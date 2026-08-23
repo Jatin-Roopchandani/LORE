@@ -36,7 +36,7 @@ class LanceStore:
             self._db.create_table("entities", schema=_ENTITIES_SCHEMA)
 
     def table_names(self) -> set[str]:
-        return set(self._db.table_names())
+        return set(self._db.list_tables().tables)
 
     def add_chunks(self, rows: list[dict]) -> None:
         self._db.open_table("chunks").add(rows)
