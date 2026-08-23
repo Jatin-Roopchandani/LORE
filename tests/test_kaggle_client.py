@@ -87,6 +87,24 @@ def test_authenticated_accepts_access_token_file(tmp_path: Path, monkeypatch) ->
     assert client.authenticated() is True
 
 
+def test_wait_dataset_ready_returns_when_ready() -> None:
+    client = KaggleClient(_cfg())
+    fake = FakeCompleted(stdout="ready")
+    with patch("lore.kaggle_api.client.subprocess.run", return_value=fake) as run:
+        client.wait_dataset_ready(timeout_s=1)
+    args = run.call_args.args[0]
+    assert args[:3] == ["kaggle", "datasets", "status"]
+    assert "testuser/lore-hello-data" in args
+
+
+def test_wait_dataset_ready_times_out_while_processing() -> None:
+    client = KaggleClient(_cfg())
+    fake = FakeCompleted(stdout="still processing")
+    with patch("lore.kaggle_api.client.subprocess.run", return_value=fake):
+        with pytest.raises(KaggleRunError):
+            client.wait_dataset_ready(timeout_s=0)
+
+
 def test_authenticated_accepts_env_token(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("KAGGLE_API_TOKEN", "KGAT_dummy")

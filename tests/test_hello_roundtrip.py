@@ -37,3 +37,4 @@ def test_roundtrip_validates_output(tmp_path: Path) -> None:
 
     assert result == expected
     client.push_dataset.assert_called_once()
+    client.wait_dataset_ready.assert_called_once()

@@ -33,6 +33,7 @@ def run_hello_roundtrip(
     kernel_dir, dataset_dir = materialize_templates(config, work_dir)
     client = KaggleClient(config)
     client.push_dataset(dataset_dir)
+    client.wait_dataset_ready()
     out_dir = client.run_and_wait(kernel_dir, work_dir / "out", on_tick=on_tick)
     output_file = out_dir / "output.json"
     if not output_file.is_file():

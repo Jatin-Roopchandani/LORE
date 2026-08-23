@@ -28,6 +28,10 @@ class KaggleClient:
     def _kernel_ref(self) -> str:
         return f"{self._cfg.username}/{self._cfg.kernel_slug}"
 
+    @property
+    def _dataset_ref(self) -> str:
+        return f"{self._cfg.username}/{self._cfg.dataset_slug}"
+
     def _run(self, args: list[str]) -> subprocess.CompletedProcess:
         try:
             result = subprocess.run(
@@ -69,6 +73,25 @@ class KaggleClient:
                 "kaggle", "datasets", "version", "-p", str(dir),
                 "-m", "lore work unit", "--dir-mode", "zip",
             ])
+
+    def dataset_status(self) -> str:
+        result = self._run(["kaggle", "datasets", "status", self._dataset_ref])
+        return result.stdout.strip().lower()
+
+    def wait_dataset_ready(self, timeout_s: int = 300) -> None:
+        # A freshly pushed dataset version processes asynchronously; a kernel
+        # started before it is ready mounts an empty input directory.
+        deadline = time.monotonic() + timeout_s
+        while True:
+            status = self.dataset_status()
+            if "ready" in status:
+                return
+            if time.monotonic() > deadline:
+                raise KaggleRunError(
+                    f"dataset {self._dataset_ref} not ready after {timeout_s}s "
+                    f"(last status: {status!r})"
+                )
+            time.sleep(self._cfg.poll_interval_s)
 
     def push_kernel(self, dir: Path) -> None:
         self._run(["kaggle", "kernels", "push", "-p", str(dir)])
