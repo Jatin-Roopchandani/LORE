@@ -16,7 +16,10 @@ dependencies = [
 lore = "lore.cli:app"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -27,3 +30,4 @@ packages = ["lore"]
 
 [tool.pytest.ini_options]
 markers = ["live: tests that hit real local services (ollama); deselect with -m 'not live'"]
+asyncio_mode = "auto"
