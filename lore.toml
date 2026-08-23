@@ -9,7 +9,7 @@ host = "http://localhost:11434"
 model = "qwen2.5:3b-instruct-q4_K_M"
 
 [lore.kaggle]
-username = ""            # personal Kaggle username (required for doctor --kaggle)
+username = "jatinroopchandani"  # personal Kaggle username (required for doctor --kaggle)
 kernel_slug = "lore-hello"
 dataset_slug = "lore-hello-data"
 poll_interval_s = 30

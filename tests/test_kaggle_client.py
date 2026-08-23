@@ -69,10 +69,28 @@ def test_run_and_wait_raises_on_error(tmp_path: Path) -> None:
 
 def test_authenticated_checks_credentials_file(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("KAGGLE_API_TOKEN", raising=False)
     client = KaggleClient(_cfg())
     assert client.authenticated() is False
     (tmp_path / ".kaggle").mkdir()
     (tmp_path / ".kaggle" / "kaggle.json").write_text("{}")
+    assert client.authenticated() is True
+
+
+def test_authenticated_accepts_access_token_file(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("KAGGLE_API_TOKEN", raising=False)
+    client = KaggleClient(_cfg())
+    assert client.authenticated() is False
+    (tmp_path / ".kaggle").mkdir()
+    (tmp_path / ".kaggle" / "access_token").write_text("KGAT_dummy")
+    assert client.authenticated() is True
+
+
+def test_authenticated_accepts_env_token(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("KAGGLE_API_TOKEN", "KGAT_dummy")
+    client = KaggleClient(_cfg())
     assert client.authenticated() is True
 
 

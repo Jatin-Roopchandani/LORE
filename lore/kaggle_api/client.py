@@ -5,6 +5,7 @@ only ever touched by Kaggle's own tooling and tests can mock one seam.
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import time
@@ -43,7 +44,14 @@ class KaggleClient:
         return result
 
     def authenticated(self) -> bool:
-        return (Path.home() / ".kaggle" / "kaggle.json").is_file()
+        # Kaggle accepts legacy kaggle.json, the newer access_token file,
+        # or a KAGGLE_API_TOKEN environment variable.
+        kaggle_dir = Path.home() / ".kaggle"
+        return (
+            bool(os.environ.get("KAGGLE_API_TOKEN"))
+            or (kaggle_dir / "kaggle.json").is_file()
+            or (kaggle_dir / "access_token").is_file()
+        )
 
     def push_dataset(self, dir: Path) -> None:
         # `create` for the first push, `version` afterwards.

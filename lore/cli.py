@@ -73,7 +73,8 @@ def doctor(kaggle: bool = typer.Option(False, "--kaggle",
 
     client = KaggleClient(config.kaggle)
     ok &= _report("kaggle-auth", client.authenticated(),
-                  "" if client.authenticated() else "~/.kaggle/kaggle.json missing")
+                  "" if client.authenticated()
+                  else "no ~/.kaggle/kaggle.json, ~/.kaggle/access_token, or KAGGLE_API_TOKEN")
 
     if kaggle:
         try:
