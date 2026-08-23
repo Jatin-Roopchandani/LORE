@@ -4,37 +4,43 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-MIGRATIONS: list[tuple[int, str]] = [
+MIGRATIONS: list[tuple[int, list[str]]] = [
     (
         1,
-        """
-        CREATE TABLE books (
-            id         TEXT PRIMARY KEY,          -- content hash of source file
-            title      TEXT NOT NULL,
-            author     TEXT,
-            source     TEXT NOT NULL DEFAULT 'upload',
-            file_path  TEXT NOT NULL,
-            status     TEXT NOT NULL DEFAULT 'registered',
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE jobs (
-            id         INTEGER PRIMARY KEY,
-            kind       TEXT NOT NULL,
-            book_id    TEXT REFERENCES books(id),
-            state      TEXT NOT NULL DEFAULT 'queued',
-            detail     TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE quota_ledger (
-            id               INTEGER PRIMARY KEY,
-            run_ref          TEXT NOT NULL,
-            gpu_hours_est    REAL NOT NULL,
-            gpu_hours_actual REAL,
-            week             TEXT NOT NULL,       -- ISO week, e.g. 2026-W34
-            created_at       TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        """,
+        [
+            """
+            CREATE TABLE books (
+                id         TEXT PRIMARY KEY,          -- content hash of source file
+                title      TEXT NOT NULL,
+                author     TEXT,
+                source     TEXT NOT NULL DEFAULT 'upload',
+                file_path  TEXT NOT NULL,
+                status     TEXT NOT NULL DEFAULT 'registered',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
+            CREATE TABLE jobs (
+                id         INTEGER PRIMARY KEY,
+                kind       TEXT NOT NULL,
+                book_id    TEXT REFERENCES books(id),
+                state      TEXT NOT NULL DEFAULT 'queued',
+                detail     TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            """
+            CREATE TABLE quota_ledger (
+                id               INTEGER PRIMARY KEY,
+                run_ref          TEXT NOT NULL,
+                gpu_hours_est    REAL NOT NULL,
+                gpu_hours_actual REAL,
+                week             TEXT NOT NULL,       -- ISO week, e.g. 2026-W34
+                created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+        ],
     ),
 ]
 
@@ -50,13 +56,18 @@ def open_db(path: Path) -> sqlite3.Connection:
         " applied_at TEXT NOT NULL DEFAULT (datetime('now')))"
     )
     current = schema_version(conn)
-    for version, sql in MIGRATIONS:
-        if version > current:
-            with conn:  # transaction per migration
-                conn.executescript(sql)
-                conn.execute(
-                    "INSERT INTO schema_migrations (version) VALUES (?)", (version,)
-                )
+    try:
+        for version, statements in MIGRATIONS:
+            if version > current:
+                with conn:  # transaction per migration
+                    for stmt in statements:
+                        conn.execute(stmt)
+                    conn.execute(
+                        "INSERT INTO schema_migrations (version) VALUES (?)", (version,)
+                    )
+    except Exception:
+        conn.close()
+        raise
     return conn
 
 
