@@ -17,6 +17,7 @@ lore = "lore.cli:app"
 
 [dependency-groups]
 dev = [
+    "kaggle>=2.2.4",
     "pytest>=8.0",
     "pytest-asyncio",
 ]
