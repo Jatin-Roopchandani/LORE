@@ -1,0 +1,13 @@
+{
+  "id": "USERNAME/lore-hello",
+  "title": "lore-hello",
+  "code_file": "hello_kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "false",
+  "dataset_sources": ["USERNAME/lore-hello-data"],
+  "competition_sources": [],
+  "kernel_sources": []
+}
