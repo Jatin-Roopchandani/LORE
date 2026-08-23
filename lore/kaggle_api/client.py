@@ -27,9 +27,14 @@ class KaggleClient:
         return f"{self._cfg.username}/{self._cfg.kernel_slug}"
 
     def _run(self, args: list[str]) -> subprocess.CompletedProcess:
-        result = subprocess.run(
-            args, capture_output=True, text=True, timeout=300
-        )
+        try:
+            result = subprocess.run(
+                args, capture_output=True, text=True, timeout=300
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise KaggleRunError(
+                f"{' '.join(args)} timed out after 300s"
+            ) from exc
         if result.returncode != 0:
             raise KaggleRunError(
                 f"{' '.join(args)} failed rc={result.returncode}: {result.stderr}"
@@ -41,10 +46,15 @@ class KaggleClient:
 
     def push_dataset(self, dir: Path) -> None:
         # `create` for the first push, `version` afterwards.
-        result = subprocess.run(
-            ["kaggle", "datasets", "create", "-p", str(dir), "--dir-mode", "zip"],
-            capture_output=True, text=True, timeout=300,
-        )
+        try:
+            result = subprocess.run(
+                ["kaggle", "datasets", "create", "-p", str(dir), "--dir-mode", "zip"],
+                capture_output=True, text=True, timeout=300,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise KaggleRunError(
+                "kaggle datasets create timed out after 300s"
+            ) from exc
         if result.returncode != 0 or "already in use" in result.stdout + result.stderr:
             self._run([
                 "kaggle", "datasets", "version", "-p", str(dir),

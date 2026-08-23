@@ -1,5 +1,6 @@
 from pathlib import Path
 from unittest.mock import patch
+import subprocess
 
 import pytest
 
@@ -55,3 +56,11 @@ def test_authenticated_checks_credentials_file(tmp_path: Path, monkeypatch) -> N
     (tmp_path / ".kaggle").mkdir()
     (tmp_path / ".kaggle" / "kaggle.json").write_text("{}")
     assert client.authenticated() is True
+
+
+def test_push_kernel_raises_on_timeout(tmp_path: Path) -> None:
+    client = KaggleClient(_cfg())
+    with patch("lore.kaggle_api.client.subprocess.run",
+               side_effect=subprocess.TimeoutExpired(cmd=["kaggle"], timeout=300)):
+        with pytest.raises(KaggleRunError):
+            client.push_kernel(tmp_path)
