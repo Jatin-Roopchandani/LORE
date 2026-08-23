@@ -63,13 +63,21 @@ def doctor(kaggle: bool = typer.Option(False, "--kaggle",
     except Exception as exc:
         ok &= _report("lancedb", False, str(exc))
 
-    provider = OllamaProvider(config.ollama)
+    async def _check_ollama() -> bool:
+        # healthy() and aclose() must share one event loop: the client's
+        # connections belong to the loop that opened them.
+        provider = OllamaProvider(config.ollama)
+        try:
+            return await provider.healthy()
+        finally:
+            await provider.aclose()
+
     try:
-        healthy = asyncio.run(provider.healthy())
+        healthy = asyncio.run(_check_ollama())
         ok &= _report("ollama", healthy,
                       config.ollama.model if healthy else f"no server at {config.ollama.host}")
-    finally:
-        asyncio.run(provider.aclose())
+    except Exception as exc:
+        ok &= _report("ollama", False, str(exc))
 
     client = KaggleClient(config.kaggle)
     ok &= _report("kaggle-auth", client.authenticated(),
