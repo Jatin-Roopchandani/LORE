@@ -1,0 +1,16 @@
+# LORE configuration — see lore/config.py for all keys and defaults.
+[lore]
+data_dir = "data"
+# "kaggle" (free T4 burst, default) | "ollama" (fully local, zero-egress)
+extraction_provider = "kaggle"
+
+[lore.ollama]
+host = "http://localhost:11434"
+model = "qwen2.5:3b-instruct-q4_K_M"
+
+[lore.kaggle]
+username = ""            # personal Kaggle username (required for doctor --kaggle)
+kernel_slug = "lore-hello"
+dataset_slug = "lore-hello-data"
+poll_interval_s = 30
+poll_timeout_s = 1800
