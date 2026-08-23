@@ -41,6 +41,24 @@ def test_kernel_status_parses_error() -> None:
         assert client.kernel_status() == "error"
 
 
+def test_kernel_status_parses_complete_kaggle_2_2_4_format() -> None:
+    client = KaggleClient(_cfg())
+    fake = FakeCompleted(
+        stdout='testuser/lore-hello has status "KernelWorkerStatus.COMPLETE"'
+    )
+    with patch("lore.kaggle_api.client.subprocess.run", return_value=fake):
+        assert client.kernel_status() == "complete"
+
+
+def test_kernel_status_parses_error_kaggle_2_2_4_format() -> None:
+    client = KaggleClient(_cfg())
+    fake = FakeCompleted(
+        stdout='testuser/lore-hello has status "KernelWorkerStatus.ERROR"'
+    )
+    with patch("lore.kaggle_api.client.subprocess.run", return_value=fake):
+        assert client.kernel_status() == "error"
+
+
 def test_run_and_wait_raises_on_error(tmp_path: Path) -> None:
     client = KaggleClient(_cfg())
     fake = FakeCompleted(stdout='testuser/lore-hello has status "error"')

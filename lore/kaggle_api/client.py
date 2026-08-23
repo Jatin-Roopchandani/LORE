@@ -21,6 +21,7 @@ class KaggleRunError(RuntimeError):
 class KaggleClient:
     def __init__(self, config: KaggleConfig) -> None:
         self._cfg = config
+        self._last_status_output = ""
 
     @property
     def _kernel_ref(self) -> str:
@@ -66,8 +67,9 @@ class KaggleClient:
 
     def kernel_status(self) -> str:
         result = self._run(["kaggle", "kernels", "status", self._kernel_ref])
-        match = re.search(r'"(\w+)"', result.stdout)
-        status = match.group(1) if match else "unknown"
+        self._last_status_output = result.stdout.strip()
+        match = re.search(r'"(?:\w+\.)?(\w+)"', result.stdout)
+        status = match.group(1).lower() if match else "unknown"
         return status if status in {"running", "complete", "error", "queued"} else "unknown"
 
     def pull_output(self, dest: Path) -> None:
@@ -94,6 +96,7 @@ class KaggleClient:
             if time.monotonic() > deadline:
                 raise KaggleRunError(
                     f"kernel {self._kernel_ref} timed out after "
-                    f"{self._cfg.poll_timeout_s}s (last status: {status})"
+                    f"{self._cfg.poll_timeout_s}s (last status: {status}; "
+                    f"last output: {self._last_status_output!r})"
                 )
             time.sleep(self._cfg.poll_interval_s)
