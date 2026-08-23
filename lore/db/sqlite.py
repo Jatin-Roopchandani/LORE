@@ -59,12 +59,17 @@ def open_db(path: Path) -> sqlite3.Connection:
     try:
         for version, statements in MIGRATIONS:
             if version > current:
-                with conn:  # transaction per migration
+                try:
+                    conn.execute("BEGIN")
                     for stmt in statements:
                         conn.execute(stmt)
                     conn.execute(
                         "INSERT INTO schema_migrations (version) VALUES (?)", (version,)
                     )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
     except Exception:
         conn.close()
         raise
