@@ -4,8 +4,15 @@ from pathlib import Path
 
 import torch
 
-data_path = Path("/kaggle/input/lore-hello-data/input.json")
-numbers = json.loads(data_path.read_text())["numbers"]
+input_root = Path("/kaggle/input")
+print("input tree:", sorted(str(p) for p in input_root.rglob("*"))[:50])
+
+# Locate by search rather than a hardcoded path: the mount layout can vary
+# with dataset packaging (dir-mode, versioning).
+candidates = sorted(input_root.rglob("input.json"))
+if not candidates:
+    raise FileNotFoundError(f"input.json not found anywhere under {input_root}")
+numbers = json.loads(candidates[0].read_text())["numbers"]
 
 tensor = torch.tensor(numbers, dtype=torch.float32)
 if torch.cuda.is_available():
