@@ -18,7 +18,7 @@ def test_doctor_all_healthy(tmp_path: Path, monkeypatch) -> None:
         ollama_cls.return_value.healthy = AsyncMock(return_value=True)
         ollama_cls.return_value.aclose = AsyncMock()
         kaggle_cls.return_value.authenticated.return_value = True
-        result = runner.invoke(app, [])
+        result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0, result.output
     for check in ("config", "sqlite", "kuzu", "lancedb", "ollama", "kaggle-auth"):
         assert f"[ ok ] {check}" in result.output
@@ -34,6 +34,6 @@ def test_doctor_fails_when_ollama_down(tmp_path: Path, monkeypatch) -> None:
         ollama_cls.return_value.healthy = AsyncMock(return_value=False)
         ollama_cls.return_value.aclose = AsyncMock()
         kaggle_cls.return_value.authenticated.return_value = True
-        result = runner.invoke(app, [])
+        result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1
     assert "[fail] ollama" in result.output

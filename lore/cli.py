@@ -15,6 +15,8 @@ from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
 
+app = typer.Typer(no_args_is_help=True)
+
 
 def _report(name: str, ok: bool, detail: str = "") -> bool:
     tag = "[ ok ]" if ok else "[fail]"
@@ -22,7 +24,14 @@ def _report(name: str, ok: bool, detail: str = "") -> bool:
     return ok
 
 
-def _doctor_impl(kaggle: bool = False) -> None:
+@app.callback()
+def main() -> None:
+    """LORE - Local Orchestration & Relational Extraction."""
+
+
+@app.command()
+def doctor(kaggle: bool = typer.Option(False, "--kaggle",
+                                       help="also run the free-tier GPU round trip (slow)")) -> None:
     """Verify every Phase 0 subsystem is alive."""
     ok = True
 
@@ -79,14 +88,3 @@ def _doctor_impl(kaggle: bool = False) -> None:
             ok &= _report("kaggle-roundtrip", False, str(exc))
 
     raise typer.Exit(0 if ok else 1)
-
-
-# For testing with CliRunner
-app = typer.Typer(no_args_is_help=True)
-
-
-@app.command()
-def doctor(kaggle: bool = typer.Option(False, "--kaggle",
-                                       help="also run the free-tier GPU round trip (slow)")) -> None:
-    """Verify every Phase 0 subsystem is alive."""
-    _doctor_impl(kaggle)
