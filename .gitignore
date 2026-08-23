@@ -1,0 +1,20 @@
+# runtime state — never commit
+data/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# secrets — belt and braces
+.env
+kaggle.json
+
+# editors / os
+.vscode/
+.idea/
+.DS_Store
