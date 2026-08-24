@@ -27,3 +27,31 @@ def make_epub(
     book.spine = ["nav", *items]
     epub.write_epub(str(path), book)
     return path
+
+
+import pymupdf
+
+
+def make_pdf(
+    path: Path,
+    pages: list[str],
+    heading_pages: dict[int, str] | None = None,
+    header: str | None = None,
+) -> Path:
+    """pages: body text per page. heading_pages: {page_index: heading} drawn
+    in a large font. header: line repeated at the top of every page."""
+    doc = pymupdf.open()
+    for i, body in enumerate(pages):
+        page = doc.new_page()
+        y = 60.0
+        if header is not None:
+            page.insert_text((72, 40), header, fontsize=9)
+        if heading_pages and i in heading_pages:
+            page.insert_text((72, 80), heading_pages[i], fontsize=24)
+            y = 120.0
+        page.insert_textbox(
+            pymupdf.Rect(72, y, 520, 780), body, fontsize=11
+        )
+    doc.save(str(path))
+    doc.close()
+    return path
