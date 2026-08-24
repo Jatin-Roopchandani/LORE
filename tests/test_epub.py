@@ -68,3 +68,54 @@ def test_unreadable_file_raises_ingest_error(tmp_path: Path) -> None:
     bad.write_bytes(b"this is not an epub")
     with pytest.raises(IngestError):
         parse_epub(bad)
+
+
+def test_multiple_headings_in_one_document_become_chapters(tmp_path: Path) -> None:
+    # make_epub wraps the body in "<h1>{title}</h1>", so this single spine
+    # document is: <h1>Doc</h1><h2>Chapter One</h2>...<h2>Chapter Three</h2>...
+    # The h1 "Doc" section has no text before the first h2, so it's empty
+    # and skipped, leaving exactly the three h2-delimited chapters.
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[
+            (
+                "Doc",
+                "<h2>Chapter One</h2><p>First body.</p>"
+                "<h2>Chapter Two</h2><p>Second body.</p>"
+                "<h2>Chapter Three</h2><p>Third body.</p>",
+            )
+        ],
+    )
+    book = parse_epub(path)
+    assert [c.title for c in book.chapters] == [
+        "Chapter One",
+        "Chapter Two",
+        "Chapter Three",
+    ]
+    assert [c.seq for c in book.chapters] == [1, 2, 3]
+    assert "First body." in book.chapters[0].text
+    assert "Second body." in book.chapters[1].text
+    assert "Third body." in book.chapters[2].text
+    for chapter in book.chapters:
+        assert "Chapter Two" not in chapter.text
+
+
+def test_preamble_before_first_heading_kept(tmp_path: Path) -> None:
+    # make_epub wraps the body in "<h1>{title}</h1>", so the preamble text
+    # lands between the h1 and the first h2 — it becomes the h1's section
+    # body (titled by the h1 heading), followed by a separate h2 section.
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[
+            ("Doc", "<p>Preamble text here.</p><h2>Real Chapter</h2><p>Body.</p>")
+        ],
+    )
+    book = parse_epub(path)
+    assert [c.title for c in book.chapters] == ["Doc", "Real Chapter"]
+    assert "Preamble text here." in book.chapters[0].text
+    assert "Body." in book.chapters[1].text
+    assert "Preamble text here." not in book.chapters[1].text
