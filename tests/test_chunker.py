@@ -1,0 +1,82 @@
+from lore.ingest.chunker import chunk_book
+from lore.ingest.models import ParsedBook, ParsedChapter
+
+BOOK_ID = "abcdef0123456789"
+
+
+def _book(chapters: list[tuple[str, str]]) -> ParsedBook:
+    return ParsedBook(
+        title="T",
+        author="A",
+        chapters=[
+            ParsedChapter(seq=i + 1, title=t, text=x)
+            for i, (t, x) in enumerate(chapters)
+        ],
+    )
+
+
+def _long_text(n_sentences: int) -> str:
+    return " ".join(
+        f"This is sentence number {i} padding the scene with enough words to matter."
+        for i in range(n_sentences)
+    )
+
+
+def test_deterministic() -> None:
+    book = _book([("One", _long_text(60)), ("Two", _long_text(40))])
+    first = chunk_book(book, BOOK_ID)
+    second = chunk_book(book, BOOK_ID)
+    assert first == second
+    assert len(first) > 2
+
+
+def test_ids_and_chapter_boundaries() -> None:
+    book = _book([("One", _long_text(60)), ("Two", _long_text(60))])
+    chunks = chunk_book(book, BOOK_ID)
+    for chunk in chunks:
+        assert chunk.id == f"{BOOK_ID}:{chunk.chapter_seq}:{chunk.seq}"
+        assert chunk.book_id == BOOK_ID
+    seqs_ch1 = [c.seq for c in chunks if c.chapter_seq == 1]
+    seqs_ch2 = [c.seq for c in chunks if c.chapter_seq == 2]
+    assert seqs_ch1 == list(range(len(seqs_ch1)))  # per-chapter numbering
+    assert seqs_ch2 == list(range(len(seqs_ch2)))  # restarts at 0
+
+
+def test_budget_respected() -> None:
+    book = _book([("One", _long_text(120))])
+    for chunk in chunk_book(book, BOOK_ID):
+        # budget + slack for the sentence that tipped it over
+        assert len(chunk.text) < 1600 + 200
+
+
+def test_overlap_between_consecutive_chunks() -> None:
+    book = _book([("One", _long_text(120))])
+    chunks = chunk_book(book, BOOK_ID)
+    assert len(chunks) >= 2
+    # the first two sentences of chunk n+1 are the last two of chunk n
+    prev, nxt = chunks[0].text, chunks[1].text
+    assert prev[-80:] in nxt  # the overlap makes chunk n's ending appear in n+1
+
+
+def test_scene_markers_split_scenes() -> None:
+    text = _long_text(10) + "\n\n***\n\n" + _long_text(10)
+    book = _book([("One", text)])
+    chunks = chunk_book(book, BOOK_ID)
+    scene_seqs = {c.scene_seq for c in chunks}
+    assert scene_seqs == {0, 1}
+    # no chunk mixes text from both scenes
+    for chunk in chunks:
+        assert "***" not in chunk.text
+
+
+def test_blank_line_runs_split_scenes() -> None:
+    text = _long_text(10) + "\n\n\n" + _long_text(10)
+    book = _book([("One", text)])
+    chunks = chunk_book(book, BOOK_ID)
+    assert {c.scene_seq for c in chunks} == {0, 1}
+
+
+def test_empty_chapter_produces_no_chunks() -> None:
+    book = _book([("One", "   \n\n  "), ("Two", _long_text(5))])
+    chunks = chunk_book(book, BOOK_ID)
+    assert all(c.chapter_seq == 2 for c in chunks)
