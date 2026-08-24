@@ -6,9 +6,19 @@ import pymupdf
 
 
 def make_epub(
-    path: Path, title: str, author: str, chapters: list[tuple[str, str]]
+    path: Path,
+    title: str,
+    author: str,
+    chapters: list[tuple[str, str]],
+    raw: set[int] | None = None,
 ) -> Path:
-    """chapters: list of (chapter_title, html_body) pairs."""
+    """chapters: list of (chapter_title, html_body) pairs.
+
+    raw: 1-based indices (matching enumerate(chapters, start=1)) whose
+    body_html is used as-is, WITHOUT the default "<h1>{title}</h1>"
+    wrapper — for tests that need to control heading placement precisely
+    (e.g. a headingless spine document).
+    """
     book = epub.EpubBook()
     book.set_identifier("fixture-id")
     book.set_title(title)
@@ -19,7 +29,9 @@ def make_epub(
         item = epub.EpubHtml(
             title=chapter_title, file_name=f"ch{i}.xhtml", lang="en"
         )
-        item.content = f"<h1>{chapter_title}</h1>{body_html}"
+        item.content = (
+            body_html if raw and i in raw else f"<h1>{chapter_title}</h1>{body_html}"
+        )
         book.add_item(item)
         items.append(item)
     book.add_item(epub.EpubNcx())

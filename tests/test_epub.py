@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
 from lore.ingest.models import IngestError
 from tests.fixtures import make_epub
@@ -119,3 +120,61 @@ def test_preamble_before_first_heading_kept(tmp_path: Path) -> None:
     assert "Preamble text here." in book.chapters[0].text
     assert "Body." in book.chapters[1].text
     assert "Preamble text here." not in book.chapters[1].text
+
+
+def test_adjacent_paragraphs_do_not_scene_split(tmp_path: Path) -> None:
+    # Two normal, non-empty adjacent paragraphs must produce a single
+    # paragraph break ("\n\n"), not a scene break ("\n\n\n"+).
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[("One", "<p>Para one.</p><p>Para two.</p>")],
+    )
+    book = parse_epub(path)
+    text = book.chapters[0].text
+    assert "\n\n\n" not in text
+    assert "Para one." in text and "Para two." in text
+    chunks = chunk_book(book, book_id="b")
+    assert all(c.scene_seq == 0 for c in chunks)
+
+
+def test_empty_paragraph_run_still_scene_splits(tmp_path: Path) -> None:
+    # A run of empty/whitespace-only paragraphs between two real ones must
+    # still accumulate into a scene break.
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[
+            ("One", "<p>Scene one.</p><p> </p><p> </p><p>Scene two.</p>")
+        ],
+    )
+    book = parse_epub(path)
+    text = book.chapters[0].text
+    assert "\n\n\n" in text
+    chunks = chunk_book(book, book_id="b")
+    assert {c.scene_seq for c in chunks} == {0, 1}
+
+
+def test_headingless_continuation_appends_to_previous_chapter(
+    tmp_path: Path,
+) -> None:
+    # A Gutenberg-style spine document that splits mid-chapter (e.g. at an
+    # illustration) leaves the chapter's tail as a headingless document with
+    # no h1/h2/h3 at all. That tail must be appended to the chapter already
+    # in progress, not treated as a new bogus chapter.
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[
+            ("One", "<p>Chapter text starts.</p>"),
+            ("Two", "<p>And continues here.</p>"),
+        ],
+        raw={2},
+    )
+    book = parse_epub(path)
+    assert [c.title for c in book.chapters] == ["One"]
+    assert "Chapter text starts." in book.chapters[0].text
+    assert "And continues here." in book.chapters[0].text

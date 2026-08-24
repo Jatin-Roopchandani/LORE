@@ -32,24 +32,39 @@ class _TextExtractor(HTMLParser):
         self._skip_depth = 0
         self._in_heading = False
         self._heading_parts: list[str] = []
+        # Per-open-block bookkeeping: (parts_list, length_at_open), pushed on
+        # a block tag's start tag and popped on its end tag, so we know
+        # whether the block emitted any content while it was open.
+        self._block_stack: list[tuple[list[str], int]] = []
 
     def handle_starttag(self, tag: str, attrs) -> None:
         if tag in ("script", "style"):
             self._skip_depth += 1
         elif tag == "hr":
             self._sections[-1]["parts"].append("\n***\n")
+        elif tag == "br":
+            self._sections[-1]["parts"].append("\n")
         elif tag in _BLOCK_TAGS:
-            self._sections[-1]["parts"].append("\n\n")
+            parts = self._sections[-1]["parts"]
+            self._block_stack.append((parts, len(parts)))
         if tag in _HEADING_TAGS:
             self._sections.append({"heading": None, "parts": []})
             self._in_heading = True
             self._heading_parts = []
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in ("script", "style") and self._skip_depth:
-            self._skip_depth -= 1
+        if tag in ("script", "style"):
+            if self._skip_depth:
+                self._skip_depth -= 1
+        elif tag in ("hr", "br"):
+            pass  # already emitted on the start tag
         elif tag in _BLOCK_TAGS:
-            self._sections[-1]["parts"].append("\n\n")
+            if self._block_stack:
+                parts, start_len = self._block_stack.pop()
+                emitted = len(parts) > start_len
+            else:
+                emitted = False
+            self._sections[-1]["parts"].append("\n\n" if emitted else "\n")
         if tag in _HEADING_TAGS and self._in_heading:
             self._in_heading = False
             heading = " ".join(self._heading_parts).strip()
@@ -60,7 +75,13 @@ class _TextExtractor(HTMLParser):
             return
         if self._in_heading:
             self._heading_parts.append(data)
-        else:
+        elif data.strip():
+            # Whitespace-only text nodes are formatting/indentation between
+            # sibling tags (ebooklib pretty-prints its XHTML output, and
+            # real-world EPUBs are often indented too) — not real content.
+            # Ignoring them keeps paragraph-boundary newline counts exact,
+            # so the block-open/close bookkeeping isn't thrown off by an
+            # incidental "\n    " between two <p> tags.
             self._sections[-1]["parts"].append(data)
 
     @staticmethod
@@ -112,6 +133,18 @@ def parse_epub(path: Path) -> ParsedBook:
         extractor = _TextExtractor()
         extractor.feed(item.get_content().decode("utf-8", errors="replace"))
         for heading, text in extractor.sections:
+            # A headingless section is either true front matter (no chapter
+            # seen yet -> its own fallback chapter) or the tail of a chapter
+            # whose spine document was split mid-chapter (e.g. at an
+            # illustration) -> append it to the chapter still in progress.
+            if heading is None and chapters:
+                prev = chapters[-1]
+                chapters[-1] = ParsedChapter(
+                    seq=prev.seq,
+                    title=prev.title,
+                    text=f"{prev.text}\n\n{text}",
+                )
+                continue
             seq += 1
             chapters.append(
                 ParsedChapter(
