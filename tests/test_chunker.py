@@ -83,12 +83,14 @@ def test_empty_chapter_produces_no_chunks() -> None:
 
 
 def test_no_sentence_is_ever_lost() -> None:
-    # A near-budget sentence followed by a short one used to make the
-    # trailing-pack guard silently drop the short one.
-    long_sentence = "L" * 1500 + "."
-    short_sentence = "The short tail sentence survives."
-    book = _book([("One", long_sentence + " " + short_sentence)])
-    chunks = chunk_book(book, BOOK_ID)
+    # Exact repro of the fixed bug: with a tiny budget, the first sentence
+    # fills a pack alone, the reseed carries only 1 sentence, and the final
+    # pack (carried + 1 new = 2 <= overlap_sentences) used to be dropped —
+    # silently deleting the second sentence.
+    first = "A" * 60 + "."
+    second = "B" * 60 + "."
+    book = _book([("One", first + " " + second)])
+    chunks = chunk_book(book, BOOK_ID, budget_chars=61)
     combined = " ".join(c.text for c in chunks)
-    assert "survives" in combined
-    assert "L" * 100 in combined
+    assert "A" * 60 in combined
+    assert "B" * 60 in combined
