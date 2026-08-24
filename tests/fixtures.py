@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from ebooklib import epub
+import pymupdf
 
 
 def make_epub(
@@ -27,9 +28,6 @@ def make_epub(
     book.spine = ["nav", *items]
     epub.write_epub(str(path), book)
     return path
-
-
-import pymupdf
 
 
 def make_pdf(

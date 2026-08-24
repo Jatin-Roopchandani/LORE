@@ -39,7 +39,7 @@ def _strip_repeated_edges(pages: list[list[tuple[str, float]]]) -> None:
         if lines:
             edges[re.sub(r"\d+", "#", lines[0][0])] += 1
             edges[re.sub(r"\d+", "#", lines[-1][0])] += 1
-    repeated = {t for t, n in edges.items() if n >= len(pages) * 0.5 * 1}
+    repeated = {t for t, n in edges.items() if n >= len(pages) * 0.5}
     for lines in pages:
         while lines and re.sub(r"\d+", "#", lines[0][0]) in repeated:
             lines.pop(0)

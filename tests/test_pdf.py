@@ -53,3 +53,21 @@ def test_scanned_pdf_rejected(tmp_path: Path) -> None:
     doc.close()
     with pytest.raises(IngestError, match="text"):
         parse_pdf(empty)
+
+
+def test_encrypted_pdf_rejected(tmp_path: Path) -> None:
+    import pymupdf
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "secret content " * 50, fontsize=11)
+    locked = tmp_path / "locked.pdf"
+    doc.save(
+        str(locked),
+        encryption=pymupdf.PDF_ENCRYPT_AES_256,
+        owner_pw="owner-secret",
+        user_pw="user-secret",
+    )
+    doc.close()
+    with pytest.raises(IngestError, match="encrypted"):
+        parse_pdf(locked)
