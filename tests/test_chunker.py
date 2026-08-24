@@ -80,3 +80,15 @@ def test_empty_chapter_produces_no_chunks() -> None:
     book = _book([("One", "   \n\n  "), ("Two", _long_text(5))])
     chunks = chunk_book(book, BOOK_ID)
     assert all(c.chapter_seq == 2 for c in chunks)
+
+
+def test_no_sentence_is_ever_lost() -> None:
+    # A near-budget sentence followed by a short one used to make the
+    # trailing-pack guard silently drop the short one.
+    long_sentence = "L" * 1500 + "."
+    short_sentence = "The short tail sentence survives."
+    book = _book([("One", long_sentence + " " + short_sentence)])
+    chunks = chunk_book(book, BOOK_ID)
+    combined = " ".join(c.text for c in chunks)
+    assert "survives" in combined
+    assert "L" * 100 in combined

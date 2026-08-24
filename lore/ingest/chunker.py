@@ -24,6 +24,7 @@ _SEGMENTER = pysbd.Segmenter(language="en", clean=False)
 
 
 def _split_scenes(text: str) -> list[str]:
+    """Split text into scenes by markers (***,---,###) and blank-line runs."""
     scenes: list[str] = []
     for part in _SCENE_MARKER.split("\n" + text + "\n"):
         scenes.extend(_BLANK_RUN.split(part))
@@ -31,6 +32,7 @@ def _split_scenes(text: str) -> list[str]:
 
 
 def _sentences(scene_text: str) -> list[str]:
+    """Segment scene text into sentences using pysbd."""
     flat = re.sub(r"\s+", " ", scene_text).strip()
     return [s.strip() for s in _SEGMENTER.segment(flat) if s.strip()]
 
@@ -38,21 +40,26 @@ def _sentences(scene_text: str) -> list[str]:
 def _pack(
     sentences: list[str], budget_chars: int, overlap_sentences: int
 ) -> list[list[str]]:
+    """Greedily pack sentences into chunks with configurable overlap.
+
+    Tracks overlap explicitly to avoid losing content when sentence sizes vary.
+    """
     packs: list[list[str]] = []
     current: list[str] = []
+    carried = 0  # sentences in `current` that came from the previous pack
     size = 0
     for sentence in sentences:
         if current and size + len(sentence) + 1 > budget_chars:
             packs.append(current)
             current = current[-overlap_sentences:] if overlap_sentences else []
+            carried = len(current)
             size = sum(len(s) + 1 for s in current)
         current.append(sentence)
         size += len(sentence) + 1
-    if current:
+    # Only append if pack holds at least one new sentence (not pure overlap).
+    # A single sentence longer than budget intentionally becomes its own chunk.
+    if current and len(current) > carried:
         packs.append(current)
-    # A trailing pack that is pure overlap adds nothing — drop it.
-    if len(packs) > 1 and len(packs[-1]) <= overlap_sentences:
-        packs.pop()
     return packs
 
 
