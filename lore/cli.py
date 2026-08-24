@@ -11,6 +11,11 @@ from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.db.sqlite import open_db, schema_version
+from lore.ingest.chunker import chunk_book
+from lore.ingest.epub import parse_epub
+from lore.ingest.models import IngestError, book_id_for_file
+from lore.ingest.pdf import parse_pdf
+from lore.ingest.registry import ingest_book, list_books
 from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
@@ -97,3 +102,57 @@ def doctor(kaggle: bool = typer.Option(False, "--kaggle",
             ok &= _report("kaggle-roundtrip", False, str(exc))
 
     raise typer.Exit(0 if ok else 1)
+
+
+@app.command()
+def ingest(path: Path) -> None:
+    """Parse, chunk, and register an EPUB or PDF."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    parsers = {".epub": parse_epub, ".pdf": parse_pdf}
+    parser = parsers.get(path.suffix.lower())
+    if parser is None:
+        typer.echo(f"unsupported file type: {path.suffix} (need .epub or .pdf)")
+        raise typer.Exit(2)
+    try:
+        book_id = book_id_for_file(path)
+        parsed = parser(path)
+        chunks = chunk_book(parsed, book_id)
+    except IngestError as exc:
+        typer.echo(f"ingest failed: {exc}")
+        raise typer.Exit(1)
+    conn = open_db(config.sqlite_path)
+    try:
+        created = ingest_book(
+            conn, book_id=book_id, title=parsed.title, author=parsed.author,
+            source="upload", file_path=str(path), chunks=chunks,
+        )
+    finally:
+        conn.close()
+    if not created:
+        typer.echo(f"{parsed.title} ({book_id}) already ingested — no-op")
+        return
+    typer.echo(
+        f"{parsed.title} ({book_id}): "
+        f"{len(parsed.chapters)} chapters, {len(chunks)} chunks"
+    )
+
+
+@app.command()
+def books() -> None:
+    """List the ingested library."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        rows = list_books(conn)
+    finally:
+        conn.close()
+    if not rows:
+        typer.echo("library is empty")
+        return
+    for row in rows:
+        typer.echo(
+            f"{row['id']}  {row['title']}  [{row['status']}]  "
+            f"{row['chunk_count']} chunks"
+        )
