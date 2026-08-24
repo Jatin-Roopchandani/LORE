@@ -42,6 +42,23 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
         ],
     ),
+    (
+        2,
+        [
+            """
+            CREATE TABLE chunks (
+                id          TEXT PRIMARY KEY,
+                book_id     TEXT NOT NULL REFERENCES books(id),
+                chapter_seq INTEGER NOT NULL,
+                scene_seq   INTEGER NOT NULL,
+                seq         INTEGER NOT NULL,
+                text        TEXT NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            "CREATE INDEX idx_chunks_book ON chunks(book_id)",
+        ],
+    ),
 ]
 
 
