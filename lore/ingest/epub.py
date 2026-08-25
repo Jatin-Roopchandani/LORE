@@ -78,10 +78,13 @@ class _TextExtractor(HTMLParser):
             target = self._sections[-1]["parts"]
             if seg.strip():
                 # This block (or something nested in it) produced real text.
-                # If a nested block already closed with "\n\n", don't add a
-                # second one on top of it — that's the double-separator bug.
+                # Append exactly enough newlines to end the block with
+                # "\n\n": a nested block may already have closed with "\n\n"
+                # (add nothing), and a trailing <br> leaves a bare "\n" (top
+                # up with one more, not a full "\n\n" — that would make
+                # "\n\n\n", a spurious scene break).
                 if not seg.endswith("\n\n"):
-                    target.append("\n\n")
+                    target.append("\n" if seg.endswith("\n") else "\n\n")
             elif seg:
                 pass  # nested separators only (e.g. blockquote around an
                 # empty <p>) — nothing of our own to add

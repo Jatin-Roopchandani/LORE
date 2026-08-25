@@ -204,6 +204,31 @@ def test_nested_blockquote_does_not_scene_split(tmp_path: Path) -> None:
     assert all(c.scene_seq == 0 for c in chunks)
 
 
+def test_trailing_br_does_not_scene_split(tmp_path: Path) -> None:
+    # <br> writes a bare "\n" into the open block's parts, so a paragraph
+    # ending in <br/> closes with a segment ending "...\n". The block-close
+    # logic must top that up to exactly "\n\n" (one more "\n"), not stack a
+    # full "\n\n" on top — that would make "\n\n\n", a spurious scene break.
+    # Common real pattern: poetry, addresses, dialogue with line breaks.
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[
+            (
+                "One",
+                "<p>Para one.</p><p>Line one.<br/>Line two.<br/></p>"
+                "<p>Para three.</p>",
+            )
+        ],
+    )
+    book = parse_epub(path)
+    text = book.chapters[0].text
+    assert "\n\n\n" not in text
+    chunks = chunk_book(book, book_id="b")
+    assert {c.scene_seq for c in chunks} == {0}
+
+
 def test_block_wrapped_heading_does_not_scene_split(tmp_path: Path) -> None:
     # A heading nested inside a still-open block (div>...<h2>...</h2>...)
     # swaps the active section mid-block. When that outer block finally
