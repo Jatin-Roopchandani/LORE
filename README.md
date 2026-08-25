@@ -7,8 +7,10 @@ server, and a graph UI.
 
 See `SPEC.md` for the full design. Phase 0 status: foundation scaffold.
 
-## Quickstart (Phase 0)
+## Quickstart
 
     uv sync
-    uv run lore doctor          # checks config, stores, ollama, kaggle auth
-    uv run lore doctor --kaggle # + full free-tier GPU round trip (slow)
+    uv run lore doctor            # checks config, stores, ollama, kaggle auth
+    uv run lore doctor --kaggle   # + full free-tier GPU round trip (slow)
+    uv run lore ingest book.epub  # parse + chunk + register a book (.epub/.pdf)
+    uv run lore books             # list the ingested library
