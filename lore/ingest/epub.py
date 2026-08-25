@@ -32,9 +32,13 @@ class _TextExtractor(HTMLParser):
         self._skip_depth = 0
         self._in_heading = False
         self._heading_parts: list[str] = []
-        # Per-open-block bookkeeping: (parts_list, length_at_open), pushed on
-        # a block tag's start tag and popped on its end tag, so we know
-        # whether the block emitted any content while it was open.
+        # Per-open-block bookkeeping: (parts_list, position_at_open), pushed
+        # on a block tag's start tag and popped on its end tag. At close
+        # time, parts_list[position_at_open:] is exactly the segment this
+        # block (and anything nested inside it) produced, so we can look at
+        # its *content* rather than assume a raw length delta means "this
+        # block itself emitted text" — the naive length check double-counts
+        # a nested block's own separator as the parent's content too.
         self._block_stack: list[tuple[list[str], int]] = []
 
     def handle_starttag(self, tag: str, attrs) -> None:
@@ -49,6 +53,13 @@ class _TextExtractor(HTMLParser):
             self._block_stack.append((parts, len(parts)))
         if tag in _HEADING_TAGS:
             self._sections.append({"heading": None, "parts": []})
+            # A heading swaps the active section mid-stream. Any block still
+            # open (including the heading tag's own just-pushed entry) now
+            # continues writing into the NEW section, so its segment must be
+            # re-anchored to start at position 0 of the new parts list —
+            # otherwise its start position would point into the old list.
+            new_parts = self._sections[-1]["parts"]
+            self._block_stack = [(new_parts, 0) for _ in self._block_stack]
             self._in_heading = True
             self._heading_parts = []
 
@@ -60,11 +71,22 @@ class _TextExtractor(HTMLParser):
             pass  # already emitted on the start tag
         elif tag in _BLOCK_TAGS:
             if self._block_stack:
-                parts, start_len = self._block_stack.pop()
-                emitted = len(parts) > start_len
+                parts, pos = self._block_stack.pop()
             else:
-                emitted = False
-            self._sections[-1]["parts"].append("\n\n" if emitted else "\n")
+                parts, pos = self._sections[-1]["parts"], len(self._sections[-1]["parts"])
+            seg = "".join(parts[pos:])
+            target = self._sections[-1]["parts"]
+            if seg.strip():
+                # This block (or something nested in it) produced real text.
+                # If a nested block already closed with "\n\n", don't add a
+                # second one on top of it — that's the double-separator bug.
+                if not seg.endswith("\n\n"):
+                    target.append("\n\n")
+            elif seg:
+                pass  # nested separators only (e.g. blockquote around an
+                # empty <p>) — nothing of our own to add
+            else:
+                target.append("\n")  # a genuinely empty leaf block
         if tag in _HEADING_TAGS and self._in_heading:
             self._in_heading = False
             heading = " ".join(self._heading_parts).strip()

@@ -178,3 +178,51 @@ def test_headingless_continuation_appends_to_previous_chapter(
     assert [c.title for c in book.chapters] == ["One"]
     assert "Chapter text starts." in book.chapters[0].text
     assert "And continues here." in book.chapters[0].text
+
+
+def test_nested_blockquote_does_not_scene_split(tmp_path: Path) -> None:
+    # A block nested inside another block (blockquote>p) must not cause the
+    # OUTER block's close to add a second separator on top of the inner
+    # block's own — that double-separator is what manufactures a spurious
+    # scene break out of ordinary nested markup.
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[
+            (
+                "One",
+                "<p>Para A.</p><blockquote><p>Quoted.</p></blockquote>"
+                "<p>Para B.</p>",
+            )
+        ],
+    )
+    book = parse_epub(path)
+    text = book.chapters[0].text
+    assert "\n\n\n" not in text
+    chunks = chunk_book(book, book_id="b")
+    assert all(c.scene_seq == 0 for c in chunks)
+
+
+def test_block_wrapped_heading_does_not_scene_split(tmp_path: Path) -> None:
+    # A heading nested inside a still-open block (div>...<h2>...</h2>...)
+    # swaps the active section mid-block. When that outer block finally
+    # closes (in the NEW section), it must not add a spurious extra
+    # separator on top of what its own nested content already closed with.
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[
+            (
+                "One",
+                "<div><p>Para A.</p><h2>Ch2</h2><p>Para B.</p></div>"
+                "<p>Para C.</p>",
+            )
+        ],
+    )
+    book = parse_epub(path)
+    ch2 = next(c for c in book.chapters if c.title == "Ch2")
+    assert "Para B." in ch2.text
+    assert "Para C." in ch2.text
+    assert "\n\n\n" not in ch2.text
