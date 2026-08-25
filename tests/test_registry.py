@@ -70,6 +70,28 @@ def test_ingest_book_is_transactional(tmp_path: Path) -> None:
     conn.close()
 
 
+def test_ingest_book_returns_false_for_any_existing_status(tmp_path: Path) -> None:
+    # Any existing books row means "already ingested" — not just status ==
+    # 'chunked'. Previously, any OTHER pre-existing status fell through to
+    # INSERT OR REPLACE, which under FK enforcement deletes the parent row
+    # and can explode on chunks that already reference it.
+    conn = open_db(tmp_path / "lore.db")
+    conn.execute(
+        "INSERT INTO books (id, title, author, source, file_path, status)"
+        " VALUES (?, ?, ?, ?, ?, 'extracted')",
+        (BOOK_ID, "T", "A", "upload", "/x/b.epub"),
+    )
+    conn.commit()
+    created = ingest_book(
+        conn, book_id=BOOK_ID, title="T", author="A",
+        source="upload", file_path="/x/b.epub", chunks=_chunks(3),
+    )
+    assert created is False
+    count = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    assert count == 0
+    conn.close()
+
+
 def test_list_books_reports_counts(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "lore.db")
     ingest_book(

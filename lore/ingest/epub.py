@@ -108,6 +108,27 @@ class _TextExtractor(HTMLParser):
             # so the block-open/close bookkeeping isn't thrown off by an
             # incidental "\n    " between two <p> tags.
             self._sections[-1]["parts"].append(data)
+        else:
+            # A whitespace-only text node CAN be real content: inline tags
+            # split by whitespace in the source ("<i>proud</i> <b>and</b>")
+            # arrive as separate handle_data calls with a whitespace-only
+            # node in between, and dropping it fuses the words together
+            # ("proudand"). Distinguish that from pure formatting/
+            # indentation — whitespace next to a BLOCK tag boundary, which
+            # always closes with a separator ending in "\n" (an empty
+            # "<p> </p>", or "\n    " between/around sibling or nested
+            # block tags) — by checking whether the most recently emitted
+            # text *since the current block opened* is itself non-
+            # whitespace: if so, this node is joining two inline runs, so
+            # collapse it to a single space; if the block is still empty,
+            # or the last thing emitted was already a separator, keep
+            # dropping it so the empty-paragraph-run scene-split behavior
+            # is unaffected.
+            parts = self._sections[-1]["parts"]
+            pos = self._block_stack[-1][1] if self._block_stack else 0
+            segment = parts[pos:]
+            if segment and not segment[-1][-1].isspace():
+                parts.append(" ")
 
     @staticmethod
     def _clean(raw: str) -> str:
@@ -131,6 +152,25 @@ def _metadata(book: epub.EpubBook, field: str) -> str | None:
     return values[0][0] if values else None
 
 
+def _spine_documents(book: epub.EpubBook) -> list:
+    """Document items in reading (spine) order.
+
+    Manifest order (book.get_items_of_type) need not match reading order —
+    the spine is the authoritative source for the order chapters should be
+    read/parsed in. Falls back to manifest order when the spine is empty
+    or none of its idrefs resolve to a document item.
+    """
+    items = []
+    for idref, _linear in book.spine:
+        item = book.get_item_with_id(idref)
+        if item is None or item.get_type() != ebooklib.ITEM_DOCUMENT:
+            continue
+        items.append(item)
+    if items:
+        return items
+    return list(book.get_items_of_type(ebooklib.ITEM_DOCUMENT))
+
+
 def _is_chapter(item) -> bool:
     """Check if item is a chapter. Fallback for older ebooklib versions."""
     # Try using is_chapter() method if available
@@ -152,7 +192,7 @@ def parse_epub(path: Path) -> ParsedBook:
 
     chapters: list[ParsedChapter] = []
     seq = 0
-    for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+    for item in _spine_documents(book):
         if not _is_chapter(item):  # nav documents etc.
             continue
         extractor = _TextExtractor()

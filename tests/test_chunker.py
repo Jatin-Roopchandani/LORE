@@ -94,3 +94,37 @@ def test_no_sentence_is_ever_lost() -> None:
     combined = " ".join(c.text for c in chunks)
     assert "A" * 60 in combined
     assert "B" * 60 in combined
+
+
+def _oversized_dialogue_sentence(turns: int = 80) -> str:
+    # pysbd can return an entire run of quoted dialogue turns as a single
+    # "sentence" (observed up to 6267 chars on real prose) because it does
+    # not split between a closing curly quote and the next quoted turn.
+    # This reproduces exactly that: repeated curly-quoted turns with no
+    # sentence-ending punctuation pysbd will split on between them.
+    turn = "“Will you give me leave to defer your raptures till I write again, Darcy?” "
+    return (turn * turns).strip()
+
+
+def test_oversized_pysbd_sentence_is_hard_split_and_bounded() -> None:
+    text = _oversized_dialogue_sentence()
+    assert len(text) > 5000  # confirms the input really is one giant blob
+    book = _book([("One", text)])
+    chunks = chunk_book(book, BOOK_ID)
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert len(chunk.text) <= 1600 + 200  # budget + slack, same tolerance
+        # as test_budget_respected
+    combined = " ".join(c.text for c in chunks)
+    # No text lost: overlap can only duplicate turns, never drop them, so
+    # every turn's marker phrase must appear at least as many times as it
+    # did in the source.
+    assert combined.count("Darcy?") >= text.count("Darcy?")
+
+
+def test_oversized_pysbd_sentence_hard_split_is_deterministic() -> None:
+    text = _oversized_dialogue_sentence()
+    book = _book([("One", text)])
+    first = chunk_book(book, BOOK_ID)
+    second = chunk_book(book, BOOK_ID)
+    assert first == second

@@ -19,7 +19,13 @@ def ingest_book(
     row = conn.execute(
         "SELECT status FROM books WHERE id = ?", (book_id,)
     ).fetchone()
-    if row is not None and row[0] == "chunked":
+    if row is not None:
+        # Any existing books row means this book has already been through
+        # ingestion (or is mid-ingestion) — not just status == 'chunked'.
+        # Falling through to INSERT OR REPLACE for any other status would
+        # delete-then-reinsert the parent row, which under FK enforcement
+        # (PRAGMA foreign_keys = ON) can crash on chunks that already
+        # reference it, or silently orphan them.
         return False
     try:
         conn.execute("BEGIN")

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from ebooklib import epub
 
 from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
@@ -40,6 +41,28 @@ def test_html_becomes_clean_text_with_paragraph_breaks(tmp_path: Path) -> None:
         "Para one." in text and "Para two." in text
     )
     assert "Styled text." in text
+
+
+def test_inline_tags_separated_by_whitespace_do_not_fuse_words(
+    tmp_path: Path,
+) -> None:
+    # Whitespace-only text nodes between inline tags (formatting markup
+    # like <i>/<b>/<span>, or a literal newline in the source) must
+    # collapse to a single joining space, not be dropped — dropping them
+    # fuses adjacent words together ("proudandvain").
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[
+            (
+                "One",
+                "<p>He was <i>proud</i> <b>and</b>\n<span>vain</span>.</p>",
+            )
+        ],
+    )
+    text = parse_epub(path).chapters[0].text
+    assert "He was proud and vain." in text
 
 
 def test_hr_becomes_scene_marker(tmp_path: Path) -> None:
@@ -251,3 +274,59 @@ def test_block_wrapped_heading_does_not_scene_split(tmp_path: Path) -> None:
     assert "Para B." in ch2.text
     assert "Para C." in ch2.text
     assert "\n\n\n" not in ch2.text
+
+
+def test_parse_epub_follows_spine_order_not_manifest_order(tmp_path: Path) -> None:
+    # Reading order is defined by the spine, not by manifest (add_item)
+    # order — real-world EPUBs can list items in the manifest in a
+    # different order than they're meant to be read. parse_epub must walk
+    # the spine, falling back to manifest order only when the spine is
+    # empty or resolves to nothing.
+    path = tmp_path / "spine.epub"
+    book = epub.EpubBook()
+    book.set_identifier("spine-fixture")
+    book.set_title("Spine Order")
+    book.set_language("en")
+    book.add_author("A")
+
+    item_b = epub.EpubHtml(title="B", file_name="b.xhtml", lang="en")
+    item_b.content = "<h1>B</h1><p>Second in spine, added first to manifest.</p>"
+    item_a = epub.EpubHtml(title="A", file_name="a.xhtml", lang="en")
+    item_a.content = "<h1>A</h1><p>First in spine, added second to manifest.</p>"
+
+    # Manifest (add_item) order: B then A.
+    book.add_item(item_b)
+    book.add_item(item_a)
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    book.toc = [item_a, item_b]
+    # Spine (reading) order: A then B — the opposite of manifest order.
+    book.spine = ["nav", item_a, item_b]
+
+    epub.write_epub(str(path), book)
+
+    parsed = parse_epub(path)
+    assert [c.title for c in parsed.chapters] == ["A", "B"]
+
+
+def test_hr_scene_split_survives_through_chunker(tmp_path: Path) -> None:
+    # Contract test: parsers emit "\n***\n" for an explicit scene break
+    # (<hr/>), and the chunker must honor it end-to-end, assigning distinct
+    # scene_seq values to the two sides of the break.
+    scene_one = " ".join(
+        f"This is sentence number {i} of the first scene, with enough "
+        "words to make it a realistic paragraph." for i in range(20)
+    )
+    scene_two = " ".join(
+        f"This is sentence number {i} of the second scene, with enough "
+        "words to make it a realistic paragraph." for i in range(20)
+    )
+    path = make_epub(
+        tmp_path / "b.epub",
+        title="T",
+        author="A",
+        chapters=[("One", f"<p>{scene_one}</p><hr/><p>{scene_two}</p>")],
+    )
+    book = parse_epub(path)
+    chunks = chunk_book(book, book_id="b")
+    assert {c.scene_seq for c in chunks} == {0, 1}
