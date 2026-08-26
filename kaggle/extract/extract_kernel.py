@@ -6,7 +6,6 @@ retries and dead-lettering cannot drift between tiers.
 """
 import asyncio
 import json
-import os
 import subprocess
 import sys
 import time
@@ -66,10 +65,21 @@ def main() -> None:
     params = SamplingParams(
         temperature=0.0, max_tokens=1024, guided_decoding=guided
     )
+    # Used only when generate() is asked for a prompt a second time (a
+    # runner retry, or two chunks sharing byte-identical text): a repeat at
+    # temperature=0.0 would reproduce the same failing text and defeat the
+    # retry, so re-generate live at a higher temperature instead.
+    retry_params = SamplingParams(
+        temperature=0.2, max_tokens=1024, guided_decoding=guided
+    )
 
     class VllmProvider:
-        """Batches the whole unit through vLLM, then serves the runner
-        one validated result per chunk from that batch."""
+        """Batches the whole unit through vLLM in one pass, caching each
+        prompt's completion for single use. The first request for a prompt
+        is served from that batched cache; any further request for the
+        same prompt text (a runner retry, or a duplicate-text chunk) is a
+        genuine live re-generation at a raised temperature, so retries
+        actually have a chance to recover."""
 
         def __init__(self) -> None:
             self._answers: dict[str, str] = {}
@@ -77,13 +87,15 @@ def main() -> None:
         def prime(self, prompts: dict[str, str]) -> None:
             ordered = list(prompts.items())
             outputs = llm.generate([p for _, p in ordered], params)
-            for (chunk_id, _), output in zip(ordered, outputs):
-                self._answers[chunk_id] = output.outputs[0].text
-            self._by_prompt = {p: cid for cid, p in ordered}
+            for (_, prompt), output in zip(ordered, outputs):
+                self._answers[prompt] = output.outputs[0].text
 
         async def generate(self, prompt, schema):
-            chunk_id = self._by_prompt[prompt]
-            return schema.model_validate_json(self._answers[chunk_id])
+            cached = self._answers.pop(prompt, None)
+            if cached is not None:
+                return schema.model_validate_json(cached)
+            text = llm.generate([prompt], retry_params)[0].outputs[0].text
+            return schema.model_validate_json(text)
 
     from lore.extract.prompts import build_prompt
 

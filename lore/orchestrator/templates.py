@@ -39,8 +39,6 @@ def materialize_extract_run(
         if config.extraction.vllm_version
         else "vllm"
     )
-    # EMBED_MODEL_ID first: MODEL_ID is a substring of it, and plain text
-    # replacement would otherwise mangle the embed line.
     substitutions = {
         "EMBED_MODEL_ID": config.extraction.embed_model,
         "USERNAME": config.kaggle.username,
