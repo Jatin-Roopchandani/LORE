@@ -126,7 +126,21 @@ def _run_unit(
             if source.is_file():
                 shutil.copy2(source, dest / name)
     except Exception as exc:  # any failure re-queues the unit
-        set_unit_state(conn, unit.book_id, unit.unit_id, "failed", error=str(exc))
+        # A failed unit's kernel log is otherwise lost forever: dispatching
+        # the next unit pushes a new kernel version over it, and `kaggle
+        # kernels output` only ever serves the latest. Best-effort pull it
+        # into the unit's own destination directory before that happens.
+        log_tail = ""
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+            client.pull_output(dest)          # best effort; may itself fail
+            for candidate in sorted(dest.glob("*.log")):
+                log_tail = candidate.read_text(errors="replace")[-2000:]
+                break
+        except Exception:
+            pass
+        error = f"{exc}" + (f" | log tail: {log_tail}" if log_tail else "")
+        set_unit_state(conn, unit.book_id, unit.unit_id, "failed", error=error[:4000])
         if on_event is not None:
             on_event(f"{unit.unit_id}: failed — {exc}")
         return False, 0.0, 0, 0

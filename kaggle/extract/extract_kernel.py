@@ -51,8 +51,11 @@ def main() -> None:
     unit_manifest = json.loads((unit_dir / "unit-manifest.json").read_text())
     chunks = [ChunkInput(chunk_id=r["chunk_id"], text=r["text"]) for r in rows]
 
+    import vllm
     from vllm import LLM, SamplingParams
-    from vllm.sampling_params import GuidedDecodingParams
+    import vllm.sampling_params as vsp
+
+    print("vllm version:", getattr(vllm, "__version__", "unknown"), flush=True)
 
     llm = LLM(
         model=MODEL_ID,
@@ -61,17 +64,34 @@ def main() -> None:
         gpu_memory_utilization=0.90,
         max_model_len=4096,
     )
-    guided = GuidedDecodingParams(json=ChunkExtraction.model_json_schema())
-    params = SamplingParams(
-        temperature=0.0, max_tokens=1024, guided_decoding=guided
-    )
+
+    schema_json = ChunkExtraction.model_json_schema()
+
+    def _make_params(temperature: float):
+        """vLLM renamed its structured-output API between major versions;
+        pick whichever this image ships rather than pinning a name."""
+        if hasattr(vsp, "StructuredOutputsParams"):
+            return SamplingParams(
+                temperature=temperature, max_tokens=1024,
+                structured_outputs=vsp.StructuredOutputsParams(json=schema_json),
+            )
+        if hasattr(vsp, "GuidedDecodingParams"):
+            return SamplingParams(
+                temperature=temperature, max_tokens=1024,
+                guided_decoding=vsp.GuidedDecodingParams(json=schema_json),
+            )
+        raise RuntimeError(
+            "no structured-output API found in vllm "
+            f"{getattr(vllm, '__version__', '?')}; available names: "
+            + ", ".join(sorted(n for n in dir(vsp) if not n.startswith('_')))
+        )
+
     # Used only when generate() is asked for a prompt a second time (a
     # runner retry, or two chunks sharing byte-identical text): a repeat at
     # temperature=0.0 would reproduce the same failing text and defeat the
     # retry, so re-generate live at a higher temperature instead.
-    retry_params = SamplingParams(
-        temperature=0.2, max_tokens=1024, guided_decoding=guided
-    )
+    params = _make_params(0.0)
+    retry_params = _make_params(0.2)
 
     class VllmProvider:
         """Batches the whole unit through vLLM in one pass, caching each

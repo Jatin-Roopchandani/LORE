@@ -39,10 +39,16 @@ def _seed(conn, n: int) -> None:
 class FakeClient:
     """Stands in for KaggleClient: writes plausible outputs, counts runs."""
 
-    def __init__(self, config, *, fail_units: set[str] | None = None) -> None:
+    def __init__(
+        self, config, *, fail_units: set[str] | None = None,
+        log_content: str | None = None,
+    ) -> None:
         self.fail_units = fail_units or set()
+        self.log_content = log_content
         self.runs: list[str] = []
+        self.pulled: list[Path] = []
         self._unit_ids: list[str] = []
+        self._last_log = ""
 
     def push_dataset(self, dir: Path) -> None:
         manifest = json.loads((dir / "unit-manifest.json").read_text())
@@ -56,11 +62,22 @@ class FakeClient:
     def wait_dataset_ready(self, timeout_s: int = 300) -> None:
         return None
 
+    def pull_output(self, dest: Path) -> None:
+        """Mimics `kaggle kernels output`: best-effort re-fetch of whatever
+        the last run produced, including its log."""
+        self.pulled.append(dest)
+        if self._last_log:
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / "kernel.log").write_text(self._last_log)
+
     def run_and_wait(self, kernel_dir: Path, dest: Path, on_tick=None) -> Path:
         unit_id = self._unit_ids[-1]
         self.runs.append(unit_id)
         dest.mkdir(parents=True, exist_ok=True)
         if unit_id in self.fail_units:
+            if self.log_content is not None:
+                (dest / "kernel.log").write_text(self.log_content)
+                self._last_log = self.log_content
             return dest  # no artifacts -> validation fails
         ids = self._chunk_ids
         pq.write_table(
@@ -210,6 +227,32 @@ def test_failure_reason_is_persisted(tmp_path: Path) -> None:
     ).fetchone()
     assert row[0] == "failed"
     assert row[1]  # non-empty error message
+    conn.close()
+
+
+def test_failed_unit_log_is_captured_for_diagnosis(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed(conn, 2)  # 1 unit at size 2
+    kernel_log = (
+        "ImportError: cannot import name 'GuidedDecodingParams' "
+        "from 'vllm.sampling_params'"
+    )
+
+    def factory(cfg):
+        return FakeClient(
+            cfg, fail_units={f"{BOOK}-u0000"}, log_content=kernel_log,
+        )
+
+    run_extraction(config, conn, BOOK, client_factory=factory)
+    row = conn.execute(
+        "SELECT state, error FROM jobs WHERE detail = ?", (f"{BOOK}-u0000",)
+    ).fetchone()
+    assert row[0] == "failed"
+    error = row[1]
+    assert "missing artifacts" in error  # the original validation failure
+    assert "GuidedDecodingParams" in error  # log content survived the fetch
     conn.close()
 
 
