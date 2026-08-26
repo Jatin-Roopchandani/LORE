@@ -90,6 +90,21 @@ def _run_unit(
     on_event: Callable[[str], None] | None,
 ) -> tuple[bool, float, int, int]:
     dest = config.extractions_dir / unit.book_id / unit.unit_id
+    if config.extraction_provider == "ollama":
+        import asyncio
+
+        from lore.orchestrator.local import run_unit_local
+
+        set_unit_state(conn, unit.book_id, unit.unit_id, "dispatched")
+        try:
+            summary = asyncio.run(run_unit_local(config, unit, dest))
+        except Exception as exc:
+            set_unit_state(conn, unit.book_id, unit.unit_id, "failed")
+            if on_event is not None:
+                on_event(f"{unit.unit_id}: failed — {exc}")
+            return False, 0.0, 0, 0
+        set_unit_state(conn, unit.book_id, unit.unit_id, "completed")
+        return True, 0.0, summary.chunks_ok, summary.chunks_dead
     week = quota.iso_week()
     quota.check_budget(conn, _estimate_hours(unit), week)
     quota.record_dispatch(conn, unit.unit_id, _estimate_hours(unit), week)

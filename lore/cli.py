@@ -19,6 +19,8 @@ from lore.ingest.registry import ingest_book, list_books
 from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
+from lore.orchestrator.quota import iso_week, week_report
+from lore.orchestrator.run import run_extraction
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -156,3 +158,48 @@ def books() -> None:
             f"{row['id']}  {row['title']}  [{row['status']}]  "
             f"{row['chunk_count']} chunks"
         )
+
+
+@app.command()
+def extract(
+    book_id: str,
+    resume: bool = typer.Option(False, "--resume", help="skip completed work units"),
+) -> None:
+    """Extract entities and relationships for an ingested book."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        report = run_extraction(
+            config, conn, book_id, resume=resume,
+            on_event=lambda message: typer.echo(f"       {message}"),
+        )
+    except ValueError as exc:
+        typer.echo(f"extract failed: {exc}")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+    typer.echo(
+        f"{report.book_id}: {report.units_completed}/{report.units_total} units, "
+        f"{report.chunks_ok} chunks extracted, {report.chunks_dead} dead-lettered, "
+        f"{report.gpu_hours:.2f} GPU-hours"
+    )
+    if report.units_failed:
+        typer.echo(f"{report.units_failed} unit(s) failed — rerun with --resume")
+        raise typer.Exit(1)
+
+
+@app.command()
+def quota() -> None:
+    """Show this week's Kaggle GPU-hour budget."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        report = week_report(conn, iso_week())
+    finally:
+        conn.close()
+    typer.echo(
+        f"{report['week']}: {report['used_hours']:.2f}h used, "
+        f"{report['remaining_hours']:.2f}h remaining across {report['runs']} run(s)"
+    )

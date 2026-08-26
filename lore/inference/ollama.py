@@ -26,6 +26,13 @@ class OllamaProvider:
         content = response.json()["message"]["content"]
         return schema.model_validate_json(content)
 
+    async def embed(self, texts: list[str], model: str) -> list[list[float]]:
+        response = await self._client.post(
+            "/api/embed", json={"model": model, "input": texts}
+        )
+        response.raise_for_status()
+        return response.json()["embeddings"]
+
     async def healthy(self) -> bool:
         try:
             response = await self._client.get("/api/tags", timeout=5.0)
