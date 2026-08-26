@@ -67,3 +67,21 @@ def test_week_report_summarizes(tmp_path: Path) -> None:
     assert report["remaining_hours"] == 25.0
     assert report["runs"] == 2
     conn.close()
+
+
+def test_redispatch_replaces_the_previous_row(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    record_dispatch(conn, "run-1", est_hours=2.0, week="2026-W35")
+    record_actual(conn, "run-1", actual_hours=1.0)
+    record_dispatch(conn, "run-1", est_hours=3.0, week="2026-W35")
+    assert conn.execute("SELECT COUNT(*) FROM quota_ledger").fetchone()[0] == 1
+    assert hours_used(conn, "2026-W35") == 3.0
+    assert week_report(conn, "2026-W35")["runs"] == 1
+    conn.close()
+
+
+def test_record_actual_rejects_an_unknown_run(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    with pytest.raises(ValueError):
+        record_actual(conn, "never-dispatched", actual_hours=1.0)
+    conn.close()

@@ -49,20 +49,29 @@ def record_dispatch(
     conn: sqlite3.Connection, run_ref: str, est_hours: float, week: str
 ) -> None:
     with conn:
-        conn.execute(
-            "INSERT INTO quota_ledger (run_ref, gpu_hours_est, week) VALUES (?, ?, ?)",
-            (run_ref, est_hours, week),
+        cursor = conn.execute(
+            "UPDATE quota_ledger SET gpu_hours_est = ?, gpu_hours_actual = NULL, week = ? WHERE run_ref = ?",
+            (est_hours, week, run_ref),
         )
+        if cursor.rowcount == 0:
+            conn.execute(
+                "INSERT INTO quota_ledger (run_ref, gpu_hours_est, week) VALUES (?, ?, ?)",
+                (run_ref, est_hours, week),
+            )
 
 
 def record_actual(
     conn: sqlite3.Connection, run_ref: str, actual_hours: float
 ) -> None:
     with conn:
-        conn.execute(
+        cursor = conn.execute(
             "UPDATE quota_ledger SET gpu_hours_actual = ? WHERE run_ref = ?",
             (actual_hours, run_ref),
         )
+        if cursor.rowcount != 1:
+            raise ValueError(
+                f"record_actual({run_ref}): expected to update 1 row, but updated {cursor.rowcount}"
+            )
 
 
 def week_report(conn: sqlite3.Connection, week: str) -> dict:
