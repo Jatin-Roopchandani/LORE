@@ -110,51 +110,19 @@ def main() -> None:
         [c.text for c in chunks], normalize_embeddings=True, batch_size=32
     ).tolist()
 
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+    from lore.extract.embed import write_unit_outputs
 
-    triplet_rows = {k: [] for k in (
-        "chunk_id", "subject", "predicate", "object", "evidence",
-        "confidence", "entity_names", "extractor_model", "run_id",
-    )}
-    for item in result.results:
-        names = [e.name for e in item.extraction.entities]
-        for triplet in item.extraction.triplets:
-            triplet_rows["chunk_id"].append(item.chunk_id)
-            triplet_rows["subject"].append(triplet.subject)
-            triplet_rows["predicate"].append(triplet.predicate)
-            triplet_rows["object"].append(triplet.object)
-            triplet_rows["evidence"].append(triplet.evidence)
-            triplet_rows["confidence"].append(triplet.confidence)
-            triplet_rows["entity_names"].append(names)
-            triplet_rows["extractor_model"].append(MODEL_ID)
-            triplet_rows["run_id"].append(unit_manifest["unit_id"])
-    pq.write_table(pa.table(triplet_rows), OUT / "triplets.parquet")
-    pq.write_table(
-        pa.table({
-            "chunk_id": [c.chunk_id for c in chunks],
-            "vector": vectors,
-            "embed_model": [EMBED_MODEL_ID] * len(chunks),
-        }),
-        OUT / "embeddings.parquet",
+    write_unit_outputs(
+        dest=OUT,
+        unit_id=unit_manifest["unit_id"],
+        chunk_ids=[c.chunk_id for c in chunks],
+        result=result,
+        vectors=vectors,
+        model=MODEL_ID,
+        embed_model=EMBED_MODEL_ID,
+        gpu_seconds=time.time() - started,
+        schema_version=unit_manifest["schema_version"],
     )
-    with (OUT / "dead_letter.jsonl").open("w") as handle:
-        for dead in result.dead_letters:
-            handle.write(json.dumps({
-                "chunk_id": dead.chunk_id,
-                "raw_output": dead.raw_output,
-                "error": dead.error,
-            }) + "\n")
-    (OUT / "manifest.json").write_text(json.dumps({
-        "unit_id": unit_manifest["unit_id"],
-        "chunks_in": len(chunks),
-        "chunks_ok": len(result.results),
-        "chunks_dead": len(result.dead_letters),
-        "gpu_seconds": time.time() - started,
-        "model": MODEL_ID,
-        "embed_model": EMBED_MODEL_ID,
-        "schema_version": unit_manifest["schema_version"],
-    }, indent=2))
     print(json.dumps({
         "ok": len(result.results), "dead": len(result.dead_letters),
         "seconds": round(time.time() - started, 1),

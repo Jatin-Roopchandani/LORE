@@ -7,6 +7,7 @@ from pathlib import Path
 from lore.config import LoreConfig
 from lore.extract.embed import write_unit_outputs
 from lore.extract.runner import ChunkInput, extract_chunks
+from lore.extract.schemas import SCHEMA_VERSION
 from lore.inference.ollama import OllamaProvider
 from lore.orchestrator.workunit import OutputSummary, WorkUnit, validate_output
 
@@ -28,9 +29,14 @@ async def run_unit_local(
         if owned:
             await active.aclose()
     write_unit_outputs(
-        unit, dest, result, vectors,
+        dest,
+        unit_id=unit.unit_id,
+        chunk_ids=[chunk.id for chunk in unit.chunks],
+        result=result,
+        vectors=vectors,
         model=config.ollama.model,
         embed_model=config.extraction.embed_model_ollama,
         gpu_seconds=time.monotonic() - started,
+        schema_version=SCHEMA_VERSION,
     )
     return validate_output(unit, dest)

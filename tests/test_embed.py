@@ -8,7 +8,7 @@ import pytest
 from lore.config import OllamaConfig
 from lore.extract.embed import write_unit_outputs
 from lore.extract.runner import ChunkResult, DeadLetter, ExtractionResult
-from lore.extract.schemas import ChunkExtraction
+from lore.extract.schemas import SCHEMA_VERSION, ChunkExtraction
 from lore.ingest.models import Chunk
 from lore.inference.ollama import OllamaProvider
 from lore.orchestrator.workunit import pack_units
@@ -52,14 +52,19 @@ def test_write_unit_outputs_matches_the_kernel_contract(tmp_path: Path) -> None:
         dead_letters=[DeadLetter(f"{BOOK}:1:1", "{bad", "invalid json")],
     )
     write_unit_outputs(
-        unit, tmp_path, result,
+        tmp_path,
+        unit_id=unit.unit_id,
+        chunk_ids=[chunk.id for chunk in unit.chunks],
+        result=result,
         vectors=[[0.0] * 768, [0.1] * 768],
         model="local-3b", embed_model="nomic-embed-text", gpu_seconds=12.0,
+        schema_version=SCHEMA_VERSION,
     )
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["chunks_in"] == 2
     assert manifest["chunks_ok"] == 1
     assert manifest["chunks_dead"] == 1
+    assert manifest["schema_version"] == SCHEMA_VERSION
     triplets = pq.read_table(tmp_path / "triplets.parquet")
     assert triplets.num_rows == 1
     assert triplets.column("predicate").to_pylist() == ["LOVES"]

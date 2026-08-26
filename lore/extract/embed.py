@@ -1,4 +1,9 @@
-"""Write the four artifacts a unit produces, identically in both tiers."""
+"""Write the four artifacts a unit produces, identically in both tiers.
+
+Takes primitives rather than a WorkUnit so the Kaggle kernel — which
+imports this module from the package shipped inside the work-unit
+dataset — never has to import lore.orchestrator.workunit too.
+"""
 from __future__ import annotations
 
 import json
@@ -8,17 +13,19 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from lore.extract.runner import ExtractionResult
-from lore.orchestrator.workunit import WorkUnit
 
 
 def write_unit_outputs(
-    unit: WorkUnit,
     dest: Path,
+    *,
+    unit_id: str,
+    chunk_ids: list[str],
     result: ExtractionResult,
     vectors: list[list[float]],
     model: str,
     embed_model: str,
     gpu_seconds: float,
+    schema_version: str,
 ) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     columns: dict[str, list] = {
@@ -39,13 +46,13 @@ def write_unit_outputs(
             columns["confidence"].append(triplet.confidence)
             columns["entity_names"].append(names)
             columns["extractor_model"].append(model)
-            columns["run_id"].append(unit.unit_id)
+            columns["run_id"].append(unit_id)
     pq.write_table(pa.table(columns), dest / "triplets.parquet")
     pq.write_table(
         pa.table({
-            "chunk_id": [chunk.id for chunk in unit.chunks],
+            "chunk_id": chunk_ids,
             "vector": vectors,
-            "embed_model": [embed_model] * len(unit.chunks),
+            "embed_model": [embed_model] * len(chunk_ids),
         }),
         dest / "embeddings.parquet",
     )
@@ -61,12 +68,13 @@ def write_unit_outputs(
             )
     (dest / "manifest.json").write_text(
         json.dumps({
-            "unit_id": unit.unit_id,
-            "chunks_in": len(unit.chunks),
+            "unit_id": unit_id,
+            "chunks_in": len(chunk_ids),
             "chunks_ok": len(result.results),
             "chunks_dead": len(result.dead_letters),
             "gpu_seconds": gpu_seconds,
             "model": model,
             "embed_model": embed_model,
+            "schema_version": schema_version,
         }, indent=2)
     )
