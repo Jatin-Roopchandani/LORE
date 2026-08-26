@@ -128,3 +128,35 @@ def test_oversized_pysbd_sentence_hard_split_is_deterministic() -> None:
     first = chunk_book(book, BOOK_ID)
     second = chunk_book(book, BOOK_ID)
     assert first == second
+
+
+def test_every_chunk_respects_budget_even_with_large_sentences() -> None:
+    # Two near-budget real sentences used to compound through overlap.
+    big_a = "A" * 900 + "."
+    big_b = "B" * 900 + "."
+    book = _book([("One", f"{big_a} {big_b}")])
+    for chunk in chunk_book(book, BOOK_ID):
+        assert len(chunk.text) <= 1600
+
+
+def test_long_sentences_still_participate_in_overlap() -> None:
+    # A 900-char sentence followed by short ones must not be isolated:
+    # the short sentences that follow it share a chunk with it.
+    big = "A" * 900 + "."
+    tail = " ".join(f"Short sentence number {i}." for i in range(6))
+    book = _book([("One", f"{big} {tail}")])
+    chunks = chunk_book(book, BOOK_ID)
+    first = chunks[0].text
+    assert "A" * 900 in first
+    assert "Short sentence number 0." in first  # packed together, not isolated
+
+
+def test_overlap_survives_below_half_budget_boundary() -> None:
+    # Restores coverage of the carried-overlap path for sentences just
+    # under half the budget, which the old isolation branch intercepted.
+    sentences = " ".join("C" * 700 + "." for _ in range(4))
+    book = _book([("One", sentences)])
+    chunks = chunk_book(book, BOOK_ID)
+    assert len(chunks) >= 2
+    for chunk in chunks:
+        assert len(chunk.text) <= 1600

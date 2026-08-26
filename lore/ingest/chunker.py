@@ -109,43 +109,36 @@ def _pack(
 ) -> list[list[str]]:
     """Greedily pack sentences into chunks with configurable overlap.
 
-    Tracks overlap explicitly to avoid losing content when sentence sizes vary.
+    Every emitted pack is <= budget_chars. Two mechanisms keep that true
+    without sacrificing overlap:
 
-    A sentence bigger than half the budget can't safely take part in
-    overlap accumulation: carrying it forward and adding just one more
-    sentence anywhere near its own size would already overshoot the
-    budget before the normal pre-append check ever gets a chance to flush
-    (that check only fires on the *next* sentence). In practice this only
-    matters for the bounded fragments _split_oversized() produces from a
-    too-long pysbd "sentence" — several of comparable size can arrive back
-    to back. Such a sentence is isolated into its own standalone pack
-    instead, carrying no overlap in or out, so it can never compound with
-    a neighbor past the budget.
+    * a sentence is only appended when it still fits, otherwise the pack
+      is flushed first;
+    * on flush, the carried overlap is trimmed from the front until the
+      incoming sentence fits alongside it. Large sentences therefore
+      carry less overlap (or none) rather than being isolated, so real
+      long-dialogue sentences keep their context while bounded fragments
+      from _split_oversized() can never compound past the budget.
+
+    Sentences arrive pre-cut: chunk_book runs them through
+    _expand_oversized() first, so none exceeds budget_chars on its own.
     """
     packs: list[list[str]] = []
     current: list[str] = []
     carried = 0  # sentences in `current` that came from the previous pack
     size = 0
     for sentence in sentences:
-        if len(sentence) > budget_chars // 2:
-            if current and len(current) > carried:
-                packs.append(current)
-            packs.append([sentence])
-            current, carried, size = [], 0, 0
-            continue
         if current and size + len(sentence) + 1 > budget_chars:
             packs.append(current)
-            current = current[-overlap_sentences:] if overlap_sentences else []
+            carry = current[-overlap_sentences:] if overlap_sentences else []
+            while carry and sum(len(s) + 1 for s in carry) + len(sentence) + 1 > budget_chars:
+                carry.pop(0)
+            current = carry
             carried = len(current)
             size = sum(len(s) + 1 for s in current)
         current.append(sentence)
         size += len(sentence) + 1
-    # Only append if pack holds at least one new sentence (not pure overlap).
-    # Every sentence reaching this function is already <= budget_chars —
-    # chunk_book runs them through _expand_oversized() first, which hard-
-    # splits any pysbd "sentence" longer than the budget into bounded
-    # fragments — so a lone oversized sentence can no longer sail through
-    # as an unbounded chunk; it arrives here pre-cut.
+    # Only append if the pack holds at least one new sentence (not pure overlap).
     if current and len(current) > carried:
         packs.append(current)
     return packs
