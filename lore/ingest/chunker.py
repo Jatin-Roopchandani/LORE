@@ -61,13 +61,12 @@ def _split_oversized(sentence: str, budget_chars: int) -> list[str]:
     _pack's budget untouched. This deterministically cuts it into bounded
     fragments: repeatedly cut at the LAST closing-quote-then-space
     boundary at or under budget_chars, falling back to the last plain
-    whitespace at or under budget_chars when no such quote boundary
-    exists. A fragment with no whitespace under the budget at all (an
-    unbroken run of non-space characters, e.g. a URL) is left whole rather
-    than butchered mid-word. Fragments are rejoined with a single space by
-    the normal join/packing path, so no characters are lost — only the
-    whitespace character at each cut point is consumed as the separator,
-    exactly as " ".join() would consume it anyway.
+    whitespace at or under budget_chars, or hard-cutting at budget_chars
+    when no whitespace boundary exists (e.g. a long URL or unbroken token).
+    Fragments are rejoined with a single space by the normal join/packing
+    path, so no characters are lost — only the whitespace character at each
+    cut point is consumed as the separator, exactly as " ".join() would
+    consume it anyway.
     """
     fragments: list[str] = []
     remaining = sentence
@@ -81,7 +80,10 @@ def _split_oversized(sentence: str, budget_chars: int) -> list[str]:
             if space > 0:
                 cut = space
         if cut is None:
-            break  # no whitespace under budget; fragment stays whole
+            # No whitespace or quote boundary under budget; hard-cut at budget_chars
+            # as the last resort to prevent unbounded chunks. A mid-token cut is
+            # preferred over violating the budget guarantee.
+            cut = budget_chars
         fragments.append(remaining[:cut].strip())
         remaining = remaining[cut:].strip()
     fragments.append(remaining)

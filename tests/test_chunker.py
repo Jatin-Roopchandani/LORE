@@ -160,3 +160,25 @@ def test_overlap_survives_below_half_budget_boundary() -> None:
     assert len(chunks) >= 2
     for chunk in chunks:
         assert len(chunk.text) <= 1600
+
+
+def test_whitespace_free_run_is_hard_cut_to_budget() -> None:
+    # A space-free run (like a long URL) used to be emitted whole.
+    # It must now be hard-cut to budget_chars to keep chunks bounded.
+    text = "Y" * 5000
+    book = _book([("One", text)])
+    chunks = chunk_book(book, BOOK_ID)
+    for chunk in chunks:
+        assert len(chunk.text) <= 1600
+    combined = " ".join(c.text for c in chunks)
+    # Overlap duplication means count might exceed 5000, but must include all.
+    assert combined.count("Y") >= 5000
+
+
+def test_split_oversized_terminates_on_pathological_input() -> None:
+    # Pathological input: 20000 chars with no spaces should not cause
+    # infinite loops; the hard-cut path must terminate.
+    text = "Z" * 20000
+    book = _book([("One", text)])
+    chunks = chunk_book(book, BOOK_ID)
+    assert len(chunks) <= 40  # 20000 / 1600 ≈ 13, plus overlap gives ~26
