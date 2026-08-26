@@ -109,14 +109,34 @@ def validate_output(unit: WorkUnit, out_dir: Path) -> OutputSummary:
             f"unit {unit.unit_id}: {chunks_ok} ok + {chunks_dead} dead are not "
             f"accounted for out of {chunks_in} chunks"
         )
-    for artifact in ("triplets.parquet", "embeddings.parquet"):
-        table = pq.read_table(out_dir / artifact, columns=["chunk_id"])
-        foreign = set(table.column("chunk_id").to_pylist()) - expected
-        if foreign:
-            raise OutputError(
-                f"unit {unit.unit_id}: {artifact} contains foreign chunk ids "
-                f"{sorted(foreign)[:3]}"
-            )
+    embeddings = pq.read_table(out_dir / "embeddings.parquet", columns=["chunk_id"])
+    embedding_ids = embeddings.column("chunk_id").to_pylist()
+    embedding_id_set = set(embedding_ids)
+    missing_embeddings = expected - embedding_id_set
+    if missing_embeddings:
+        raise OutputError(
+            f"unit {unit.unit_id}: embeddings.parquet is missing chunk ids "
+            f"{sorted(missing_embeddings)[:3]}"
+        )
+    foreign_embeddings = embedding_id_set - expected
+    if foreign_embeddings:
+        raise OutputError(
+            f"unit {unit.unit_id}: embeddings.parquet contains foreign chunk ids "
+            f"{sorted(foreign_embeddings)[:3]}"
+        )
+    if len(embedding_ids) != chunks_in:
+        raise OutputError(
+            f"unit {unit.unit_id}: embeddings.parquet has {len(embedding_ids)} rows, "
+            f"expected {chunks_in}"
+        )
+
+    triplets = pq.read_table(out_dir / "triplets.parquet", columns=["chunk_id"])
+    foreign_triplets = set(triplets.column("chunk_id").to_pylist()) - expected
+    if foreign_triplets:
+        raise OutputError(
+            f"unit {unit.unit_id}: triplets.parquet contains foreign chunk ids "
+            f"{sorted(foreign_triplets)[:3]}"
+        )
     return OutputSummary(
         chunks_in=chunks_in,
         chunks_ok=chunks_ok,
