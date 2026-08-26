@@ -58,7 +58,18 @@ def test_json_schema_is_guided_decoding_ready() -> None:
     schema = ChunkExtraction.model_json_schema()
     assert schema["type"] == "object"
     assert set(schema["required"]) == {"entities", "triplets"}
+    triplet = schema["$defs"]["ExtractedTriplet"]
+    assert set(triplet["required"]) == {
+        "subject", "predicate", "object", "evidence", "confidence",
+    }
 
 
 def test_schema_version_is_recorded() -> None:
     assert SCHEMA_VERSION == "2a.1"
+
+
+def test_evidence_is_required_but_may_be_empty() -> None:
+    base = {"subject": "A", "predicate": "KNOWS", "object": "B", "confidence": 0.5}
+    with pytest.raises(ValidationError):
+        ExtractedTriplet.model_validate(base)          # key missing entirely
+    assert ExtractedTriplet.model_validate({**base, "evidence": ""}).evidence == ""

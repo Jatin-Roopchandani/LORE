@@ -32,7 +32,7 @@ class ExtractedTriplet(BaseModel):
     subject: str = Field(min_length=1)
     predicate: str = Field(min_length=1)
     object: str = Field(min_length=1)
-    evidence: str = Field(default="", description="verbatim quote from the chunk")
+    evidence: str = Field(description="verbatim quote from the chunk")
     confidence: float = Field(ge=0.0, le=1.0)
 
     @field_validator("subject", "predicate", "object")
