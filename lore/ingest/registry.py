@@ -59,3 +59,18 @@ def list_books(conn: sqlite3.Connection) -> list[dict]:
         {"id": r[0], "title": r[1], "author": r[2], "status": r[3], "chunk_count": r[4]}
         for r in rows
     ]
+
+
+def chunks_for_book(conn: sqlite3.Connection, book_id: str) -> list[Chunk]:
+    rows = conn.execute(
+        "SELECT id, book_id, chapter_seq, scene_seq, seq, text FROM chunks"
+        " WHERE book_id = ? ORDER BY chapter_seq, seq",
+        (book_id,),
+    ).fetchall()
+    return [
+        Chunk(
+            id=r[0], book_id=r[1], chapter_seq=r[2],
+            scene_seq=r[3], seq=r[4], text=r[5],
+        )
+        for r in rows
+    ]

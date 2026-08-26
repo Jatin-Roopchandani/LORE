@@ -19,6 +19,16 @@ class KaggleConfig(BaseModel):
     dataset_slug: str = "lore-hello-data"
     poll_interval_s: int = 30
     poll_timeout_s: int = 1800
+    extract_kernel_slug: str = "lore-extract"
+    extract_dataset_slug: str = "lore-extract-data"
+
+
+class ExtractionConfig(BaseModel):
+    model: str = "Qwen/Qwen2.5-7B-Instruct-AWQ"
+    embed_model: str = "nomic-ai/nomic-embed-text-v1.5"
+    embed_model_ollama: str = "nomic-embed-text"
+    work_unit_size: int = 250
+    vllm_version: str = ""  # empty = install latest on the kernel
 
 
 class LoreConfig(BaseModel):
@@ -26,6 +36,7 @@ class LoreConfig(BaseModel):
     extraction_provider: str = "kaggle"  # "kaggle" | "ollama"
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     kaggle: KaggleConfig = Field(default_factory=KaggleConfig)
+    extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
@@ -55,6 +66,16 @@ class LoreConfig(BaseModel):
     def inbox_dir(self) -> Path:
         return self.data_dir / "inbox"
 
+    @property
+    def extractions_dir(self) -> Path:
+        return self.data_dir / "extractions"
+
     def ensure_dirs(self) -> None:
-        for d in (self.data_dir, self.kuzu_dir, self.lancedb_dir, self.inbox_dir):
+        for d in (
+            self.data_dir,
+            self.kuzu_dir,
+            self.lancedb_dir,
+            self.inbox_dir,
+            self.extractions_dir,
+        ):
             d.mkdir(parents=True, exist_ok=True)

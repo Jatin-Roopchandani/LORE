@@ -14,3 +14,12 @@ kernel_slug = "lore-hello"
 dataset_slug = "lore-hello-data"
 poll_interval_s = 30
 poll_timeout_s = 1800
+extract_kernel_slug = "lore-extract"
+extract_dataset_slug = "lore-extract-data"
+
+[lore.extraction]
+model = "Qwen/Qwen2.5-7B-Instruct-AWQ"
+embed_model = "nomic-ai/nomic-embed-text-v1.5"
+embed_model_ollama = "nomic-embed-text"
+work_unit_size = 250
+vllm_version = ""            # empty installs the latest vLLM on the kernel

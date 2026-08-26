@@ -105,3 +105,20 @@ def test_list_books_reports_counts(tmp_path: Path) -> None:
     assert books[0]["status"] == "chunked"
     assert books[0]["chunk_count"] == 5
     conn.close()
+
+
+def test_chunks_for_book_returns_narrative_order(tmp_path: Path) -> None:
+    from lore.ingest.registry import chunks_for_book
+
+    conn = open_db(tmp_path / "lore.db")
+    out_of_order = [
+        Chunk(id=f"{BOOK_ID}:2:0", book_id=BOOK_ID, chapter_seq=2, scene_seq=0, seq=0, text="c"),
+        Chunk(id=f"{BOOK_ID}:1:1", book_id=BOOK_ID, chapter_seq=1, scene_seq=0, seq=1, text="b"),
+        Chunk(id=f"{BOOK_ID}:1:0", book_id=BOOK_ID, chapter_seq=1, scene_seq=0, seq=0, text="a"),
+    ]
+    ingest_book(
+        conn, book_id=BOOK_ID, title="T", author=None,
+        source="upload", file_path="/x/b.epub", chunks=out_of_order,
+    )
+    assert [c.text for c in chunks_for_book(conn, BOOK_ID)] == ["a", "b", "c"]
+    conn.close()
