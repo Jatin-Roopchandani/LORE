@@ -17,8 +17,9 @@ from lore.config import LoreConfig
 from lore.ingest.registry import chunks_for_book
 from lore.kaggle_api.client import KaggleClient
 from lore.orchestrator import quota
+from lore.orchestrator.quota import QuotaExceeded
 from lore.orchestrator.templates import materialize_extract_run
-from lore.orchestrator.workunit import OutputError, WorkUnit, pack_units, validate_output
+from lore.orchestrator.workunit import WorkUnit, pack_units, validate_output
 
 JOB_KIND = "extract_unit"
 
@@ -32,6 +33,7 @@ class RunReport:
     chunks_ok: int = 0
     chunks_dead: int = 0
     gpu_hours: float = 0.0
+    stopped_reason: str | None = None
 
 
 def unit_state(conn: sqlite3.Connection, unit_id: str) -> str | None:
@@ -44,7 +46,7 @@ def unit_state(conn: sqlite3.Connection, unit_id: str) -> str | None:
 
 
 def set_unit_state(
-    conn: sqlite3.Connection, book_id: str, unit_id: str, state: str, detail: str = ""
+    conn: sqlite3.Connection, book_id: str, unit_id: str, state: str, error: str = ""
 ) -> None:
     with conn:
         existing = conn.execute(
@@ -52,13 +54,15 @@ def set_unit_state(
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE jobs SET state = ?, updated_at = datetime('now') WHERE id = ?",
-                (state, existing[0]),
+                "UPDATE jobs SET state = ?, error = ?, updated_at = datetime('now')"
+                " WHERE id = ?",
+                (state, error, existing[0]),
             )
         else:
             conn.execute(
-                "INSERT INTO jobs (kind, book_id, state, detail) VALUES (?, ?, ?, ?)",
-                (JOB_KIND, book_id, state, unit_id),
+                "INSERT INTO jobs (kind, book_id, state, detail, error)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (JOB_KIND, book_id, state, unit_id, error),
             )
 
 
@@ -107,7 +111,7 @@ def _run_unit(
             if source.is_file():
                 shutil.copy2(source, dest / name)
     except Exception as exc:  # any failure re-queues the unit
-        set_unit_state(conn, unit.book_id, unit.unit_id, "failed")
+        set_unit_state(conn, unit.book_id, unit.unit_id, "failed", error=str(exc))
         if on_event is not None:
             on_event(f"{unit.unit_id}: failed — {exc}")
         return False, 0.0, 0, 0
@@ -153,9 +157,18 @@ def run_extraction(
     client = make_client(_kaggle_config_for_extraction(config))
 
     for unit in pending:
-        ok, hours, chunks_ok, chunks_dead = _run_unit(
-            config, conn, unit, client, on_event
-        )
+        try:
+            ok, hours, chunks_ok, chunks_dead = _run_unit(
+                config, conn, unit, client, on_event
+            )
+        except QuotaExceeded as exc:
+            # Budget ran out before this unit was attempted — end the run
+            # cleanly, leave the unit re-runnable, and hand back what
+            # landed so far rather than crashing out of the whole call.
+            report.stopped_reason = str(exc)
+            if on_event is not None:
+                on_event(f"{unit.unit_id}: stopped — {exc}")
+            break
         report.gpu_hours += hours
         report.chunks_ok += chunks_ok
         report.chunks_dead += chunks_dead

@@ -9,7 +9,8 @@ from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.models import Chunk
 from lore.ingest.registry import ingest_book
-from lore.orchestrator.run import RunReport, run_extraction, unit_state
+from lore.orchestrator.quota import iso_week, record_dispatch
+from lore.orchestrator.run import RunReport, run_extraction, set_unit_state, unit_state
 
 BOOK = "abcdef0123456789"
 
@@ -191,4 +192,78 @@ def test_unknown_book_raises(tmp_path: Path) -> None:
     conn = open_db(config.sqlite_path)
     with pytest.raises(ValueError, match="no chunks"):
         run_extraction(config, conn, "nosuchbook", client_factory=lambda cfg: FakeClient(cfg))
+    conn.close()
+
+
+def test_failure_reason_is_persisted(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed(conn, 2)
+
+    def factory(cfg):
+        return FakeClient(cfg, fail_units={f"{BOOK}-u0000"})
+
+    run_extraction(config, conn, BOOK, client_factory=factory)
+    row = conn.execute(
+        "SELECT state, error FROM jobs WHERE detail = ?", (f"{BOOK}-u0000",)
+    ).fetchone()
+    assert row[0] == "failed"
+    assert row[1]  # non-empty error message
+    conn.close()
+
+
+def test_successful_run_clears_a_previous_error(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed(conn, 2)
+    run_extraction(
+        config, conn, BOOK,
+        client_factory=lambda cfg: FakeClient(cfg, fail_units={f"{BOOK}-u0000"}),
+    )
+    run_extraction(
+        config, conn, BOOK, resume=True,
+        client_factory=lambda cfg: FakeClient(cfg),
+    )
+    row = conn.execute(
+        "SELECT state, error FROM jobs WHERE detail = ?", (f"{BOOK}-u0000",)
+    ).fetchone()
+    assert row[0] == "completed"
+    assert not row[1]  # empty or NULL
+    conn.close()
+
+
+def test_quota_exhaustion_stops_cleanly_with_partial_report(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed(conn, 4)  # 2 units at size 2
+    record_dispatch(conn, "prior-run", est_hours=29.99, week=iso_week())
+
+    report = run_extraction(config, conn, BOOK, client_factory=lambda cfg: FakeClient(cfg))
+
+    assert report.stopped_reason is not None
+    assert unit_state(conn, f"{BOOK}-u0000") != "completed"
+    conn.close()
+
+
+def test_resume_reruns_a_dispatched_unit(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed(conn, 2)  # 1 unit at size 2
+    set_unit_state(conn, BOOK, f"{BOOK}-u0000", "dispatched")
+
+    clients: list[FakeClient] = []
+
+    def factory(cfg):
+        client = FakeClient(cfg)
+        clients.append(client)
+        return client
+
+    report = run_extraction(config, conn, BOOK, resume=True, client_factory=factory)
+    assert clients[0].runs == [f"{BOOK}-u0000"]
+    assert report.units_completed == 1
+    assert unit_state(conn, f"{BOOK}-u0000") == "completed"
     conn.close()

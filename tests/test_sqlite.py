@@ -14,14 +14,14 @@ def _tables(conn: sqlite3.Connection) -> set[str]:
 def test_open_db_creates_schema(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "lore.db")
     assert {"schema_migrations", "books", "jobs", "quota_ledger", "chunks"} <= _tables(conn)
-    assert schema_version(conn) == 2
+    assert schema_version(conn) == 3
     conn.close()
 
 
 def test_open_db_is_idempotent(tmp_path: Path) -> None:
     open_db(tmp_path / "lore.db").close()
     conn = open_db(tmp_path / "lore.db")  # second open must not re-apply v1
-    assert schema_version(conn) == 2
+    assert schema_version(conn) == 3
     conn.close()
 
 
@@ -49,13 +49,13 @@ def test_migration_atomicity(tmp_path: Path, monkeypatch) -> None:
 
     # First, create the database successfully at v1 and v2
     conn = open_db(db_path)
-    assert schema_version(conn) == 2
+    assert schema_version(conn) == 3
     conn.close()
 
     # Now simulate a failed migration with a statement that succeeds followed by one that fails
     # This tests that partial migrations are rolled back entirely
     broken_migration = (
-        3,
+        4,
         [
             "CREATE TABLE extra_table (x INTEGER)",
             "THIS IS NOT VALID SQL",
@@ -73,7 +73,7 @@ def test_migration_atomicity(tmp_path: Path, monkeypatch) -> None:
     # Verify that open_db() works again and schema_version is still 2
     # (the failed migration should have left nothing behind due to atomicity)
     conn = open_db(db_path)
-    assert schema_version(conn) == 2
+    assert schema_version(conn) == 3
     assert {"schema_migrations", "books", "jobs", "quota_ledger", "chunks"} <= _tables(conn)
 
     # Most importantly: verify that extra_table does NOT exist

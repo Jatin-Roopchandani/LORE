@@ -59,6 +59,7 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             "CREATE INDEX idx_chunks_book ON chunks(book_id)",
         ],
     ),
+    (3, ["ALTER TABLE jobs ADD COLUMN error TEXT"]),
 ]
 
 
