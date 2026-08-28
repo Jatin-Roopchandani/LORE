@@ -34,3 +34,24 @@ def test_entity_id_is_deterministic_and_kind_scoped() -> None:
     assert a == entity_id("darcy", "Character")
     assert a != entity_id("darcy", "Place")
     assert a.startswith("e") and len(a) == 13
+
+
+def test_honorific_words_survive_inside_a_name() -> None:
+    # "King" is a common surname; stripping it mid-name would fuse
+    # unrelated characters onto one node.
+    assert normalize_name("Larry King") == "larry king"
+    assert normalize_name("Martin Luther King") == "martin luther king"
+    assert normalize_name("Larry King") != normalize_name("Mr. Larry")
+
+
+def test_degenerate_names_never_normalize_to_empty() -> None:
+    for name in ("The", "the", "A", "an", "Mr."):
+        assert normalize_name(name) != ""
+
+
+def test_contentless_input_yields_empty() -> None:
+    # Documented behaviour: no word characters means no key, and callers
+    # must skip the mention rather than mint an entity.
+    assert normalize_name("") == ""
+    assert normalize_name("   ") == ""
+    assert normalize_name("...") == ""

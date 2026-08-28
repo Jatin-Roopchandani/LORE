@@ -2,8 +2,13 @@
 
 Deliberately conservative: it strips the decorations that make one
 character look like two (honorifics, possessives, punctuation, a leading
-article) and nothing else. It never returns an empty string, because
-"the Captain" is a real way to name someone.
+article) and nothing else. Honors the invariant: for input containing at least
+one word character, never returns an empty string; for punctuation-only or
+blank input, legitimately yields "" (callers skip such mentions).
+
+Honorifics are stripped only when LEADING a name (a title prefix), never
+mid-name, to avoid fusing unrelated characters: "King" and "Prince" are
+common surnames and must survive in "Larry King" or "Martin Luther King".
 """
 from __future__ import annotations
 
@@ -24,12 +29,32 @@ def normalize_name(name: str) -> str:
     text = _POSSESSIVE.sub("", name.casefold())
     text = _NON_WORD.sub(" ", text)
     tokens = [t for t in text.split() if t]
+
+    # Remember state before stripping articles
+    tokens_before_articles = tokens[:]
+
+    # Strip leading articles
     while tokens and tokens[0] in _ARTICLES:
         tokens = tokens[1:]
-    without_honorifics = [t for t in tokens if t not in HONORIFICS]
-    # Falling back to `tokens` keeps honorific-only names ("the Captain")
-    # from normalizing to nothing.
-    return " ".join(without_honorifics or tokens)
+
+    # Remember state before stripping honorifics
+    tokens_before_honorifics = tokens[:]
+
+    # Strip leading honorifics (a title prefix), not from anywhere in the name
+    # to preserve common surnames like King, Prince, Lord, Major, Sir
+    while tokens and tokens[0] in HONORIFICS:
+        tokens = tokens[1:]
+
+    # Fall back progressively to ensure non-empty for word-containing input,
+    # and empty only for punctuation-only or blank input
+    if tokens:
+        return " ".join(tokens)
+    elif tokens_before_honorifics:
+        return " ".join(tokens_before_honorifics)
+    elif tokens_before_articles:
+        return " ".join(tokens_before_articles)
+    else:
+        return ""
 
 
 def entity_id(normalized_name: str, kind: str) -> str:
