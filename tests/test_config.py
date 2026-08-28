@@ -39,3 +39,8 @@ def test_ensure_dirs_creates_layout(tmp_path: Path) -> None:
     cfg.ensure_dirs()
     for sub in ("kuzu", "lancedb", "inbox"):
         assert (tmp_path / "d" / sub).is_dir()
+
+
+def test_extraction_work_unit_size_default() -> None:
+    cfg = LoreConfig.load()
+    assert cfg.extraction.work_unit_size == 10

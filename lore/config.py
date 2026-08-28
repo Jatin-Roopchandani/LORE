@@ -27,7 +27,7 @@ class ExtractionConfig(BaseModel):
     model: str = "Qwen/Qwen2.5-7B-Instruct-AWQ"
     embed_model: str = "nomic-ai/nomic-embed-text-v1.5"
     embed_model_ollama: str = "nomic-embed-text"
-    work_unit_size: int = 250
+    work_unit_size: int = 10  # 10 verified on a Kaggle T4; 40 crashes vLLM's engine
     vllm_version: str = ""  # empty = install latest on the kernel
 
 
