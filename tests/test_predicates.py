@@ -74,3 +74,13 @@ def test_curated_list_is_the_documented_ten() -> None:
         "ALLEGIANCE_TO", "MEMBER_OF", "LOCATED_IN", "POSSESSES",
         "INTERACTS_WITH", "OPPOSES", "LOVES", "KILLS", "BECOMES", "EXPERIENCES",
     )
+
+
+@pytest.mark.asyncio
+async def test_short_embedder_response_is_rejected_loudly() -> None:
+    # A partial batch must never silently drop predicates from the mapping.
+    async def embed(texts):
+        return [[1.0, 0.0] for _ in CURATED_PREDICATES]  # missing the unknowns
+
+    with pytest.raises(ValueError, match="truncated"):
+        await normalize_predicates(["ALPHA", "BETA", "GAMMA"], embed)

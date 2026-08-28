@@ -45,6 +45,12 @@ async def normalize_predicates(
         return mapping
 
     vectors = await embed(list(CURATED_PREDICATES) + unknown)
+    expected = len(CURATED_PREDICATES) + len(unknown)
+    if len(vectors) != expected:
+        raise ValueError(
+            f"embedder returned {len(vectors)} vectors for {expected} inputs; "
+            "refusing to map predicates from a truncated response"
+        )
     curated_vectors = vectors[: len(CURATED_PREDICATES)]
     unknown_vectors = vectors[len(CURATED_PREDICATES) :]
     for raw, vector in zip(unknown, unknown_vectors):
