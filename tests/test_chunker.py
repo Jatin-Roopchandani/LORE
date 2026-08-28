@@ -215,3 +215,23 @@ def test_drop_front_matter_can_be_disabled() -> None:
     book = _book([("Licence", _GUTENBERG_LICENCE), ("One", _long_text(60))])
     chunks = chunk_book(book, BOOK_ID, drop_front_matter=False)
     assert any("Project Gutenberg" in c.text for c in chunks)
+
+
+def test_front_matter_adjacent_to_narrative_keeps_the_narrative() -> None:
+    # A licence sentence sitting beside ordinary narrative in the SAME
+    # scene (plain "\n\n" paragraph breaks, not a "\n\n\n" scene break) must
+    # only remove itself, not the whole pack it lands in alongside it.
+    licence = (
+        "This short passage is Project Gutenberg boilerplate text mentioning "
+        "the eBook license terms."
+    )
+    narrative = "\n\n".join(
+        f"Narrative sentence number {i} continues the scene." for i in range(12)
+    )
+    text = licence + "\n\n" + narrative
+    book = _book([("One", text)])
+    chunks = chunk_book(book, BOOK_ID)
+    combined = " ".join(c.text for c in chunks)
+    assert "Project Gutenberg" not in combined
+    for i in range(12):
+        assert f"Narrative sentence number {i} continues the scene." in combined

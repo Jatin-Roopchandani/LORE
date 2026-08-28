@@ -159,13 +159,17 @@ def chunk_book(
     for chapter in book.chapters:
         seq = 0
         for scene_seq, scene in enumerate(_split_scenes(chapter.text)):
-            sentences = _expand_oversized(_sentences(scene), budget_chars)
+            sentences = _sentences(scene)
+            # Filter at sentence granularity, before packing: a front-matter
+            # sentence sitting beside narrative in the same pack must only
+            # remove itself, not the surrounding narrative it happens to
+            # share a pack with. A whole front-matter scene still vanishes
+            # naturally once every one of its sentences is dropped, leaving
+            # nothing left to pack.
+            if drop_front_matter:
+                sentences = [s for s in sentences if not is_front_matter(s)]
+            sentences = _expand_oversized(sentences, budget_chars)
             for pack in _pack(sentences, budget_chars, overlap_sentences):
-                text = " ".join(pack)
-                # Filter BEFORE assigning seq/id: a dropped chunk must not
-                # leave a numbering hole in the per-chapter sequence.
-                if drop_front_matter and is_front_matter(text):
-                    continue
                 chunks.append(
                     Chunk(
                         id=f"{book_id}:{chapter.seq}:{seq}",
@@ -173,7 +177,7 @@ def chunk_book(
                         chapter_seq=chapter.seq,
                         scene_seq=scene_seq,
                         seq=seq,
-                        text=text,
+                        text=" ".join(pack),
                     )
                 )
                 seq += 1
