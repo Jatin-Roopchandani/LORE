@@ -155,3 +155,36 @@ async def test_mention_with_empty_normalized_name_mints_no_entity() -> None:
     assert result.entities == []
     assert result.aliases == []
     assert result.mention_map == {}
+
+
+@pytest.mark.asyncio
+async def test_entity_ids_do_not_depend_on_mention_order() -> None:
+    embed = _embedder({"the Captain": [1.0, 0.0, 0.0]})
+    mentions = [
+        Mention("the Captain", "Character", "b1", "he shouted"),
+        Mention("the Captain", "Character", "b2", "he wept"),
+        Mention("the Captain", "Character", "b3", "he sang"),
+    ]
+    forward = await resolve_mentions(list(mentions), embed, _never)
+    backward = await resolve_mentions(list(reversed(mentions)), embed, _never)
+    assert {e.id for e in forward.entities} == {e.id for e in backward.entities}
+    assert forward.mention_map == backward.mention_map
+
+
+@pytest.mark.asyncio
+async def test_recurring_alias_is_recorded_once() -> None:
+    embed = _embedder({
+        "Elizabeth Bennet": [1.0, 0.0, 0.0],
+        "Lizzy": [1.0, 0.0, 0.0],
+    })
+    result = await resolve_mentions(
+        [
+            Mention("Elizabeth Bennet", "Character", "b1", "she laughed"),
+            Mention("Lizzy", "Character", "b1", "she laughed"),
+            Mention("Lizzy", "Character", "b2", "she laughed"),
+        ],
+        embed,
+        _always,
+    )
+    lizzy_records = [a for a in result.aliases if a.alias_name == "Lizzy"]
+    assert len(lizzy_records) == 1

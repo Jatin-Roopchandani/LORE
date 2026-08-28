@@ -70,6 +70,17 @@ async def resolve_mentions(
     reject_floor: float = 0.70,
 ) -> ResolutionResult:
     result = ResolutionResult()
+    # Process mentions in a canonical order (not input order) so the result
+    # — including the disambiguation suffix on a refused merge, below — is a
+    # function of the mention SET, never of the sequence they happen to
+    # arrive in. Without this, which entity gets the "bare" id and which
+    # gets a "#1" suffix depends on read order, and a rebuild from the same
+    # data in a different order would produce different ids.
+    ordered_mentions = sorted(
+        mentions,
+        key=lambda m: (m.book_id, normalize_name(m.name), m.kind, m.context),
+    )
+
     # Working state, keyed by canonical id.
     names: dict[str, str] = {}
     kinds: dict[str, str] = {}
@@ -78,7 +89,7 @@ async def resolve_mentions(
     books: dict[str, set[str]] = {}
     vectors: dict[str, list[float]] = {}  # lazily populated cache
 
-    for mention in mentions:
+    for mention in ordered_mentions:
         normalized = normalize_name(mention.name)
         if not normalized:
             # A mention with no word characters at all mints no entity.
@@ -161,16 +172,21 @@ async def resolve_mentions(
                 # compare against are cached lazily, on first future use.
                 vectors[chosen] = vector
         else:
+            # A known alias resurfacing in another book (pass 1 is
+            # book-scoped, so it lands here rather than short-circuiting)
+            # must not be recorded twice — only the book membership grows.
+            is_new_alias = normalized not in alias_sets[chosen]
             alias_sets[chosen].add(normalized)
             books[chosen].add(mention.book_id)
-            result.aliases.append(
-                AliasRecord(
-                    alias_id=entity_id(normalized, mention.kind),
-                    alias_name=mention.name,
-                    kind=mention.kind,
-                    canonical_id=chosen,
+            if is_new_alias:
+                result.aliases.append(
+                    AliasRecord(
+                        alias_id=entity_id(normalized, mention.kind),
+                        alias_name=mention.name,
+                        kind=mention.kind,
+                        canonical_id=chosen,
+                    )
                 )
-            )
         result.mention_map[key] = chosen
 
     result.entities = [
