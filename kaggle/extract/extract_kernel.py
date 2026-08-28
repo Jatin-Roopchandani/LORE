@@ -15,6 +15,7 @@ MODEL_ID = "MODEL_ID"
 EMBED_MODEL_ID = "EMBED_MODEL_ID"
 VLLM_SPEC = "VLLM_SPEC"
 OUT = Path("/kaggle/working")
+MAX_OUTPUT_TOKENS = 2048   # 1024 truncated JSON mid-object on dense passages
 
 
 def _install() -> None:
@@ -72,12 +73,12 @@ def main() -> None:
         pick whichever this image ships rather than pinning a name."""
         if hasattr(vsp, "StructuredOutputsParams"):
             return SamplingParams(
-                temperature=temperature, max_tokens=1024,
+                temperature=temperature, max_tokens=MAX_OUTPUT_TOKENS,
                 structured_outputs=vsp.StructuredOutputsParams(json=schema_json),
             )
         if hasattr(vsp, "GuidedDecodingParams"):
             return SamplingParams(
-                temperature=temperature, max_tokens=1024,
+                temperature=temperature, max_tokens=MAX_OUTPUT_TOKENS,
                 guided_decoding=vsp.GuidedDecodingParams(json=schema_json),
             )
         raise RuntimeError(

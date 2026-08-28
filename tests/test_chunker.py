@@ -182,3 +182,36 @@ def test_split_oversized_terminates_on_pathological_input() -> None:
     book = _book([("One", text)])
     chunks = chunk_book(book, BOOK_ID)
     assert len(chunks) <= 40  # 20000 / 1600 ≈ 13, plus overlap gives ~26
+
+
+_GUTENBERG_LICENCE = (
+    "This eBook is for the use of anyone anywhere in the United States and "
+    "most other parts of the world at no cost and with almost no restrictions "
+    "whatsoever. You may copy it, give it away or re-use it under the terms "
+    "of the Project Gutenberg License included with this eBook or online at "
+    "www.gutenberg.org."
+)
+
+
+def test_front_matter_chunks_are_dropped() -> None:
+    book = _book([("Licence", _GUTENBERG_LICENCE), ("One", _long_text(60))])
+    chunks = chunk_book(book, BOOK_ID)
+    assert all("Project Gutenberg" not in c.text for c in chunks)
+    assert any(c.chapter_seq == 2 for c in chunks)
+
+
+def test_chunk_ids_stay_contiguous_after_dropping() -> None:
+    text = _GUTENBERG_LICENCE + "\n\n\n" + _long_text(60)
+    book = _book([("One", text)])
+    chunks = chunk_book(book, BOOK_ID)
+    assert all("Project Gutenberg" not in c.text for c in chunks)
+    seqs = [c.seq for c in chunks if c.chapter_seq == 1]
+    assert seqs == list(range(len(seqs)))
+    for chunk in chunks:
+        assert chunk.id == f"{BOOK_ID}:{chunk.chapter_seq}:{chunk.seq}"
+
+
+def test_drop_front_matter_can_be_disabled() -> None:
+    book = _book([("Licence", _GUTENBERG_LICENCE), ("One", _long_text(60))])
+    chunks = chunk_book(book, BOOK_ID, drop_front_matter=False)
+    assert any("Project Gutenberg" in c.text for c in chunks)

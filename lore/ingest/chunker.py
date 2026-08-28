@@ -19,6 +19,7 @@ import re
 
 import pysbd
 
+from lore.ingest.frontmatter import is_front_matter
 from lore.ingest.models import Chunk, ParsedBook
 
 # A scene marker is a line of ***, ---, ### (3+, spaces allowed between).
@@ -151,6 +152,8 @@ def chunk_book(
     book_id: str,
     budget_chars: int = 1600,
     overlap_sentences: int = 2,
+    *,
+    drop_front_matter: bool = True,
 ) -> list[Chunk]:
     chunks: list[Chunk] = []
     for chapter in book.chapters:
@@ -158,6 +161,11 @@ def chunk_book(
         for scene_seq, scene in enumerate(_split_scenes(chapter.text)):
             sentences = _expand_oversized(_sentences(scene), budget_chars)
             for pack in _pack(sentences, budget_chars, overlap_sentences):
+                text = " ".join(pack)
+                # Filter BEFORE assigning seq/id: a dropped chunk must not
+                # leave a numbering hole in the per-chapter sequence.
+                if drop_front_matter and is_front_matter(text):
+                    continue
                 chunks.append(
                     Chunk(
                         id=f"{book_id}:{chapter.seq}:{seq}",
@@ -165,7 +173,7 @@ def chunk_book(
                         chapter_seq=chapter.seq,
                         scene_seq=scene_seq,
                         seq=seq,
-                        text=" ".join(pack),
+                        text=text,
                     )
                 )
                 seq += 1
