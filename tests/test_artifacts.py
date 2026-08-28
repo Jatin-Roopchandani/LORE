@@ -1,12 +1,19 @@
+import shutil
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
 from lore.config import LoreConfig
 from lore.db.lance_store import EMBED_DIM
 from lore.db.sqlite import open_db
-from lore.graph.artifacts import completed_unit_dirs, read_embeddings, read_triplets
+from lore.graph.artifacts import (
+    MissingArtifactError,
+    completed_unit_dirs,
+    read_embeddings,
+    read_triplets,
+)
 from lore.ingest.registry import ingest_book
 from lore.orchestrator.run import set_unit_state
 
@@ -76,4 +83,75 @@ def test_reads_rows_across_units(tmp_path: Path) -> None:
     dirs = completed_unit_dirs(conn, config, BOOK)
     assert {r["chunk_id"] for r in read_triplets(dirs)} == {"c0", "c1"}
     assert len(read_embeddings(dirs)) == 2
+    conn.close()
+
+
+def test_missing_directory_for_completed_job_raises_loudly(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed_book(conn)
+    unit_id = f"{BOOK}-u0000-aaaa"
+    d = _unit(config, unit_id, "c0")
+    set_unit_state(conn, BOOK, unit_id, "completed")
+    shutil.rmtree(d)  # simulate corruption: jobs says completed, disk disagrees
+
+    with pytest.raises(MissingArtifactError, match=unit_id):
+        completed_unit_dirs(conn, config, BOOK)
+    conn.close()
+
+
+def test_missing_triplets_file_raises_loudly(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed_book(conn)
+    unit_id = f"{BOOK}-u0000-aaaa"
+    d = _unit(config, unit_id, "c0")
+    set_unit_state(conn, BOOK, unit_id, "completed")
+    (d / "triplets.parquet").unlink()
+
+    dirs = completed_unit_dirs(conn, config, BOOK)
+    with pytest.raises(MissingArtifactError, match=unit_id):
+        read_triplets(dirs)
+    conn.close()
+
+
+def test_empty_but_present_parquet_reads_as_no_rows(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed_book(conn)
+    populated_id = f"{BOOK}-u0000-aaaa"
+    empty_id = f"{BOOK}-u0001-bbbb"
+    _unit(config, populated_id, "c0")
+    empty_dir = config.extractions_dir / BOOK / empty_id
+    empty_dir.mkdir(parents=True, exist_ok=True)
+    pq.write_table(
+        pa.table(
+            {
+                "chunk_id": pa.array([], type=pa.string()),
+                "subject": pa.array([], type=pa.string()),
+                "predicate": pa.array([], type=pa.string()),
+            }
+        ),
+        empty_dir / "triplets.parquet",
+    )
+    pq.write_table(
+        pa.table(
+            {
+                "chunk_id": pa.array([], type=pa.string()),
+                "vector": pa.array([], type=pa.list_(pa.float32(), EMBED_DIM)),
+            }
+        ),
+        empty_dir / "embeddings.parquet",
+    )
+    set_unit_state(conn, BOOK, populated_id, "completed")
+    set_unit_state(conn, BOOK, empty_id, "completed")
+
+    dirs = completed_unit_dirs(conn, config, BOOK)
+    triplets = read_triplets(dirs)
+    embeddings = read_embeddings(dirs)
+    assert {r["chunk_id"] for r in triplets} == {"c0"}
+    assert len(embeddings) == 1
     conn.close()
