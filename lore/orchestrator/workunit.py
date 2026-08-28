@@ -1,6 +1,7 @@
 """Work units: the transport format between the local pipeline and Kaggle."""
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from dataclasses import dataclass
@@ -8,10 +9,13 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
+from lore.db.lance_store import EMBED_DIM
 from lore.extract.schemas import SCHEMA_VERSION
 from lore.ingest.models import Chunk
 
-_ARTIFACTS = ("triplets.parquet", "embeddings.parquet", "manifest.json")
+_ARTIFACTS = (
+    "triplets.parquet", "embeddings.parquet", "manifest.json", "dead_letter.jsonl",
+)
 
 
 class OutputError(RuntimeError):
@@ -39,11 +43,15 @@ def pack_units(book_id: str, chunks: list[Chunk], size: int) -> list[WorkUnit]:
         raise ValueError("work unit size must be >= 1")
     units: list[WorkUnit] = []
     for index, start in enumerate(range(0, len(chunks), size)):
+        unit_chunks = chunks[start : start + size]
+        h = hashlib.sha256(
+            "\n".join(chunk.id for chunk in unit_chunks).encode()
+        ).hexdigest()[:8]
         units.append(
             WorkUnit(
-                unit_id=f"{book_id}-u{index:04d}",
+                unit_id=f"{book_id}-u{index:04d}-{h}",
                 book_id=book_id,
-                chunks=chunks[start : start + size],
+                chunks=unit_chunks,
             )
         )
     return units
@@ -109,8 +117,16 @@ def validate_output(unit: WorkUnit, out_dir: Path) -> OutputSummary:
             f"unit {unit.unit_id}: {chunks_ok} ok + {chunks_dead} dead are not "
             f"accounted for out of {chunks_in} chunks"
         )
-    embeddings = pq.read_table(out_dir / "embeddings.parquet", columns=["chunk_id"])
+    embeddings = pq.read_table(
+        out_dir / "embeddings.parquet", columns=["chunk_id", "vector"]
+    )
     embedding_ids = embeddings.column("chunk_id").to_pylist()
+    for vector in embeddings.column("vector").to_pylist():
+        if len(vector) != EMBED_DIM:
+            raise OutputError(
+                f"unit {unit.unit_id}: embeddings.parquet has a vector of "
+                f"dimension {len(vector)}, expected {EMBED_DIM}"
+            )
     embedding_id_set = set(embedding_ids)
     missing_embeddings = expected - embedding_id_set
     if missing_embeddings:

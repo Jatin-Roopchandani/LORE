@@ -99,7 +99,7 @@ def _run_unit(
         try:
             summary = asyncio.run(run_unit_local(config, unit, dest))
         except Exception as exc:
-            set_unit_state(conn, unit.book_id, unit.unit_id, "failed")
+            set_unit_state(conn, unit.book_id, unit.unit_id, "failed", error=str(exc))
             if on_event is not None:
                 on_event(f"{unit.unit_id}: failed — {exc}")
             return False, 0.0, 0, 0

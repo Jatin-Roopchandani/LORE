@@ -2,6 +2,7 @@ import pytest
 
 from lore.extract.runner import ChunkInput, extract_chunks
 from lore.extract.schemas import ChunkExtraction
+from lore.inference.base import ProviderOutputError
 
 VALID = ChunkExtraction.model_validate(
     {
@@ -75,6 +76,31 @@ async def test_one_bad_chunk_does_not_abort_the_batch() -> None:
     )
     assert [r.chunk_id for r in result.results] == ["b:1:1"]
     assert [d.chunk_id for d in result.dead_letters] == ["b:1:0"]
+
+
+@pytest.mark.asyncio
+async def test_max_attempts_below_one_raises_value_error() -> None:
+    provider = ScriptedProvider([VALID])
+    with pytest.raises(ValueError):
+        await extract_chunks(
+            [ChunkInput("b:1:0", "text")], provider, max_attempts=0
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_output_error_populates_the_dead_letter_raw_output() -> None:
+    # FIX 4: providers that raise ProviderOutputError give the dead letter
+    # a populated raw_output instead of an empty string.
+    provider = ScriptedProvider([
+        ProviderOutputError("bad json", raw_output="{not valid"),
+        ProviderOutputError("still bad", raw_output="{also not valid"),
+    ])
+    result = await extract_chunks([ChunkInput("b:1:0", "t")], provider)
+    assert result.results == []
+    assert len(result.dead_letters) == 1
+    dead = result.dead_letters[0]
+    assert dead.chunk_id == "b:1:0"
+    assert dead.raw_output == "{also not valid"
 
 
 @pytest.mark.asyncio

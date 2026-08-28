@@ -9,6 +9,7 @@ import json
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 MODEL_ID = "MODEL_ID"
@@ -36,6 +37,7 @@ def _find_input() -> Path:
 
 
 def main() -> None:
+    started_at = datetime.now(timezone.utc)
     started = time.time()
     _install()
     unit_dir = _find_input()
@@ -112,11 +114,19 @@ def main() -> None:
                 self._answers[prompt] = output.outputs[0].text
 
         async def generate(self, prompt, schema):
+            from lore.inference.base import ProviderOutputError
+
             cached = self._answers.pop(prompt, None)
             if cached is not None:
-                return schema.model_validate_json(cached)
+                try:
+                    return schema.model_validate_json(cached)
+                except Exception as exc:
+                    raise ProviderOutputError(str(exc), raw_output=cached) from exc
             text = llm.generate([prompt], retry_params)[0].outputs[0].text
-            return schema.model_validate_json(text)
+            try:
+                return schema.model_validate_json(text)
+            except Exception as exc:
+                raise ProviderOutputError(str(exc), raw_output=text) from exc
 
     from lore.extract.prompts import build_prompt
 
@@ -126,16 +136,18 @@ def main() -> None:
 
     from sentence_transformers import SentenceTransformer
 
+    from lore.extract.embed import DOCUMENT_PREFIX, write_unit_outputs
+
     embedder = SentenceTransformer(EMBED_MODEL_ID, trust_remote_code=True)
     vectors = embedder.encode(
-        [c.text for c in chunks], normalize_embeddings=True, batch_size=32
+        [DOCUMENT_PREFIX + c.text for c in chunks],
+        normalize_embeddings=True, batch_size=32,
     ).tolist()
-
-    from lore.extract.embed import write_unit_outputs
 
     write_unit_outputs(
         dest=OUT,
         unit_id=unit_manifest["unit_id"],
+        book_id=unit_manifest["book_id"],
         chunk_ids=[c.chunk_id for c in chunks],
         result=result,
         vectors=vectors,
@@ -143,6 +155,7 @@ def main() -> None:
         embed_model=EMBED_MODEL_ID,
         gpu_seconds=time.time() - started,
         schema_version=unit_manifest["schema_version"],
+        started_at=started_at.isoformat(),
     )
     print(json.dumps({
         "ok": len(result.results), "dead": len(result.dead_letters),

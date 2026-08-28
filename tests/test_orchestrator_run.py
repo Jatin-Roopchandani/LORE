@@ -11,8 +11,24 @@ from lore.ingest.models import Chunk
 from lore.ingest.registry import ingest_book
 from lore.orchestrator.quota import iso_week, record_dispatch
 from lore.orchestrator.run import RunReport, run_extraction, set_unit_state, unit_state
+from lore.orchestrator.workunit import pack_units
 
 BOOK = "abcdef0123456789"
+
+
+def _chunks(n: int) -> list[Chunk]:
+    return [
+        Chunk(id=f"{BOOK}:1:{i}", book_id=BOOK, chapter_seq=1,
+              scene_seq=0, seq=i, text=f"text {i}")
+        for i in range(n)
+    ]
+
+
+def _unit_ids(n: int, size: int = 2) -> list[str]:
+    """Unit ids are content-addressed (FIX 5): compute the real ids
+    pack_units would assign for a given seed size, rather than hardcoding
+    the old `{book_id}-u{index:04d}` format."""
+    return [unit.unit_id for unit in pack_units(BOOK, _chunks(n), size=size)]
 
 
 def _config(tmp_path: Path) -> LoreConfig:
@@ -27,13 +43,8 @@ def _config(tmp_path: Path) -> LoreConfig:
 
 
 def _seed(conn, n: int) -> None:
-    chunks = [
-        Chunk(id=f"{BOOK}:1:{i}", book_id=BOOK, chapter_seq=1,
-              scene_seq=0, seq=i, text=f"text {i}")
-        for i in range(n)
-    ]
     ingest_book(conn, book_id=BOOK, title="T", author=None,
-                source="upload", file_path="/x/b.epub", chunks=chunks)
+                source="upload", file_path="/x/b.epub", chunks=_chunks(n))
 
 
 class FakeClient:
@@ -88,6 +99,7 @@ class FakeClient:
             pa.table({"chunk_id": ids, "vector": [[0.0] * 768] * len(ids)}),
             dest / "embeddings.parquet",
         )
+        (dest / "dead_letter.jsonl").write_text("")
         (dest / "manifest.json").write_text(json.dumps({
             "unit_id": unit_id, "chunks_in": len(ids), "chunks_ok": len(ids),
             "chunks_dead": 0, "gpu_seconds": 3600.0,
@@ -123,7 +135,7 @@ def test_artifacts_land_under_the_book_directory(tmp_path: Path) -> None:
     conn = open_db(config.sqlite_path)
     _seed(conn, 2)
     run_extraction(config, conn, BOOK, client_factory=lambda cfg: FakeClient(cfg))
-    unit_dir = config.extractions_dir / BOOK / f"{BOOK}-u0000"
+    unit_dir = config.extractions_dir / BOOK / _unit_ids(2)[0]
     assert (unit_dir / "triplets.parquet").is_file()
     assert (unit_dir / "manifest.json").is_file()
     conn.close()
@@ -134,15 +146,16 @@ def test_failed_unit_is_marked_and_counted(tmp_path: Path) -> None:
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     _seed(conn, 4)  # units u0000, u0001
+    u0000, u0001 = _unit_ids(4)
 
     def factory(cfg):
-        return FakeClient(cfg, fail_units={f"{BOOK}-u0001"})
+        return FakeClient(cfg, fail_units={u0001})
 
     report = run_extraction(config, conn, BOOK, client_factory=factory)
     assert report.units_completed == 1
     assert report.units_failed == 1
-    assert unit_state(conn, f"{BOOK}-u0000") == "completed"
-    assert unit_state(conn, f"{BOOK}-u0001") == "failed"
+    assert unit_state(conn, u0000) == "completed"
+    assert unit_state(conn, u0001) == "failed"
     conn.close()
 
 
@@ -151,9 +164,10 @@ def test_resume_skips_completed_and_retries_failed(tmp_path: Path) -> None:
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     _seed(conn, 4)
+    _, u0001 = _unit_ids(4)
     run_extraction(
         config, conn, BOOK,
-        client_factory=lambda cfg: FakeClient(cfg, fail_units={f"{BOOK}-u0001"}),
+        client_factory=lambda cfg: FakeClient(cfg, fail_units={u0001}),
     )
     second: list[FakeClient] = []
 
@@ -163,9 +177,9 @@ def test_resume_skips_completed_and_retries_failed(tmp_path: Path) -> None:
         return client
 
     report = run_extraction(config, conn, BOOK, resume=True, client_factory=factory)
-    assert second[0].runs == [f"{BOOK}-u0001"]  # only the failed unit re-ran
+    assert second[0].runs == [u0001]  # only the failed unit re-ran
     assert report.units_completed == 1
-    assert unit_state(conn, f"{BOOK}-u0001") == "completed"
+    assert unit_state(conn, u0001) == "completed"
     conn.close()
 
 
@@ -198,7 +212,7 @@ def test_quota_is_recorded_per_unit(tmp_path: Path) -> None:
     rows = conn.execute(
         "SELECT run_ref, gpu_hours_actual FROM quota_ledger"
     ).fetchall()
-    assert rows[0][0] == f"{BOOK}-u0000"
+    assert rows[0][0] == _unit_ids(2)[0]
     assert rows[0][1] == pytest.approx(1.0)  # 3600 gpu_seconds
     conn.close()
 
@@ -217,13 +231,14 @@ def test_failure_reason_is_persisted(tmp_path: Path) -> None:
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     _seed(conn, 2)
+    u0000 = _unit_ids(2)[0]
 
     def factory(cfg):
-        return FakeClient(cfg, fail_units={f"{BOOK}-u0000"})
+        return FakeClient(cfg, fail_units={u0000})
 
     run_extraction(config, conn, BOOK, client_factory=factory)
     row = conn.execute(
-        "SELECT state, error FROM jobs WHERE detail = ?", (f"{BOOK}-u0000",)
+        "SELECT state, error FROM jobs WHERE detail = ?", (u0000,)
     ).fetchone()
     assert row[0] == "failed"
     assert row[1]  # non-empty error message
@@ -235,6 +250,7 @@ def test_failed_unit_log_is_captured_for_diagnosis(tmp_path: Path) -> None:
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     _seed(conn, 2)  # 1 unit at size 2
+    u0000 = _unit_ids(2)[0]
     kernel_log = (
         "ImportError: cannot import name 'GuidedDecodingParams' "
         "from 'vllm.sampling_params'"
@@ -242,12 +258,12 @@ def test_failed_unit_log_is_captured_for_diagnosis(tmp_path: Path) -> None:
 
     def factory(cfg):
         return FakeClient(
-            cfg, fail_units={f"{BOOK}-u0000"}, log_content=kernel_log,
+            cfg, fail_units={u0000}, log_content=kernel_log,
         )
 
     run_extraction(config, conn, BOOK, client_factory=factory)
     row = conn.execute(
-        "SELECT state, error FROM jobs WHERE detail = ?", (f"{BOOK}-u0000",)
+        "SELECT state, error FROM jobs WHERE detail = ?", (u0000,)
     ).fetchone()
     assert row[0] == "failed"
     error = row[1]
@@ -261,16 +277,17 @@ def test_successful_run_clears_a_previous_error(tmp_path: Path) -> None:
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     _seed(conn, 2)
+    u0000 = _unit_ids(2)[0]
     run_extraction(
         config, conn, BOOK,
-        client_factory=lambda cfg: FakeClient(cfg, fail_units={f"{BOOK}-u0000"}),
+        client_factory=lambda cfg: FakeClient(cfg, fail_units={u0000}),
     )
     run_extraction(
         config, conn, BOOK, resume=True,
         client_factory=lambda cfg: FakeClient(cfg),
     )
     row = conn.execute(
-        "SELECT state, error FROM jobs WHERE detail = ?", (f"{BOOK}-u0000",)
+        "SELECT state, error FROM jobs WHERE detail = ?", (u0000,)
     ).fetchone()
     assert row[0] == "completed"
     assert not row[1]  # empty or NULL
@@ -282,12 +299,13 @@ def test_quota_exhaustion_stops_cleanly_with_partial_report(tmp_path: Path) -> N
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     _seed(conn, 4)  # 2 units at size 2
+    u0000 = _unit_ids(4)[0]
     record_dispatch(conn, "prior-run", est_hours=29.99, week=iso_week())
 
     report = run_extraction(config, conn, BOOK, client_factory=lambda cfg: FakeClient(cfg))
 
     assert report.stopped_reason is not None
-    assert unit_state(conn, f"{BOOK}-u0000") != "completed"
+    assert unit_state(conn, u0000) != "completed"
     conn.close()
 
 
@@ -296,7 +314,8 @@ def test_resume_reruns_a_dispatched_unit(tmp_path: Path) -> None:
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     _seed(conn, 2)  # 1 unit at size 2
-    set_unit_state(conn, BOOK, f"{BOOK}-u0000", "dispatched")
+    u0000 = _unit_ids(2)[0]
+    set_unit_state(conn, BOOK, u0000, "dispatched")
 
     clients: list[FakeClient] = []
 
@@ -306,7 +325,7 @@ def test_resume_reruns_a_dispatched_unit(tmp_path: Path) -> None:
         return client
 
     report = run_extraction(config, conn, BOOK, resume=True, client_factory=factory)
-    assert clients[0].runs == [f"{BOOK}-u0000"]
+    assert clients[0].runs == [u0000]
     assert report.units_completed == 1
-    assert unit_state(conn, f"{BOOK}-u0000") == "completed"
+    assert unit_state(conn, u0000) == "completed"
     conn.close()

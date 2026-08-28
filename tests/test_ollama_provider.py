@@ -5,6 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from lore.config import OllamaConfig
+from lore.inference.base import ProviderOutputError
 from lore.inference.ollama import OllamaProvider
 
 
@@ -36,6 +37,23 @@ async def test_generate_parses_structured_output() -> None:
     provider = _provider_with(handler)
     result = await provider.generate("Capital of France as JSON.", Answer)
     assert result == Answer(city="Paris")
+
+
+@pytest.mark.asyncio
+async def test_generate_raises_provider_output_error_on_malformed_response() -> None:
+    # FIX 4: a schema-validation failure must carry the raw text so dead
+    # letters stay diagnosable, not just the bare exception string.
+    raw = '{"city": 42}'  # wrong type for a required field
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"message": {"role": "assistant", "content": raw}}
+        )
+
+    provider = _provider_with(handler)
+    with pytest.raises(ProviderOutputError) as exc_info:
+        await provider.generate("Capital of France as JSON.", Answer)
+    assert exc_info.value.raw_output == raw
 
 
 @pytest.mark.asyncio

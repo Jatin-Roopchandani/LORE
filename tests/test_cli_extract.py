@@ -49,6 +49,23 @@ def test_extract_passes_resume(tmp_path: Path, monkeypatch) -> None:
     assert run.call_args.kwargs["resume"] is True
 
 
+def test_extract_echoes_and_fails_when_stopped_early(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _seed(tmp_path)
+    report = RunReport(
+        book_id=BOOK, units_total=2, units_completed=1,
+        chunks_ok=3, chunks_dead=0, gpu_hours=0.5,
+        stopped_reason="weekly GPU-hour quota exhausted",
+    )
+    with patch("lore.cli.run_extraction", return_value=report):
+        result = runner.invoke(app, ["extract", BOOK])
+    assert result.exit_code != 0
+    assert "weekly GPU-hour quota exhausted" in result.output
+
+
 def test_extract_fails_cleanly_for_unknown_book(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)

@@ -5,6 +5,7 @@ import httpx
 from pydantic import BaseModel
 
 from lore.config import OllamaConfig
+from lore.inference.base import ProviderOutputError
 
 
 class OllamaProvider:
@@ -24,7 +25,10 @@ class OllamaProvider:
         )
         response.raise_for_status()
         content = response.json()["message"]["content"]
-        return schema.model_validate_json(content)
+        try:
+            return schema.model_validate_json(content)
+        except Exception as exc:
+            raise ProviderOutputError(str(exc), raw_output=content) from exc
 
     async def embed(self, texts: list[str], model: str) -> list[list[float]]:
         response = await self._client.post(

@@ -50,6 +50,8 @@ async def extract_chunks(
     max_attempts: int = 2,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> ExtractionResult:
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be >= 1")
     result = ExtractionResult()
     total = len(chunks)
     for done, chunk in enumerate(chunks, start=1):

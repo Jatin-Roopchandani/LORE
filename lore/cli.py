@@ -184,6 +184,10 @@ def extract(
         f"{report.chunks_ok} chunks extracted, {report.chunks_dead} dead-lettered, "
         f"{report.gpu_hours:.2f} GPU-hours"
     )
+    if report.stopped_reason:
+        typer.echo(f"stopped early — {report.stopped_reason}")
+        if report.units_completed < report.units_total:
+            raise typer.Exit(1)
     if report.units_failed:
         typer.echo(f"{report.units_failed} unit(s) failed — rerun with --resume")
         raise typer.Exit(1)
