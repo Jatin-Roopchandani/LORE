@@ -44,3 +44,19 @@ class LanceStore:
     def search_chunks(self, vector: list[float], limit: int = 5) -> list[dict]:
         table = self._db.open_table("chunks")
         return table.search(vector).limit(limit).to_list()
+
+    def add_entities(self, rows: list[dict]) -> None:
+        self._db.open_table("entities").add(rows)
+
+    def delete_chunks_for_book(self, book_id: str) -> None:
+        escaped = book_id.replace("'", "''")
+        self._db.open_table("chunks").delete(f"book_id = '{escaped}'")
+
+    def delete_entities(self, entity_ids: list[str]) -> None:
+        if not entity_ids:
+            return
+        quoted = ", ".join("'" + e.replace("'", "''") + "'" for e in entity_ids)
+        self._db.open_table("entities").delete(f"entity_id IN ({quoted})")
+
+    def count(self, table: str) -> int:
+        return self._db.open_table(table).count_rows()

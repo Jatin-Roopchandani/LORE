@@ -16,8 +16,8 @@ _SCHEMA: list[str] = [
     "CREATE REL TABLE ALIAS_OF (FROM Entity TO Entity)",
     (
         "CREATE REL TABLE REL (FROM Entity TO Entity, predicate STRING, "
-        "evidence STRING, confidence DOUBLE, chunk_id STRING, book_id STRING, "
-        "chapter_seq INT64, run_id STRING)"
+        "predicate_raw STRING, evidence STRING, confidence DOUBLE, "
+        "chunk_id STRING, book_id STRING, chapter_seq INT64, run_id STRING)"
     ),
 ]
 
@@ -32,6 +32,14 @@ class KuzuStore:
             table = ddl.split()[3]  # CREATE NODE|REL TABLE <name> ...
             if table not in existing:
                 self._conn.execute(ddl)
+
+        if "REL" in existing:
+            columns = {
+                row[1]
+                for row in self._conn.execute("CALL table_info('REL') RETURN *")
+            }
+            if "predicate_raw" not in columns:
+                self._conn.execute("ALTER TABLE REL ADD predicate_raw STRING")
 
     def execute(self, cypher: str, params: dict | None = None) -> kuzu.QueryResult:
         return self._conn.execute(cypher, parameters=params or {})

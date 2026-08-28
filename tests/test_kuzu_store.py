@@ -35,3 +35,27 @@ def test_write_and_traverse(tmp_path: Path) -> None:
     rows = [tuple(r) for r in result]
     assert rows == [("The Dark Lord", "Voldemort")]
     store.close()
+
+
+def test_rel_table_has_predicate_raw(tmp_path: Path) -> None:
+    store = KuzuStore(tmp_path / "kuzu")
+    store.execute(
+        "CREATE (:Entity {id:'e1', name:'A', kind:'Character', aliases:['a']})"
+    )
+    store.execute(
+        "CREATE (:Entity {id:'e2', name:'B', kind:'Character', aliases:['b']})"
+    )
+    store.execute(
+        "MATCH (a:Entity {id:'e1'}), (b:Entity {id:'e2'}) "
+        "CREATE (a)-[:REL {predicate:'OPPOSES', predicate_raw:'DISTRUSTS', "
+        "evidence:'ev', confidence:0.9, chunk_id:'c1', book_id:'b1', "
+        "chapter_seq:3, run_id:'r1'}]->(b)"
+    )
+    rows = [
+        tuple(r)
+        for r in store.execute(
+            "MATCH ()-[r:REL]->() RETURN r.predicate, r.predicate_raw"
+        )
+    ]
+    assert rows == [("OPPOSES", "DISTRUSTS")]
+    store.close()
