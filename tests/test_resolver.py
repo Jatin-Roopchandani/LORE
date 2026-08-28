@@ -188,3 +188,23 @@ async def test_recurring_alias_is_recorded_once() -> None:
     )
     lizzy_records = [a for a in result.aliases if a.alias_name == "Lizzy"]
     assert len(lizzy_records) == 1
+
+
+@pytest.mark.asyncio
+async def test_canonical_name_is_the_fullest_surface_form() -> None:
+    embed = _embedder({
+        "Elizabeth Bennet": [1.0, 0.0, 0.0],
+        "Miss Bennet": [1.0, 0.0, 0.0],
+        "Lizzy": [1.0, 0.0, 0.0],
+    })
+    for order in ("forward", "reverse"):
+        mentions = [
+            Mention("Miss Bennet", "Character", "b1", "she laughed"),
+            Mention("Elizabeth Bennet", "Character", "b1", "she laughed"),
+            Mention("Lizzy", "Character", "b1", "she laughed"),
+        ]
+        if order == "reverse":
+            mentions.reverse()
+        result = await resolve_mentions(mentions, embed, _always)
+        assert len(result.entities) == 1
+        assert result.entities[0].name == "Elizabeth Bennet"

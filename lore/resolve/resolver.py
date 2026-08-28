@@ -88,6 +88,13 @@ async def resolve_mentions(
     alias_sets: dict[str, set[str]] = {}
     books: dict[str, set[str]] = {}
     vectors: dict[str, list[float]] = {}  # lazily populated cache
+    raw_names: dict[str, set[str]] = {}  # every raw surface form seen, for display
+
+    def display_name(cid: str) -> str:
+        # Content-derived, not order-derived: the longest raw surface form
+        # seen for this entity, ties broken alphabetically. See the note at
+        # the final entities list below for why this matters.
+        return sorted(raw_names[cid], key=lambda s: (-len(s), s))[0]
 
     for mention in ordered_mentions:
         normalized = normalize_name(mention.name)
@@ -110,6 +117,7 @@ async def resolve_mentions(
             None,
         )
         if hit is not None:
+            raw_names[hit].add(mention.name)
             result.mention_map[key] = hit
             continue
 
@@ -138,7 +146,7 @@ async def resolve_mentions(
                 same_book = mention.book_id in books[best]
                 floor = same_book_floor if same_book else cross_book_floor
                 candidate_entity = CanonicalEntity(
-                    id=best, name=names[best], kind=kinds[best],
+                    id=best, name=display_name(best), kind=kinds[best],
                     aliases=tuple(sorted(alias_sets[best])),
                     book_ids=tuple(sorted(books[best])),
                 )
@@ -166,6 +174,7 @@ async def resolve_mentions(
             contexts[chosen] = mention.context
             alias_sets[chosen] = {normalized}
             books[chosen] = {mention.book_id}
+            raw_names[chosen] = {mention.name}
             if vector is not None:
                 # Reuse the vector already computed above instead of an
                 # extra embed call; entities created with no candidates to
@@ -178,6 +187,7 @@ async def resolve_mentions(
             is_new_alias = normalized not in alias_sets[chosen]
             alias_sets[chosen].add(normalized)
             books[chosen].add(mention.book_id)
+            raw_names[chosen].add(mention.name)
             if is_new_alias:
                 result.aliases.append(
                     AliasRecord(
@@ -191,7 +201,15 @@ async def resolve_mentions(
 
     result.entities = [
         CanonicalEntity(
-            id=cid, name=names[cid], kind=kinds[cid],
+            id=cid,
+            # The display name is picked from content, not from whichever
+            # mention happened to create or be processed for this entity:
+            # the longest raw surface form seen, ties broken alphabetically.
+            # "Elizabeth Bennet" beats "Miss Bennet" and "Lizzy" on length;
+            # a same-length tie ("THE CAPTAIN" vs "the captain") resolves
+            # the same way regardless of input order.
+            name=display_name(cid),
+            kind=kinds[cid],
             aliases=tuple(sorted(alias_sets[cid])),
             book_ids=tuple(sorted(books[cid])),
         )
