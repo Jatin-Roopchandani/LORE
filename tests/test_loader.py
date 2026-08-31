@@ -223,7 +223,10 @@ def _rows(kuzu, cypher):
 
 def _snapshot(kuzu, lance) -> dict:
     return {
-        "entities": sorted(_rows(kuzu, "MATCH (e:Entity) RETURN e.id, e.name, e.kind")),
+        "entities": sorted(
+            (r[0], r[1], r[2], tuple(r[3] or ()))
+            for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.id, e.name, e.kind, e.books")
+        ),
         "rel": sorted(_rows(
             kuzu,
             "MATCH (a:Entity)-[r:REL]->(b:Entity) RETURN a.id, r.predicate,"
@@ -486,4 +489,178 @@ async def test_probe_subject_absent_from_entity_names_drops_the_edge(
     assert sorted(r[0] for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.name")) == [
         "Ana", "Bo"
     ]
+    conn.close(); kuzu.close()
+
+
+# --------------------------------------------------------------------------
+# Fix round 1: cross-book fusion must clear adjudication (SPEC acceptance:
+# "two books each containing 'the Captain' must NOT merge without
+# adjudication approving it"), and dropped edges must be reported.
+# --------------------------------------------------------------------------
+
+
+class _AdjudicateSpy:
+    """Records every adjudication call so tests can assert the count."""
+
+    def __init__(self, answer: bool) -> None:
+        self.answer = answer
+        self.calls: list[tuple[str, str, str, str]] = []
+
+    async def __call__(self, canonical, mention) -> bool:
+        self.calls.append(
+            (canonical.id, canonical.name, mention.name, mention.book_id)
+        )
+        return self.answer
+
+
+def _two_captains(config, conn) -> None:
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "the Captain", "OPPOSES", "Bo",
+             ["the Captain", "Bo"], ["Character", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "the Captain", "LOVES", "Zed",
+             ["the Captain", "Zed"], ["Character", "Character"]),
+    ])
+
+
+def _captains(kuzu) -> list[tuple]:
+    return sorted(
+        (r[0], tuple(sorted(r[1] or ())))
+        for r in _rows(
+            kuzu, "MATCH (e:Entity) WHERE e.name = 'the Captain'"
+                  " RETURN e.id, e.books")
+    )
+
+
+@pytest.mark.asyncio
+async def test_two_books_one_captain_refused_stay_separate(tmp_path: Path) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_captains(config, conn)
+    spy = _AdjudicateSpy(False)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    assert spy.calls == []  # nothing persisted yet, nothing to adjudicate
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert len(spy.calls) == 1  # the homonym, and only the homonym
+
+    captains = _captains(kuzu)
+    assert len(captains) == 2  # two nodes, not one
+    assert [books for _id, books in captains] == [(BOOK_B,), (BOOK,)] or \
+           [books for _id, books in captains] == [(BOOK,), (BOOK_B,)]
+    assert {books for _id, books in captains} == {(BOOK,), (BOOK_B,)}
+
+    # Each captain keeps its own edge.
+    edges = sorted(
+        (r[0], r[1], r[2])
+        for r in _rows(
+            kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
+                  " RETURN s.id, r.book_id, o.name")
+    )
+    assert len(edges) == 2
+    by_book = {book: (sid, obj) for sid, book, obj in edges}
+    assert by_book[BOOK][1] == "Bo"
+    assert by_book[BOOK_B][1] == "Zed"
+    assert by_book[BOOK][0] != by_book[BOOK_B][0]  # different subject nodes
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_two_books_one_captain_approved_merges(tmp_path: Path) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_captains(config, conn)
+    spy = _AdjudicateSpy(True)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert len(spy.calls) == 1
+
+    captains = _captains(kuzu)
+    assert len(captains) == 1
+    assert captains[0][1] == tuple(sorted((BOOK, BOOK_B)))  # books unioned
+    edges = _rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
+                        " RETURN s.id, r.book_id, o.name")
+    assert {e[0] for e in edges} == {captains[0][0]}  # both edges on one node
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_ana_and_the_ana_do_not_fuse_across_books(tmp_path: Path) -> None:
+    """The case reproduced in the round-0 report, asserted the right way."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "Ana", "LOVES", "Bo", ["Ana", "Bo"],
+             ["Character", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "The Ana", "OPPOSES", "Zed", ["The Ana", "Zed"],
+             ["Character", "Character"]),
+    ])
+    spy = _AdjudicateSpy(False)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    rows = sorted(
+        (r[0], r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(kuzu, "MATCH (e:Entity) WHERE e.name IN ['Ana', 'The Ana']"
+                             " RETURN e.id, e.name, e.books")
+    )
+    assert len(rows) == 2
+    assert {(name, books) for _id, name, books in rows} == {
+        ("Ana", (BOOK,)), ("The Ana", (BOOK_B,)),
+    }
+    assert rows[0][0] != rows[1][0]  # genuinely distinct ids
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_reloading_the_same_book_never_adjudicates(tmp_path: Path) -> None:
+    config, conn, kuzu, lance = _setup(tmp_path)
+    spy = _AdjudicateSpy(False)
+    first = await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    assert spy.calls == []
+    snapshot = _snapshot(kuzu, lance)
+    second = await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    assert spy.calls == []  # same book rewriting itself: never re-adjudicated
+    assert _snapshot(kuzu, lance) == snapshot
+    assert (second.entities, second.rel_edges, second.chunks) == (
+        first.entities, first.rel_edges, first.chunks
+    )
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_reloading_after_a_refused_merge_never_readjudicates(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_captains(config, conn)
+    spy = _AdjudicateSpy(False)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert len(spy.calls) == 1
+    snapshot = _snapshot(kuzu, lance)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    assert len(spy.calls) == 1  # the suffixed node is found by its own book
+    assert _snapshot(kuzu, lance) == snapshot
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_dropped_edges_are_counted(tmp_path: Path) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    chunks = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, chunks, [
+        _row(chunks[0].id, BOOK, "Ghost", "LOVES", "Bo", ["Ana", "Bo"],
+             ["Character", "Character"]),
+        _row(chunks[0].id, BOOK, "Ana", "LOVES", "Phantom", ["Ana", "Bo"],
+             ["Character", "Character"]),
+        _row(chunks[0].id, BOOK, "Ana", "LOVES", "Bo", ["Ana", "Bo"],
+             ["Character", "Character"]),
+    ])
+    report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert report.rel_edges == 1
+    assert report.dropped_edges == 2  # unknown subject, then unknown object
     conn.close(); kuzu.close()

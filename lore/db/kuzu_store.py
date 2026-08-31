@@ -9,7 +9,10 @@ _SCHEMA: list[str] = [
     "CREATE NODE TABLE Book (id STRING, title STRING, author STRING, PRIMARY KEY (id))",
     "CREATE NODE TABLE Chapter (id STRING, book_id STRING, seq INT64, title STRING, PRIMARY KEY (id))",
     "CREATE NODE TABLE Chunk (id STRING, book_id STRING, chapter_seq INT64, PRIMARY KEY (id))",
-    "CREATE NODE TABLE Entity (id STRING, name STRING, kind STRING, aliases STRING[], PRIMARY KEY (id))",
+    (
+        "CREATE NODE TABLE Entity (id STRING, name STRING, kind STRING, "
+        "aliases STRING[], books STRING[], PRIMARY KEY (id))"
+    ),
     "CREATE REL TABLE HAS_CHAPTER (FROM Book TO Chapter)",
     "CREATE REL TABLE HAS_CHUNK (FROM Chapter TO Chunk)",
     "CREATE REL TABLE MENTIONS (FROM Chunk TO Entity)",
@@ -40,6 +43,17 @@ class KuzuStore:
             }
             if "predicate_raw" not in columns:
                 self._conn.execute("ALTER TABLE REL ADD predicate_raw STRING")
+
+        if "Entity" in existing:
+            columns = {
+                row[1]
+                for row in self._conn.execute("CALL table_info('Entity') RETURN *")
+            }
+            if "books" not in columns:
+                # Which books an entity was seen in. Without it the loader
+                # cannot tell a book rewriting its own node from a genuine
+                # cross-book merge, and would fuse the two silently.
+                self._conn.execute("ALTER TABLE Entity ADD books STRING[]")
 
     def execute(self, cypher: str, params: dict | None = None) -> kuzu.QueryResult:
         return self._conn.execute(cypher, parameters=params or {})

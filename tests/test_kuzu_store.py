@@ -59,3 +59,32 @@ def test_rel_table_has_predicate_raw(tmp_path: Path) -> None:
     ]
     assert rows == [("OPPOSES", "DISTRUSTS")]
     store.close()
+
+
+def test_entity_table_gains_books_on_an_old_database(tmp_path: Path) -> None:
+    """A database created before Entity had `books` is ALTERed on open."""
+    import kuzu
+
+    path = tmp_path / "kuzu"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    db = kuzu.Database(str(path))
+    conn = kuzu.Connection(db)
+    conn.execute(
+        "CREATE NODE TABLE Entity (id STRING, name STRING, kind STRING,"
+        " aliases STRING[], PRIMARY KEY (id))"
+    )
+    conn.execute(
+        "CREATE (:Entity {id:'e1', name:'A', kind:'Character', aliases:['a']})"
+    )
+    conn.close()
+    db.close()
+
+    store = KuzuStore(path)
+    columns = {r[1] for r in store.execute("CALL table_info('Entity') RETURN *")}
+    assert "books" in columns
+    rows = [
+        tuple(r)
+        for r in store.execute("MATCH (e:Entity) RETURN e.id, e.name, e.aliases")
+    ]
+    assert rows == [("e1", "A", ["a"])]  # the pre-existing row survives
+    store.close()

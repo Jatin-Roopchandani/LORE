@@ -16,7 +16,7 @@ embed call.
 """
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Container, Iterator
 from dataclasses import dataclass, field
 
 from lore.resolve.normalize import entity_id, normalize_name
@@ -58,6 +58,38 @@ class ResolutionResult:
 
 
 Adjudicate = Callable[[CanonicalEntity, Mention], Awaitable[bool]]
+
+
+def entity_id_chain(normalized: str, kind: str) -> Iterator[str]:
+    """The deterministic collision chain for a (normalized name, kind).
+
+    `entity_id` is a pure hash of (normalized_name, kind), so a refused
+    merge — two "the Captain"s in different books, or two same-named
+    mentions too dissimilar to merge — must not silently collide with, and
+    overwrite, the existing entity of that same name and kind. This yields
+    `id(n), id(n#1), id(n#2), …`: the same id every time, for the same
+    name, at the same position in the chain.
+
+    Two callers walk it: `resolve_mentions` below, for a refusal inside one
+    resolution pass, and `lore.graph.loader`, for a refusal against an
+    entity another book already persisted. One scheme, one place.
+    """
+    yield entity_id(normalized, kind)
+    suffix = 0
+    while True:
+        suffix += 1
+        yield entity_id(f"{normalized}#{suffix}", kind)
+
+
+def disambiguated_entity_id(
+    normalized: str, kind: str, taken: Container[str]
+) -> str:
+    """The first id in the collision chain that nothing has claimed yet."""
+    return next(
+        candidate
+        for candidate in entity_id_chain(normalized, kind)
+        if candidate not in taken
+    )
 
 
 async def resolve_mentions(
@@ -159,16 +191,9 @@ async def resolve_mentions(
                     chosen = best
 
         if chosen is None:
-            # entity_id is a pure hash of (normalized_name, kind), so a
-            # refused merge (e.g. two "the Captain"s in different books, or
-            # two same-named mentions too dissimilar to merge) must not
-            # silently collide with — and overwrite — the existing entity
-            # of that same name and kind. Disambiguate deterministically.
-            chosen = entity_id(normalized, mention.kind)
-            suffix = 0
-            while chosen in alias_sets:
-                suffix += 1
-                chosen = entity_id(f"{normalized}#{suffix}", mention.kind)
+            # A refused merge must not silently collide with — and
+            # overwrite — the existing entity of that same name and kind.
+            chosen = disambiguated_entity_id(normalized, mention.kind, alias_sets)
             names[chosen] = mention.name
             kinds[chosen] = mention.kind
             contexts[chosen] = mention.context

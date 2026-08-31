@@ -5,15 +5,33 @@ another book survives a reload), while this book's REL and MENTIONS edges
 and its LanceDB chunk rows are deleted and rewritten, because
 re-extraction can legitimately change them.
 
+Cross-book identity — `entity_id` is a pure hash of (normalized name,
+kind) with no book in it, and `resolve_mentions` only ever sees one book's
+mentions per call, so "MERGE the node and move on" would silently fuse two
+unrelated books' homonyms at the persistence seam, exactly the merge the
+resolver's `cross_book_floor`/pass-3 gate exists to prevent. The Entity
+node therefore carries a `books` list, and `_reconcile_ids` below decides,
+before anything is written, which node each incoming entity may own:
+
+  * a persisted node whose `books` already contains this book_id is this
+    same book rewriting itself — fused with NO adjudication, so a re-load
+    is free and deterministic;
+  * a persisted node belonging to some *other* book must clear
+    `adjudicate` before being fused into;
+  * a refusal mints the next id in Task 3's collision chain
+    (`entity_id_chain`), so both entities survive as separate nodes with
+    their own edges.
+
 Failure containment — the two stores have no shared transaction, so the
 write is staged in three phases and ordered so that the largest, most
 failure-prone body of work sits under the one real transaction available:
 
-  1. Read and compute. Artifacts, registry, resolution, predicate
-     normalization, entity centroids and the *entire* Kuzu statement plan
-     are built in memory. Nothing has been mutated, so any failure here
-     (a missing artifact, a truncated embedder response, an unresolvable
-     book) leaves both stores exactly as they were.
+  1. Read and compute. Artifacts, registry, resolution, id reconciliation
+     (reads and adjudication only), predicate normalization, entity
+     centroids and the *entire* Kuzu statement plan are built in memory.
+     Nothing has been mutated, so any failure here (a missing artifact, a
+     truncated embedder response, an unresolvable book) leaves both stores
+     exactly as they were.
   2. Kuzu, inside one explicit transaction. The book's old REL/MENTIONS
      edges are deleted and the new graph written in a single BEGIN/COMMIT.
      A failure rolls the whole thing back: the previous graph survives.
@@ -30,17 +48,29 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
+from itertools import islice
 
 from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.graph.artifacts import completed_unit_dirs, read_embeddings, read_triplets
 from lore.ingest.registry import chunks_for_book
-from lore.resolve.normalize import normalize_name
+from lore.resolve.normalize import entity_id, normalize_name
 from lore.resolve.predicates import normalize_predicates
-from lore.resolve.resolver import Mention, resolve_mentions
+from lore.resolve.resolver import (
+    Adjudicate,
+    CanonicalEntity,
+    Mention,
+    entity_id_chain,
+    resolve_mentions,
+)
 
 Statement = tuple[str, dict]
+
+# How far down a name's collision chain a load will look for a free slot.
+# 64 distinct entities sharing one normalized name and kind across a whole
+# corpus is not a real library; it is a bug, and it fails loudly.
+_MAX_HOMONYMS = 64
 
 
 @dataclass
@@ -51,6 +81,7 @@ class LoadReport:
     rel_edges: int = 0
     chunks: int = 0
     mentions: int = 0
+    dropped_edges: int = 0
 
 
 class PartialLoadError(RuntimeError):
@@ -61,6 +92,30 @@ class PartialLoadError(RuntimeError):
     """
 
 
+@dataclass(frozen=True)
+class _PersistedEntity:
+    """An Entity node already in Kuzu, possibly put there by another book."""
+
+    id: str
+    name: str
+    kind: str
+    aliases: tuple[str, ...]
+    books: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _NodeCandidate:
+    """An Entity node this load wants to write, before id reconciliation."""
+
+    id: str
+    base: str  # the normalized name its id was derived from
+    name: str
+    kind: str
+    aliases: tuple[str, ...] = ()
+    books: tuple[str, ...] = ()
+    context: str = ""
+
+
 def _display_name(candidates: Iterable[str]) -> str:
     """The longest surface form, ties broken alphabetically.
 
@@ -69,6 +124,20 @@ def _display_name(candidates: Iterable[str]) -> str:
     load-order-derived.
     """
     return sorted(candidates, key=lambda s: (-len(s), s))[0]
+
+
+def _base_normalized(node_id: str, name: str, kind: str, aliases: tuple) -> str:
+    """The normalized string whose hash produced `node_id`.
+
+    Needed to walk that id's collision chain. An entity's aliases are its
+    normalized forms, so the one that hashes back to the id is the base;
+    if the resolver already suffixed the id, none will, and the entity's
+    own normalized display name is a stable fallback.
+    """
+    for alias in sorted(aliases):
+        if entity_id(alias, kind) == node_id:
+            return alias
+    return normalize_name(name) or name
 
 
 def _named_kinds(row: dict) -> list[tuple[str, str]]:
@@ -114,23 +183,104 @@ def _centroid(vectors: list[list[float]]) -> list[float]:
     return [value / len(vectors) for value in total]
 
 
-def _existing_entities(kuzu: KuzuStore, ids: list[str]) -> dict[str, tuple[str, list]]:
-    """Name and aliases already on the Entity nodes we are about to write.
-
-    Entity ids are a hash of (normalized name, kind) with no book in them,
-    so a node can already exist because another book named the same
-    character. Overwriting its aliases with only this book's view would
-    silently drop what the other book knew, so both are unioned below.
-    """
-    if not ids:
+def _persisted_entities(
+    kuzu: KuzuStore, ids: Iterable[str]
+) -> dict[str, _PersistedEntity]:
+    wanted = sorted(set(ids))
+    if not wanted:
         return {}
     return {
-        row[0]: (row[1], list(row[2] or []))
+        row[0]: _PersistedEntity(
+            id=row[0], name=row[1], kind=row[2],
+            aliases=tuple(row[3] or ()), books=tuple(row[4] or ()),
+        )
         for row in kuzu.execute(
-            "MATCH (e:Entity) WHERE e.id IN $ids RETURN e.id, e.name, e.aliases",
-            {"ids": ids},
+            "MATCH (e:Entity) WHERE e.id IN $ids"
+            " RETURN e.id, e.name, e.kind, e.aliases, e.books",
+            {"ids": wanted},
         )
     }
+
+
+async def _reconcile_ids(
+    kuzu: KuzuStore,
+    book_id: str,
+    candidates: list[_NodeCandidate],
+    adjudicate: Adjudicate,
+) -> tuple[dict[str, str], dict[str, _PersistedEntity]]:
+    """Decide which persisted node, if any, each candidate may own.
+
+    Read-only: it queries Kuzu and may call `adjudicate`, but writes
+    nothing, so it stays inside phase 1's "no store mutated" guarantee.
+    """
+    chains = {
+        candidate.id: list(
+            islice(entity_id_chain(candidate.base, candidate.kind), _MAX_HOMONYMS)
+        )
+        for candidate in candidates
+    }
+    persisted = _persisted_entities(kuzu, (c.id for c in candidates))
+    # Only a candidate whose base id is held by a *different* book can need
+    # more of its chain, so the second lookup stays small.
+    contested = [
+        candidate for candidate in candidates
+        if candidate.id in persisted
+        and book_id not in persisted[candidate.id].books
+    ]
+    if contested:
+        persisted.update(_persisted_entities(
+            kuzu,
+            (cid for candidate in contested for cid in chains[candidate.id][1:]),
+        ))
+
+    id_for: dict[str, str] = {}
+    claimed: set[str] = set()
+    for candidate in candidates:
+        chain = chains[candidate.id]
+
+        # 1. This book already owns a node in this chain: it is rewriting
+        #    itself. Fuse, and never re-adjudicate — a re-load must be free.
+        chosen = next(
+            (cid for cid in chain
+             if cid not in claimed
+             and cid in persisted
+             and book_id in persisted[cid].books),
+            None,
+        )
+
+        # 2. Otherwise every persisted homonym belongs to another book, and
+        #    fusing into one requires adjudication to approve it.
+        if chosen is None:
+            for cid in chain:
+                node = persisted.get(cid)
+                if node is None or cid in claimed:
+                    continue
+                if await adjudicate(
+                    CanonicalEntity(id=node.id, name=node.name, kind=node.kind,
+                                    aliases=node.aliases, book_ids=node.books),
+                    Mention(name=candidate.name, kind=candidate.kind,
+                            book_id=book_id, context=candidate.context),
+                ):
+                    chosen = cid
+                    break
+
+        # 3. Refused (or nothing to fuse with): take the next free slot, so
+        #    both entities survive as separate nodes with their own edges.
+        if chosen is None:
+            chosen = next(
+                (cid for cid in chain
+                 if cid not in persisted and cid not in claimed),
+                None,
+            )
+        if chosen is None:
+            raise RuntimeError(
+                f"more than {_MAX_HOMONYMS} distinct entities named"
+                f" {candidate.name!r} of kind {candidate.kind!r}; refusing"
+                " to load rather than fuse them silently"
+            )
+        claimed.add(chosen)
+        id_for[candidate.id] = chosen
+    return id_for, persisted
 
 
 def _run_in_transaction(kuzu: KuzuStore, statements: list[Statement]) -> None:
@@ -157,7 +307,7 @@ async def load_book(
     lance: LanceStore,
     book_id: str,
     embed: Callable[[list[str]], Awaitable[list[list[float]]]],
-    adjudicate,
+    adjudicate: Adjudicate,
 ) -> LoadReport:
     # ---- Phase 1: read and compute. No store is mutated below this line.
     dirs = completed_unit_dirs(conn, config, book_id)
@@ -169,13 +319,88 @@ async def load_book(
     chunks = chunks_for_book(conn, book_id)
     chapter_of = {chunk.id: chunk.chapter_seq for chunk in chunks}
 
-    resolution = await resolve_mentions(
-        _mentions_from(triplets, book_id), embed, adjudicate
-    )
+    mentions = _mentions_from(triplets, book_id)
+    resolution = await resolve_mentions(mentions, embed, adjudicate)
     predicate_map = await normalize_predicates(
         [str(row.get("predicate") or "") for row in triplets], embed
     )
-    entity_for = resolution.mention_map
+
+    # A representative context per entity, for adjudicating it against a
+    # node another book persisted. Picked in the resolver's own canonical
+    # order so it does not depend on artifact read order.
+    context_for: dict[str, str] = {}
+    for mention in sorted(
+        mentions, key=lambda m: (normalize_name(m.name), m.kind, m.context)
+    ):
+        target = resolution.mention_map.get(
+            (mention.name, mention.kind, mention.book_id)
+        )
+        if target is not None:
+            context_for.setdefault(target, mention.context)
+
+    candidates: list[_NodeCandidate] = [
+        _NodeCandidate(
+            id=entity.id,
+            base=_base_normalized(entity.id, entity.name, entity.kind,
+                                  entity.aliases),
+            name=entity.name, kind=entity.kind, aliases=entity.aliases,
+            books=entity.book_ids or (book_id,),
+            context=context_for.get(entity.id, ""),
+        )
+        for entity in resolution.entities
+    ]
+    alias_records = [
+        alias for alias in resolution.aliases if alias.alias_id != alias.canonical_id
+    ]
+    seen_ids = {candidate.id for candidate in candidates}
+    for alias in alias_records:
+        # An alias surface form only gets its own node if no canonical
+        # already claims that id.
+        if alias.alias_id in seen_ids:
+            continue
+        seen_ids.add(alias.alias_id)
+        candidates.append(_NodeCandidate(
+            id=alias.alias_id,
+            base=normalize_name(alias.alias_name),
+            name=alias.alias_name, kind=alias.kind,
+            books=(book_id,),
+            context=context_for.get(alias.canonical_id, ""),
+        ))
+
+    id_for, persisted = await _reconcile_ids(kuzu, book_id, candidates, adjudicate)
+
+    node_writes: dict[str, dict] = {}
+    for candidate in candidates:
+        target = id_for[candidate.id]
+        node = persisted.get(target)
+        # `node` is present only for a same-book rewrite or an approved
+        # cross-book merge; a refusal minted a fresh id, so nothing of the
+        # other book's entity leaks into it.
+        node_writes[target] = {
+            "id": target,
+            "name": _display_name(
+                [candidate.name] + ([node.name] if node and node.name else [])
+            ),
+            "kind": candidate.kind,
+            "aliases": sorted(set(candidate.aliases) | set(node.aliases if node else ())),
+            "books": sorted(set(candidate.books) | set(node.books if node else ())),
+        }
+
+    entity_for = {
+        key: id_for.get(target, target)
+        for key, target in resolution.mention_map.items()
+    }
+    alias_statements: list[Statement] = []
+    for alias in alias_records:
+        alias_target = id_for.get(alias.alias_id, alias.alias_id)
+        canonical_target = id_for.get(alias.canonical_id, alias.canonical_id)
+        if alias_target == canonical_target:
+            continue
+        alias_statements.append((
+            "MATCH (a:Entity {id: $alias}), (c:Entity {id: $canonical})"
+            " MERGE (a)-[:ALIAS_OF]->(c)",
+            {"alias": alias_target, "canonical": canonical_target},
+        ))
 
     # Surface form -> entity id, for a subject/object the row did not list
     # among its entity_names. First match wins: if the same surface name
@@ -212,6 +437,10 @@ async def load_book(
         subject_id = per_row.get(subject, by_surface.get(subject))
         object_id = per_row.get(obj, by_surface.get(obj))
         if subject_id is None or object_id is None:
+            # The row named an endpoint it did not list among its
+            # entity_names, so there is no entity to hang the edge on.
+            # Counted rather than silently lost.
+            report.dropped_edges += 1
             continue
         raw = str(row.get("predicate") or "")
         rel_statements.append((
@@ -230,37 +459,6 @@ async def load_book(
              "run": str(row.get("run_id") or "")},
         ))
     report.rel_edges = len(rel_statements)
-
-    # Entity node writes, canonicals first; an alias surface form only
-    # gets its own node if no canonical already claims that id.
-    node_writes: dict[str, dict] = {}
-    for entity in resolution.entities:
-        node_writes[entity.id] = {
-            "id": entity.id, "name": entity.name, "kind": entity.kind,
-            "aliases": list(entity.aliases),
-        }
-    alias_statements: list[Statement] = []
-    for alias in resolution.aliases:
-        if alias.alias_id == alias.canonical_id:
-            continue
-        if alias.alias_id not in node_writes:
-            node_writes[alias.alias_id] = {
-                "id": alias.alias_id, "name": alias.alias_name,
-                "kind": alias.kind, "aliases": [],
-            }
-        alias_statements.append((
-            "MATCH (a:Entity {id: $alias}), (c:Entity {id: $canonical})"
-            " MERGE (a)-[:ALIAS_OF]->(c)",
-            {"alias": alias.alias_id, "canonical": alias.canonical_id},
-        ))
-
-    existing = _existing_entities(kuzu, list(node_writes))
-    for entity_id_value, params in node_writes.items():
-        prior_name, prior_aliases = existing.get(entity_id_value, ("", []))
-        params["aliases"] = sorted(set(params["aliases"]) | set(prior_aliases))
-        params["name"] = _display_name(
-            [params["name"], prior_name] if prior_name else [params["name"]]
-        )
 
     statements: list[Statement] = [
         ("MATCH ()-[r:REL]->() WHERE r.book_id = $book DELETE r", {"book": book_id}),
@@ -295,7 +493,7 @@ async def load_book(
     for params in node_writes.values():
         statements.append((
             "MERGE (e:Entity {id: $id}) SET e.name = $name, e.kind = $kind,"
-            " e.aliases = $aliases",
+            " e.aliases = $aliases, e.books = $books",
             params,
         ))
     statements.extend(alias_statements)
@@ -327,6 +525,9 @@ async def load_book(
     # entity search live in the same space. An entity whose chunks carry
     # no embedding (e.g. its chunk_id is not in the artifacts) falls back
     # to embedding its name.
+    entity_targets = [
+        (entity, id_for.get(entity.id, entity.id)) for entity in resolution.entities
+    ]
     per_entity_vectors: dict[str, list[list[float]]] = {}
     for chunk_id, entity_ids in chunk_entities.items():
         vector = embeddings.get(chunk_id)
@@ -334,18 +535,23 @@ async def load_book(
             continue
         for entity_id_value in entity_ids:
             per_entity_vectors.setdefault(entity_id_value, []).append(vector)
-    uncovered = [e for e in resolution.entities if e.id not in per_entity_vectors]
+    uncovered = [
+        (entity, target) for entity, target in entity_targets
+        if target not in per_entity_vectors
+    ]
     fallback: dict[str, list[float]] = {}
     if uncovered:
-        vectors = await embed([entity.name for entity in uncovered])
+        vectors = await embed([entity.name for entity, _ in uncovered])
         fallback = {
-            entity.id: list(vector) for entity, vector in zip(uncovered, vectors)
+            target: list(vector)
+            for (_entity, target), vector in zip(uncovered, vectors)
         }
     lance_entity_rows = [
-        {"vector": (_centroid(per_entity_vectors[entity.id])
-                    if entity.id in per_entity_vectors else fallback[entity.id]),
-         "entity_id": entity.id, "name": entity.name, "kind": entity.kind}
-        for entity in resolution.entities
+        {"vector": (_centroid(per_entity_vectors[target])
+                    if target in per_entity_vectors else fallback[target]),
+         "entity_id": target,
+         "name": node_writes[target]["name"], "kind": entity.kind}
+        for entity, target in entity_targets
     ]
 
     # ---- Phase 2: the graph, under one transaction.
@@ -356,7 +562,7 @@ async def load_book(
         lance.delete_chunks_for_book(book_id)
         if lance_chunk_rows:
             lance.add_chunks(lance_chunk_rows)
-        lance.delete_entities([entity.id for entity in resolution.entities])
+        lance.delete_entities([target for _entity, target in entity_targets])
         if lance_entity_rows:
             lance.add_entities(lance_entity_rows)
     except Exception as exc:
