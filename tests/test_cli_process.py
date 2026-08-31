@@ -138,3 +138,44 @@ def test_graph_reports_empty_store(tmp_path: Path, monkeypatch) -> None:
     result = runner.invoke(app, ["graph"])
     assert result.exit_code == 0
     assert "0" in result.output
+
+
+def test_load_book_sync_closes_the_client_on_the_loop_it_used(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Regression: the provider close must share the load's event loop.
+
+    Every other test in this file patches `_load_book_sync` away, so a
+    second `asyncio.run()` around the close went unnoticed until a real
+    run — httpx binds its sockets to the running loop, and closing them
+    from a fresh loop raises "Event loop is closed" *after* the graph is
+    already committed, reporting `process failed` on a successful load.
+    """
+    import asyncio
+
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    seen: dict[str, object] = {}
+    report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
+                        chunks=1, mentions=1)
+
+    async def fake_load(*args, **kwargs):
+        seen["load"] = asyncio.get_running_loop()
+        return report
+
+    async def fake_aclose() -> None:
+        seen["close"] = asyncio.get_running_loop()
+
+    from lore.config import LoreConfig
+
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    with (
+        patch("lore.cli.load_book", fake_load),
+        patch("lore.cli.make_ollama_pair", return_value=(None, None, fake_aclose)),
+    ):
+        from lore.cli import _load_book_sync
+
+        result = _load_book_sync(config, None, BOOK)
+    assert result is report
+    assert seen["close"] is seen["load"]

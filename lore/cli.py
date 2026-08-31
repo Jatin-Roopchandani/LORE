@@ -216,12 +216,22 @@ def _load_book_sync(config: LoreConfig, conn, book_id: str):
     kuzu = KuzuStore(config.kuzu_dir / "graph")
     lance = LanceStore(config.lancedb_dir)
     embed, adjudicate, aclose = make_ollama_pair(config)
+
+    async def _run():
+        # The close MUST share the loop the requests ran on: httpx binds its
+        # sockets to the running loop, and closing them from a second
+        # asyncio.run() raises "Event loop is closed" *after* a successful
+        # load — turning a loaded graph into a spurious `process failed`.
+        try:
+            return await load_book(
+                config, conn, kuzu, lance, book_id, embed, adjudicate
+            )
+        finally:
+            await aclose()
+
     try:
-        return asyncio.run(
-            load_book(config, conn, kuzu, lance, book_id, embed, adjudicate)
-        )
+        return asyncio.run(_run())
     finally:
-        asyncio.run(aclose())
         kuzu.close()
 
 
