@@ -242,9 +242,10 @@ def process(
     config = LoreConfig.load()
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
+    extraction = None
     try:
         if not skip_extract:
-            run_extraction(
+            extraction = run_extraction(
                 config, conn, book_id, resume=resume,
                 on_event=lambda message: typer.echo(f"       {message}"),
             )
@@ -274,6 +275,19 @@ def process(
             f"{report.dropped_edges} edge(s) dropped — endpoint not among"
             " that row's entity_names"
         )
+    if extraction is not None and (extraction.units_failed or extraction.stopped_reason):
+        # The load above only ever reads completed units, so it is correct
+        # and worth keeping — but the graph it produced is partial, and a
+        # bare success line here would tell the user their book is in the
+        # graph when it is not. Say so, and never exit 0 for this.
+        reason = extraction.stopped_reason or f"{extraction.units_failed} unit(s) failed"
+        typer.echo(
+            f"extraction incomplete ({extraction.units_completed}/"
+            f"{extraction.units_total} units — {reason}): the graph above"
+            f" reflects only the units that completed. Rerun `lore process"
+            f" {book_id} --resume` to finish it."
+        )
+        raise typer.Exit(1)
 
 
 @app.command()

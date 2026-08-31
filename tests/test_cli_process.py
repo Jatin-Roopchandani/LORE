@@ -85,6 +85,53 @@ def test_process_reports_partial_load_and_does_not_claim_success(
     assert "entities" not in result.output.lower()
 
 
+def test_process_with_failed_units_does_not_claim_success(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """1 of 2 units failed: the load still runs (partial graph is useful),
+    but `process` must not print a bare success line at exit 0 — that
+    would tell the user their book is fully in the graph when it isn't.
+    """
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    report = LoadReport(book_id=BOOK, entities=4, alias_links=1, rel_edges=7,
+                        chunks=2, mentions=6)
+    extraction = RunReport(book_id=BOOK, units_total=2, units_completed=1,
+                           units_failed=1)
+    with (
+        patch("lore.cli.run_extraction", return_value=extraction) as extract,
+        patch("lore.cli._load_book_sync", return_value=report) as load,
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert extract.called and load.called
+    assert result.exit_code != 0, result.output
+    assert "--resume" in result.output
+    assert "incomplete" in result.output.lower()
+
+
+def test_process_with_quota_truncated_extraction_does_not_claim_success(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Quota exhausted after 1 of 5 units: same non-zero-exit requirement,
+    driven by `stopped_reason` rather than `units_failed`.
+    """
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
+                        chunks=1, mentions=1)
+    extraction = RunReport(book_id=BOOK, units_total=5, units_completed=1,
+                           stopped_reason="weekly GPU-hour quota exhausted")
+    with (
+        patch("lore.cli.run_extraction", return_value=extraction),
+        patch("lore.cli._load_book_sync", return_value=report),
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code != 0, result.output
+    assert "--resume" in result.output
+    assert "incomplete" in result.output.lower()
+    assert "quota exhausted" in result.output.lower()
+
+
 def test_graph_reports_empty_store(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
