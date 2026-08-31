@@ -11,6 +11,8 @@ from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.db.sqlite import open_db, schema_version
+from lore.graph.adjudicate import make_ollama_pair
+from lore.graph.loader import PartialLoadError, load_book
 from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
 from lore.ingest.models import IngestError, book_id_for_file
@@ -207,3 +209,94 @@ def quota() -> None:
         f"{report['week']}: {report['used_hours']:.2f}h used, "
         f"{report['remaining_hours']:.2f}h remaining across {report['runs']} run(s)"
     )
+
+
+def _load_book_sync(config: LoreConfig, conn, book_id: str):
+    """Own the event loop and the store handles for one load."""
+    kuzu = KuzuStore(config.kuzu_dir / "graph")
+    lance = LanceStore(config.lancedb_dir)
+    embed, adjudicate, aclose = make_ollama_pair(config)
+    try:
+        return asyncio.run(
+            load_book(config, conn, kuzu, lance, book_id, embed, adjudicate)
+        )
+    finally:
+        asyncio.run(aclose())
+        kuzu.close()
+
+
+@app.command()
+def process(
+    book_id: str,
+    resume: bool = typer.Option(False, "--resume", help="skip completed work units"),
+    skip_extract: bool = typer.Option(
+        False, "--skip-extract", help="reload the graph from existing artifacts"
+    ),
+) -> None:
+    """Extract, resolve entities, and load the graph for a book.
+
+    Note: even with --skip-extract, loading re-runs the resolver's
+    adjudication against whatever the graph already holds, so a reload
+    still does real LLM work — it is not free or instantaneous.
+    """
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        if not skip_extract:
+            run_extraction(
+                config, conn, book_id, resume=resume,
+                on_event=lambda message: typer.echo(f"       {message}"),
+            )
+        report = _load_book_sync(config, conn, book_id)
+    except PartialLoadError as exc:
+        # The graph committed but the vector write did not: the book is
+        # genuinely half-loaded. Never report success or mark it ready —
+        # a plain re-run repairs it because the load is idempotent.
+        typer.echo(f"process failed: {exc}")
+        typer.echo(
+            f"book {book_id} is NOT fully processed — re-run "
+            f"`lore process {book_id} --skip-extract` to repair it"
+        )
+        raise typer.Exit(1)
+    except (ValueError, RuntimeError) as exc:
+        typer.echo(f"process failed: {exc}")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+    typer.echo(
+        f"{report.book_id}: {report.entities} entities "
+        f"({report.alias_links} aliases merged), "
+        f"{report.rel_edges} relationships, {report.chunks} chunks indexed"
+    )
+    if report.dropped_edges:
+        typer.echo(
+            f"{report.dropped_edges} edge(s) dropped — endpoint not among"
+            " that row's entity_names"
+        )
+
+
+@app.command()
+def graph() -> None:
+    """Show what is in the knowledge graph."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    store = KuzuStore(config.kuzu_dir / "graph")
+    try:
+        for label in ("Book", "Chapter", "Chunk", "Entity"):
+            rows = list(store.execute(f"MATCH (n:{label}) RETURN COUNT(n)"))
+            typer.echo(f"{label:>8}: {rows[0][0] if rows else 0}")
+        for rel in ("REL", "MENTIONS", "ALIAS_OF"):
+            rows = list(store.execute(f"MATCH ()-[r:{rel}]->() RETURN COUNT(r)"))
+            typer.echo(f"{rel:>8}: {rows[0][0] if rows else 0}")
+        typer.echo("busiest entities:")
+        busiest = list(store.execute(
+            "MATCH (e:Entity)-[r:REL]-() RETURN e.name, COUNT(r) AS c"
+            " ORDER BY c DESC LIMIT 5"
+        ))
+        for row in busiest:
+            typer.echo(f"  {row[0]}  ({row[1]})")
+        if not busiest:
+            typer.echo("  (none — 0 relationships loaded)")
+    finally:
+        store.close()
