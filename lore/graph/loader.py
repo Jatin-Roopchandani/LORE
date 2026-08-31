@@ -5,6 +5,18 @@ another book survives a reload), while this book's REL and MENTIONS edges
 and its LanceDB chunk rows are deleted and rewritten, because
 re-extraction can legitimately change them.
 
+Entity rows are never written as if this book were their only writer:
+
+  * an entity this book wrote last time but does not write now is stale.
+    If this book was its only owner it is DETACH DELETEd from Kuzu and
+    dropped from LanceDB; if other books also claim it, only this book's
+    entry in `books` is removed and the node is kept.
+  * an entity's LanceDB vector is the centroid of EVERY chunk that
+    mentions it across EVERY book it belongs to. Other books' chunk rows
+    are read back from the persisted `chunks` table and this book's come
+    from the rows about to replace its own, so the value is exact and does
+    not depend on which book was loaded last.
+
 Cross-book identity — `entity_id` is a pure hash of (normalized name,
 kind) with no book in it, and `resolve_mentions` only ever sees one book's
 mentions per call, so "MERGE the node and move on" would silently fuse two
@@ -47,7 +59,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import islice
 
 from lore.config import LoreConfig
@@ -198,6 +210,27 @@ def _persisted_entities(
             "MATCH (e:Entity) WHERE e.id IN $ids"
             " RETURN e.id, e.name, e.kind, e.aliases, e.books",
             {"ids": wanted},
+        )
+    }
+
+
+def _entities_owned_by(kuzu: KuzuStore, book_id: str) -> dict[str, _PersistedEntity]:
+    """Every Entity node whose `books` currently names this book.
+
+    A re-extraction can drop an entity the previous load wrote. Without
+    this the node survives with no MENTIONS and no REL but still claiming
+    the book, and "who is in book X" answers with characters the book no
+    longer contains.
+    """
+    return {
+        row[0]: _PersistedEntity(
+            id=row[0], name=row[1], kind=row[2],
+            aliases=tuple(row[3] or ()), books=tuple(row[4] or ()),
+        )
+        for row in kuzu.execute(
+            "MATCH (e:Entity) WHERE list_contains(e.books, $book)"
+            " RETURN e.id, e.name, e.kind, e.aliases, e.books",
+            {"book": book_id},
         )
     }
 
@@ -386,6 +419,21 @@ async def load_book(
             "books": sorted(set(candidate.books) | set(node.books if node else ())),
         }
 
+    # An entity this book wrote last time but does not write now is stale.
+    # If this book was its only owner it goes away entirely; if it is
+    # shared, only this book's claim on it does.
+    orphan_ids: list[str] = []
+    released: dict[str, _PersistedEntity] = {}
+    for node_id, node in _entities_owned_by(kuzu, book_id).items():
+        if node_id in node_writes:
+            continue
+        remaining = tuple(book for book in node.books if book != book_id)
+        if remaining:
+            released[node_id] = replace(node, books=remaining)
+        else:
+            orphan_ids.append(node_id)
+    orphan_ids.sort()
+
     entity_for = {
         key: id_for.get(target, target)
         for key, target in resolution.mention_map.items()
@@ -464,9 +512,22 @@ async def load_book(
         ("MATCH ()-[r:REL]->() WHERE r.book_id = $book DELETE r", {"book": book_id}),
         ("MATCH (c:Chunk)-[m:MENTIONS]->() WHERE c.book_id = $book DELETE m",
          {"book": book_id}),
-        ("MERGE (b:Book {id: $id}) SET b.title = $title, b.author = $author",
-         {"id": book_id, "title": title, "author": author}),
     ]
+    # Sequenced before anything is written back: an orphan is detached and
+    # removed outright, a shared entity merely loses this book's claim.
+    for node_id in orphan_ids:
+        statements.append(
+            ("MATCH (e:Entity {id: $id}) DETACH DELETE e", {"id": node_id})
+        )
+    for node_id in sorted(released):
+        statements.append((
+            "MATCH (e:Entity {id: $id}) SET e.books = $books",
+            {"id": node_id, "books": list(released[node_id].books)},
+        ))
+    statements.append(
+        ("MERGE (b:Book {id: $id}) SET b.title = $title, b.author = $author",
+         {"id": book_id, "title": title, "author": author})
+    )
     for chapter_seq in sorted({chunk.chapter_seq for chunk in chunks}):
         chapter_id = f"{book_id}:{chapter_seq}"
         statements.append((
@@ -520,38 +581,63 @@ async def load_book(
         if chunk.id in embeddings
     ]
 
-    # An entity's vector is the centroid of the chunks that mention it —
-    # every one of them, across chapters — so a passage search and an
-    # entity search live in the same space. An entity whose chunks carry
-    # no embedding (e.g. its chunk_id is not in the artifacts) falls back
-    # to embedding its name.
-    entity_targets = [
-        (entity, id_for.get(entity.id, entity.id)) for entity in resolution.entities
-    ]
-    per_entity_vectors: dict[str, list[list[float]]] = {}
-    for chunk_id, entity_ids in chunk_entities.items():
-        vector = embeddings.get(chunk_id)
-        if vector is None:
-            continue
-        for entity_id_value in entity_ids:
-            per_entity_vectors.setdefault(entity_id_value, []).append(vector)
-    uncovered = [
-        (entity, target) for entity, target in entity_targets
-        if target not in per_entity_vectors
-    ]
+    # An entity's vector is the centroid of EVERY chunk that mentions it,
+    # across every book it belongs to — not just this load's. A shared
+    # entity written from only the book in hand would flap between the
+    # books' means depending on which loaded last.
+    #
+    # The other books' contributions are read from the persisted `chunks`
+    # rows (authoritative and untouched by this load); this book's come
+    # from the rows about to replace its own. That is arithmetically the
+    # same as reading the table after the write, but keeps every value
+    # computed before phase 2 — nothing here mutates a store.
+    entity_rows: dict[str, dict] = {
+        target: {"name": params["name"], "kind": params["kind"],
+                 "books": params["books"]}
+        for target, params in node_writes.items()
+    }
+    for node_id, node in released.items():
+        entity_rows[node_id] = {"name": node.name, "kind": node.kind,
+                                "books": list(node.books)}
+
+    other_books = {
+        book for params in entity_rows.values() for book in params["books"]
+    } - {book_id}
+    # (chunk_id, vector) per entity, so the mean is summed in a fixed order
+    # and comes out bit-identical whichever book was loaded first.
+    per_entity_vectors: dict[str, list[tuple[str, list[float]]]] = {}
+    for chunk_id, chunk_entity_ids, vector in lance.chunk_entity_vectors(
+        sorted(other_books)
+    ):
+        for entity_id_value in chunk_entity_ids:
+            if entity_id_value in entity_rows:
+                per_entity_vectors.setdefault(entity_id_value, []).append(
+                    (chunk_id, list(vector))
+                )
+    for chunk_row in lance_chunk_rows:
+        for entity_id_value in chunk_row["entity_ids"]:
+            if entity_id_value in entity_rows:
+                per_entity_vectors.setdefault(entity_id_value, []).append(
+                    (chunk_row["chunk_id"], chunk_row["vector"])
+                )
+
+    # An entity no chunk embedding covers falls back to embedding its name.
+    uncovered = sorted(
+        target for target in entity_rows if target not in per_entity_vectors
+    )
     fallback: dict[str, list[float]] = {}
     if uncovered:
-        vectors = await embed([entity.name for entity, _ in uncovered])
+        vectors = await embed([entity_rows[t]["name"] for t in uncovered])
         fallback = {
-            target: list(vector)
-            for (_entity, target), vector in zip(uncovered, vectors)
+            target: list(vector) for target, vector in zip(uncovered, vectors)
         }
     lance_entity_rows = [
-        {"vector": (_centroid(per_entity_vectors[target])
-                    if target in per_entity_vectors else fallback[target]),
+        {"vector": (
+            _centroid([v for _cid, v in sorted(per_entity_vectors[target])])
+            if target in per_entity_vectors else fallback[target]),
          "entity_id": target,
-         "name": node_writes[target]["name"], "kind": entity.kind}
-        for entity, target in entity_targets
+         "name": params["name"], "kind": params["kind"]}
+        for target, params in sorted(entity_rows.items())
     ]
 
     # ---- Phase 2: the graph, under one transaction.
@@ -562,7 +648,8 @@ async def load_book(
         lance.delete_chunks_for_book(book_id)
         if lance_chunk_rows:
             lance.add_chunks(lance_chunk_rows)
-        lance.delete_entities([target for _entity, target in entity_targets])
+        # Orphans go for good; everything being rewritten is replaced.
+        lance.delete_entities(orphan_ids + sorted(entity_rows))
         if lance_entity_rows:
             lance.add_entities(lance_entity_rows)
     except Exception as exc:

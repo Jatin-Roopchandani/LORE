@@ -183,33 +183,46 @@ def _row(chunk_id, book_id, subject, predicate, obj, names, kinds, evidence="ev"
     }
 
 
-def _add_book(config, conn, book_id, chunks, triplet_rows, *, embedded=None,
-              title=None):
+def _write_unit(config, book_id, triplet_rows, chunk_ids, firsts=None):
+    """(Re)write a unit's artifacts — used to simulate a re-extraction."""
     unit = f"{book_id}-u0000-aaaa"
-    ingest_book(conn, book_id=book_id, title=title or f"title-{book_id}",
-                author="A", source="upload", file_path=f"/x/{book_id}.epub",
-                chunks=chunks)
     d = config.extractions_dir / book_id / unit
     d.mkdir(parents=True, exist_ok=True)
     pq.write_table(
         pa.Table.from_pylist(triplet_rows, schema=_TRIPLET_SCHEMA),
         d / "triplets.parquet",
     )
-    ids = [c.id for c in chunks] if embedded is None else embedded
+    if firsts is None:
+        firsts = [float(i + 1) for i in range(len(chunk_ids))]
     pq.write_table(
         pa.Table.from_pylist(
             [
                 {"chunk_id": cid,
-                 "vector": [float(i + 1)] + [0.0] * (EMBED_DIM - 1),
+                 "vector": [first] + [0.0] * (EMBED_DIM - 1),
                  "embed_model": "e"}
-                for i, cid in enumerate(ids)
+                for cid, first in zip(chunk_ids, firsts)
             ],
             schema=_EMBED_SCHEMA,
         ),
         d / "embeddings.parquet",
     )
+    return unit
+
+
+def _add_book(config, conn, book_id, chunks, triplet_rows, *, embedded=None,
+              title=None, firsts=None):
+    ingest_book(conn, book_id=book_id, title=title or f"title-{book_id}",
+                author="A", source="upload", file_path=f"/x/{book_id}.epub",
+                chunks=chunks)
+    ids = [c.id for c in chunks] if embedded is None else embedded
+    unit = _write_unit(config, book_id, triplet_rows, ids, firsts)
     set_unit_state(conn, book_id, unit, "completed")
     return unit
+
+
+def _entity_vectors(config) -> dict[str, list[float]]:
+    table = lancedb.connect(str(config.lancedb_dir)).open_table("entities")
+    return {r["entity_id"]: list(r["vector"]) for r in table.to_arrow().to_pylist()}
 
 
 def _chunk(book_id, chapter, seq, text="passage"):
@@ -663,4 +676,158 @@ async def test_dropped_edges_are_counted(tmp_path: Path) -> None:
     report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     assert report.rel_edges == 1
     assert report.dropped_edges == 2  # unknown subject, then unknown object
+    conn.close(); kuzu.close()
+
+
+# --------------------------------------------------------------------------
+# Fix round 2: the LoadReport must agree with what is actually in the stores.
+# --------------------------------------------------------------------------
+
+
+async def _load_two_captains_merged(tmp_path: Path, order: list[str]):
+    """A's chunk vector is 10.0, B's is 20.0, and the merge is approved."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "the Captain", "OPPOSES", "Bo",
+             ["the Captain", "Bo"], ["Character", "Character"]),
+    ], firsts=[10.0])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "the Captain", "LOVES", "Zed",
+             ["the Captain", "Zed"], ["Character", "Character"]),
+    ], firsts=[20.0])
+    spy = _AdjudicateSpy(True)
+    for book in order:
+        await load_book(config, conn, kuzu, lance, book, _embed, spy)
+    return config, conn, kuzu, lance
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", [[BOOK, BOOK_B], [BOOK_B, BOOK]])
+async def test_merged_entity_centroid_is_the_true_mean(
+    tmp_path: Path, order: list[str]
+) -> None:
+    config, conn, kuzu, lance = await _load_two_captains_merged(tmp_path, order)
+    captains = _captains(kuzu)
+    assert len(captains) == 1
+    assert captains[0][1] == tuple(sorted((BOOK, BOOK_B)))
+    vectors = _entity_vectors(config)
+    # 10.0 from book A's chunk, 20.0 from book B's — the mean is 15.0, and
+    # it must not depend on which book was loaded last.
+    assert vectors[captains[0][0]][0] == pytest.approx(15.0)
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_merged_centroid_survives_a_reload_of_either_book(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = await _load_two_captains_merged(
+        tmp_path, [BOOK, BOOK_B]
+    )
+    captain = _captains(kuzu)[0][0]
+    spy = _AdjudicateSpy(True)
+    for book in (BOOK, BOOK_B, BOOK, BOOK_B):
+        await load_book(config, conn, kuzu, lance, book, _embed, spy)
+        assert _entity_vectors(config)[captain][0] == pytest.approx(15.0)
+    assert spy.calls == []  # both books already own the node
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_reload_after_reextraction_drops_stale_entities(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    chunks = [_chunk(BOOK, 1, 0), _chunk(BOOK, 1, 1)]
+    both = [
+        _row(chunks[0].id, BOOK, "Ana", "LOVES", "Bo", ["Ana", "Bo"],
+             ["Character", "Character"]),
+        _row(chunks[1].id, BOOK, "Cy", "OPPOSES", "Dee", ["Cy", "Dee"],
+             ["Character", "Character"]),
+    ]
+    _add_book(config, conn, BOOK, chunks, both)
+    first = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert first.entities == 4
+    assert lance.count("entities") == 4
+
+    # Re-extract: Cy and Dee are gone from the artifacts.
+    _write_unit(config, BOOK, both[:1], [c.id for c in chunks])
+    report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+
+    assert report.entities == 2
+    names = sorted(r[0] for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.name"))
+    assert names == ["Ana", "Bo"]  # no orphaned Cy/Dee nodes left behind
+    assert lance.count("entities") == 2
+    assert _entity_vectors(config).keys() == {
+        r[0] for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.id")
+    }
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_shared_entity_survives_reload_with_this_book_removed(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0), _chunk(BOOK, 1, 1)]
+    a_rows = [
+        _row(a[0].id, BOOK, "the Captain", "OPPOSES", "Bo",
+             ["the Captain", "Bo"], ["Character", "Character"]),
+        _row(a[1].id, BOOK, "Ana", "LOVES", "Bo", ["Ana", "Bo"],
+             ["Character", "Character"]),
+    ]
+    _add_book(config, conn, BOOK, a, a_rows, firsts=[10.0, 30.0])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "the Captain", "LOVES", "Zed",
+             ["the Captain", "Zed"], ["Character", "Character"]),
+    ], firsts=[20.0])
+    spy = _AdjudicateSpy(True)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    captain = _captains(kuzu)[0][0]
+    assert _entity_vectors(config)[captain][0] == pytest.approx(15.0)
+
+    # Re-extract book A without the Captain.
+    _write_unit(config, BOOK, a_rows[1:], [c.id for c in a], firsts=[10.0, 30.0])
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+
+    survivors = sorted(
+        (r[0], r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.id, e.name, e.books")
+    )
+    captains = [s for s in survivors if s[1] == "the Captain"]
+    assert len(captains) == 1                    # retained, not deleted
+    assert captains[0][2] == (BOOK_B,)           # this book removed from books
+    # Recomputed over book B's chunk alone.
+    assert _entity_vectors(config)[captain][0] == pytest.approx(20.0)
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_stale_entity_removal_is_inside_the_transaction(
+    tmp_path: Path,
+) -> None:
+    """A failure after the orphan deletes must put the orphans back."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    chunks = [_chunk(BOOK, 1, 0), _chunk(BOOK, 1, 1)]
+    both = [
+        _row(chunks[0].id, BOOK, "Ana", "LOVES", "Bo", ["Ana", "Bo"],
+             ["Character", "Character"]),
+        _row(chunks[1].id, BOOK, "Cy", "OPPOSES", "Dee", ["Cy", "Dee"],
+             ["Character", "Character"]),
+    ]
+    _add_book(config, conn, BOOK, chunks, both)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    before = _snapshot(kuzu, lance)
+    assert len(before["entities"]) == 4
+
+    # Re-extract without Cy/Dee, then fail after the DETACH DELETEs have run.
+    _write_unit(config, BOOK, both[:1], [c.id for c in chunks])
+    failing = _KuzuFailingOn(kuzu, "CREATE (s)-[:REL", nth=1)
+    with pytest.raises(RuntimeError, match="injected mid-write failure"):
+        await load_book(config, conn, failing, lance, BOOK, _embed, _never)
+    assert _snapshot(kuzu, lance) == before  # Cy and Dee are back
     conn.close(); kuzu.close()

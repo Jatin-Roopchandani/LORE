@@ -48,6 +48,35 @@ class LanceStore:
     def add_entities(self, rows: list[dict]) -> None:
         self._db.open_table("entities").add(rows)
 
+    def chunk_entity_vectors(
+        self, book_ids: list[str]
+    ) -> list[tuple[str, list[str], list[float]]]:
+        """(chunk_id, entity_ids, vector) for every chunk row in these books.
+
+        The graph loader recomputes an entity's centroid from every chunk
+        that mentions it, which for an entity shared between books means
+        chunk rows another book wrote. `limit(None)` is explicit: a query
+        builder default would silently truncate a long book to its first
+        page of chunks and produce a quietly wrong centroid.
+        """
+        if not book_ids:
+            return []
+        quoted = ", ".join(
+            "'" + b.replace("'", "''") + "'" for b in sorted(set(book_ids))
+        )
+        rows = (
+            self._db.open_table("chunks")
+            .search()
+            .where(f"book_id IN ({quoted})")
+            .select(["chunk_id", "entity_ids", "vector"])
+            .limit(None)
+            .to_list()
+        )
+        return [
+            (row["chunk_id"], list(row["entity_ids"] or []), list(row["vector"]))
+            for row in rows
+        ]
+
     def delete_chunks_for_book(self, book_id: str) -> None:
         escaped = book_id.replace("'", "''")
         self._db.open_table("chunks").delete(f"book_id = '{escaped}'")
