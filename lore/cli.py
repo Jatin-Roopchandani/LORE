@@ -285,8 +285,8 @@ def process(
     )
     if report.dropped_edges:
         typer.echo(
-            f"{report.dropped_edges} edge(s) dropped — endpoint not among"
-            " that row's entity_names"
+            f"{report.dropped_edges} edge(s) dropped — an endpoint was named"
+            " nowhere in the book"
         )
     if extraction is not None:
         # Always, the way `extract` does. "N chunks indexed" above is the
