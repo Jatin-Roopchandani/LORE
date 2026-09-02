@@ -155,3 +155,23 @@ def test_empty_but_present_parquet_reads_as_no_rows(tmp_path: Path) -> None:
     assert {r["chunk_id"] for r in triplets} == {"c0"}
     assert len(embeddings) == 1
     conn.close()
+
+
+def test_completed_job_with_a_null_detail_raises_a_diagnosis(
+    tmp_path: Path,
+) -> None:
+    """`detail` holds the unit id. A NULL one used to reach `base / None`
+    and surface as a bare TypeError — a LORE crash, not a diagnosis."""
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed_book(conn)
+    conn.execute(
+        "INSERT INTO jobs (kind, book_id, state, detail)"
+        " VALUES ('extract_unit', ?, 'completed', NULL)",
+        (BOOK,),
+    )
+    conn.commit()
+    with pytest.raises(MissingArtifactError, match=BOOK):
+        completed_unit_dirs(conn, config, BOOK)
+    conn.close()

@@ -39,6 +39,16 @@ def completed_unit_dirs(
     base = config.extractions_dir / book_id
     dirs: list[Path] = []
     for (unit_id,) in rows:
+        if not unit_id:
+            # `detail` holds the unit id and is minted by `pack_units`, so
+            # a NULL one means the row was written by something else. Left
+            # alone it reached `base / None` and surfaced as a bare
+            # TypeError — a LORE crash rather than a diagnosis.
+            raise MissingArtifactError(
+                f"a completed {JOB_KIND!r} job for book {book_id} has no unit"
+                " id in its `detail` column, so its artifacts cannot be"
+                " located. The jobs table is corrupt for this book."
+            )
         d = base / unit_id
         if not d.is_dir():
             raise MissingArtifactError(
