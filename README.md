@@ -16,6 +16,9 @@ See `SPEC.md` for the full design. Phase 0 status: foundation scaffold.
     uv run lore books             # list the ingested library
     uv run lore extract <book_id> # extract entities + relationships (Kaggle T4s)
     uv run lore extract <book_id> --resume   # continue after an interrupted run
+    uv run lore process <book_id> # extract, resolve entities, load the graph
+    uv run lore process <book_id> --skip-extract   # reload the graph only
+    uv run lore graph             # node/edge counts and the busiest entities
     uv run lore quota             # this week's free-tier GPU budget
 
 Set `extraction_provider = "ollama"` in `lore.toml` for fully local,
