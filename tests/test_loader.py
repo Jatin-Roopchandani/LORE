@@ -1,3 +1,6 @@
+import hashlib
+import itertools
+import re
 from pathlib import Path
 
 import lancedb
@@ -830,4 +833,148 @@ async def test_stale_entity_removal_is_inside_the_transaction(
     with pytest.raises(RuntimeError, match="injected mid-write failure"):
         await load_book(config, conn, failing, lance, BOOK, _embed, _never)
     assert _snapshot(kuzu, lance) == before  # Cy and Dee are back
+    conn.close(); kuzu.close()
+
+
+# --------------------------------------------------------------------------
+# Final fix round, item 1: the loader must not reintroduce order-dependence.
+#
+# `resolve_mentions` is a function of the mention SET. `_mentions_from` used
+# to hand it a set whose per-mention `context` was the FIRST row's evidence,
+# so permuting a unit's triplet rows — which a `--resume` rerun or a changed
+# `work_unit_size` legitimately does — changed the resolver's sort key, the
+# pass-2 embedding text and the pass-3 prompt, and therefore the graph.
+# --------------------------------------------------------------------------
+
+# Two evidences with almost no vocabulary in common. Under the token-set
+# embedder below, a mention carrying `_SHARED_EV` sits above the resolver's
+# same-book floor against the Captain (whose only evidence is `_SHARED_EV`),
+# and one carrying `_OTHER_EV` sits below its reject floor — so which of a
+# row's evidences becomes an entity's context decides whether two entities
+# merge, with no LLM anywhere in the loop.
+_SHARED_EV = (
+    "the wind tore across the open deck while ropes snapped and sails"
+    " cracked overhead"
+)
+_OTHER_EV = (
+    "a quiet garden of flowers where tea and cake waited on a painted table"
+)
+
+
+def _content_vector(text: str) -> list[float]:
+    """A deterministic, purely content-derived embedding: a token indicator.
+
+    cosine(a, b) is then |A∩B| / sqrt(|A|·|B|), so a fixture can place a
+    pair of mentions deliberately above or below a resolver floor without
+    calling a model.
+    """
+    vector = [0.0] * EMBED_DIM
+    for token in re.findall(r"\w+", text.lower()):
+        vector[int(hashlib.sha1(token.encode()).hexdigest(), 16) % EMBED_DIM] = 1.0
+    return vector
+
+
+async def _content_embed(texts):
+    return [_content_vector(text) for text in texts]
+
+
+def _chunk_bridge(config) -> list[tuple[str, list[str]]]:
+    """Each chunk's LanceDB `entity_ids`, the Phase 3 retrieval filter."""
+    table = lancedb.connect(str(config.lancedb_dir)).open_table("chunks")
+    return sorted(
+        (row["chunk_id"], sorted(row["entity_ids"]))
+        for row in table.to_arrow().to_pylist()
+    )
+
+
+def _order_fixture(chunks):
+    """Four rows over one book. Vane is named by two rows carrying different
+    evidence, so the old first-row-wins context was permutation-dependent."""
+    return [
+        _row(chunks[0].id, BOOK, "the Captain", "COMMANDS", "Ship",
+             ["the Captain", "Ship"], ["Character", "Vessel"],
+             evidence=_SHARED_EV),
+        _row(chunks[1].id, BOOK, "Vane", "OWNS", "Sword",
+             ["Vane", "Sword"], ["Character", "Weapon"], evidence=_SHARED_EV),
+        _row(chunks[2].id, BOOK, "Vane", "LIKES", "Tea",
+             ["Vane", "Tea"], ["Character", "Drink"], evidence=_OTHER_EV),
+        _row(chunks[3].id, BOOK, "Anna", "READS", "Book",
+             ["Anna", "Book"], ["Character", "Tome"],
+             evidence="a still page turned in the lamplit study"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_triplet_row_order_never_changes_the_graph(tmp_path: Path) -> None:
+    """All 24 orderings of one triplet set must load to one identical graph."""
+    snapshots: list[tuple[tuple[int, ...], dict]] = []
+    for index, permutation in enumerate(itertools.permutations(range(4))):
+        config, conn, kuzu, lance = _env(tmp_path / f"perm{index}")
+        chunks = [_chunk(BOOK, 1, i) for i in range(4)]
+        rows = _order_fixture(chunks)
+        _add_book(config, conn, BOOK, chunks, [rows[i] for i in permutation])
+        report = await load_book(
+            config, conn, kuzu, lance, BOOK, _content_embed, _never
+        )
+        snapshot = _snapshot(kuzu, lance)
+        snapshot["bridge"] = _chunk_bridge(config)
+        snapshot["report"] = (report.entities, report.alias_links,
+                              report.rel_edges, report.mentions,
+                              report.dropped_edges)
+        snapshots.append((permutation, snapshot))
+        conn.close(); kuzu.close()
+
+    baseline = snapshots[0][1]
+    differing = [p for p, s in snapshots if s != baseline]
+    assert not differing, (
+        f"{len(differing)} of {len(snapshots)} row orderings produced a"
+        f" different graph, e.g. {differing[0]}:\n"
+        f"  baseline entities: {baseline['entities']}\n"
+        f"  variant  entities: "
+        f"{dict(snapshots)[differing[0]]['entities']}"
+    )
+
+
+# --------------------------------------------------------------------------
+# Final fix round, item 2: a REL edge's endpoints must be MENTIONed by the
+# chunk the edge hangs on. `by_surface` is book-global, so a row whose
+# subject is absent from its OWN entity_names still gets an edge; the
+# endpoint is already resolved, so the mention is added rather than the
+# faithfully-extracted edge dropped.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_edge_endpoints_are_always_mentioned_by_their_chunk(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    chunks = [_chunk(BOOK, 1, 0), _chunk(BOOK, 1, 1)]
+    _add_book(config, conn, BOOK, chunks, [
+        _row(chunks[0].id, BOOK, "Ana", "LOVES", "Cy", ["Ana", "Cy"],
+             ["Character", "Character"]),
+        # Chunk 1 names only Cy, but still carries an Ana -> Cy edge.
+        _row(chunks[1].id, BOOK, "Ana", "LOVES", "Cy", ["Cy"], ["Character"]),
+    ])
+    report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert (report.rel_edges, report.dropped_edges) == (2, 0)
+
+    mentions = set(_rows(
+        kuzu, "MATCH (c:Chunk)-[:MENTIONS]->(e:Entity) RETURN c.id, e.id"))
+    edges = _rows(
+        kuzu,
+        "MATCH (a:Entity)-[r:REL]->(b:Entity) RETURN a.id, b.id, r.chunk_id",
+    )
+    assert len(edges) == 2
+    for subject_id, object_id, chunk_id in edges:
+        assert (chunk_id, subject_id) in mentions, "subject not MENTIONed"
+        assert (chunk_id, object_id) in mentions, "object not MENTIONed"
+    assert report.mentions == len(mentions)
+
+    # The same coverage must reach LanceDB, or entity-filtered vector
+    # retrieval cannot return the chunk that evidences the edge.
+    ids = {name: eid for name, eid in _rows(
+        kuzu, "MATCH (e:Entity) RETURN e.name, e.id")}
+    bridge = dict(_chunk_bridge(config))
+    assert bridge[chunks[1].id] == sorted([ids["Ana"], ids["Cy"]])
     conn.close(); kuzu.close()

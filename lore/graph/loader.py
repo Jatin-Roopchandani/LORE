@@ -73,6 +73,7 @@ from lore.resolve.resolver import (
     Adjudicate,
     CanonicalEntity,
     Mention,
+    display_name,
     entity_id_chain,
     resolve_mentions,
 )
@@ -128,16 +129,6 @@ class _NodeCandidate:
     context: str = ""
 
 
-def _display_name(candidates: Iterable[str]) -> str:
-    """The longest surface form, ties broken alphabetically.
-
-    The same rule `lore.resolve.resolver` uses, applied again here so that
-    merging with a name already on the node is content-derived rather than
-    load-order-derived.
-    """
-    return sorted(candidates, key=lambda s: (-len(s), s))[0]
-
-
 def _base_normalized(node_id: str, name: str, kind: str, aliases: tuple) -> str:
     """The normalized string whose hash produced `node_id`.
 
@@ -171,20 +162,37 @@ def _named_kinds(row: dict) -> list[tuple[str, str]]:
 
 
 def _mentions_from(rows: list[dict], book_id: str) -> list[Mention]:
-    """One Mention per (name, kind) pair a triplet row names, with its
-    evidence as local context for the embedding pass."""
-    seen: set[tuple[str, str]] = set()
-    mentions: list[Mention] = []
+    """One Mention per (name, kind) pair the triplet rows name, with an
+    evidence sentence as local context for the embedding pass.
+
+    The context must be derived from the CONTENT of the rows, never from
+    their order. `resolve_mentions` is deliberately a function of the
+    mention SET — it sorts by (book, normalized name, kind, context)
+    before doing anything — and that context also feeds the pass-2
+    embedding text and the pass-3 prompt. Keeping "whichever row happened
+    to come first" would make the whole resolution a function of the input
+    sequence again: a `--resume` rerun of one unit, or a changed
+    `work_unit_size` moving unit boundaries, reorders rows and would then
+    silently produce a different graph from identical data.
+
+    Of the two content-derived choices, the lexicographically smallest
+    evidence is used rather than a concatenation of all of them: it is
+    a single real sentence of bounded length, so it neither grows with
+    corpus size nor risks being truncated by the embedder's context
+    window — a truncation that would quietly reintroduce a dependence on
+    which evidences happened to land inside the window.
+    """
+    contexts: dict[tuple[str, str], str] = {}
     for row in rows:
-        for name, kind in _named_kinds(row):
-            if (name, kind) in seen:
-                continue
-            seen.add((name, kind))
-            mentions.append(
-                Mention(name=name, kind=kind, book_id=book_id,
-                        context=str(row.get("evidence") or ""))
-            )
-    return mentions
+        evidence = str(row.get("evidence") or "")
+        for pair in _named_kinds(row):
+            current = contexts.get(pair)
+            if current is None or evidence < current:
+                contexts[pair] = evidence
+    return [
+        Mention(name=name, kind=kind, book_id=book_id, context=context)
+        for (name, kind), context in sorted(contexts.items())
+    ]
 
 
 def _centroid(vectors: list[list[float]]) -> list[float]:
@@ -195,23 +203,34 @@ def _centroid(vectors: list[list[float]]) -> list[float]:
     return [value / len(vectors) for value in total]
 
 
-def _persisted_entities(
-    kuzu: KuzuStore, ids: Iterable[str]
+def _entities_where(
+    kuzu: KuzuStore, predicate: str, params: dict
 ) -> dict[str, _PersistedEntity]:
-    wanted = sorted(set(ids))
-    if not wanted:
-        return {}
+    """Every Entity node matching `predicate`, by id.
+
+    The two callers below differ only in that WHERE clause, so the row
+    shape and its unpacking live here once.
+    """
     return {
         row[0]: _PersistedEntity(
             id=row[0], name=row[1], kind=row[2],
             aliases=tuple(row[3] or ()), books=tuple(row[4] or ()),
         )
         for row in kuzu.execute(
-            "MATCH (e:Entity) WHERE e.id IN $ids"
+            f"MATCH (e:Entity) WHERE {predicate}"
             " RETURN e.id, e.name, e.kind, e.aliases, e.books",
-            {"ids": wanted},
+            params,
         )
     }
+
+
+def _persisted_entities(
+    kuzu: KuzuStore, ids: Iterable[str]
+) -> dict[str, _PersistedEntity]:
+    wanted = sorted(set(ids))
+    if not wanted:
+        return {}
+    return _entities_where(kuzu, "e.id IN $ids", {"ids": wanted})
 
 
 def _entities_owned_by(kuzu: KuzuStore, book_id: str) -> dict[str, _PersistedEntity]:
@@ -222,17 +241,9 @@ def _entities_owned_by(kuzu: KuzuStore, book_id: str) -> dict[str, _PersistedEnt
     the book, and "who is in book X" answers with characters the book no
     longer contains.
     """
-    return {
-        row[0]: _PersistedEntity(
-            id=row[0], name=row[1], kind=row[2],
-            aliases=tuple(row[3] or ()), books=tuple(row[4] or ()),
-        )
-        for row in kuzu.execute(
-            "MATCH (e:Entity) WHERE list_contains(e.books, $book)"
-            " RETURN e.id, e.name, e.kind, e.aliases, e.books",
-            {"book": book_id},
-        )
-    }
+    return _entities_where(
+        kuzu, "list_contains(e.books, $book)", {"book": book_id}
+    )
 
 
 async def _reconcile_ids(
@@ -411,7 +422,7 @@ async def load_book(
         # other book's entity leaks into it.
         node_writes[target] = {
             "id": target,
-            "name": _display_name(
+            "name": display_name(
                 [candidate.name] + ([node.name] if node and node.name else [])
             ),
             "kind": candidate.kind,
@@ -485,11 +496,21 @@ async def load_book(
         subject_id = per_row.get(subject, by_surface.get(subject))
         object_id = per_row.get(obj, by_surface.get(obj))
         if subject_id is None or object_id is None:
-            # The row named an endpoint it did not list among its
-            # entity_names, so there is no entity to hang the edge on.
-            # Counted rather than silently lost.
+            # No mention of this endpoint anywhere in the book, so there is
+            # no entity to hang the edge on. Counted rather than silently
+            # lost — `dropped_edges` keeps meaning exactly this.
             report.dropped_edges += 1
             continue
+        # `by_surface` is book-global, so an endpoint resolved through it
+        # may be absent from this row's own entity_names — but the edge is
+        # about to be written against this chunk, and `chunk_entities` is
+        # the source of both MENTIONS and LanceDB's `entity_ids`. Leaving
+        # it out would hang an edge on a chunk that does not mention its
+        # own endpoint, and Phase 3's entity-filtered vector retrieval
+        # would fail to return the chunk that evidences the edge. The
+        # endpoint is already resolved, so the mention is added rather
+        # than the faithfully-extracted edge dropped.
+        chunk_entities.setdefault(chunk_id, set()).update((subject_id, object_id))
         raw = str(row.get("predicate") or "")
         rel_statements.append((
             "MATCH (s:Entity {id: $s}), (o:Entity {id: $o})"
