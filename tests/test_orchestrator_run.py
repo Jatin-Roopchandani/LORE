@@ -36,6 +36,13 @@ def _config(tmp_path: Path) -> LoreConfig:
     return config.model_copy(
         update={
             "data_dir": tmp_path / "data",
+            # Pinned, not inherited: `LoreConfig.load()` reads the working
+            # tree's lore.toml, and every test in this file exercises the
+            # Kaggle dispatch path. Setting `extraction_provider = "ollama"`
+            # there — a documented, supported knob — otherwise rerouted
+            # `run_extraction` to the local path, wrote no quota rows, and
+            # failed nine unrelated tests on an empty quota_ledger.
+            "extraction_provider": "kaggle",
             "kaggle": config.kaggle.model_copy(update={"username": "realuser"}),
             "extraction": config.extraction.model_copy(update={"work_unit_size": 2}),
         }
