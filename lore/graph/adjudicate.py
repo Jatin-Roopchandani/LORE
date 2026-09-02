@@ -13,7 +13,7 @@ from lore.inference.ollama import OllamaProvider
 _TEMPLATE = """Two names appear in a book. Decide whether they refer to the \
 SAME entity.
 
-A: {a_name} ({a_kind}) — evidence: {a_evidence}
+A: {a_name} ({a_kind}) — other names it is known by: {a_aliases}
 B: {b_name} ({b_kind}) — evidence: {b_evidence}
 
 Answer with one word: yes or no."""
@@ -31,15 +31,22 @@ def make_ollama_pair(config: LoreConfig):
 
     async def adjudicate(canonical, mention) -> bool:
         prompt = _TEMPLATE.format(
+            # A is a CanonicalEntity: it carries no context, only the
+            # normalized surface forms already merged into it. Say that,
+            # rather than labelling them "evidence" the model never got.
             a_name=canonical.name, a_kind=canonical.kind,
-            a_evidence=", ".join(canonical.aliases) or "(none)",
+            a_aliases=", ".join(canonical.aliases) or "(none)",
             b_name=mention.name, b_kind=mention.kind,
             b_evidence=mention.context or "(none)",
         )
         response = await provider._client.post(
             "/api/chat",
+            # temperature 0: Ollama defaults to 0.8, which would make a
+            # merge decision — and therefore the graph — a sample rather
+            # than a function of its inputs.
             json={"model": config.ollama.model,
                   "messages": [{"role": "user", "content": prompt}],
+                  "options": {"temperature": 0},
                   "stream": False},
         )
         response.raise_for_status()
