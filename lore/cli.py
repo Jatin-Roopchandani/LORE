@@ -276,7 +276,10 @@ def process(
     finally:
         conn.close()
     typer.echo(
-        f"{report.book_id}: {report.entities} entities "
+        # "canonical" because each merged alias is ALSO persisted as its own
+        # node, linked by ALIAS_OF: `lore graph` counts those too, so the
+        # two commands legitimately report different Entity totals.
+        f"{report.book_id}: {report.entities} canonical entities "
         f"({report.alias_links} aliases merged), "
         f"{report.rel_edges} relationships, {report.chunks} chunks indexed"
     )
@@ -285,16 +288,40 @@ def process(
             f"{report.dropped_edges} edge(s) dropped — endpoint not among"
             " that row's entity_names"
         )
-    if extraction is not None and (extraction.units_failed or extraction.stopped_reason):
+    if extraction is not None:
+        # Always, the way `extract` does. "N chunks indexed" above is the
+        # book's full chunk count (every chunk is embedded regardless of
+        # extraction outcome), so it is no signal at all about how much of
+        # the book actually made it into the graph. These two are.
+        typer.echo(
+            f"extraction: {extraction.units_completed}/{extraction.units_total}"
+            f" units run, {extraction.chunks_ok} chunks extracted,"
+            f" {extraction.chunks_dead} dead-lettered"
+        )
+    if extraction is not None and (extraction.units_failed or extraction.stopped_reason
+                                   or extraction.chunks_dead):
         # The load above only ever reads completed units, so it is correct
         # and worth keeping — but the graph it produced is partial, and a
         # bare success line here would tell the user their book is in the
         # graph when it is not. Say so, and never exit 0 for this.
-        reason = extraction.stopped_reason or f"{extraction.units_failed} unit(s) failed"
+        #
+        # `chunks_dead` is the third signal and the easiest to miss: a unit
+        # whose every chunk dead-lettered still COMPLETES, so it shows up
+        # in neither `units_failed` nor `stopped_reason`. Note the residual
+        # — `chunks_dead` only counts units run by THIS invocation, so a
+        # `--resume` that re-runs nothing reports clean even if a previous
+        # run dead-lettered chunks. `units_completed < units_total` is not
+        # the fix for that: it false-fires on exactly that legitimate
+        # resume, where 0/3 units pending is a complete success.
+        reason = (
+            extraction.stopped_reason
+            or (f"{extraction.units_failed} unit(s) failed"
+                if extraction.units_failed else "")
+            or f"{extraction.chunks_dead} chunk(s) dead-lettered"
+        )
         typer.echo(
-            f"extraction incomplete ({extraction.units_completed}/"
-            f"{extraction.units_total} units — {reason}): the graph above"
-            f" reflects only the units that completed. Rerun `lore process"
+            f"extraction incomplete ({reason}): the graph above reflects"
+            f" only what was successfully extracted. Rerun `lore process"
             f" {book_id} --resume` to finish it."
         )
         raise typer.Exit(1)

@@ -179,3 +179,116 @@ def test_load_book_sync_closes_the_client_on_the_loop_it_used(
         result = _load_book_sync(config, None, BOOK)
     assert result is report
     assert seen["close"] is seen["load"]
+
+
+# ---------------------------------------------------------------------------
+# Final fix round, item 3: a unit that completes with every chunk
+# dead-lettered has no failed units and no stopped_reason, so the Task 7 fix
+# never saw it — `process` printed a success line over an empty graph and
+# exited 0. `chunks_dead` is the missing signal, and it must always be shown.
+# ---------------------------------------------------------------------------
+
+
+def _dead_letter_run(monkeypatch, tmp_path: Path, extraction: RunReport,
+                     report: LoadReport):
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("lore.cli.run_extraction", return_value=extraction),
+        patch("lore.cli._load_book_sync", return_value=report),
+    ):
+        return runner.invoke(app, ["process", BOOK])
+
+
+def test_process_fails_when_every_chunk_dead_letters(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The unit "completed" — with nothing in it. Never exit 0 for that."""
+    result = _dead_letter_run(
+        monkeypatch, tmp_path,
+        RunReport(book_id=BOOK, units_total=1, units_completed=1,
+                  chunks_ok=0, chunks_dead=1),
+        LoadReport(book_id=BOOK, entities=0, alias_links=0, rel_edges=0,
+                   chunks=1, mentions=0),
+    )
+    assert result.exit_code != 0, result.output
+    assert "dead-lettered" in result.output
+    assert "incomplete" in result.output.lower()
+    assert "--resume" in result.output
+
+
+def test_process_reports_dead_chunks_among_good_ones(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The untested middle: 5 chunks landed, 3 were lost. Say so."""
+    result = _dead_letter_run(
+        monkeypatch, tmp_path,
+        RunReport(book_id=BOOK, units_total=1, units_completed=1,
+                  chunks_ok=5, chunks_dead=3),
+        LoadReport(book_id=BOOK, entities=4, alias_links=1, rel_edges=7,
+                   chunks=8, mentions=6),
+    )
+    assert result.exit_code != 0, result.output
+    assert "5 chunks extracted" in result.output
+    assert "3 dead-lettered" in result.output
+
+
+def test_process_echoes_chunk_counts_on_a_clean_run(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """`extract` always prints them; `process` printed nothing at all."""
+    result = _dead_letter_run(
+        monkeypatch, tmp_path,
+        RunReport(book_id=BOOK, units_total=2, units_completed=2,
+                  chunks_ok=9, chunks_dead=0),
+        LoadReport(book_id=BOOK, entities=4, alias_links=1, rel_edges=7,
+                   chunks=9, mentions=6),
+    )
+    assert result.exit_code == 0, result.output
+    assert "9 chunks extracted" in result.output
+    assert "0 dead-lettered" in result.output
+
+
+def test_process_resume_with_nothing_pending_still_succeeds(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A --resume over an already-finished book reports 0/3 units run and is
+    a complete success. `units_completed < units_total` would false-fire."""
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("lore.cli.run_extraction",
+              return_value=RunReport(book_id=BOOK, units_total=3,
+                                     units_completed=0)),
+        patch("lore.cli._load_book_sync",
+              return_value=LoadReport(book_id=BOOK, entities=4, alias_links=1,
+                                      rel_edges=7, chunks=2, mentions=6)),
+    ):
+        result = runner.invoke(app, ["process", BOOK, "--resume"])
+    assert result.exit_code == 0, result.output
+    assert "incomplete" not in result.output.lower()
+
+
+# ---------------------------------------------------------------------------
+# Final fix round, item 5: `process` says "4 entities" where `graph` says
+# "6 Entity", because each merged alias is persisted as its own node linked
+# by ALIAS_OF. Name what is being counted.
+# ---------------------------------------------------------------------------
+
+
+def test_process_labels_its_entity_count_as_canonical(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    with (
+        patch("lore.cli.run_extraction",
+              return_value=RunReport(book_id=BOOK, units_total=1,
+                                     units_completed=1, chunks_ok=2)),
+        patch("lore.cli._load_book_sync",
+              return_value=LoadReport(book_id=BOOK, entities=4, alias_links=2,
+                                      rel_edges=7, chunks=2, mentions=6)),
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code == 0, result.output
+    assert "4 canonical entities" in result.output
