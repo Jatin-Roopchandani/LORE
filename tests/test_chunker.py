@@ -69,11 +69,67 @@ def test_scene_markers_split_scenes() -> None:
         assert "***" not in chunk.text
 
 
-def test_blank_line_runs_split_scenes() -> None:
+def test_blank_line_runs_do_not_split_scenes() -> None:
+    # CHANGED, deliberately. This test previously asserted the opposite
+    # ({0, 1}) and so pinned the bug: a blank-line run was a hard scene
+    # boundary, which made chunk size depend on an edition's whitespace
+    # habits and collapsed the Sherlock Holmes EPUBs to a 170-char median
+    # against a 1600-char budget. A blank line separates paragraphs; only
+    # an explicit marker separates scenes. See the neighbouring
+    # test_an_explicit_scene_marker_still_ends_a_chunk for the boundary
+    # that remains hard.
     text = _long_text(10) + "\n\n\n" + _long_text(10)
     book = _book([("One", text)])
     chunks = chunk_book(book, BOOK_ID)
-    assert {c.scene_seq for c in chunks} == {0, 1}
+    assert {c.scene_seq for c in chunks} == {0}
+    # and the two sides really did pack together rather than merely
+    # sharing a scene number
+    assert any(
+        "This is sentence number 0 padding" in c.text
+        and "This is sentence number 9 padding" in c.text
+        for c in chunks
+    )
+
+
+def test_paragraphs_separated_by_blank_lines_pack_to_budget() -> None:
+    # A Gutenberg EPUB may separate every paragraph with a blank-line
+    # run. Those are paragraph breaks, not scene breaks: packing must
+    # cross them, or every paragraph becomes its own tiny chunk and the
+    # extractor gets no context to work with.
+    #
+    # Every separator width is exercised because editions really do
+    # differ: Pride and Prejudice writes "\n\n" between paragraphs, the
+    # Gutenberg Holmes editions write "\n\n\n" — and it was only the
+    # 3-or-more form that the old blank-run scene split fired on, which
+    # is exactly why the bug was edition-dependent and silent.
+    para = "Holmes lit his pipe and considered the matter at length."
+    for sep in ("\n\n", "\n\n\n", "\n\n\n\n"):
+        text = sep.join([para] * 40)
+        chunks = chunk_book(_book([("One", text)]), "b" * 16)
+        assert len(chunks) < 10, repr(sep)
+        assert max(len(c.text) for c in chunks) > 800, repr(sep)
+
+
+def test_an_explicit_scene_marker_still_ends_a_chunk() -> None:
+    # The marked break is the one that carries authorial meaning, so it
+    # stays hard even though blank lines no longer are.
+    text = "Before the break happened here.\n\n***\n\nAfter the break happened here."
+    chunks = chunk_book(_book([("One", text)]), "b" * 16)
+    assert len(chunks) == 2
+    assert "Before" in chunks[0].text and "After" in chunks[1].text
+
+
+def test_a_marker_still_splits_when_paragraphs_surround_it() -> None:
+    para = "Some sentence of reasonable length to pack together."
+    # Blank-line runs on both sides of the marker: they pack across, the
+    # marker does not.
+    text = ("\n\n\n".join([para] * 6) + "\n\n***\n\n"
+            + "\n\n\n".join([para] * 6))
+    chunks = chunk_book(_book([("One", text)]), "b" * 16)
+    assert len(chunks) >= 2
+    # nothing may span the marker
+    for chunk in chunks:
+        assert not ("***" in chunk.text)
 
 
 def test_empty_chapter_produces_no_chunks() -> None:
@@ -235,3 +291,42 @@ def test_front_matter_adjacent_to_narrative_keeps_the_narrative() -> None:
     assert "Project Gutenberg" not in combined
     for i in range(12):
         assert f"Narrative sentence number {i} continues the scene." in combined
+
+
+def test_a_front_matter_banner_does_not_swallow_the_prose_before_it() -> None:
+    # Found by probing the real EPUBs, not by any listed test. Gutenberg
+    # closes a book with "*** END OF THE PROJECT GUTENBERG EBOOK ... ***"
+    # on its own line. That is NOT a scene marker (_SCENE_MARKER wants a
+    # bare ***, not *** with text after it), and once blank-line runs
+    # stopped being scene boundaries there was nothing left to stop pysbd
+    # gluing the banner onto the closing quote of the last narrative
+    # sentence — is_front_matter then read the merged blob as boilerplate
+    # and deleted the end of the book. Silently. Segmenting sentences per
+    # paragraph is what keeps the banner a sentence of its own.
+    prose = (
+        "“That’s the result of all our Study in Scarlet: to get them a "
+        "testimonial!”"
+    )
+    text = (
+        prose
+        + "\n\n\n*** END OF THE PROJECT GUTENBERG EBOOK A STUDY IN SCARLET ***"
+        + "\n\n\nUpdated editions will replace the previous one."
+    )
+    chunks = chunk_book(_book([("One", text)]), BOOK_ID)
+    combined = " ".join(c.text for c in chunks)
+    assert "result of all our Study in Scarlet" in combined
+    assert "END OF THE PROJECT GUTENBERG" not in combined
+
+
+def test_a_sentence_never_spans_a_paragraph_break() -> None:
+    # A paragraph break is a sentence break even where pysbd would not
+    # split: packing may cross it, segmentation may not.
+    first = "He spoke without a full stop"
+    second = "A new paragraph begins here."
+    text = f"{first}\n\n\n{second}"
+    chunks = chunk_book(_book([("One", text)]), BOOK_ID, budget_chars=40)
+    # 40 chars cannot hold both. Segmented per paragraph they are two
+    # clean sentences and come back verbatim; segmented as one flat blob
+    # pysbd returns a single 57-char pseudo-sentence that _split_oversized
+    # then hard-cuts mid-phrase, so the paragraphs come back mangled.
+    assert [c.text for c in chunks] == [first, second]

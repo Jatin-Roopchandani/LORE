@@ -1,17 +1,30 @@
 """Deterministic structure-aware chunker.
 
-Chapters are hard boundaries; scenes (typographic markers or blank-line
-runs) are hard boundaries too; within a scene, sentences are greedily
+Chapters are hard boundaries; so is an explicit, typographic scene marker
+(a line of ***, ---, or ###). Within a scene, sentences are greedily
 packed to a character budget with a fixed sentence overlap. Same input,
 same output — chunk IDs must be stable across runs forever.
 
+Blank lines are NOT a boundary. A run of blank lines is a paragraph
+separator, and packing crosses it freely: it collapses to ordinary
+whitespace in `_sentences`, which normalises all runs of whitespace to a
+single space before segmenting. This is deliberate and was learned the
+hard way. Editions disagree about paragraph whitespace — Pride and
+Prejudice separates paragraphs with "\\n\\n" while the Gutenberg Sherlock
+Holmes editions use "\\n\\n\\n" — so treating a blank-line run as a scene
+break made chunk size silently edition-dependent: Holmes came out at a
+170-char median against the same 1600-char budget that gave P&P 1429,
+starving the extractor of context and tripling the GPU work units.
+Nothing errored; the data was just wrong.
+
 Scene-break contract with parsers: a parser emits a literal "\\n***\\n" for
-an explicit, source-marked scene break (e.g. an EPUB <hr/>), and lets any
-run of blank lines it produces escalate naturally to "\\n{3,}" wherever
-paragraphs were dropped or merged. The chunker is the single consumer of
-that contract: it splits scenes on `_SCENE_MARKER` (***, ---, ### lines)
-and `_BLANK_RUN` (3+ consecutive newlines), and neither side needs to know
-anything about the other's internals beyond this shared marker vocabulary.
+an explicit, source-marked scene break (e.g. an EPUB <hr/>). That marker
+is the *whole* contract — a parser that wants a scene break must say so
+with a marker, because whitespace alone no longer carries that meaning.
+The chunker is the single consumer of the contract: it splits scenes on
+`_SCENE_MARKER` (***, ---, ### lines) and nothing else, so neither side
+needs to know anything about the other's internals beyond this shared
+marker vocabulary.
 """
 from __future__ import annotations
 
@@ -23,27 +36,62 @@ from lore.ingest.frontmatter import is_front_matter
 from lore.ingest.models import Chunk, ParsedBook
 
 # A scene marker is a line of ***, ---, ### (3+, spaces allowed between).
+# It is the only hard scene boundary: see the module docstring for why a
+# blank-line run deliberately is not one.
 _SCENE_MARKER = re.compile(
     r"\n[ \t]*(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:#[ \t]*){3,})[ \t]*\n"
 )
-# Two or more consecutive blank lines also end a scene.
-_BLANK_RUN = re.compile(r"\n{3,}")
+
+# A blank-line run: two or more line endings, horizontal whitespace and
+# CRLF tolerated. Not a scene boundary — but still a sentence boundary,
+# see _sentences.
+_PARAGRAPH_BREAK = re.compile(r"(?:[ \t\r]*\n){2,}")
 
 _SEGMENTER = pysbd.Segmenter(language="en", clean=False)
 
 
 def _split_scenes(text: str) -> list[str]:
-    """Split text into scenes by markers (***,---,###) and blank-line runs."""
-    scenes: list[str] = []
-    for part in _SCENE_MARKER.split("\n" + text + "\n"):
-        scenes.extend(_BLANK_RUN.split(part))
-    return [s.strip() for s in scenes if s.strip()]
+    """Split text into scenes on explicit markers (***, ---, ###) only.
+
+    Blank-line runs are left in place as ordinary whitespace for
+    `_sentences` to normalise away, so packing crosses paragraph breaks
+    and reaches the budget regardless of an edition's whitespace habits.
+
+    The leading and trailing "\n" let a marker that opens or closes the
+    text still match, since `_SCENE_MARKER` requires a newline on each
+    side; empty pieces are dropped by the final filter.
+    """
+    parts = _SCENE_MARKER.split("\n" + text + "\n")
+    return [s.strip() for s in parts if s.strip()]
 
 
 def _sentences(scene_text: str) -> list[str]:
-    """Segment scene text into sentences using pysbd."""
-    flat = re.sub(r"\s+", " ", scene_text).strip()
-    return [s.strip() for s in _SEGMENTER.segment(flat) if s.strip()]
+    """Segment scene text into sentences, paragraph by paragraph.
+
+    A paragraph break is not a scene break — packing crosses it — but it
+    IS a sentence break: no sentence in prose spans two paragraphs. So
+    pysbd is run per paragraph and the results concatenated, rather than
+    on the whole scene at once.
+
+    That distinction is load-bearing, not tidiness. pysbd will not split
+    between a closing curly quote and the next line, so segmenting a
+    whole chapter at once glues the last narrative sentence of A Study in
+    Scarlet onto the "*** END OF THE PROJECT GUTENBERG EBOOK ***" banner
+    that follows it. is_front_matter then reads that one merged
+    "sentence" as boilerplate and the closing lines of the book vanish —
+    silently, since nothing errors. Segmenting per paragraph keeps the
+    banner a sentence of its own, so only the banner is dropped.
+
+    Whitespace inside a paragraph (including single newlines from hard
+    line wrapping) still collapses to a single space.
+    """
+    sentences: list[str] = []
+    for paragraph in _PARAGRAPH_BREAK.split(scene_text):
+        flat = re.sub(r"\s+", " ", paragraph).strip()
+        if not flat:
+            continue
+        sentences.extend(s.strip() for s in _SEGMENTER.segment(flat) if s.strip())
+    return sentences
 
 
 # A closing-quote-then-space boundary: a straight or curly closing quote

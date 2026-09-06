@@ -162,9 +162,20 @@ def test_adjacent_paragraphs_do_not_scene_split(tmp_path: Path) -> None:
     assert all(c.scene_seq == 0 for c in chunks)
 
 
-def test_empty_paragraph_run_still_scene_splits(tmp_path: Path) -> None:
-    # A run of empty/whitespace-only paragraphs between two real ones must
-    # still accumulate into a scene break.
+def test_empty_paragraph_run_is_whitespace_not_a_scene_split(
+    tmp_path: Path,
+) -> None:
+    # A run of empty/whitespace-only paragraphs between two real ones
+    # still accumulates into a blank-line run in the PARSER's output —
+    # that half of the contract is unchanged and still asserted below.
+    #
+    # CHANGED, deliberately: the chunker half previously asserted
+    # {0, 1}, pinning blank-line-run-as-hard-scene-boundary. That is the
+    # bug — it made chunk size edition-dependent. A blank-line run is now
+    # a paragraph separator that packing crosses; only an explicit marker
+    # (***, ---, ###) ends a scene. See
+    # test_hr_scene_split_survives_through_chunker for the marker path,
+    # which still splits.
     path = make_epub(
         tmp_path / "b.epub",
         title="T",
@@ -177,7 +188,10 @@ def test_empty_paragraph_run_still_scene_splits(tmp_path: Path) -> None:
     text = book.chapters[0].text
     assert "\n\n\n" in text
     chunks = chunk_book(book, book_id="b")
-    assert {c.scene_seq for c in chunks} == {0, 1}
+    assert {c.scene_seq for c in chunks} == {0}
+    assert any(
+        "Scene one." in c.text and "Scene two." in c.text for c in chunks
+    )
 
 
 def test_headingless_continuation_appends_to_previous_chapter(

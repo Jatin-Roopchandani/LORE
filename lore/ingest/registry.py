@@ -49,6 +49,39 @@ def ingest_book(
     return True
 
 
+def forget_book(conn: sqlite3.Connection, book_id: str) -> bool:
+    """Delete a book and everything in SQLite that hangs off it.
+
+    Returns True if a books row was actually removed. This exists so a
+    book can be re-ingested after a chunker change: chunk IDs are
+    content-addressed provenance keys, so new chunking means the old
+    rows are not merely stale, they are unreferenceable.
+
+    Children go first, parent last, all in one explicit transaction.
+    `PRAGMA foreign_keys = ON` is set in open_db, so jobs rows must be
+    cleared too — a book that got as far as an extraction run has them,
+    and leaving them makes the parent DELETE fail on the FK. Those jobs
+    describe work over chunk IDs that are about to stop existing, so
+    they are exactly as invalid as the chunks are.
+
+    Explicit BEGIN/COMMIT/ROLLBACK, not `with conn:` — Phase 0 found
+    that `with conn:` never issues BEGIN for DDL.
+    """
+    row = conn.execute("SELECT id FROM books WHERE id = ?", (book_id,)).fetchone()
+    if row is None:
+        return False
+    try:
+        conn.execute("BEGIN")
+        conn.execute("DELETE FROM chunks WHERE book_id = ?", (book_id,))
+        conn.execute("DELETE FROM jobs WHERE book_id = ?", (book_id,))
+        conn.execute("DELETE FROM books WHERE id = ?", (book_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return True
+
+
 def list_books(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(
         "SELECT b.id, b.title, b.author, b.status, COUNT(c.id)"

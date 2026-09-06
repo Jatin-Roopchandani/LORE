@@ -17,7 +17,7 @@ from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
 from lore.ingest.models import IngestError, book_id_for_file
 from lore.ingest.pdf import parse_pdf
-from lore.ingest.registry import ingest_book, list_books
+from lore.ingest.registry import forget_book, ingest_book, list_books
 from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
@@ -109,7 +109,14 @@ def doctor(kaggle: bool = typer.Option(False, "--kaggle",
 
 
 @app.command()
-def ingest(path: Path) -> None:
+def ingest(
+    path: Path,
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="drop the book's existing rows first and re-ingest it",
+    ),
+) -> None:
     """Parse, chunk, and register an EPUB or PDF."""
     config = LoreConfig.load()
     config.ensure_dirs()
@@ -127,12 +134,17 @@ def ingest(path: Path) -> None:
         raise typer.Exit(1)
     conn = open_db(config.sqlite_path)
     try:
+        # Drop first, then re-insert, so a re-chunk lands cleanly instead
+        # of colliding with the old content-addressed chunk IDs.
+        forgotten = forget_book(conn, book_id) if force else False
         created = ingest_book(
             conn, book_id=book_id, title=parsed.title, author=parsed.author,
             source="upload", file_path=str(path), chunks=chunks,
         )
     finally:
         conn.close()
+    if forgotten:
+        typer.echo(f"cleared previous ingest of {book_id}")
     if not created:
         typer.echo(f"{parsed.title} ({book_id}) already ingested — no-op")
         return
