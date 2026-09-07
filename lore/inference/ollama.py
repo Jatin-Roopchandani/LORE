@@ -5,7 +5,16 @@ import httpx
 from pydantic import BaseModel
 
 from lore.config import OllamaConfig
+from lore.extract.schemas import MAX_OUTPUT_TOKENS
 from lore.inference.base import ProviderOutputError
+
+# A raw response within ~5% of this many characters is plausibly a
+# truncated MAX_OUTPUT_TOKENS-token completion rather than a malformed
+# one. This mirrors the ~3.1-3.4 chars/token ratio measured across the
+# 26 dead letters that motivated raising the cap (6367-8329 characters
+# for ~1800-2400 tokens): a cheap diagnostic hint, not a guarantee.
+_CHARS_PER_TOKEN = 3.2
+_TRUNCATION_HINT_CHARS = MAX_OUTPUT_TOKENS * _CHARS_PER_TOKEN
 
 
 class OllamaProvider:
@@ -21,6 +30,7 @@ class OllamaProvider:
                 "messages": [{"role": "user", "content": prompt}],
                 "format": schema.model_json_schema(),
                 "stream": False,
+                "options": {"num_predict": MAX_OUTPUT_TOKENS},
             },
         )
         response.raise_for_status()
@@ -28,7 +38,15 @@ class OllamaProvider:
         try:
             return schema.model_validate_json(content)
         except Exception as exc:
-            raise ProviderOutputError(str(exc), raw_output=content) from exc
+            message = str(exc)
+            if abs(len(content) - _TRUNCATION_HINT_CHARS) <= 0.05 * _TRUNCATION_HINT_CHARS:
+                message = (
+                    f"{message} (raw output is {len(content)} chars, near the "
+                    f"~{_TRUNCATION_HINT_CHARS:.0f}-char span for a "
+                    f"MAX_OUTPUT_TOKENS={MAX_OUTPUT_TOKENS} completion - this "
+                    "looks like truncation, not malformed JSON)"
+                )
+            raise ProviderOutputError(message, raw_output=content) from exc
 
     async def embed(self, texts: list[str], model: str) -> list[list[float]]:
         response = await self._client.post(

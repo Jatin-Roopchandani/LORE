@@ -16,7 +16,6 @@ MODEL_ID = "MODEL_ID"
 EMBED_MODEL_ID = "EMBED_MODEL_ID"
 VLLM_SPEC = "VLLM_SPEC"
 OUT = Path("/kaggle/working")
-MAX_OUTPUT_TOKENS = 2048   # 1024 truncated JSON mid-object on dense passages
 
 
 def _install() -> None:
@@ -44,7 +43,15 @@ def main() -> None:
     sys.path.insert(0, str(unit_dir))  # the shipped `lore` package
 
     from lore.extract.runner import ChunkInput, extract_chunks
-    from lore.extract.schemas import ChunkExtraction
+    from lore.extract.schemas import MAX_OUTPUT_TOKENS, ChunkExtraction
+    # MAX_OUTPUT_TOKENS lives in lore/extract/schemas.py (imported from the
+    # shipped `lore` package, see write_unit() in workunit.py) so this tier
+    # and the Ollama tier cannot drift apart on the cap (SPEC §3 rule 1).
+    # 4096 is measured against observed truncations of 6367-8329 raw
+    # characters (~1800-2400 tokens) - see schemas.py for the full note.
+    # Previously hardcoded here at 2048, which the comment on this line
+    # once already raised from 1024 for the same reason it needed raising
+    # again.
 
     rows = [
         json.loads(line)
