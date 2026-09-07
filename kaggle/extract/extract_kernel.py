@@ -72,7 +72,14 @@ def main() -> None:
         quantization="awq",
         dtype="float16",
         gpu_memory_utilization=0.90,
-        max_model_len=4096,
+        # max_model_len bounds prompt + output tokens together. Measured
+        # worst-case prompt (A Study in Scarlet, build_prompt over all 206
+        # chunks) is ~682 tokens; output is capped at MAX_OUTPUT_TOKENS=4096;
+        # so the ceiling must exceed ~682 + 4096 = ~4778 or vLLM clamps the
+        # output cap silently (or errors) and the configured cap doesn't
+        # hold. 8192 gives ~3400 tokens of headroom over that worst case for
+        # denser passages in later books.
+        max_model_len=8192,
     )
 
     schema_json = ChunkExtraction.model_json_schema()
