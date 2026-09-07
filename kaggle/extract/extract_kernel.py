@@ -17,6 +17,13 @@ EMBED_MODEL_ID = "EMBED_MODEL_ID"
 VLLM_SPEC = "VLLM_SPEC"
 OUT = Path("/kaggle/working")
 
+# vLLM schedules every prompt in a single generate() call concurrently, so
+# THIS - not work_unit_size - is what KV-cache VRAM scales with. 10 is the
+# value Phase 2A verified fits a T4; 40 crashed EngineCore. work_unit_size
+# governs how many chunks one kernel invocation covers and is free to grow
+# independently of this once the two concerns are decoupled.
+VLLM_BATCH_SIZE = 10
+
 
 def _install() -> None:
     subprocess.run(
@@ -42,6 +49,7 @@ def main() -> None:
     unit_dir = _find_input()
     sys.path.insert(0, str(unit_dir))  # the shipped `lore` package
 
+    from lore.extract.batching import batched
     from lore.extract.runner import ChunkInput, extract_chunks
     from lore.extract.schemas import MAX_OUTPUT_TOKENS, ChunkExtraction
     # MAX_OUTPUT_TOKENS lives in lore/extract/schemas.py (imported from the
@@ -111,21 +119,24 @@ def main() -> None:
     retry_params = _make_params(0.2)
 
     class VllmProvider:
-        """Batches the whole unit through vLLM in one pass, caching each
-        prompt's completion for single use. The first request for a prompt
-        is served from that batched cache; any further request for the
-        same prompt text (a runner retry, or a duplicate-text chunk) is a
-        genuine live re-generation at a raised temperature, so retries
-        actually have a chance to recover."""
+        """Batches the whole unit through vLLM in fixed-size groups of
+        VLLM_BATCH_SIZE (so KV-cache VRAM scales with the batch size, not
+        the unit size), caching each prompt's completion for single use.
+        The first request for a prompt is served from that batched cache;
+        any further request for the same prompt text (a runner retry, or
+        a duplicate-text chunk) is a genuine live re-generation at a
+        raised temperature, so retries actually have a chance to
+        recover."""
 
         def __init__(self) -> None:
             self._answers: dict[str, str] = {}
 
         def prime(self, prompts: dict[str, str]) -> None:
             ordered = list(prompts.items())
-            outputs = llm.generate([p for _, p in ordered], params)
-            for (_, prompt), output in zip(ordered, outputs):
-                self._answers[prompt] = output.outputs[0].text
+            for batch in batched(ordered, VLLM_BATCH_SIZE):
+                outputs = llm.generate([p for _, p in batch], params)
+                for (_, prompt), output in zip(batch, outputs):
+                    self._answers[prompt] = output.outputs[0].text
 
         async def generate(self, prompt, schema):
             from lore.inference.base import ProviderOutputError
