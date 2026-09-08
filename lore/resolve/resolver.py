@@ -60,6 +60,49 @@ class ResolutionResult:
 Adjudicate = Callable[[CanonicalEntity, Mention], Awaitable[bool]]
 
 
+# Tokens that carry no identity: articles, determiners, bare pronouns,
+# the prepositions and conjunctions that join name parts, and nobiliary
+# particles. `normalize_name` strips a LEADING article or honorific, but an
+# interior one survives ("the Sign of the Four" -> "sign of the four"), and
+# the corpus really does yield mentions named "i", "we" and "our prisoner".
+# Two names whose only common token is one of these are not related names.
+_FUNCTION_WORDS = frozenset({
+    "the", "a", "an", "this", "that", "these", "those",
+    "i", "me", "my", "we", "us", "our", "you", "your",
+    "he", "him", "his", "she", "her", "hers", "it", "its",
+    "they", "them", "their",
+    "of", "and", "or", "in", "on", "at", "to", "for", "from", "with", "by",
+    "de", "del", "della", "di", "du", "da", "van", "von", "der", "den",
+    "la", "le", "el", "los", "las", "bin", "ibn",
+    # Clitic remnants. `normalize_name`'s possessive regex only knows the
+    # ASCII apostrophe, so a curly one (which is what the corpus text
+    # actually uses) survives as a bare token: "Knight’s Place" normalizes
+    # to "knight s place" and "Dawson’s wife" to "dawson s wife". Those
+    # two merged in the live corpus on nothing but that stray "s".
+    "ll", "re", "ve",
+})
+
+
+def name_tokens(normalized: str) -> frozenset[str]:
+    """The identity-bearing tokens of an already-normalized name.
+
+    Single-character tokens are excluded along with the function words:
+    they are initials, clitic remnants and list markers, never identity.
+    "J. Watson" and "J. Smith" share only "j", which is not evidence they
+    are one person — and "J. Watson" still reaches "Watson" through
+    "watson", so nothing real is lost.
+
+    Empty for a name made of nothing but such tokens — which makes that
+    name un-mergeable in pass 2. That is the safe direction: it can only
+    under-merge, and pass 1 still collapses exact repeats of it.
+    """
+    return frozenset(
+        token
+        for token in normalized.split()
+        if len(token) > 1 and token not in _FUNCTION_WORDS
+    )
+
+
 def display_name(candidates: Iterable[str]) -> str:
     """The longest surface form, ties broken alphabetically.
 
@@ -132,6 +175,9 @@ async def resolve_mentions(
     kinds: dict[str, str] = {}
     contexts: dict[str, str] = {}
     alias_sets: dict[str, set[str]] = {}
+    # The union of `name_tokens` over an entity's aliases, maintained in
+    # step with `alias_sets` so the pass-2 gate below is a set lookup.
+    alias_tokens: dict[str, set[str]] = {}
     books: dict[str, set[str]] = {}
     vectors: dict[str, list[float]] = {}  # lazily populated cache
     raw_names: dict[str, set[str]] = {}  # every raw surface form seen, for display
@@ -141,6 +187,7 @@ async def resolve_mentions(
         if not normalized:
             # A mention with no word characters at all mints no entity.
             continue
+        mention_tokens = name_tokens(normalized)
         key = (mention.name, mention.kind, mention.book_id)
 
         # Pass 1 — exact or alias match, same kind, same book. Restricted to
@@ -161,7 +208,27 @@ async def resolve_mentions(
             result.mention_map[key] = hit
             continue
 
-        candidates = [cid for cid in alias_sets if kinds[cid] == mention.kind]
+        # Pass-2 name gate. Pass 2 embeds "{name} — {evidence sentence}" and
+        # compares those vectors, so when two entities are named in one
+        # sentence their texts differ only by a short prefix against a long
+        # shared body and the sentence dominates the vector. Measured
+        # against the live nomic-embed-text: "Holmes" vs "Drebber" sharing
+        # an evidence sentence scored 0.9135 and merged at the 0.86
+        # same-book floor, while "Holmes" vs "Holmes" in two different
+        # sentences scored 0.7110 and did not. The metric measures
+        # co-occurrence, not identity, and the bands are inverted — so no
+        # threshold separates them and raising same_book_floor cannot fix
+        # it. Context may only DISAMBIGUATE names that already look
+        # related; it must never be able to CREATE a merge between
+        # unrelated names. A candidate therefore has to share an
+        # identity-bearing token with the mention before its similarity is
+        # consulted at all — which also means an unrelated candidate costs
+        # no embedding call. Do not "simplify" this away.
+        candidates = [
+            cid
+            for cid in alias_sets
+            if kinds[cid] == mention.kind and alias_tokens[cid] & mention_tokens
+        ]
         chosen: str | None = None
         vector: list[float] | None = None
 
@@ -206,6 +273,7 @@ async def resolve_mentions(
             kinds[chosen] = mention.kind
             contexts[chosen] = mention.context
             alias_sets[chosen] = {normalized}
+            alias_tokens[chosen] = set(mention_tokens)
             books[chosen] = {mention.book_id}
             raw_names[chosen] = {mention.name}
             if vector is not None:
@@ -219,6 +287,7 @@ async def resolve_mentions(
             # must not be recorded twice — only the book membership grows.
             is_new_alias = normalized not in alias_sets[chosen]
             alias_sets[chosen].add(normalized)
+            alias_tokens[chosen] |= mention_tokens
             books[chosen].add(mention.book_id)
             raw_names[chosen].add(mention.name)
             if is_new_alias:
