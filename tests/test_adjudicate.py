@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from lore.config import LoreConfig
-from lore.graph.adjudicate import make_ollama_pair
+from lore.graph.adjudicate import _TEMPLATE, make_ollama_pair
 from lore.inference.ollama import OllamaProvider
 from lore.resolve.resolver import CanonicalEntity, Mention
 
@@ -53,6 +53,13 @@ async def test_prompt_does_not_claim_to_show_evidence_it_has_not_got() -> None:
     `evidence:` showed the model "governor hale" where it promised a
     sentence — an asymmetric, near-empty prompt for the phase's only
     merge decision.
+
+    The label itself is "Also called:", not "other names it is known
+    by:" as an earlier draft of this fix used: verified against the live
+    model (see task-1e-report.md), the literal word "names" in this line
+    made the model merge two unrelated "the Captain"s, regardless of the
+    surrounding no-generic-titles instruction. "Also called" is equally
+    honest about what the field contains and does not carry that failure.
     """
     seen: dict[str, str] = {}
 
@@ -66,7 +73,7 @@ async def test_prompt_does_not_claim_to_show_evidence_it_has_not_got() -> None:
     b_line = next(line for line in prompt.splitlines() if line.startswith("B:"))
     assert "evidence:" not in a_line, a_line
     # It must say what it is actually showing: the merged surface forms.
-    assert "names" in a_line.lower(), a_line
+    assert "called" in a_line.lower(), a_line
     assert "governor hale, hale" in a_line
     # The B side really is evidence, and keeps its label.
     assert "evidence:" in b_line and "signed the order" in b_line
@@ -83,3 +90,40 @@ async def test_adjudication_is_asked_at_temperature_zero() -> None:
 
     assert await _ask(handler) is True
     assert seen["body"]["options"]["temperature"] == 0
+
+
+def test_prompt_frames_the_decision_across_books() -> None:
+    """The high-bar case (which is what actually reaches adjudication) is
+    cross-book. Saying "a book" describes the opposite situation and is
+    what made the model refuse two identical names. The criterion that
+    separates Holmes/Holmes from Captain/Captain must also be stated, or
+    the model has nothing to reason from.
+    """
+    rendered = _TEMPLATE.format(
+        a_name="Holmes", a_kind="Character", a_aliases="holmes",
+        b_name="Holmes", b_kind="Character", b_evidence="He examined the body.",
+    )
+    low = rendered.lower()
+    assert "a book" not in low
+    assert "distinctive" in low
+    assert "generic" in low
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reply, expected",
+    [
+        ("Yes", True),
+        ("yes", True),
+        ("yes.", True),
+        (" YES", True),
+        ("no", False),
+        ("No", False),
+        ("", False),
+    ],
+)
+async def test_adjudicate_parses_yes_no_replies(reply: str, expected: bool) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {"content": reply}})
+
+    assert await _ask(handler) is expected

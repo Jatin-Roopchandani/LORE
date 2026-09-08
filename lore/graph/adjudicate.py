@@ -10,13 +10,17 @@ from lore.config import LoreConfig
 from lore.extract.embed import DOCUMENT_PREFIX
 from lore.inference.ollama import OllamaProvider
 
-_TEMPLATE = """Two names appear in a book. Decide whether they refer to the \
-SAME entity.
+_TEMPLATE = """You are matching characters across two novels by the same author.
 
-A: {a_name} ({a_kind}) — other names it is known by: {a_aliases}
-B: {b_name} ({b_kind}) — evidence: {b_evidence}
+Example: A: "the Doctor" (Character). Also called: the doctor. B: "the Doctor" (Character). evidence: The doctor examined the wound. Even though the same title appears on both sides, they are NOT the same person, because "the Doctor" is a generic role, not a distinctive name. Correct answer: no.
 
-Answer with one word: yes or no."""
+A: "{a_name}" ({a_kind}). Also called: {a_aliases}.
+B: "{b_name}" ({b_kind}). evidence: {b_evidence}
+
+Do A and B refer to the same person? A shared distinctive name is strong
+evidence they do. A shared generic title (like "the Doctor" above) is not.
+
+Answer yes or no."""
 
 
 def make_ollama_pair(config: LoreConfig):
@@ -43,10 +47,16 @@ def make_ollama_pair(config: LoreConfig):
             "/api/chat",
             # temperature 0: Ollama defaults to 0.8, which would make a
             # merge decision — and therefore the graph — a sample rather
-            # than a function of its inputs.
+            # than a function of its inputs. temperature 0 alone was not
+            # enough to make this reproducible in practice: back-to-back
+            # calls with different prompts could still flip a borderline
+            # verdict (observed on "the Captain" vs "the Captain"), most
+            # likely from batching-order floating-point noise in the
+            # local server. A fixed seed removes that remaining source
+            # of variance.
             json={"model": config.ollama.model,
                   "messages": [{"role": "user", "content": prompt}],
-                  "options": {"temperature": 0},
+                  "options": {"temperature": 0, "seed": 0},
                   "stream": False},
         )
         response.raise_for_status()
