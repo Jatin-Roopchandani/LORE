@@ -67,6 +67,7 @@ from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.graph.artifacts import completed_unit_dirs, read_embeddings, read_triplets
 from lore.ingest.registry import chunks_for_book
+from lore.resolve.entityhood import is_probable_entity
 from lore.resolve.normalize import entity_id, normalize_name
 from lore.resolve.predicates import normalize_predicates
 from lore.resolve.resolver import (
@@ -95,6 +96,7 @@ class LoadReport:
     chunks: int = 0
     mentions: int = 0
     dropped_edges: int = 0
+    dropped_mentions: int = 0
 
 
 class PartialLoadError(RuntimeError):
@@ -143,25 +145,41 @@ def _base_normalized(node_id: str, name: str, kind: str, aliases: tuple) -> str:
     return normalize_name(name) or name
 
 
-def _named_kinds(row: dict) -> list[tuple[str, str]]:
+def _named_kinds(
+    row: dict, on_reject: Callable[[str], None] | None = None
+) -> list[tuple[str, str]]:
     """The (name, kind) pairs a triplet row names, junk mentions dropped.
 
     A name with no word characters normalizes to "" and mints no entity
     (see `normalize_name`); minting a node for it here would put a junk
-    entity in the graph, so such names are skipped at the source.
+    entity in the graph, so such names are skipped at the source. The same
+    goes for a name that normalizes fine but is not a probable ENTITY at
+    all — a definite description like "the box" or "his hands" that the
+    extraction prompt happily copied verbatim (see `is_probable_entity`).
+
+    `on_reject`, when given, is called once per name skipped here, so a
+    caller can count drops without this function reaching into a report
+    object itself. It is deliberately optional and only wired from the one
+    call site that scans every row exactly once (`_mentions_from`) — the
+    second call site below re-derives the same pairs from already-resolved
+    mentions, and counting there too would double every drop.
     """
     names = list(row.get("entity_names") or [])
     kinds = list(row.get("entity_kinds") or [])
     pairs: list[tuple[str, str]] = []
     for index, name in enumerate(names):
         text = str(name)
-        if not normalize_name(text):
+        if not normalize_name(text) or not is_probable_entity(text):
+            if on_reject is not None:
+                on_reject(text)
             continue
         pairs.append((text, str(kinds[index]) if index < len(kinds) else "Concept"))
     return pairs
 
 
-def _mentions_from(rows: list[dict], book_id: str) -> list[Mention]:
+def _mentions_from(
+    rows: list[dict], book_id: str, on_reject: Callable[[str], None] | None = None
+) -> list[Mention]:
     """One Mention per (name, kind) pair the triplet rows name, with an
     evidence sentence as local context for the embedding pass.
 
@@ -185,7 +203,7 @@ def _mentions_from(rows: list[dict], book_id: str) -> list[Mention]:
     contexts: dict[tuple[str, str], str] = {}
     for row in rows:
         evidence = str(row.get("evidence") or "")
-        for pair in _named_kinds(row):
+        for pair in _named_kinds(row, on_reject):
             current = contexts.get(pair)
             if current is None or evidence < current:
                 contexts[pair] = evidence
@@ -363,7 +381,13 @@ async def load_book(
     chunks = chunks_for_book(conn, book_id)
     chapter_of = {chunk.id: chunk.chapter_seq for chunk in chunks}
 
-    mentions = _mentions_from(triplets, book_id)
+    dropped_mentions = 0
+
+    def _count_rejected(_name: str) -> None:
+        nonlocal dropped_mentions
+        dropped_mentions += 1
+
+    mentions = _mentions_from(triplets, book_id, _count_rejected)
     resolution = await resolve_mentions(mentions, embed, adjudicate)
     predicate_map = await normalize_predicates(
         [str(row.get("predicate") or "") for row in triplets], embed
@@ -475,7 +499,8 @@ async def load_book(
     title, author = (row[0], row[1] or "") if row else ("", "")
 
     report = LoadReport(book_id=book_id, entities=len(resolution.entities),
-                        alias_links=len(resolution.aliases))
+                        alias_links=len(resolution.aliases),
+                        dropped_mentions=dropped_mentions)
 
     # Which canonical entities each chunk mentions — the bridge LanceDB
     # rows carry, and the source of the MENTIONS edges.

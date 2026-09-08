@@ -42,6 +42,39 @@ def test_process_skip_extract_only_loads(tmp_path: Path, monkeypatch) -> None:
     assert not extract.called
 
 
+def test_process_reports_dropped_mentions(tmp_path: Path, monkeypatch) -> None:
+    """A non-zero dropped_mentions count must be visible, not silent."""
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
+                        chunks=1, mentions=1, dropped_mentions=3)
+    with (
+        patch("lore.cli.run_extraction",
+              return_value=RunReport(book_id=BOOK, units_total=1, units_completed=1)),
+        patch("lore.cli._load_book_sync", return_value=report),
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code == 0, result.output
+    assert "3 mention(s) dropped" in result.output
+
+
+def test_process_says_nothing_when_no_mentions_were_dropped(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
+                        chunks=1, mentions=1, dropped_mentions=0)
+    with (
+        patch("lore.cli.run_extraction",
+              return_value=RunReport(book_id=BOOK, units_total=1, units_completed=1)),
+        patch("lore.cli._load_book_sync", return_value=report),
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code == 0, result.output
+    assert "mention(s) dropped" not in result.output
+
+
 def test_process_reports_a_load_failure(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)

@@ -300,6 +300,11 @@ def process(
             f"{report.dropped_edges} edge(s) dropped — an endpoint was named"
             " nowhere in the book"
         )
+    if report.dropped_mentions:
+        typer.echo(
+            f"{report.dropped_mentions} mention(s) dropped — not a probable"
+            " entity (a definite description or unnamed fragment)"
+        )
     if extraction is not None:
         # Always, the way `extract` does. "N chunks indexed" above is the
         # book's full chunk count (every chunk is embedded regardless of

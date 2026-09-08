@@ -978,3 +978,71 @@ async def test_edge_endpoints_are_always_mentioned_by_their_chunk(
     bridge = dict(_chunk_bridge(config))
     assert bridge[chunks[1].id] == sorted([ids["Ana"], ids["Cy"]])
     conn.close(); kuzu.close()
+
+
+# Task 1d: reject non-entities at load time. `dropped_mentions` must count
+# exactly the rejected names, not be trusted on faith.
+
+
+@pytest.mark.asyncio
+async def test_non_entity_mentions_are_dropped_and_counted(tmp_path: Path) -> None:
+    """"the box" and "his hands" are definite descriptions, not entities.
+
+    Both are listed among the row's entity_names alongside the real
+    subject/object pair (Ana, Bo), so this isolates dropped_mentions from
+    dropped_edges: the edge still resolves cleanly because its own
+    endpoints are real names, while the two junk names are rejected.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    chunks = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, chunks, [
+        _row(chunks[0].id, BOOK, "Ana", "LOVES", "Bo",
+             ["Ana", "Bo", "the box", "his hands"],
+             ["Character", "Character", "Object", "Concept"]),
+    ])
+    report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert report.dropped_mentions == 2   # "the box" and "his hands"
+    assert report.rel_edges == 1          # Ana -> Bo still resolves cleanly
+    assert report.dropped_edges == 0
+    assert report.entities == 2
+    names = sorted(r[0] for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.name"))
+    assert names == ["Ana", "Bo"]          # no node minted for either junk name
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_dropped_mentions_counts_exactly_the_rejections(
+    tmp_path: Path,
+) -> None:
+    """Build a fixture with a known number of rejects and count independently.
+
+    Rather than trusting the implementation, this test re-derives the
+    expected count from the raw fixture data using the same predicate the
+    loader uses, and asserts the report agrees.
+    """
+    from lore.resolve.entityhood import is_probable_entity
+    from lore.resolve.normalize import normalize_name
+
+    config, conn, kuzu, lance = _env(tmp_path)
+    chunks = [_chunk(BOOK, 1, 0), _chunk(BOOK, 1, 1)]
+    rows = [
+        _row(chunks[0].id, BOOK, "Ana", "LOVES", "Bo",
+             ["Ana", "Bo", "the weather", "my curiosity"],
+             ["Character", "Character", "Concept", "Concept"]),
+        _row(chunks[1].id, BOOK, "Cy", "OPPOSES", "Dee",
+             ["Cy", "Dee", "the pavement"],
+             ["Character", "Character", "Object"]),
+    ]
+    _add_book(config, conn, BOOK, chunks, rows)
+
+    expected_drops = sum(
+        1
+        for row in rows
+        for name in row["entity_names"]
+        if not normalize_name(name) or not is_probable_entity(name)
+    )
+    assert expected_drops == 3  # sanity: the fixture names 3 junk mentions
+
+    report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert report.dropped_mentions == expected_drops == 3
+    conn.close(); kuzu.close()
