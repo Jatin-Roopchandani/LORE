@@ -13,7 +13,7 @@ username = "jatinroopchandani"  # personal Kaggle username (required for doctor 
 kernel_slug = "lore-hello"
 dataset_slug = "lore-hello-data"
 poll_interval_s = 30
-poll_timeout_s = 1800
+poll_timeout_s = 5400   # size-40 units run ~1505s typical; 1800s timed out a dense one
 extract_kernel_slug = "lore-extract"
 extract_dataset_slug = "lore-extract-data"
 
