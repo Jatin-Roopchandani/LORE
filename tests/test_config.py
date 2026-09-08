@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from lore.config import LoreConfig
+from lore.config import ExtractionConfig, LoreConfig
 
 
 def test_defaults_when_no_file(tmp_path: Path, monkeypatch) -> None:
@@ -42,5 +42,10 @@ def test_ensure_dirs_creates_layout(tmp_path: Path) -> None:
 
 
 def test_extraction_work_unit_size_default() -> None:
-    cfg = LoreConfig.load()
-    assert cfg.extraction.work_unit_size == 10
+    # The dataclass default, NOT whatever lore.toml currently sets. Reading
+    # the working tree's config made this test fail the moment the committed
+    # value moved 10 -> 40 — the same coupling that once broke nine tests in
+    # test_orchestrator_run.py when `extraction_provider` was flipped for a
+    # local run. A test that asserts a tunable's shipped value is a tripwire
+    # on config edits, not a test of behaviour.
+    assert ExtractionConfig().work_unit_size == 10
