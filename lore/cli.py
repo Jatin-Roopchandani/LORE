@@ -18,11 +18,23 @@ from lore.ingest.epub import parse_epub
 from lore.ingest.models import IngestError, book_id_for_file
 from lore.ingest.pdf import parse_pdf
 from lore.ingest.registry import forget_book, ingest_book, list_books
+from lore.inference.gemini import (
+    GeminiClient,
+    GeminiError,
+    limits_for,
+    resolve_api_key,
+)
 from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
 from lore.orchestrator.quota import iso_week, week_report
 from lore.orchestrator.run import run_extraction
+from lore.resolve.disambiguation import (
+    MAX_BATCH,
+    AnswerMismatchError,
+    DisambiguationStore,
+    ask,
+)
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -228,6 +240,13 @@ def _load_book_sync(config: LoreConfig, conn, book_id: str):
     kuzu = KuzuStore(config.kuzu_dir / "graph")
     lance = LanceStore(config.lancedb_dir)
     embed, adjudicate, aclose = make_ollama_pair(config)
+    # Opt-in, default-off, and offline either way: the store only records
+    # the merges the resolver refused and reads answers a previous `lore
+    # disambiguate` already paid for. No API call happens in a load.
+    disambiguation = (
+        DisambiguationStore(config.disambiguation_dir)
+        if config.disambiguation.enabled else None
+    )
 
     async def _run():
         # The close MUST share the loop the requests ran on: httpx binds its
@@ -236,7 +255,8 @@ def _load_book_sync(config: LoreConfig, conn, book_id: str):
         # load — turning a loaded graph into a spurious `process failed`.
         try:
             return await load_book(
-                config, conn, kuzu, lance, book_id, embed, adjudicate
+                config, conn, kuzu, lance, book_id, embed, adjudicate,
+                disambiguation=disambiguation,
             )
         finally:
             await aclose()
@@ -347,6 +367,119 @@ def process(
             f" {book_id} --resume` to finish it."
         )
         raise typer.Exit(1)
+
+
+@app.command()
+def disambiguate(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="show the pending questions and spend nothing"
+    ),
+) -> None:
+    """Answer the ambiguous merges a load refused — one batched API call.
+
+    This is the ONLY command that spends the Gemini free tier, and that
+    tier is counted per DAY: 500 requests on the Lite models, 20 on
+    Flash. Every pending question goes in one request and every answer is
+    cached, so a whole corpus costs ONE request on first use and ZERO on
+    every reload. Deliberately separate from `lore process`, which stays
+    local, fast and offline.
+    """
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    store = DisambiguationStore(config.disambiguation_dir)
+
+    if not config.disambiguation.enabled:
+        typer.echo(
+            "note: disambiguation is off — set `enabled = true` under"
+            " [lore.disambiguation] in lore.toml so `lore process` records"
+            " questions and applies these answers"
+        )
+
+    pending = store.pending()
+    todo = store.unanswered(pending)
+    if not todo:
+        typer.echo(
+            f"nothing to ask — {len(pending)} pending question(s),"
+            f" {len(pending)} already answered (0 requests spent)"
+        )
+        return
+
+    if dry_run:
+        batches = -(-len(todo) // MAX_BATCH)
+        typer.echo(
+            f"would ask {len(todo)} question(s) in {batches} request(s)"
+            " (0 requests spent):"
+        )
+        for index, question in enumerate(todo, start=1):
+            options = " | ".join(c.name for c in question.candidates)
+            typer.echo(f"  {index}. {question.mention} ({question.kind})"
+                       f" -> {options} | none")
+            typer.echo(f"     {question.evidence}")
+        return
+
+    api_key = resolve_api_key()
+    if api_key is None:
+        typer.echo(
+            "no API key: set GEMINI_API_KEY (or GOOGLE_API_KEY) in your"
+            " environment. A free key comes from"
+            " https://aistudio.google.com/apikey — it is never read from"
+            " lore.toml, so it cannot end up in git."
+        )
+        typer.echo(
+            f"{len(todo)} question(s) still pending; 0 requests spent."
+        )
+        raise typer.Exit(2)
+
+    batches = -(-len(todo) // MAX_BATCH)
+    # A cascade, not one model: a 429/503/404 moves to the next entry
+    # instead of sleeping, which is what turns five per-model daily quotas
+    # into aggregate capacity.
+    client = GeminiClient(api_key, models=config.disambiguation.models)
+
+    async def _run():
+        # Same loop for the request and the close: httpx binds its sockets
+        # to the loop that opened them.
+        try:
+            return await ask(client, todo)
+        finally:
+            await client.aclose()
+
+    try:
+        answers = asyncio.run(_run())
+    except (GeminiError, AnswerMismatchError) as exc:
+        typer.echo(f"disambiguate failed: {exc}")
+        # Nothing is written until a complete, verified answer set is in
+        # hand, so a failure here can never leave a half-answered cache
+        # that quietly mis-merges entities on the next load.
+        typer.echo(
+            "the answer cache was not modified — re-run `lore disambiguate`"
+            " to try again"
+        )
+        raise typer.Exit(1)
+
+    store.save_answers(answers)
+    merges = sum(1 for value in answers.values() if value)
+    typer.echo(
+        f"asked {len(todo)} question(s) in {batches} request(s);"
+        f" answered by {client.last_model}"
+        f" ({client.requests_made} HTTP call(s) across the cascade)"
+    )
+    typer.echo(
+        f"recorded {len(answers)} answer(s): {merges} merge(s),"
+        f" {len(answers) - merges} refusal(s)"
+    )
+    typer.echo(f"cached in {store.answers_path} — a reload spends 0 requests")
+    # Per model, because a cascade that fell through a 429 spent one
+    # request against THAT model's budget, not against the one that
+    # answered. Reporting the total against the winner would be a lie.
+    spent = ", ".join(
+        f"{model} {count}/{limits_for(model).rpd}"
+        for model, count in getattr(client, "attempts", {}).items()
+    )
+    typer.echo(f"free-tier requests/day used by this run: {spent}")
+    typer.echo(
+        f"re-run `lore process <book> --skip-extract` to apply {merges} merge(s)"
+    )
 
 
 @app.command()

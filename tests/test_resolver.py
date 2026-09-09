@@ -924,3 +924,118 @@ async def test_a_possessive_description_still_absorbs_the_person_it_names(
         e.aliases == ("lucy ferrier", "lucy ferrier s father")
         for e in result.entities
     ), "and the possessive defect is still there, unfixed by this task"
+
+
+# --------------------------------------------------------------------------
+# Task 1j: the ambiguous residue. The refusal above is safe but lossy, so a
+# refused mention is RECORDED as a question, and a previously answered
+# question is honoured on the next load. Both hooks are optional and
+# default to None: with neither wired, every test above must still hold.
+#
+# The three names below are deliberately shaped so the BARE one sorts last
+# (`resolve_mentions` walks its canonical order), which is the case where
+# both full names already exist and the question carries two candidates.
+# The orthogonal vectors keep the similarity path out of it: any merge
+# below is the Task 1j hook's doing and nothing else's.
+
+_FAMILY = [
+    Mention("Adam Sholto", "Character", "b1", "the father was dead"),
+    Mention("Brian Sholto", "Character", "b1", "the son answered"),
+    Mention("Sholto", "Character", "b1", "Sholto had been dead for years"),
+]
+_FAMILY_VECTORS = {
+    "Adam Sholto": [1.0, 0.0, 0.0],
+    "Brian Sholto": [0.0, 1.0, 0.0],
+    "Sholto": [1.0, 0.0, 0.0],  # identical to Adam: only the hook may merge it
+}
+
+
+def _family_embed():
+    return _embedder(_FAMILY_VECTORS)
+
+
+@pytest.mark.asyncio
+async def test_an_ambiguous_refusal_records_a_question() -> None:
+    recorded: list = []
+    result = await resolve_mentions(
+        list(_FAMILY), _family_embed(), _never, record_ambiguous=recorded.append
+    )
+    assert len(result.entities) == 3, "recording must not change the outcome"
+    assert len(recorded) == 1
+    question = recorded[0]
+    assert question.mention == "Sholto"
+    assert question.kind == "Character"
+    assert question.book_id == "b1"
+    assert question.evidence == "Sholto had been dead for years"
+    assert sorted(c.name for c in question.candidates) == [
+        "Adam Sholto", "Brian Sholto"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_an_unambiguous_merge_records_nothing() -> None:
+    recorded: list = []
+    await resolve_mentions(
+        [
+            Mention("Watson", "Character", "b1", "my companion"),
+            Mention("Dr. John Watson", "Character", "b1", "my companion"),
+        ],
+        _embedder({}),
+        _never,
+        record_ambiguous=recorded.append,
+    )
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_a_cached_answer_merges_the_ambiguous_mention() -> None:
+    def decide(question):
+        chosen = [c for c in question.candidates if c.name == "Adam Sholto"]
+        return chosen[0].id if chosen else None
+
+    result = await resolve_mentions(
+        list(_FAMILY), _family_embed(), _never, decide_ambiguous=decide
+    )
+    assert len(result.entities) == 2
+    merged = [e for e in result.entities if len(e.aliases) == 2]
+    assert len(merged) == 1
+    assert merged[0].aliases == ("adam sholto", "sholto")
+
+
+@pytest.mark.asyncio
+async def test_an_answer_naming_an_unoffered_entity_never_merges() -> None:
+    # A stale cache entry, or a mis-mapped batch that somehow got this far,
+    # must not be allowed to fuse an arbitrary pair of entities.
+    result = await resolve_mentions(
+        list(_FAMILY), _family_embed(), _never,
+        decide_ambiguous=lambda question: "not-a-candidate-id",
+    )
+    assert len(result.entities) == 3
+
+
+@pytest.mark.asyncio
+async def test_no_answer_refuses_exactly_as_before() -> None:
+    with_hook = await resolve_mentions(
+        list(_FAMILY), _family_embed(), _never,
+        decide_ambiguous=lambda question: None,
+    )
+    without = await resolve_mentions(list(_FAMILY), _family_embed(), _never)
+    assert sorted(e.id for e in with_hook.entities) == sorted(
+        e.id for e in without.entities
+    )
+    assert [e.aliases for e in with_hook.entities] == [
+        e.aliases for e in without.entities
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_recorded_question_is_a_function_of_the_mention_set() -> None:
+    """Same data in a different order — same question, same cache key."""
+    forward: list = []
+    backward: list = []
+    await resolve_mentions(list(_FAMILY), _family_embed(), _never,
+                           record_ambiguous=forward.append)
+    await resolve_mentions(list(reversed(_FAMILY)), _family_embed(), _never,
+                           record_ambiguous=backward.append)
+    assert [q.key for q in forward] == [q.key for q in backward]
+    assert forward[0].candidates == backward[0].candidates

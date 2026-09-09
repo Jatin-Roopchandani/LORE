@@ -5,7 +5,9 @@ import os
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from lore.inference.gemini import DEFAULT_MODELS
 
 
 class OllamaConfig(BaseModel):
@@ -31,12 +33,38 @@ class ExtractionConfig(BaseModel):
     vllm_version: str = ""  # empty = install latest on the kernel
 
 
+class DisambiguationConfig(BaseModel):
+    """The optional Gemini disambiguator (Task 1j). Off by default.
+
+    `extra="forbid"` is load-bearing, not tidiness: the API key must come
+    from the environment (`GEMINI_API_KEY`, then `GOOGLE_API_KEY`) and
+    nowhere else. Pydantic ignores unknown keys by default, so an
+    `api_key = "..."` line in lore.toml would be silently accepted, do
+    nothing, and end up committed to git. Forbidding extras turns that
+    into a loud config error instead.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Opt-in. With this False, `lore process` records no questions,
+    # consults no cache, and behaves exactly as it did before Task 1j.
+    enabled: bool = False
+    # The whole cascade is configurable, and its ORDER IS MEASURED, not
+    # chronological — see `lore.inference.gemini`. A 429/503/404 moves to
+    # the next entry, which is what turns five per-model daily quotas into
+    # aggregate capacity.
+    models: list[str] = Field(default_factory=lambda: list(DEFAULT_MODELS))
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
     extraction_provider: str = "kaggle"  # "kaggle" | "ollama"
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     kaggle: KaggleConfig = Field(default_factory=KaggleConfig)
     extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
+    disambiguation: DisambiguationConfig = Field(
+        default_factory=DisambiguationConfig
+    )
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
@@ -69,6 +97,16 @@ class LoreConfig(BaseModel):
     @property
     def extractions_dir(self) -> Path:
         return self.data_dir / "extractions"
+
+    @property
+    def disambiguation_dir(self) -> Path:
+        """Pending questions and the answer cache. Never created eagerly.
+
+        Deliberately absent from `ensure_dirs`: a run with the feature off
+        must leave no trace of it at all, which is also what makes "a load
+        with no key and no config is byte-identical to today" testable.
+        """
+        return self.data_dir / "disambiguation"
 
     def ensure_dirs(self) -> None:
         for d in (

@@ -78,6 +78,7 @@ from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.graph.artifacts import completed_unit_dirs, read_embeddings, read_triplets
 from lore.ingest.registry import chunks_for_book
+from lore.resolve.disambiguation import DisambiguationStore
 from lore.resolve.entityhood import (
     is_generic_name,
     is_gutenberg_boilerplate,
@@ -573,7 +574,20 @@ async def load_book(
     book_id: str,
     embed: Callable[[list[str]], Awaitable[list[list[float]]]],
     adjudicate: Adjudicate,
+    disambiguation: DisambiguationStore | None = None,
 ) -> LoadReport:
+    """Load one book. `disambiguation` is Task 1j's optional residue store.
+
+    When it is None — the default, and what `lore process` passes unless
+    `[lore.disambiguation] enabled = true` — nothing about this load
+    differs from before Task 1j: no questions are recorded, no cache is
+    consulted, no directory is created, and no network call is possible.
+
+    When it is given, the load is still entirely offline. It only WRITES
+    the ambiguous merges it refused (so `lore disambiguate` can spend one
+    request on all of them at once) and READS answers a previous run
+    already paid for.
+    """
     # ---- Phase 1: read and compute. No store is mutated below this line.
     dirs = completed_unit_dirs(conn, config, book_id)
     if not dirs:
@@ -609,7 +623,13 @@ async def load_book(
         dropped_mentions += 1
 
     mentions = _mentions_from(triplets, book_id, _count_rejected)
-    resolution = await resolve_mentions(mentions, embed, adjudicate)
+    resolution = await resolve_mentions(
+        mentions, embed, adjudicate,
+        record_ambiguous=None if disambiguation is None else disambiguation.record,
+        decide_ambiguous=(
+            None if disambiguation is None else disambiguation.answer_for
+        ),
+    )
     predicate_map = await normalize_predicates(
         [str(row.get("predicate") or "") for row in triplets], embed
     )
@@ -927,4 +947,13 @@ async def load_book(
             " left incomplete. Re-run the load to repair it."
         ) from exc
     report.chunks = len(lance_chunk_rows)
+
+    # ---- Phase 4: the questions this load could not answer.
+    # Last, and outside both stores: it is a note to the user, not part of
+    # the graph. Writing it here rather than in phase 1 means a load that
+    # failed leaves the previous run's questions intact, and writing it
+    # per book means a re-load REPLACES this book's set — a question that
+    # is no longer ambiguous stops costing quota.
+    if disambiguation is not None:
+        disambiguation.flush(book_id)
     return report

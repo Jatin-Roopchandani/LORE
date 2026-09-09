@@ -1729,3 +1729,196 @@ async def test_probe_the_variant_merge_adopts_the_first_loaded_books_id(
     assert ids[BOOK] == entity_id("john watson", "Character")   # A minted it
     assert ids[BOOK_B] == entity_id("watson", "Character")      # B minted it
     assert ids[BOOK] != ids[BOOK_B]
+
+
+# --------------------------------------------------------------------------
+# Task 1j: the ambiguous residue reaches a pending store, and a cached
+# answer merges it on the next load. The API is never called from here —
+# `lore disambiguate` is a separate, deliberate command.
+
+
+def _setup_ambiguous(tmp_path: Path):
+    """A book whose bare surname nests inside two different full names.
+
+    `Major Sholto` normalizes to `sholto`, which is a subset of both
+    `bartholomew sholto` and `thaddeus sholto` — the murdered father and
+    his two sons. Task 1i refuses that merge; Task 1j records it.
+    """
+    config = LoreConfig.load().model_copy(update={"data_dir": tmp_path / "data"})
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    chunks = [
+        Chunk(id=f"{BOOK}:1:{i}", book_id=BOOK, chapter_seq=1, scene_seq=0,
+              seq=i, text=f"passage {i}")
+        for i in range(2)
+    ]
+    ingest_book(conn, book_id=BOOK, title="Sign", author="ACD", source="upload",
+                file_path="/x/b.epub", chunks=chunks)
+    d = config.extractions_dir / BOOK / UNIT
+    d.mkdir(parents=True, exist_ok=True)
+    pq.write_table(
+        pa.table({
+            "chunk_id": [f"{BOOK}:1:0", f"{BOOK}:1:1"],
+            "book_id": [BOOK, BOOK],
+            "subject": ["Major Sholto", "Thaddeus Sholto"],
+            "predicate": ["FATHER_OF", "BROTHER_OF"],
+            "object": ["Bartholomew Sholto", "Bartholomew Sholto"],
+            "evidence": ["a: he had been dead for years",
+                         "b: the twin brother"],
+            "confidence": [0.9, 0.8],
+            "entity_names": [["Major Sholto", "Bartholomew Sholto"],
+                             ["Thaddeus Sholto", "Bartholomew Sholto"]],
+            "entity_kinds": [["Character", "Character"],
+                             ["Character", "Character"]],
+            "extractor_model": ["m", "m"],
+            "run_id": [UNIT, UNIT],
+        }),
+        d / "triplets.parquet",
+    )
+    pq.write_table(
+        pa.table({
+            "chunk_id": [f"{BOOK}:1:0", f"{BOOK}:1:1"],
+            "vector": [[0.0] * EMBED_DIM, [0.0] * EMBED_DIM],
+            "embed_model": ["e", "e"],
+        }),
+        d / "embeddings.parquet",
+    )
+    set_unit_state(conn, BOOK, UNIT, "completed")
+    return config, conn, KuzuStore(config.kuzu_dir / "graph"), LanceStore(
+        config.lancedb_dir
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_load_without_a_store_touches_no_disambiguation_state(
+    tmp_path: Path
+) -> None:
+    # `lore process` with no key and no config must behave exactly as it did
+    # before Task 1j: three entities, and not so much as a directory made.
+    config, conn, kuzu, lance = _setup_ambiguous(tmp_path)
+    report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert report.entities == 3
+    assert not (config.data_dir / "disambiguation").exists()
+
+
+@pytest.mark.asyncio
+async def test_a_load_records_the_ambiguous_question(tmp_path: Path) -> None:
+    from lore.resolve.disambiguation import DisambiguationStore
+
+    config, conn, kuzu, lance = _setup_ambiguous(tmp_path)
+    store = DisambiguationStore(config.disambiguation_dir)
+    report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never,
+                             disambiguation=store)
+    assert report.entities == 3, "recording changes nothing about the load"
+
+    # Two refusals, so two questions — one per pairwise decision the rules
+    # could not make. The resolver walks its mentions in canonical order,
+    # so `sholto` is asked against the entity that already existed
+    # (Bartholomew) and `thaddeus sholto` against the bare `sholto` node
+    # that the first refusal minted. Each question mirrors exactly one
+    # merge, which is what makes an answer directly actionable.
+    pending = DisambiguationStore(config.disambiguation_dir).pending()
+    asked = {
+        (q.mention, tuple(c.name for c in q.candidates), q.evidence)
+        for q in pending
+    }
+    assert asked == {
+        ("Major Sholto", ("Bartholomew Sholto",),
+         "a: he had been dead for years"),
+        ("Thaddeus Sholto", ("Major Sholto",), "b: the twin brother"),
+    }
+    assert {q.book_id for q in pending} == {BOOK}
+    by_mention = {q.mention: q for q in pending}
+    assert [c.id for c in by_mention["Major Sholto"].candidates] == [
+        entity_id("bartholomew sholto", "Character")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_cached_answer_merges_on_the_next_load(tmp_path: Path) -> None:
+    from lore.resolve.disambiguation import DisambiguationStore
+
+    config, conn, kuzu, lance = _setup_ambiguous(tmp_path)
+    store = DisambiguationStore(config.disambiguation_dir)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never,
+                    disambiguation=store)
+
+    # What `lore disambiguate` would have written, without any API call:
+    # the bare `Major Sholto` really is Bartholomew's, say. The other
+    # question (Thaddeus against the bare node) is left unanswered, so it
+    # must still refuse.
+    pending = DisambiguationStore(config.disambiguation_dir).pending()
+    question = next(q for q in pending if q.mention == "Major Sholto")
+    father = entity_id("bartholomew sholto", "Character")
+    DisambiguationStore(config.disambiguation_dir).save_answers(
+        {question.key: father}
+    )
+
+    report = await load_book(
+        config, conn, kuzu, lance, BOOK, _embed, _never,
+        disambiguation=DisambiguationStore(config.disambiguation_dir),
+    )
+    assert report.entities == 2
+    aliases = {
+        r[0]: sorted(r[1] or ())
+        for r in kuzu.execute("MATCH (e:Entity) RETURN e.name, e.aliases")
+    }
+    assert aliases["Bartholomew Sholto"] == ["bartholomew sholto", "sholto"]
+    # `Major Sholto` survives only as a surface form pointing at the
+    # canonical, which is what every merged alias does in this graph.
+    links = [
+        tuple(r) for r in kuzu.execute(
+            "MATCH (a:Entity)-[:ALIAS_OF]->(c:Entity) RETURN a.name, c.name"
+        )
+    ]
+    assert links == [("Major Sholto", "Bartholomew Sholto")]
+    # The merge removed the bare node, so the second question no longer
+    # arises at all; the first is answered. Nothing is left to ask.
+    remaining = DisambiguationStore(config.disambiguation_dir)
+    assert remaining.unanswered(remaining.pending()) == []
+
+
+@pytest.mark.asyncio
+async def test_a_reload_replaces_this_books_pending_questions(
+    tmp_path: Path
+) -> None:
+    from lore.resolve.disambiguation import DisambiguationStore
+
+    config, conn, kuzu, lance = _setup_ambiguous(tmp_path)
+    stale = DisambiguationStore(config.disambiguation_dir)
+    (config.disambiguation_dir / "pending").mkdir(parents=True, exist_ok=True)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never,
+                    disambiguation=stale)
+    assert len(DisambiguationStore(config.disambiguation_dir).pending()) == 2
+
+    # Answer one, reload: the merge it authorises makes the OTHER question
+    # stop arising, and the file is rewritten rather than appended to — so
+    # a settled question never costs quota again.
+    question = next(
+        q for q in DisambiguationStore(config.disambiguation_dir).pending()
+        if q.mention == "Major Sholto"
+    )
+    DisambiguationStore(config.disambiguation_dir).save_answers(
+        {question.key: entity_id("bartholomew sholto", "Character")}
+    )
+    await load_book(
+        config, conn, kuzu, lance, BOOK, _embed, _never,
+        disambiguation=DisambiguationStore(config.disambiguation_dir),
+    )
+    fresh = DisambiguationStore(config.disambiguation_dir)
+    assert [q.mention for q in fresh.pending()] == ["Major Sholto"]
+    assert fresh.unanswered(fresh.pending()) == []
+
+
+@pytest.mark.asyncio
+async def test_a_corrupt_answer_cache_does_not_break_a_load(tmp_path: Path) -> None:
+    from lore.resolve.disambiguation import DisambiguationStore
+
+    config, conn, kuzu, lance = _setup_ambiguous(tmp_path)
+    config.disambiguation_dir.mkdir(parents=True, exist_ok=True)
+    (config.disambiguation_dir / "answers.json").write_text('{"a": ')
+    report = await load_book(
+        config, conn, kuzu, lance, BOOK, _embed, _never,
+        disambiguation=DisambiguationStore(config.disambiguation_dir),
+    )
+    assert report.entities == 3

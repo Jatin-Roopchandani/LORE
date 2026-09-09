@@ -22,10 +22,16 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Container, Iterable, Iterator
 from dataclasses import dataclass, field
 
+from lore.resolve.disambiguation import Candidate, Question
 from lore.resolve.normalize import entity_id, normalize_name
 from lore.resolve.predicates import cosine
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
+# Task 1j's two optional hooks onto the ambiguous residue. Both default to
+# None, and with neither wired every decision below is exactly what it was
+# before: an ambiguous subset match refuses, offline and for free.
+RecordAmbiguous = Callable[[Question], None]
+DecideAmbiguous = Callable[[Question], str | None]
 
 
 @dataclass(frozen=True)
@@ -245,6 +251,8 @@ async def resolve_mentions(
     same_book_floor: float = 0.86,
     cross_book_floor: float = 0.92,
     reject_floor: float = 0.70,
+    record_ambiguous: RecordAmbiguous | None = None,
+    decide_ambiguous: DecideAmbiguous | None = None,
 ) -> ResolutionResult:
     result = ResolutionResult()
     # Process mentions in a canonical order (not input order) so the result
@@ -406,6 +414,38 @@ async def resolve_mentions(
         refused = {cid for cid in nests if cid not in subset_matches}
         if refused:
             candidates = [cid for cid in candidates if cid not in refused]
+
+        # Task 1j — the residue. A refusal here is the ONE class of merge
+        # no rule can settle: the bare surname really might be either son,
+        # or the father who is neither. It is recorded as a question, and
+        # if a previous `lore disambiguate` already paid for an answer,
+        # that answer is honoured. Both hooks are optional; with neither
+        # wired this block records nothing, decides nothing, and the
+        # refusal stands exactly as Task 1i left it.
+        #
+        # The answer is a candidate ID and it is checked against `refused`
+        # before it is used. A stale cache entry — written before a
+        # re-extraction changed the entity set — must be ignored, never
+        # allowed to fuse an arbitrary pair of entities.
+        verdict: str | None = None
+        if refused and not subset_matches and (
+            record_ambiguous is not None or decide_ambiguous is not None
+        ):
+            question = Question(
+                mention=mention.name, kind=mention.kind,
+                book_id=mention.book_id, evidence=mention.context,
+                candidates=tuple(
+                    Candidate(id=cid, name=display_name(raw_names[cid]))
+                    for cid in sorted(refused)
+                ),
+            )
+            if record_ambiguous is not None:
+                record_ambiguous(question)
+            if decide_ambiguous is not None:
+                answer = decide_ambiguous(question)
+                if answer is not None and answer in refused:
+                    verdict = answer
+
         if subset_matches:
             # Prefer the most specific match (the largest shared token set;
             # one side nests in the other, so that is the larger of the two
@@ -416,6 +456,8 @@ async def resolve_mentions(
                 subset_matches,
                 key=lambda cid: (-len(alias_tokens[cid] & mention_tokens), cid),
             )
+        elif verdict is not None:
+            chosen = verdict
         elif candidates:
             # Pass 2 — embed this mention plus any not-yet-cached candidates,
             # in one batch, then compare against same-kind candidates.
