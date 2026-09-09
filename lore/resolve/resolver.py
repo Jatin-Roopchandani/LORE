@@ -106,14 +106,89 @@ def name_tokens(normalized: str) -> frozenset[str]:
     )
 
 
-def _tokens_nest(left: frozenset[str], right: frozenset[str]) -> bool:
+def tokens_nest(left: frozenset[str], right: frozenset[str]) -> bool:
     """True when one of two non-empty token sets contains the other.
+
+    Public because two rules share it: pass 2a below decides SAME-book name
+    variants with it, and `lore.graph.loader._reconcile_ids` decides
+    CROSS-book ones (Task 1i). One rule, one place.
 
     Both sides must be non-empty: the empty set is a subset of everything,
     and a name whose tokens are all function words or initials must never
     nest inside — and so merge with — an arbitrary other name.
     """
     return bool(left) and bool(right) and (left <= right or right <= left)
+
+
+def superset_counts(
+    mentions: Iterable[tuple[str, str, str]]
+) -> dict[tuple[str, str, str], int]:
+    """How many DISTINCT longer names each normalized name nests inside.
+
+    Keyed by (book_id, kind, normalized name), counted over the whole
+    mention set — a function of the data, never of processing order.
+
+    This is the ambiguity test the subset shortcut needs. A one-token name
+    is a subset of every longer name containing it, and `normalize_name`
+    strips honorifics, so a full and distinct character name can be reduced
+    to a bare surname:
+
+        normalize_name('Major Sholto')       -> 'sholto'
+        normalize_name('Thaddeus Sholto')    -> 'thaddeus sholto'
+        normalize_name('Bartholomew Sholto') -> 'bartholomew sholto'
+
+    Major Sholto is the murdered father, Thaddeus and Bartholomew his sons.
+    `sholto` nests inside both sons, so a subset rule that merges on the
+    first match it finds fuses the family into one node and makes every
+    edge on it wrong. Same shape for `smith` (Mrs. Smith vs Mordecai
+    Smith), `ferrier` (John vs Lucy) and `lucy` (Lucy Ferrier vs "Lucy
+    Ferrier's father").
+
+    So a subset match may merge only when it is UNAMBIGUOUS: the shorter
+    name nests inside exactly ONE longer name in that book and kind. Two or
+    more and the merge is refused and the entities stay separate — under-
+    merging leaves two nodes a later pass can join, over-merging destroys
+    both.
+
+    Token sets that are EQUAL are not counted: `john h watson m d` and
+    `john watson` are the same name written two ways, not two people, and
+    counting them would make every such pair ambiguous with itself.
+    """
+    grouped: dict[tuple[str, str], set[str]] = {}
+    for book_id, kind, normalized in mentions:
+        if normalized:
+            grouped.setdefault((book_id, kind), set()).add(normalized)
+    counts: dict[tuple[str, str, str], int] = {}
+    for (book_id, kind), names in grouped.items():
+        tokens = {name: name_tokens(name) for name in names}
+        for name, mine in tokens.items():
+            if not mine:
+                continue
+            counts[(book_id, kind, name)] = len({
+                theirs for other, theirs in tokens.items()
+                if other != name and theirs and mine < theirs
+            })
+    return counts
+
+
+def unambiguous_nesting(
+    left: str, right: str, book_id: str, kind: str,
+    counts: dict[tuple[str, str, str], int],
+) -> bool:
+    """True when the shorter of two nesting names has exactly one superset.
+
+    Equal token sets are always unambiguous — neither name is the shorter.
+    A name absent from `counts` (it was never a mention in this group) is
+    treated as having no supersets, so it cannot be the ambiguous side.
+    """
+    left_tokens, right_tokens = name_tokens(left), name_tokens(right)
+    if left_tokens < right_tokens:
+        shorter = left
+    elif right_tokens < left_tokens:
+        shorter = right
+    else:
+        return True
+    return counts.get((book_id, kind, shorter), 0) <= 1
 
 
 def display_name(candidates: Iterable[str]) -> str:
@@ -181,6 +256,14 @@ async def resolve_mentions(
     ordered_mentions = sorted(
         mentions,
         key=lambda m: (m.book_id, normalize_name(m.name), m.kind, m.context),
+    )
+    # How many distinct longer names each name nests inside — the ambiguity
+    # gate on pass 2a below. Computed over the whole mention set up front,
+    # because the streaming loop cannot see it: a bare surname sorts BEFORE
+    # every full name containing it, so at the moment it is processed none
+    # of its rivals exist yet and the first one to arrive would win it.
+    nesting_counts = superset_counts(
+        (m.book_id, m.kind, normalize_name(m.name)) for m in ordered_mentions
     )
 
     # Working state, keyed by canonical id.
@@ -282,15 +365,47 @@ async def resolve_mentions(
         #
         # Placed before the embedding batch is built, so a subset match
         # costs no embedding call at all.
-        subset_matches = [
+        #
+        # AMBIGUITY. A nesting pair is evidence of one entity only when the
+        # shorter name has exactly ONE longer name to nest inside. `sholto`
+        # nests inside both `thaddeus sholto` and `bartholomew sholto` —
+        # two sons and their murdered father — and merging on whichever
+        # arrived first would fuse the family. When the nesting is
+        # ambiguous the mention is refused outright: it does not fall
+        # through to the similarity path, because that path would happily
+        # merge it too (an entity and its own surname share an evidence
+        # sentence, and the embedding measures co-occurrence). Under-merging
+        # leaves nodes a later pass can join; over-merging destroys both.
+        nests = [
             cid
             for cid in candidates
             if mention.book_id in books[cid]
             and all(
-                _tokens_nest(mention_tokens, name_tokens(alias))
+                tokens_nest(mention_tokens, name_tokens(alias))
                 for alias in alias_sets[cid]
             )
         ]
+        subset_matches = [
+            cid
+            for cid in nests
+            if all(
+                unambiguous_nesting(
+                    normalized, alias, mention.book_id, mention.kind,
+                    nesting_counts,
+                )
+                for alias in alias_sets[cid]
+            )
+        ]
+        # An ambiguous nesting candidate is dropped from the similarity pass
+        # as well, not merely from the shortcut: an entity and its own
+        # surname share an evidence sentence, and the embedding measures
+        # co-occurrence, so leaving it in would let the very merge just
+        # refused come back through the other door. Candidates that never
+        # nested are untouched — the ambiguity is about one pair of names,
+        # not about this mention.
+        refused = {cid for cid in nests if cid not in subset_matches}
+        if refused:
+            candidates = [cid for cid in candidates if cid not in refused]
         if subset_matches:
             # Prefer the most specific match (the largest shared token set;
             # one side nests in the other, so that is the larger of the two

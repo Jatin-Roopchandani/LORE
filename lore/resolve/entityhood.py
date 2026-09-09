@@ -190,3 +190,91 @@ def is_generic_name(name: str) -> bool:
     """
     tokens = [word for word in (_bare_word(t) for t in name.split()) if word]
     return bool(tokens) and all(token in _GENERIC_TOKENS for token in tokens)
+
+
+# --------------------------------------------------------------------------
+# Task 1i defect 2: Gutenberg header, table of contents and licence are
+# ingested as ordinary chapters, so their boilerplate mints ordinary
+# entities. Measured on the freshly rebuilt two-novel graph, ELEVEN of the
+# 18 entities spanning both books came from that boilerplate — they span
+# both books precisely because the text is byte-identical in both:
+#
+#   [Place ] TRADEMARK_OWNER      [Object] the IRS        [Place ] FOUNDATION
+#   [Place ] DISTRIBUTOR          [Object] The Foundation [Faction] Arthur Conan Doyle
+#   [Char  ] The Foundation       [Object] the United States
+#   [Place ] United States        [Object] 50 states of the United States
+#   [Place ] 50 states of the United States
+#
+# The brief offered two fixes: a stoplist of licence-specific NAMES, or a
+# detector for the boilerplate PASSAGE. This is the second, for three
+# measured reasons:
+#
+#   * a name stoplist would have to ban `United States`, `The Foundation`
+#     and `Arthur Conan Doyle` outright. `the United States` is one of this
+#     module's own worked examples of a name that must survive, and any of
+#     the three can be a real entity in another book. Keying on the passage
+#     bans no word at all: `The Foundation` in a story chunk is an ordinary
+#     entity, and the tests assert exactly that.
+#   * it removes the junk EDGES with the junk nodes, because the triplet
+#     rows never reach the graph.
+#   * the licence also leaks into story chunks through the loader's
+#     book-global surface-name fallback: chunk `05ab674df048d13f:16:13`,
+#     ordinary Salt Lake City prose, carries a MENTIONS edge to
+#     `50 states of the United States`. Killing the row at its source stops
+#     that too.
+#
+# The markers are phrases that occur in Gutenberg's own front matter and
+# licence and nowhere in a novel. Measured over all 1,140 chunks of the
+# three real books in `data/` they flag 6 chunks of *A Study in Scarlet*,
+# 6 of *The Sign of the Four* and 46 of *Pride and Prejudice* — every
+# boilerplate chunk in each, and no chunk of story prose.
+#
+# Deliberately NOT keyed on the words "foundation", "trademark",
+# "distributor" or "united states" alone: a book may use any of them.
+# `1.f.3` and `paper edition` are on the list because the epub extraction
+# strips the "Project Gutenberg" links out of some licence paragraphs,
+# leaving the paragraph-number scaffolding as the only marker; neither
+# appears in running prose.
+#
+# The two novels each have ONE mixed chunk where the last paragraph runs
+# straight into the licence with no chapter break
+# (`05ab674df048d13f:18:10`, `0ee225a9a3b5fbc2:15:43`). They are treated as
+# boilerplate, which is why this is a chunk-level and not a chapter-level
+# rule; measured, the only story triplets lost with them are
+# `Sherlock Holmes POSSESSES cocaine-bottle` — which the previous chunk,
+# `0ee225a9a3b5fbc2:15:42`, states as well — and two whose endpoints
+# `is_probable_entity` already rejects.
+_GUTENBERG_MARKERS = (
+    "project gutenberg",
+    "gutenberg.org",
+    "gutenberg™",
+    "gutenberg-tm",
+    "pglaf",
+    "[ebook #",
+    "start: full license",
+    "end: full license",
+    "please read this before you distribute or use this work",
+    "updated editions will replace the previous one",
+    "literary archive foundation",
+    "trademark owner",
+    "1.f.3",
+    "laws regulating charities and charitable donations",
+    "paper edition",
+)
+
+
+def is_gutenberg_boilerplate(text: str) -> bool:
+    """True when a chunk's text is Gutenberg front matter or licence.
+
+    Case-insensitive substring match against `_GUTENBERG_MARKERS`. Pure and
+    dependency-free, like `is_probable_entity`: it takes the passage and
+    nothing else, so it can be called before anything is written.
+
+    Keyed on the PASSAGE, never on a name. In a different corpus it would
+    wrongly reject only a chunk that quotes Gutenberg's own boilerplate
+    inside the story, or one that happens to contain a phrase such as
+    "trademark owner" or "paper edition" — and then only the entities named
+    nowhere else in that book.
+    """
+    lowered = text.casefold()
+    return any(marker in lowered for marker in _GUTENBERG_MARKERS)

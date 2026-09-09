@@ -17,6 +17,7 @@ from lore.graph.loader import PartialLoadError, load_book
 from lore.ingest.models import Chunk
 from lore.ingest.registry import ingest_book
 from lore.orchestrator.run import set_unit_state
+from lore.resolve.normalize import entity_id
 
 BOOK = "abcdef0123456789"
 UNIT = f"{BOOK}-u0000-aaaa"
@@ -1256,3 +1257,475 @@ async def test_probe_two_same_base_generic_candidates_take_free_slots(
     assert len(chosen) == 2
     assert persisted_id not in chosen  # generic: book A's node is untouched
     conn.close(); kuzu.close()
+
+
+# --------------------------------------------------------------------------
+# Task 1i defect 1: cross-book merging used to fire only on IDENTICAL names.
+# `Watson` (book one) and `Dr. John Watson` (book two) normalize to `watson`
+# and `john watson`, so their content-derived ids never collided and
+# `_reconcile_ids` never considered them. The same-book path got a token
+# subset rule in Task 1g; these tests extend it to the cross-book path.
+
+
+def _two_watsons(config, conn, *, kind_a="Character", kind_b="Character",
+                 name_a="Dr. John Watson", name_b="Watson") -> None:
+    """Book A names him in full, book B by surname alone."""
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, name_a, "OPPOSES", "Bo",
+             [name_a, "Bo"], [kind_a, "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, name_b, "LOVES", "Zed",
+             [name_b, "Zed"], [kind_b, "Character"]),
+    ])
+
+
+def _watsons(kuzu) -> list[tuple]:
+    return sorted(
+        (r[0], r[1], tuple(sorted(r[2] or ())), tuple(sorted(r[3] or ())))
+        for r in _rows(
+            kuzu,
+            "MATCH (e:Entity) WHERE e.name IN ['Dr. John Watson', 'Watson']"
+            " RETURN e.id, e.name, e.books, e.aliases",
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_cross_book_name_variant_merges(tmp_path: Path) -> None:
+    """`watson` nests inside `john watson`, both distinctive: one entity."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_watsons(config, conn)
+    spy = _AdjudicateSpy(False)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert spy.calls == []  # decided by rule, never by the 3B model
+
+    watsons = _watsons(kuzu)
+    assert len(watsons) == 1  # one node, not two
+    node_id, name, books, aliases = watsons[0]
+    assert books == tuple(sorted((BOOK, BOOK_B)))
+    assert name == "Dr. John Watson"  # the longest raw surface form
+    assert aliases == ("john watson", "watson")
+
+    edges = sorted(
+        (r[0], r[1], r[2])
+        for r in _rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
+                             " RETURN s.id, r.book_id, o.name")
+    )
+    assert len(edges) == 2
+    assert {e[0] for e in edges} == {node_id}  # both books' edges on one node
+    assert {(e[1], e[2]) for e in edges} == {(BOOK, "Bo"), (BOOK_B, "Zed")}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_generic_cross_book_name_variant_does_not_merge(
+    tmp_path: Path,
+) -> None:
+    """`inspector` nests inside `police inspector`, but both are generic.
+
+    Lestrade in one novel and Athelney Jones in the other are two people;
+    the subset shape must not override the Task 1h stoplist.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "the police Inspector", "OPPOSES", "Bo",
+             ["the police Inspector", "Bo"], ["Character", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "Inspector", "LOVES", "Zed",
+             ["Inspector", "Zed"], ["Character", "Character"]),
+    ])
+    spy = _AdjudicateSpy(True)  # even an approving model cannot fuse these
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert spy.calls == []
+
+    rows = sorted(
+        (r[0], tuple(sorted(r[1] or ())))
+        for r in _rows(
+            kuzu,
+            "MATCH (e:Entity) WHERE e.name IN ['the police Inspector',"
+            " 'Inspector'] RETURN e.id, e.books")
+    )
+    assert len(rows) == 2  # two people, two nodes
+    assert {books for _id, books in rows} == {(BOOK,), (BOOK_B,)}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_cross_book_name_variant_of_another_kind_does_not_merge(
+    tmp_path: Path,
+) -> None:
+    """A Place named `Watson` is not the Character `Dr. John Watson`."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_watsons(config, conn, kind_b="Place")
+    spy = _AdjudicateSpy(True)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert spy.calls == []
+
+    watsons = _watsons(kuzu)
+    assert len(watsons) == 2
+    assert {books for _id, _n, books, _a in watsons} == {(BOOK,), (BOOK_B,)}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", [[BOOK, BOOK_B], [BOOK_B, BOOK]])
+async def test_cross_book_variant_merge_is_independent_of_load_order(
+    tmp_path: Path, order: list[str],
+) -> None:
+    """Whichever book loads first, the graph says the same thing.
+
+    Everything a caller can read off the entity — how many nodes there are,
+    the display name, the kind, the books, the alias set and which node each
+    book's edges hang on — is a function of the two books' mentions and not
+    of which book was loaded first. The node's *id* is the one exception and
+    is asserted in the probe below.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_watsons(config, conn)
+    for book_id in order:
+        await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
+
+    watsons = _watsons(kuzu)
+    assert len(watsons) == 1
+    node_id, name, books, aliases = watsons[0]
+    assert (name, books, aliases) == (
+        "Dr. John Watson", tuple(sorted((BOOK, BOOK_B))), ("john watson", "watson")
+    )
+    edges = sorted(
+        (r[0], r[1], r[2])
+        for r in _rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
+                             " RETURN s.id, r.book_id, o.name")
+    )
+    assert {e[0] for e in edges} == {node_id}
+    assert {(e[1], e[2]) for e in edges} == {(BOOK, "Bo"), (BOOK_B, "Zed")}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", [[BOOK, BOOK_B], [BOOK_B, BOOK]])
+async def test_a_variant_merge_survives_a_reload_of_either_book(
+    tmp_path: Path, order: list[str],
+) -> None:
+    """The merged node is found again on reload, not split back in two.
+
+    A variant merge adopts an id derived from the OTHER book's name, so the
+    re-loading book no longer mints that id from its own. Without a way back
+    to the node it just merged into, a second `lore load` would mint a fresh
+    node and strip this book from the merged one's `books`.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_watsons(config, conn)
+    for book_id in order:
+        await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
+    snapshot = _snapshot(kuzu, lance)
+    for book_id in list(reversed(order)) + order:
+        await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
+    assert _snapshot(kuzu, lance) == snapshot
+    assert len(_watsons(kuzu)) == 1
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_variant_pair_that_nests_with_only_some_aliases_stays_split(
+    tmp_path: Path,
+) -> None:
+    """Task 1g's every-alias requirement, lifted to the cross-book path.
+
+    Book A's entity carries two surface forms. Book B's `Sholto` nests with
+    one of them and not the other, so it is NOT the same entity — this is
+    the shape that chained `mary` -> `mary morstan` -> `morstan` -> Captain
+    Morstan on the live corpus when the rule was pairwise.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0), _chunk(BOOK, 1, 1)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "Bartholomew Sholto", "OPPOSES", "Bo",
+             ["Bartholomew Sholto", "Bo"], ["Character", "Character"]),
+        _row(a[1].id, BOOK, "Bartholomew", "OPPOSES", "Bo",
+             ["Bartholomew", "Bo"], ["Character", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "Sholto", "LOVES", "Zed",
+             ["Sholto", "Zed"], ["Character", "Character"]),
+    ])
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+
+    rows = sorted(
+        (r[0], tuple(sorted(r[1] or ())))
+        for r in _rows(
+            kuzu,
+            "MATCH (e:Entity) WHERE e.name IN ['Bartholomew Sholto',"
+            " 'Bartholomew', 'Sholto'] RETURN e.id, e.books")
+    )
+    assert {books for _id, books in rows} == {(BOOK,), (BOOK_B,)}
+    assert any(books == (BOOK_B,) for _id, books in rows)
+    conn.close(); kuzu.close()
+
+
+# --------------------------------------------------------------------------
+# Task 1i defect 2: Gutenberg header / licence chunks minted entities.
+
+
+_GUTENBERG_LICENCE = (
+    "PLEASE READ THIS BEFORE YOU DISTRIBUTE OR USE THIS WORK Section 1. "
+    "1.A. 1.B. YOU AGREE THAT THE FOUNDATION, THE TRADEMARK OWNER, AND ANY "
+    "DISTRIBUTOR UNDER THIS AGREEMENT WILL NOT BE LIABLE TO YOU. The "
+    "Foundation is committed to complying with the laws regulating charities "
+    "and charitable donations in all 50 states of the United States."
+)
+
+
+@pytest.mark.asyncio
+async def test_gutenberg_boilerplate_chunks_mint_no_entities(
+    tmp_path: Path,
+) -> None:
+    """The licence chunk's triplets never enter the graph at all."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    chunks = [
+        _chunk(BOOK, 1, 0, text="Ana met Bo in the hall."),
+        _chunk(BOOK, 2, 0, text=_GUTENBERG_LICENCE),
+    ]
+    _add_book(config, conn, BOOK, chunks, [
+        _row(chunks[0].id, BOOK, "Ana", "LOVES", "Bo", ["Ana", "Bo"],
+             ["Character", "Character"]),
+        _row(chunks[1].id, BOOK, "The Foundation", "POSSESSES", "the IRS",
+             ["The Foundation", "the IRS", "TRADEMARK_OWNER", "DISTRIBUTOR",
+              "FOUNDATION", "Arthur Conan Doyle",
+              "50 states of the United States"],
+             ["Character", "Object", "Place", "Place", "Place", "Faction",
+              "Object"]),
+    ])
+    report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+
+    names = {r[0] for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.name")}
+    assert names == {"Ana", "Bo"}
+    for banned in ("The Foundation", "the IRS", "TRADEMARK_OWNER",
+                   "DISTRIBUTOR", "FOUNDATION", "Arthur Conan Doyle",
+                   "50 states of the United States"):
+        assert banned not in names
+    # ...and neither do its edges.
+    assert report.rel_edges == 1
+    assert _rows(kuzu, "MATCH ()-[r:REL]->() RETURN r.predicate") == [("LOVES",)]
+    # The chunk itself is still the registry's faithful record of the file.
+    assert report.boilerplate_chunks == 1
+    assert len(_rows(kuzu, "MATCH (c:Chunk) RETURN c.id")) == 2
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_boilerplate_does_not_reach_across_to_ordinary_chunks(
+    tmp_path: Path,
+) -> None:
+    """A name the licence also uses still survives from ordinary prose.
+
+    The rule is keyed on the passage, not on the name: `The Foundation` in a
+    story chunk is an ordinary entity.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    chunks = [
+        _chunk(BOOK, 1, 0, text="The Foundation stone was laid by Ana."),
+        _chunk(BOOK, 2, 0, text=_GUTENBERG_LICENCE),
+    ]
+    _add_book(config, conn, BOOK, chunks, [
+        _row(chunks[0].id, BOOK, "The Foundation", "LOVES", "Ana",
+             ["The Foundation", "Ana"], ["Faction", "Character"]),
+        _row(chunks[1].id, BOOK, "The Foundation", "POSSESSES", "the IRS",
+             ["The Foundation", "the IRS"], ["Faction", "Object"]),
+    ])
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    names = {r[0] for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.name")}
+    assert names == {"The Foundation", "Ana"}
+    assert "the IRS" not in names
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_cross_book_surname_matching_two_characters_merges_with_neither(
+    tmp_path: Path,
+) -> None:
+    """The Sholtos again, this time across the persistence seam.
+
+    Book A names the two sons; book B names their father, whose honorific
+    `normalize_name` strips down to the bare `Sholto`. It nests inside both
+    sons, so it is a family and not a person: three nodes, not one.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0), _chunk(BOOK, 1, 1)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "Thaddeus Sholto", "OPPOSES", "Bo",
+             ["Thaddeus Sholto", "Bo"], ["Character", "Character"]),
+        _row(a[1].id, BOOK, "Bartholomew Sholto", "OPPOSES", "Bo",
+             ["Bartholomew Sholto", "Bo"], ["Character", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "Major Sholto", "LOVES", "Zed",
+             ["Major Sholto", "Zed"], ["Character", "Character"]),
+    ])
+    spy = _AdjudicateSpy(True)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+
+    sholtos = sorted(
+        (r[0], r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(
+            kuzu,
+            "MATCH (e:Entity) WHERE e.name IN ['Thaddeus Sholto',"
+            " 'Bartholomew Sholto', 'Major Sholto'] RETURN e.id, e.name, e.books")
+    )
+    assert len(sholtos) == 3
+    assert {name for _id, name, _b in sholtos} == {
+        "Thaddeus Sholto", "Bartholomew Sholto", "Major Sholto"
+    }
+    # No node claims both books.
+    assert all(len(books) == 1 for _id, _n, books in sholtos)
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_two_cross_book_candidates_matching_one_node_merge_with_neither(
+    tmp_path: Path,
+) -> None:
+    """The other direction of the same ambiguity.
+
+    Book A has the bare `Major Sholto`; book B has both sons. Each son
+    matches the persisted surname on its own, so a rule that only counted
+    matches per CANDIDATE would give the node to whichever son was reached
+    first. Uniqueness has to hold both ways.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "Major Sholto", "OPPOSES", "Bo",
+             ["Major Sholto", "Bo"], ["Character", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0), _chunk(BOOK_B, 1, 1)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "Thaddeus Sholto", "LOVES", "Zed",
+             ["Thaddeus Sholto", "Zed"], ["Character", "Character"]),
+        _row(b[1].id, BOOK_B, "Bartholomew Sholto", "LOVES", "Zed",
+             ["Bartholomew Sholto", "Zed"], ["Character", "Character"]),
+    ])
+    spy = _AdjudicateSpy(True)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+
+    rows = sorted(
+        (r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(
+            kuzu,
+            "MATCH (e:Entity) WHERE e.name IN ['Thaddeus Sholto',"
+            " 'Bartholomew Sholto', 'Major Sholto'] RETURN e.id, e.name, e.books")
+    )
+    assert len(rows) == 3
+    assert all(len(books) == 1 for _n, books in rows)
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("persisted_name, incoming_name", [
+    # Persisted generic, incoming distinctive.
+    ("the police Inspector", "Inspector Lestrade"),
+    # Persisted distinctive, incoming generic.
+    ("Inspector Lestrade", "the police Inspector"),
+])
+async def test_a_variant_pair_with_one_generic_side_does_not_merge(
+    tmp_path: Path, persisted_name: str, incoming_name: str,
+) -> None:
+    """`police inspector` nests inside `lestrade`? No — but `inspector` does.
+
+    `normalize_name` leaves `the police Inspector` as `police inspector` and
+    strips nothing from `Inspector Lestrade`, so their tokens do not nest and
+    this pair never reaches the rule. The case that DOES reach it is a bare
+    generic against a name containing it, so both directions are asserted
+    below with `Inspector` itself.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_watsons(config, conn, name_a=persisted_name, name_b=incoming_name)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    rows = sorted(
+        (r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(
+            kuzu, "MATCH (e:Entity) WHERE e.name IN $names"
+                  " RETURN e.id, e.name, e.books",
+        )
+        if r[1] in (persisted_name, incoming_name)
+    )
+    assert len(rows) == 2
+    assert {books for _n, books in rows} == {(BOOK,), (BOOK_B,)}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("persisted_name, incoming_name", [
+    ("Inspector", "Inspector Lestrade"),   # persisted generic
+    ("Inspector Lestrade", "Inspector"),   # incoming generic
+])
+async def test_a_bare_generic_never_merges_into_a_distinctive_name(
+    tmp_path: Path, persisted_name: str, incoming_name: str,
+) -> None:
+    """`inspector` nests inside `inspector lestrade`, and must not merge.
+
+    The Task 1h stoplist is applied to BOTH sides, not only to the incoming
+    candidate: whichever book loads first, a bare role word can name a
+    different person in the other novel.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_watsons(config, conn, name_a=persisted_name, name_b=incoming_name)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    rows = sorted(
+        (r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.id, e.name, e.books")
+        if r[1] in ("Inspector", "Inspector Lestrade")
+    )
+    assert len(rows) == 2
+    assert {books for _n, books in rows} == {(BOOK,), (BOOK_B,)}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_probe_the_variant_merge_adopts_the_first_loaded_books_id(
+    tmp_path: Path,
+) -> None:
+    """The one thing a variant merge CANNOT make order-independent.
+
+    An identical-name cross-book merge (Task 1h) is order-free because both
+    books hash to the same id. A VARIANT merge cannot be: the two names hash
+    differently, and the second book adopts the id the first one minted,
+    because a Kuzu primary key cannot be moved without recreating the node
+    and every edge another book already hung on it.
+
+    So the id is pinned here rather than left to be discovered later. Every
+    other property of the node — name, kind, books, aliases, which edges
+    hang on it — is order-independent and asserted in
+    `test_cross_book_variant_merge_is_independent_of_load_order`.
+    """
+    ids = {}
+    for order in ([BOOK, BOOK_B], [BOOK_B, BOOK]):
+        root = tmp_path / order[0]
+        root.mkdir()
+        config, conn, kuzu, lance = _env(root)
+        _two_watsons(config, conn)
+        for book_id in order:
+            await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
+        watsons = _watsons(kuzu)
+        assert len(watsons) == 1
+        ids[order[0]] = watsons[0][0]
+        conn.close(); kuzu.close()
+
+    assert ids[BOOK] == entity_id("john watson", "Character")   # A minted it
+    assert ids[BOOK_B] == entity_id("watson", "Character")      # B minted it
+    assert ids[BOOK] != ids[BOOK_B]

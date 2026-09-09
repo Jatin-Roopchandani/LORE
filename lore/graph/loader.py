@@ -34,6 +34,13 @@ before anything is written, which node each incoming entity may own:
     judgement call; what matters is whether such a name can name two
     different people, and a stoplist answers that deterministically. This
     deliberately replaces a call to `adjudicate` — see `_reconcile_ids`;
+  * a persisted node whose name is a VARIANT of the candidate's — one
+    name's identity tokens nesting inside the other's, `watson` inside
+    `john watson` — is fused into on the same terms, provided the match is
+    unambiguous in both directions. There is no id collision to key on
+    here, so `_reconcile_ids` searches the persisted names; Task 1i, and
+    the only path by which Watson, a prime cross-book question subject,
+    becomes one entity across the two novels;
   * a refusal mints the next id in Task 3's collision chain
     (`entity_id_chain`), so both entities survive as separate nodes with
     their own edges.
@@ -71,7 +78,11 @@ from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.graph.artifacts import completed_unit_dirs, read_embeddings, read_triplets
 from lore.ingest.registry import chunks_for_book
-from lore.resolve.entityhood import is_generic_name, is_probable_entity
+from lore.resolve.entityhood import (
+    is_generic_name,
+    is_gutenberg_boilerplate,
+    is_probable_entity,
+)
 from lore.resolve.normalize import entity_id, normalize_name
 from lore.resolve.predicates import normalize_predicates
 from lore.resolve.resolver import (
@@ -79,7 +90,9 @@ from lore.resolve.resolver import (
     Mention,
     display_name,
     entity_id_chain,
+    name_tokens,
     resolve_mentions,
+    tokens_nest,
 )
 
 Statement = tuple[str, dict]
@@ -100,6 +113,7 @@ class LoadReport:
     mentions: int = 0
     dropped_edges: int = 0
     dropped_mentions: int = 0
+    boilerplate_chunks: int = 0
 
 
 class PartialLoadError(RuntimeError):
@@ -132,6 +146,12 @@ class _NodeCandidate:
     aliases: tuple[str, ...] = ()
     books: tuple[str, ...] = ()
     context: str = ""
+    # True for a node that exists only to carry one surface form of another
+    # entity (ALIAS_OF). Not an entity in its own right, so it takes no part
+    # in the cross-book name-variant search below — as a match it would be a
+    # duplicate of its own canonical, and counting it would make every real
+    # variant pair look ambiguous.
+    is_alias: bool = False
 
 
 def _base_normalized(node_id: str, name: str, kind: str, aliases: tuple) -> str:
@@ -254,6 +274,72 @@ def _persisted_entities(
     return _entities_where(kuzu, "e.id IN $ids", {"ids": wanted})
 
 
+def _entities_of_kinds(
+    kuzu: KuzuStore, kinds: Iterable[str]
+) -> dict[str, _PersistedEntity]:
+    """Every Entity node of any of these kinds.
+
+    A full scan of the kinds in play, because Task 1i's cross-book name
+    VARIANT rule has no id to key on: `watson` and `john watson` hash
+    differently, so the only way to find the counterpart is to look at the
+    persisted names. The graph is one node per entity per corpus (378 for
+    the two novels), so this is one small query per load; if a corpus ever
+    grows big enough for it to matter, the fix is a token index, not a
+    weaker rule.
+    """
+    wanted = sorted(set(kinds))
+    if not wanted:
+        return {}
+    return _entities_where(kuzu, "e.kind IN $kinds", {"kinds": wanted})
+
+
+def _alias_node_ids(kuzu: KuzuStore) -> set[str]:
+    """Every Entity node that exists only as another entity's surface form.
+
+    An ALIAS_OF source is not an entity in its own right — `Watson` and
+    `Dr. John Watson` are one person and one of them is only a spelling. It
+    must therefore take no part in the cross-book variant search: as a
+    match it is a duplicate of its own canonical, and counting it would
+    make every genuine variant pair look ambiguous and refuse it.
+    """
+    return {
+        row[0]
+        for row in kuzu.execute(
+            "MATCH (a:Entity)-[:ALIAS_OF]->(:Entity) RETURN DISTINCT a.id"
+        )
+    }
+
+
+def _name_forms(base: str, aliases: tuple[str, ...]) -> list[frozenset[str]]:
+    """The identity-token sets of every normalized name an entity answers to.
+
+    Empty (and so never a variant match) when any one of those names has no
+    identity-bearing token at all — `tokens_nest` refuses an empty side, and
+    a name made of nothing but function words must not nest inside an
+    arbitrary other name.
+    """
+    forms = [name_tokens(form) for form in sorted({base, *aliases}) if form]
+    return forms if forms and all(forms) else []
+
+
+def _is_name_variant(
+    left: list[frozenset[str]], right: list[frozenset[str]]
+) -> bool:
+    """True when two entities are the same name written two ways.
+
+    EVERY name form on one side must nest with EVERY form on the other, not
+    merely one of them: that is Task 1g's hard-won requirement, lifted from
+    the same-book path (`resolver.resolve_mentions`, pass 2a) to this one.
+    A pairwise version lets a merged entity bridge two names that never
+    nested with each other — measured on the live corpus, `mary` +
+    `mary morstan` then admitted `morstan`, fusing Mary Morstan with her
+    father Captain Morstan.
+    """
+    return bool(left) and bool(right) and all(
+        tokens_nest(a, b) for a in left for b in right
+    )
+
+
 def _entities_owned_by(kuzu: KuzuStore, book_id: str) -> dict[str, _PersistedEntity]:
     """Every Entity node whose `books` currently names this book.
 
@@ -289,6 +375,14 @@ async def _reconcile_ids(
     now decided by rule and none are left over for the model. It stays
     `async` so that re-introducing an awaited decision here — should a
     trustworthy adjudicator ever exist — costs no call-site churn.
+
+    Task 1i added step 2b, the cross-book name VARIANT. Steps 1 and 2 only
+    ever look at a candidate's own id chain, so they see a cross-book pair
+    only when the two normalized names are identical; `watson` and
+    `john watson` hash differently and were never considered. Step 2b
+    searches the persisted names instead, which is why this function now
+    reads the whole Entity table for the kinds in play. Every decision it
+    makes is still a pure function of the two books' data.
     """
     chains = {
         candidate.id: list(
@@ -309,6 +403,60 @@ async def _reconcile_ids(
             kuzu,
             (cid for candidate in contested for cid in chains[candidate.id][1:]),
         ))
+
+    # Task 1i: the cross-book name VARIANT index. Every persisted node of a
+    # kind this load writes, with its normalized name forms precomputed, so
+    # step 2b below is a pure in-memory scan. Generic names are dropped
+    # here rather than at match time — a generic name can name two
+    # different people, which is exactly what the Task 1h stoplist is for,
+    # and that is true whichever side of the match it sits on.
+    searchable = _entities_of_kinds(kuzu, (c.kind for c in candidates))
+    alias_nodes = _alias_node_ids(kuzu)
+    variant_index: dict[str, list[tuple[str, str, list[frozenset[str]]]]] = {}
+    for node in searchable.values():
+        node_base = _base_normalized(node.id, node.name, node.kind, node.aliases)
+        if node.id in alias_nodes or is_generic_name(node_base):
+            continue
+        forms = _name_forms(node_base, node.aliases)
+        if forms:
+            variant_index.setdefault(node.kind, []).append(
+                (node_base, node.id, forms)
+            )
+    # Sorted by (normalized name, id) so every list below is walked in a
+    # content-derived order and never in the order Kuzu returned the rows.
+    for rows in variant_index.values():
+        rows.sort(key=lambda row: (row[0], row[1]))
+
+    # Every variant match in both directions, computed before any candidate
+    # is decided, because the rule is MUTUAL uniqueness: a match may only
+    # merge when this candidate has exactly one persisted partner AND that
+    # partner has exactly one candidate. `sholto` nesting inside both
+    # `thaddeus sholto` and `bartholomew sholto` is two sons and their
+    # father, not one man; so is one persisted `sholto` matched by two
+    # incoming Sholtos. Both directions have to be checked, or the second
+    # shape merges whichever candidate happens to be reached first.
+    variant_matches: dict[str, list[tuple[str, str]]] = {}
+    matched_by: dict[str, int] = {}
+    for candidate in candidates:
+        if candidate.is_alias or is_generic_name(candidate.base):
+            continue
+        forms = _name_forms(candidate.base, candidate.aliases)
+        if not forms:
+            continue
+        found = [
+            (node_base, node_id)
+            for node_base, node_id, node_forms in variant_index.get(
+                candidate.kind, ()
+            )
+            # An id on this candidate's own chain was already ruled on by
+            # steps 1 and 2; re-deciding it here would undo that ruling.
+            if node_id not in chains[candidate.id]
+            and _is_name_variant(forms, node_forms)
+        ]
+        if found:
+            variant_matches[candidate.id] = found
+            for _node_base, node_id in found:
+                matched_by[node_id] = matched_by.get(node_id, 0) + 1
 
     id_for: dict[str, str] = {}
     claimed: set[str] = set()
@@ -339,6 +487,47 @@ async def _reconcile_ids(
                  if cid in persisted and cid not in claimed),
                 None,
             )
+
+        # 2b. Task 1i — a cross-book name VARIANT. There is no id collision
+        #    to key on: `watson` and `john watson` hash differently, so
+        #    step 2 never sees them. Search the persisted names instead and
+        #    apply the SAME rule the same-book path uses (Task 1g): if one
+        #    name's identity tokens nest inside the other's, and the name is
+        #    distinctive, they are one entity. `Watson` is a prime
+        #    cross-book question subject and this is the only step that
+        #    reaches him.
+        #
+        #    Deliberately NOT restricted to nodes another book owns. A
+        #    variant merge adopts an id derived from the OTHER book's
+        #    spelling, which this book will not mint again next time, so a
+        #    reload must be able to find the node it merged into — step 1
+        #    cannot, because that id is not on this candidate's chain.
+        #    Reaching a node this book already owns is therefore what makes
+        #    the merge idempotent, and it is preferred over a foreign one
+        #    for the same reason.
+        #
+        #    Only a candidate that got past steps 1 and 2 arrives here, so a
+        #    same-book entity that still owns its own node is never a
+        #    target: it was already claimed in step 1.
+        #
+        #    The match must be MUTUALLY unique (see `variant_matches`): a
+        #    bare surname that fits two full names, or a full name that two
+        #    incoming names fit, is a family and not a person.
+        if chosen is None:
+            found = variant_matches.get(candidate.id, ())
+            owned = [m for m in found if book_id in searchable[m[1]].books]
+            pick: str | None = None
+            if len(owned) == 1:
+                # A node this book is already part of: this is the reload
+                # path, re-finding the merge this book made last time. Not a
+                # new decision, so the uniqueness test does not apply — the
+                # node's `books` already records the answer.
+                pick = owned[0][1]
+            elif not owned and len(found) == 1 and matched_by[found[0][1]] == 1:
+                pick = found[0][1]
+            if pick is not None and pick not in claimed:
+                chosen = pick
+                persisted.setdefault(chosen, searchable[chosen])
 
         # 3. Refused (or nothing to fuse with): take the next free slot, so
         #    both entities survive as separate nodes with their own edges.
@@ -395,6 +584,24 @@ async def load_book(
     chunks = chunks_for_book(conn, book_id)
     chapter_of = {chunk.id: chunk.chapter_seq for chunk in chunks}
 
+    # Task 1i defect 2. Gutenberg's header, table of contents and licence
+    # are ingested as ordinary chapters, and their boilerplate minted
+    # eleven of the eighteen entities that spanned both novels — they span
+    # both books precisely because the text is identical in both. Fixing it
+    # at ingest means re-extracting the corpus, so the rows are dropped
+    # here instead, before they can mint an entity, an edge or a MENTIONS.
+    # The Chunk nodes and their vectors are left alone: they are the
+    # registry's faithful record of the file, and with no entity on them
+    # the graph never reaches the text.
+    boilerplate = {
+        chunk.id for chunk in chunks if is_gutenberg_boilerplate(chunk.text)
+    }
+    if boilerplate:
+        triplets = [
+            row for row in triplets
+            if str(row.get("chunk_id") or "") not in boilerplate
+        ]
+
     dropped_mentions = 0
 
     def _count_rejected(_name: str) -> None:
@@ -447,6 +654,7 @@ async def load_book(
             name=alias.alias_name, kind=alias.kind,
             books=(book_id,),
             context=context_for.get(alias.canonical_id, ""),
+            is_alias=True,
         ))
 
     id_for, persisted = await _reconcile_ids(kuzu, book_id, candidates)
@@ -514,7 +722,8 @@ async def load_book(
 
     report = LoadReport(book_id=book_id, entities=len(resolution.entities),
                         alias_links=len(resolution.aliases),
-                        dropped_mentions=dropped_mentions)
+                        dropped_mentions=dropped_mentions,
+                        boilerplate_chunks=len(boilerplate))
 
     # Which canonical entities each chunk mentions — the bridge LanceDB
     # rows carry, and the source of the MENTIONS edges.

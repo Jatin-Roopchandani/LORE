@@ -199,6 +199,16 @@ async def test_recurring_alias_is_recorded_once() -> None:
 
 @pytest.mark.asyncio
 async def test_canonical_name_is_the_fullest_surface_form() -> None:
+    """Task 1i changed the entity COUNT here, not the naming rule it asserts.
+
+    `Miss Bennet` normalizes to the bare `bennet`, which nests inside BOTH
+    `elizabeth bennet` and `lizzy bennet`. That is now an ambiguous subset
+    and merges with neither — the same shape as `sholto` inside two Sholto
+    sons, which is what the rule exists for. (It is also right for the
+    novel: Miss Bennet is Jane, the eldest, not Elizabeth.) The two full
+    names still merge on similarity, and the fullest surface form still
+    wins the display name, which is what this test is for.
+    """
     embed = _embedder({
         "Elizabeth Bennet": [1.0, 0.0, 0.0],
         "Miss Bennet": [1.0, 0.0, 0.0],
@@ -213,8 +223,10 @@ async def test_canonical_name_is_the_fullest_surface_form() -> None:
         if order == "reverse":
             mentions.reverse()
         result = await resolve_mentions(mentions, embed, _always)
-        assert len(result.entities) == 1
-        assert result.entities[0].name == "Elizabeth Bennet"
+        assert len(result.entities) == 2
+        merged = max(result.entities, key=lambda e: len(e.aliases))
+        assert merged.name == "Elizabeth Bennet"
+        assert merged.aliases == ("elizabeth bennet", "lizzy bennet")
 
 
 # --- Pass-2 name gate -------------------------------------------------------
@@ -744,3 +756,171 @@ async def test_subset_shortcut_keeps_resolution_a_function_of_the_set() -> None:
     assert {name for _, name, _, _ in baseline[0]} == {
         "Sherlock Holmes", "Dr. John Watson", "Toby",
     }
+
+
+# --------------------------------------------------------------------------
+# Task 1i, coordinator correction: a subset match may only merge when it is
+# UNAMBIGUOUS. `normalize_name` strips honorifics, so `Major Sholto` becomes
+# the bare `sholto` — a subset of both his sons, `thaddeus sholto` and
+# `bartholomew sholto`. Merging on the first match found fuses the family.
+#
+# Every test below gives the BARE name a vector identical to one of the full
+# names, so if it stays separate it is the ambiguity rule that kept it
+# separate and not the similarity score. The two full names get orthogonal
+# vectors, because they really are two people and a real embedder says so.
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bare, twin, other", [
+    # The Sholtos: a murdered father and his two sons, in one book.
+    ("Major Sholto", "Bartholomew Sholto", "Thaddeus Sholto"),
+    # The boatman's wife and the boatman.
+    ("Mrs. Smith", "Mordecai Smith", "old Smith"),
+    # John Ferrier and his adopted daughter.
+    ("Ferrier", "John Ferrier", "Lucy Ferrier"),
+])
+async def test_a_surname_shared_by_two_characters_merges_with_neither(
+    bare: str, twin: str, other: str,
+) -> None:
+    embed = _embedder({
+        bare: [1.0, 0.0, 0.0],
+        twin: [1.0, 0.0, 0.0],   # identical to the bare name's vector
+        other: [0.0, 1.0, 0.0],
+    })
+    result = await resolve_mentions(
+        [Mention(name, "Character", "b1", "ev") for name in (bare, twin, other)],
+        embed,
+        _always,  # even an approving adjudicator cannot fuse them
+    )
+    assert len(result.entities) == 3
+    assert sorted(len(e.aliases) for e in result.entities) == [1, 1, 1]
+
+
+@pytest.mark.asyncio
+async def test_a_surname_shared_by_only_one_character_still_merges() -> None:
+    """One candidate is not ambiguous: `watson` still joins `john watson`."""
+    embed = _embedder({})
+    result = await resolve_mentions(
+        [
+            Mention("Watson", "Character", "b1", "my companion"),
+            Mention("Dr. John Watson", "Character", "b1", "my companion"),
+        ],
+        embed,
+        _never,
+    )
+    assert len(result.entities) == 1
+    assert result.entities[0].aliases == ("john watson", "watson")
+
+
+@pytest.mark.asyncio
+async def test_ambiguity_is_measured_over_the_whole_mention_set() -> None:
+    """Not over "the entities built so far".
+
+    A bare surname sorts BEFORE every full name containing it, so when the
+    streaming loop reaches it none of its rivals exist yet and the first
+    full name to arrive would win it. Reversing the input must not change
+    the answer, ids included.
+    """
+    embed = _embedder({
+        "Major Sholto": [1.0, 0.0, 0.0],
+        "Bartholomew Sholto": [1.0, 0.0, 0.0],
+        "Thaddeus Sholto": [0.0, 1.0, 0.0],
+    })
+    mentions = [
+        Mention("Bartholomew Sholto", "Character", "b1", "ev"),
+        Mention("Major Sholto", "Character", "b1", "ev"),
+        Mention("Thaddeus Sholto", "Character", "b1", "ev"),
+    ]
+    forward = await resolve_mentions(list(mentions), embed, _always)
+    backward = await resolve_mentions(list(reversed(mentions)), embed, _always)
+    assert len(forward.entities) == len(backward.entities) == 3
+    assert sorted(e.id for e in forward.entities) == sorted(
+        e.id for e in backward.entities
+    )
+
+
+@pytest.mark.asyncio
+async def test_ambiguity_is_per_book_and_per_kind() -> None:
+    """Two books' Sholtos are not each other's ambiguity.
+
+    `thaddeus sholto` in another book cannot make `sholto` ambiguous here:
+    the same-book shortcut only ever looks at same-book candidates, so the
+    count that gates it is scoped the same way.
+    """
+    embed = _embedder({})
+    result = await resolve_mentions(
+        [
+            Mention("Major Sholto", "Character", "b1", "ev"),
+            Mention("Bartholomew Sholto", "Character", "b1", "ev"),
+            Mention("Thaddeus Sholto", "Character", "b2", "ev"),
+        ],
+        embed,
+        _never,
+    )
+    b1 = [e for e in result.entities if e.book_ids == ("b1",)]
+    assert len(b1) == 1
+    assert b1[0].aliases == ("bartholomew sholto", "sholto")
+
+
+@pytest.mark.asyncio
+async def test_an_ambiguous_pair_does_not_block_an_unrelated_similarity_merge(
+) -> None:
+    """The refusal is about ONE pair of names, not about the mention.
+
+    `bennet` is ambiguous between `elizabeth bennet` and `lizzy bennet`, so
+    it merges with neither. That must not also stop `Lizzy Bennet` reaching
+    `Elizabeth Bennet` through the ordinary similarity path, which never
+    involved the bare surname at all.
+    """
+    embed = _embedder({
+        "Elizabeth Bennet": [1.0, 0.0, 0.0],
+        "Lizzy Bennet": [1.0, 0.0, 0.0],
+        "Miss Bennet": [0.0, 1.0, 0.0],
+    })
+    result = await resolve_mentions(
+        [
+            Mention("Miss Bennet", "Character", "b1", "she laughed"),
+            Mention("Elizabeth Bennet", "Character", "b1", "she laughed"),
+            Mention("Lizzy Bennet", "Character", "b1", "she laughed"),
+        ],
+        embed,
+        _always,
+    )
+    assert len(result.entities) == 2
+    merged = max(result.entities, key=lambda e: len(e.aliases))
+    assert merged.name == "Elizabeth Bennet"
+    assert merged.aliases == ("elizabeth bennet", "lizzy bennet")
+
+
+@pytest.mark.asyncio
+async def test_a_possessive_description_still_absorbs_the_person_it_names(
+) -> None:
+    """A known, out-of-scope defect, pinned so it is not mistaken for this one.
+
+    `Lucy Ferrier’s father` normalizes to `lucy ferrier s father` —
+    the curly-apostrophe possessive `normalize_name` does not strip — and
+    `lucy ferrier` nests inside it with nothing else to be ambiguous with,
+    so the daughter is absorbed into the description of her father. The
+    ambiguity rule cannot see this: there is only ONE superset. It is the
+    normalizer's possessive bug, which this task does not touch.
+
+    The bare `Lucy` IS ambiguous between the two and stays separate, which
+    is the part this task is responsible for.
+    """
+    embed = _embedder({
+        "Lucy": [1.0, 0.0, 0.0],
+        "Lucy Ferrier": [1.0, 0.0, 0.0],
+        "Lucy Ferrier’s father": [0.0, 1.0, 0.0],
+    })
+    result = await resolve_mentions(
+        [Mention(name, "Character", "b1", "ev") for name in
+         ("Lucy", "Lucy Ferrier", "Lucy Ferrier’s father")],
+        embed,
+        _always,
+    )
+    lucy = [e for e in result.entities if e.aliases == ("lucy",)]
+    assert len(lucy) == 1, "the ambiguous bare name stays its own entity"
+    assert any(
+        e.aliases == ("lucy ferrier", "lucy ferrier s father")
+        for e in result.entities
+    ), "and the possessive defect is still there, unfixed by this task"

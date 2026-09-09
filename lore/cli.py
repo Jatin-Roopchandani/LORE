@@ -305,6 +305,11 @@ def process(
             f"{report.dropped_mentions} mention(s) dropped — not a probable"
             " entity (a definite description or unnamed fragment)"
         )
+    if report.boilerplate_chunks:
+        typer.echo(
+            f"{report.boilerplate_chunks} chunk(s) skipped — Gutenberg"
+            " header or licence boilerplate, not story text"
+        )
     if extraction is not None:
         # Always, the way `extract` does. "N chunks indexed" above is the
         # book's full chunk count (every chunk is embedded regardless of
