@@ -5,9 +5,16 @@ class genuinely needs judgement and no rule can settle it: a bare surname
 that is a subset of two or more candidates. `normalize_name` strips
 honorifics, so `Major Sholto` becomes the bare `sholto`, which nests
 inside both `thaddeus sholto` and `bartholomew sholto` — a murdered father
-and his two sons. Task 1i makes that refuse, which is safe but lossy: 17
-declined same-book merges on the real corpus (`sholto`, `ferrier`,
-`smith`, `drebber`, `morstan`, `young`).
+and his two sons. Task 1i makes that refuse, which is safe but lossy: 36
+refused pairs over 17 distinct bare names on the real corpus (`sholto`,
+`ferrier`, `smith`, `drebber`, `morstan`, `young`, `lucy`, `agra`, …).
+
+A question is about a BARE NAME and all of its rivals at once — never a
+pair. `resolve_mentions` groups its refusals before it asks, because the
+pairwise form is a different and wrong question: measured live, the model
+answers Yes to `Sholto` vs `Major Sholto` AND Yes to `Sholto` vs
+`Thaddeus Sholto`, each individually reasonable, together fusing the
+father into his son. See `resolve_mentions.grouped_question`.
 
 Three things shape this module, all of them the free tier's daily request
 ceiling — 20/day on Flash, 500/day on Lite (see `lore.inference.gemini`):

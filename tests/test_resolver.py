@@ -927,26 +927,32 @@ async def test_a_possessive_description_still_absorbs_the_person_it_names(
 
 
 # --------------------------------------------------------------------------
-# Task 1j: the ambiguous residue. The refusal above is safe but lossy, so a
-# refused mention is RECORDED as a question, and a previously answered
-# question is honoured on the next load. Both hooks are optional and
-# default to None: with neither wired, every test above must still hold.
+# Task 1j: the ambiguous residue, asked ONE QUESTION PER BARE NAME.
 #
-# The three names below are deliberately shaped so the BARE one sorts last
-# (`resolve_mentions` walks its canonical order), which is the case where
-# both full names already exist and the question carries two candidates.
-# The orthogonal vectors keep the similarity path out of it: any merge
-# below is the Task 1j hook's doing and nothing else's.
+# Fix round 1. The first cut asked pairwise, once per refusal, and that is
+# not a smaller version of the grouped question — it is a different and
+# wrong one. Measured against the live model: `Sholto` vs `Major Sholto`
+# -> Yes AND `Sholto` vs `Thaddeus Sholto` -> Yes; `Ferrier` vs `John
+# Ferrier` -> Yes AND vs `Lucy Ferrier` -> Yes. Each answer is
+# individually reasonable — a bare surname really could be either man —
+# and the aggregate fuses a murdered father with his son, which is exactly
+# what the Task 1i refusal exists to prevent. Nothing in a pairwise
+# question can see it is one of several, so the shape has to carry it.
+#
+# Both hooks are optional and default to None: with neither wired, every
+# test above must still hold.
 
 _FAMILY = [
-    Mention("Adam Sholto", "Character", "b1", "the father was dead"),
-    Mention("Brian Sholto", "Character", "b1", "the son answered"),
-    Mention("Sholto", "Character", "b1", "Sholto had been dead for years"),
+    Mention("Major Sholto", "Character", "b1", "a: he had been dead for years"),
+    Mention("Thaddeus Sholto", "Character", "b1", "b: the twin"),
+    Mention("Bartholomew Sholto", "Character", "b1", "c: the brother"),
 ]
+# Orthogonal, so nothing below can merge through the similarity path: any
+# merge is the Task 1j hook's doing and nothing else's.
 _FAMILY_VECTORS = {
-    "Adam Sholto": [1.0, 0.0, 0.0],
-    "Brian Sholto": [0.0, 1.0, 0.0],
-    "Sholto": [1.0, 0.0, 0.0],  # identical to Adam: only the hook may merge it
+    "Major Sholto": [1.0, 0.0, 0.0],
+    "Thaddeus Sholto": [0.0, 1.0, 0.0],
+    "Bartholomew Sholto": [0.0, 0.0, 1.0],
 }
 
 
@@ -954,8 +960,23 @@ def _family_embed():
     return _embedder(_FAMILY_VECTORS)
 
 
+def _picks(name: str):
+    """A decider that answers one grouped question with one candidate."""
+    def decide(question):
+        chosen = [c for c in question.candidates if c.name == name]
+        return chosen[0].id if chosen else None
+    return decide
+
+
+def _by_name(result):
+    return {e.name: e for e in result.entities}
+
+
 @pytest.mark.asyncio
-async def test_an_ambiguous_refusal_records_a_question() -> None:
+async def test_three_refusals_for_one_bare_name_make_one_question() -> None:
+    """Not three. `sholto` is refused against both sons AND both sons are
+    refused against the bare node it minted — several pairwise events, one
+    question, every rival offered."""
     recorded: list = []
     result = await resolve_mentions(
         list(_FAMILY), _family_embed(), _never, record_ambiguous=recorded.append
@@ -963,13 +984,117 @@ async def test_an_ambiguous_refusal_records_a_question() -> None:
     assert len(result.entities) == 3, "recording must not change the outcome"
     assert len(recorded) == 1
     question = recorded[0]
-    assert question.mention == "Sholto"
+    # The display name carries the honorific back, which is the evidence
+    # that separates the father from his sons.
+    assert question.mention == "Major Sholto"
     assert question.kind == "Character"
     assert question.book_id == "b1"
-    assert question.evidence == "Sholto had been dead for years"
+    assert question.evidence == "a: he had been dead for years"
     assert sorted(c.name for c in question.candidates) == [
-        "Adam Sholto", "Brian Sholto"
+        "Bartholomew Sholto", "Thaddeus Sholto"
     ]
+
+
+@pytest.mark.asyncio
+async def test_the_chosen_candidate_merges_and_the_others_do_not() -> None:
+    """The property the pairwise version broke.
+
+    One answer, one merge. Every other rival of the same bare name must
+    come out untouched — a father fused into two sons is the failure this
+    whole task exists to avoid.
+    """
+    result = await resolve_mentions(
+        list(_FAMILY), _family_embed(), _never,
+        decide_ambiguous=_picks("Bartholomew Sholto"),
+    )
+    assert len(result.entities) == 2
+    entities = _by_name(result)
+    assert entities["Bartholomew Sholto"].aliases == (
+        "bartholomew sholto", "sholto"
+    )
+    assert entities["Thaddeus Sholto"].aliases == ("thaddeus sholto",)
+
+
+@pytest.mark.asyncio
+async def test_the_other_candidate_is_equally_reachable() -> None:
+    """Nothing about the first candidate is privileged."""
+    result = await resolve_mentions(
+        list(_FAMILY), _family_embed(), _never,
+        decide_ambiguous=_picks("Thaddeus Sholto"),
+    )
+    entities = _by_name(result)
+    assert entities["Thaddeus Sholto"].aliases == ("sholto", "thaddeus sholto")
+    assert entities["Bartholomew Sholto"].aliases == ("bartholomew sholto",)
+
+
+@pytest.mark.asyncio
+async def test_none_for_a_group_leaves_every_candidate_separate() -> None:
+    for answer in ("", None):
+        result = await resolve_mentions(
+            list(_FAMILY), _family_embed(), _never,
+            decide_ambiguous=lambda question, a=answer: a,
+        )
+        assert len(result.entities) == 3
+        assert sorted(len(e.aliases) for e in result.entities) == [1, 1, 1]
+
+
+@pytest.mark.asyncio
+async def test_two_bare_names_make_two_questions_that_do_not_cross() -> None:
+    mentions = _FAMILY + [
+        Mention("Ferrier", "Character", "b1", "f: he looked at the girl"),
+        Mention("John Ferrier", "Character", "b1", "g: the father"),
+        Mention("Lucy Ferrier", "Character", "b1", "h: the daughter"),
+    ]
+    vectors = dict(_FAMILY_VECTORS)
+    vectors.update({"Ferrier": [0.0, 0.0, 0.0, 1.0],
+                    "John Ferrier": [0.0, 0.0, 0.0, 0.0, 1.0],
+                    "Lucy Ferrier": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]})
+    recorded: list = []
+    await resolve_mentions(list(mentions), _embedder(vectors), _never,
+                           record_ambiguous=recorded.append)
+    assert sorted(q.mention for q in recorded) == ["Ferrier", "Major Sholto"]
+    assert len({q.key for q in recorded}) == 2
+
+    # Answering the Ferriers must leave the Sholtos exactly as they were.
+    result = await resolve_mentions(
+        list(mentions), _embedder(vectors), _never,
+        decide_ambiguous=_picks("Lucy Ferrier"),
+    )
+    entities = _by_name(result)
+    assert entities["Lucy Ferrier"].aliases == ("ferrier", "lucy ferrier")
+    assert entities["John Ferrier"].aliases == ("john ferrier",)
+    assert entities["Major Sholto"].aliases == ("sholto",)
+    assert entities["Thaddeus Sholto"].aliases == ("thaddeus sholto",)
+    assert entities["Bartholomew Sholto"].aliases == ("bartholomew sholto",)
+
+
+@pytest.mark.asyncio
+async def test_grouping_is_stable_whatever_order_the_refusals_arrive_in() -> None:
+    """This project has been bitten by order dependence repeatedly.
+
+    A bare surname sorts BEFORE the full names containing it, so the
+    refusals genuinely arrive in different directions depending on the
+    input sequence. The question — and therefore the cache key — must not
+    notice.
+    """
+    import itertools
+
+    keys: set[tuple] = set()
+    for permutation in itertools.permutations(_FAMILY):
+        recorded: list = []
+        result = await resolve_mentions(
+            list(permutation), _family_embed(), _never,
+            record_ambiguous=recorded.append,
+        )
+        keys.add((
+            tuple(q.key for q in recorded),
+            tuple(sorted(e.id for e in result.entities)),
+        ))
+        assert [q.mention for q in recorded] == ["Major Sholto"]
+        assert [tuple(sorted(c.id for c in q.candidates)) for q in recorded] == [
+            tuple(sorted(c.id for c in recorded[0].candidates))
+        ]
+    assert len(keys) == 1, "the question and the ids are a function of the SET"
 
 
 @pytest.mark.asyncio
@@ -985,21 +1110,6 @@ async def test_an_unambiguous_merge_records_nothing() -> None:
         record_ambiguous=recorded.append,
     )
     assert recorded == []
-
-
-@pytest.mark.asyncio
-async def test_a_cached_answer_merges_the_ambiguous_mention() -> None:
-    def decide(question):
-        chosen = [c for c in question.candidates if c.name == "Adam Sholto"]
-        return chosen[0].id if chosen else None
-
-    result = await resolve_mentions(
-        list(_FAMILY), _family_embed(), _never, decide_ambiguous=decide
-    )
-    assert len(result.entities) == 2
-    merged = [e for e in result.entities if len(e.aliases) == 2]
-    assert len(merged) == 1
-    assert merged[0].aliases == ("adam sholto", "sholto")
 
 
 @pytest.mark.asyncio
@@ -1029,13 +1139,44 @@ async def test_no_answer_refuses_exactly_as_before() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_recorded_question_is_a_function_of_the_mention_set() -> None:
-    """Same data in a different order — same question, same cache key."""
-    forward: list = []
-    backward: list = []
-    await resolve_mentions(list(_FAMILY), _family_embed(), _never,
-                           record_ambiguous=forward.append)
-    await resolve_mentions(list(reversed(_FAMILY)), _family_embed(), _never,
-                           record_ambiguous=backward.append)
-    assert [q.key for q in forward] == [q.key for q in backward]
-    assert forward[0].candidates == backward[0].candidates
+async def test_a_candidate_that_does_not_exist_yet_is_still_offered() -> None:
+    """The reason grouping had to move off the pairwise path.
+
+    `ferrier` sorts before both `john ferrier` and `lucy ferrier`, so when
+    the bare name is processed NEITHER rival exists as an entity. A
+    question built from "the candidates that happen to exist right now"
+    could never offer them; one built from the mention set always can.
+    """
+    mentions = [
+        Mention("Ferrier", "Character", "b1", "f: he looked at the girl"),
+        Mention("John Ferrier", "Character", "b1", "g: the father"),
+        Mention("Lucy Ferrier", "Character", "b1", "h: the daughter"),
+    ]
+    embed = _embedder({"Ferrier": [1.0, 0.0, 0.0],
+                       "John Ferrier": [0.0, 1.0, 0.0],
+                       "Lucy Ferrier": [0.0, 0.0, 1.0]})
+    recorded: list = []
+    await resolve_mentions(list(mentions), embed, _never,
+                           record_ambiguous=recorded.append)
+    assert len(recorded) == 1
+    assert sorted(c.name for c in recorded[0].candidates) == [
+        "John Ferrier", "Lucy Ferrier"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_superset_names_and_counts_agree() -> None:
+    from lore.resolve.resolver import superset_counts, superset_names
+
+    rows = [
+        ("b1", "Character", "sholto"),
+        ("b1", "Character", "thaddeus sholto"),
+        ("b1", "Character", "bartholomew sholto"),
+        ("b2", "Character", "sholto"),
+    ]
+    names = superset_names(rows)
+    assert names[("b1", "Character", "sholto")] == (
+        "bartholomew sholto", "thaddeus sholto"
+    )
+    assert names[("b2", "Character", "sholto")] == ()
+    assert superset_counts(rows) == {k: len(v) for k, v in names.items()}

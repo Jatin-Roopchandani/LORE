@@ -1811,27 +1811,24 @@ async def test_a_load_records_the_ambiguous_question(tmp_path: Path) -> None:
                              disambiguation=store)
     assert report.entities == 3, "recording changes nothing about the load"
 
-    # Two refusals, so two questions — one per pairwise decision the rules
-    # could not make. The resolver walks its mentions in canonical order,
-    # so `sholto` is asked against the entity that already existed
-    # (Bartholomew) and `thaddeus sholto` against the bare `sholto` node
-    # that the first refusal minted. Each question mirrors exactly one
-    # merge, which is what makes an answer directly actionable.
+    # ONE question, not one per refusal. The bare `sholto` is refused
+    # against Bartholomew, and `thaddeus sholto` is refused against the
+    # bare node that refusal minted — two pairwise events, one question,
+    # both sons offered. Asking pairwise would get "yes" to each son and
+    # fuse the father into both.
     pending = DisambiguationStore(config.disambiguation_dir).pending()
-    asked = {
-        (q.mention, tuple(c.name for c in q.candidates), q.evidence)
-        for q in pending
-    }
-    assert asked == {
-        ("Major Sholto", ("Bartholomew Sholto",),
-         "a: he had been dead for years"),
-        ("Thaddeus Sholto", ("Major Sholto",), "b: the twin brother"),
-    }
-    assert {q.book_id for q in pending} == {BOOK}
-    by_mention = {q.mention: q for q in pending}
-    assert [c.id for c in by_mention["Major Sholto"].candidates] == [
-        entity_id("bartholomew sholto", "Character")
+    assert len(pending) == 1
+    question = pending[0]
+    assert question.mention == "Major Sholto"
+    assert question.book_id == BOOK
+    assert question.evidence == "a: he had been dead for years"
+    assert sorted(c.name for c in question.candidates) == [
+        "Bartholomew Sholto", "Thaddeus Sholto"
     ]
+    assert sorted(c.id for c in question.candidates) == sorted([
+        entity_id("bartholomew sholto", "Character"),
+        entity_id("thaddeus sholto", "Character"),
+    ])
 
 
 @pytest.mark.asyncio
@@ -1844,14 +1841,10 @@ async def test_a_cached_answer_merges_on_the_next_load(tmp_path: Path) -> None:
                     disambiguation=store)
 
     # What `lore disambiguate` would have written, without any API call:
-    # the bare `Major Sholto` really is Bartholomew's, say. The other
-    # question (Thaddeus against the bare node) is left unanswered, so it
-    # must still refuse.
-    pending = DisambiguationStore(config.disambiguation_dir).pending()
-    question = next(q for q in pending if q.mention == "Major Sholto")
-    father = entity_id("bartholomew sholto", "Character")
+    # ONE answer naming ONE of the two sons.
+    question = DisambiguationStore(config.disambiguation_dir).pending()[0]
     DisambiguationStore(config.disambiguation_dir).save_answers(
-        {question.key: father}
+        {question.key: entity_id("bartholomew sholto", "Character")}
     )
 
     report = await load_book(
@@ -1864,6 +1857,8 @@ async def test_a_cached_answer_merges_on_the_next_load(tmp_path: Path) -> None:
         for r in kuzu.execute("MATCH (e:Entity) RETURN e.name, e.aliases")
     }
     assert aliases["Bartholomew Sholto"] == ["bartholomew sholto", "sholto"]
+    # The property the pairwise version broke: the OTHER son is untouched.
+    assert aliases["Thaddeus Sholto"] == ["thaddeus sholto"]
     # `Major Sholto` survives only as a surface form pointing at the
     # canonical, which is what every merged alias does in this graph.
     links = [
@@ -1889,15 +1884,11 @@ async def test_a_reload_replaces_this_books_pending_questions(
     (config.disambiguation_dir / "pending").mkdir(parents=True, exist_ok=True)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, _never,
                     disambiguation=stale)
-    assert len(DisambiguationStore(config.disambiguation_dir).pending()) == 2
+    assert len(DisambiguationStore(config.disambiguation_dir).pending()) == 1
 
-    # Answer one, reload: the merge it authorises makes the OTHER question
-    # stop arising, and the file is rewritten rather than appended to — so
-    # a settled question never costs quota again.
-    question = next(
-        q for q in DisambiguationStore(config.disambiguation_dir).pending()
-        if q.mention == "Major Sholto"
-    )
+    # Answer it, reload: the file is rewritten rather than appended to, and
+    # the question is settled — so it never costs quota again.
+    question = DisambiguationStore(config.disambiguation_dir).pending()[0]
     DisambiguationStore(config.disambiguation_dir).save_answers(
         {question.key: entity_id("bartholomew sholto", "Character")}
     )

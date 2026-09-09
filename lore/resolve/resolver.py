@@ -126,6 +126,40 @@ def tokens_nest(left: frozenset[str], right: frozenset[str]) -> bool:
     return bool(left) and bool(right) and (left <= right or right <= left)
 
 
+def superset_names(
+    mentions: Iterable[tuple[str, str, str]]
+) -> dict[tuple[str, str, str], tuple[str, ...]]:
+    """The DISTINCT longer names each normalized name nests inside.
+
+    Keyed by (book_id, kind, normalized name) and sorted, so the value is a
+    function of the mention SET and never of the order it arrived in. This
+    is `superset_counts` before it throws the names away: the count gates
+    the ambiguity rule, and the names themselves are the candidate list
+    Task 1j must offer for that bare name (see `resolve_mentions`).
+
+    Names with no identity-bearing token are excluded on both sides — an
+    empty token set is a subset of everything and must never nest.
+
+    Token sets that are EQUAL are not listed: `john h watson m d` and
+    `john watson` are the same name written two ways, not two people.
+    """
+    grouped: dict[tuple[str, str], set[str]] = {}
+    for book_id, kind, normalized in mentions:
+        if normalized:
+            grouped.setdefault((book_id, kind), set()).add(normalized)
+    found: dict[tuple[str, str, str], tuple[str, ...]] = {}
+    for (book_id, kind), names in grouped.items():
+        tokens = {name: name_tokens(name) for name in names}
+        for name, mine in tokens.items():
+            if not mine:
+                continue
+            found[(book_id, kind, name)] = tuple(sorted(
+                other for other, theirs in tokens.items()
+                if other != name and theirs and mine < theirs
+            ))
+    return found
+
+
 def superset_counts(
     mentions: Iterable[tuple[str, str, str]]
 ) -> dict[tuple[str, str, str], int]:
@@ -160,21 +194,20 @@ def superset_counts(
     `john watson` are the same name written two ways, not two people, and
     counting them would make every such pair ambiguous with itself.
     """
-    grouped: dict[tuple[str, str], set[str]] = {}
-    for book_id, kind, normalized in mentions:
-        if normalized:
-            grouped.setdefault((book_id, kind), set()).add(normalized)
-    counts: dict[tuple[str, str, str], int] = {}
-    for (book_id, kind), names in grouped.items():
-        tokens = {name: name_tokens(name) for name in names}
-        for name, mine in tokens.items():
-            if not mine:
-                continue
-            counts[(book_id, kind, name)] = len({
-                theirs for other, theirs in tokens.items()
-                if other != name and theirs and mine < theirs
-            })
-    return counts
+    return {
+        key: len(names) for key, names in superset_names(mentions).items()
+    }
+
+
+def bare_name_of(names: Iterable[str]) -> str:
+    """The shortest name of a nesting chain — the one a group is about.
+
+    Every name reaching here nests pairwise with every other, so their
+    token sets form a chain and the smallest is the bare one. Ties break
+    alphabetically, so the answer is a function of the names and not of
+    the order they were collected in.
+    """
+    return min(names, key=lambda name: (len(name_tokens(name)), name))
 
 
 def unambiguous_nesting(
@@ -270,9 +303,67 @@ async def resolve_mentions(
     # because the streaming loop cannot see it: a bare surname sorts BEFORE
     # every full name containing it, so at the moment it is processed none
     # of its rivals exist yet and the first one to arrive would win it.
-    nesting_counts = superset_counts(
+    #
+    # Task 1j needs the NAMES, not just the count: a grouped question has
+    # to offer every rival the bare name has, and the count is that list's
+    # length.
+    superset_map = superset_names(
         (m.book_id, m.kind, normalize_name(m.name)) for m in ordered_mentions
     )
+    nesting_counts = {key: len(names) for key, names in superset_map.items()}
+
+    # Surface form and evidence per normalized name, over the whole mention
+    # set — so a grouped question can name a rival that does not exist as
+    # an entity yet. A bare surname sorts BEFORE the full names containing
+    # it, so at the moment it is processed most of its rivals have not been
+    # created; asking about only the ones that happen to exist is what
+    # makes the question pairwise, and pairwise is wrong (see below).
+    raw_by_name: dict[tuple[str, str, str], set[str]] = {}
+    evidence_by_name: dict[tuple[str, str, str], str] = {}
+    for mention in ordered_mentions:
+        normalized = normalize_name(mention.name)
+        if not normalized:
+            continue
+        name_key = (mention.book_id, mention.kind, normalized)
+        raw_by_name.setdefault(name_key, set()).add(mention.name)
+        seen_evidence = evidence_by_name.get(name_key)
+        if seen_evidence is None or mention.context < seen_evidence:
+            evidence_by_name[name_key] = mention.context
+    display_by_name = {
+        name_key: display_name(raws) for name_key, raws in raw_by_name.items()
+    }
+
+    def grouped_question(bare: str, kind: str, book_id: str) -> Question:
+        """The one question a bare name deserves: ALL of its rivals.
+
+        Asking pairwise ("is bare `Sholto` Thaddeus?", then "is bare
+        `Sholto` Bartholomew?") is not a smaller version of this — it is a
+        different and wrong question. Measured against the live model:
+        every pairwise answer came back Yes, because a bare surname really
+        could be either man, and nothing in a pairwise question can see
+        that it is being asked about two. The aggregate of those answers
+        merges the murdered father into both his sons — exactly the fusion
+        the ambiguity refusal exists to prevent. One question, every
+        candidate, one answer.
+        """
+        key = (book_id, kind, bare)
+        return Question(
+            mention=display_by_name.get(key, bare),
+            kind=kind,
+            book_id=book_id,
+            evidence=evidence_by_name.get(key, ""),
+            candidates=tuple(
+                Candidate(
+                    id=entity_id(rival, kind),
+                    name=display_by_name.get((book_id, kind, rival), rival),
+                )
+                for rival in superset_map.get(key, ())
+            ),
+        )
+
+    # One grouped question per (book, kind, bare name), however many
+    # pairwise refusals it took to discover it.
+    asked: set[str] = set()
 
     # Working state, keyed by canonical id.
     names: dict[str, str] = {}
@@ -423,28 +514,60 @@ async def resolve_mentions(
         # wired this block records nothing, decides nothing, and the
         # refusal stands exactly as Task 1i left it.
         #
-        # The answer is a candidate ID and it is checked against `refused`
-        # before it is used. A stale cache entry — written before a
-        # re-extraction changed the entity set — must be ignored, never
-        # allowed to fuse an arbitrary pair of entities.
+        # ASK ONCE PER BARE NAME, NEVER PAIRWISE. The refusals arrive one
+        # pair at a time and from both directions, but the question is
+        # about the bare name and all of its rivals at once. Measured
+        # against the live model, the pairwise form is not a smaller
+        # version of the grouped one — it is a different and wrong
+        # question: `Sholto` vs `Major Sholto` -> Yes AND `Sholto` vs
+        # `Thaddeus Sholto` -> Yes, each individually reasonable, together
+        # fusing a murdered father with his son. Nothing in a pairwise
+        # question can see that it is one of several. So the refusals are
+        # grouped by their bare name and each group is asked once, with
+        # every rival offered and exactly one answer accepted.
         verdict: str | None = None
         if refused and not subset_matches and (
             record_ambiguous is not None or decide_ambiguous is not None
         ):
-            question = Question(
-                mention=mention.name, kind=mention.kind,
-                book_id=mention.book_id, evidence=mention.context,
-                candidates=tuple(
-                    Candidate(id=cid, name=display_name(raw_names[cid]))
-                    for cid in sorted(refused)
-                ),
-            )
-            if record_ambiguous is not None:
-                record_ambiguous(question)
-            if decide_ambiguous is not None:
+            groups: dict[str, list[str]] = {}
+            for cid in sorted(refused):
+                groups.setdefault(
+                    bare_name_of({normalized, *alias_sets[cid]}), []
+                ).append(cid)
+
+            for bare in sorted(groups):
+                question = grouped_question(bare, mention.kind, mention.book_id)
+                if record_ambiguous is not None and question.key not in asked:
+                    asked.add(question.key)
+                    record_ambiguous(question)
+                if decide_ambiguous is None or verdict is not None:
+                    continue
                 answer = decide_ambiguous(question)
-                if answer is not None and answer in refused:
-                    verdict = answer
+                # A stale cache entry — written before a re-extraction
+                # changed the entity set — must be ignored, never allowed
+                # to fuse an arbitrary pair of entities.
+                if not answer or answer not in {
+                    candidate.id for candidate in question.candidates
+                }:
+                    continue
+                # The answer names ONE rival. It applies to this pair only
+                # if that rival is the non-bare side of THIS pair, which is
+                # what stops one grouped answer from merging the bare name
+                # into two different people: every other rival sees an
+                # answer that is not about it, and refuses exactly as
+                # before.
+                for cid in groups[bare]:
+                    picked = (
+                        answer in {
+                            entity_id(alias, mention.kind)
+                            for alias in alias_sets[cid]
+                        }
+                        if normalized == bare
+                        else answer == entity_id(normalized, mention.kind)
+                    )
+                    if picked:
+                        verdict = cid
+                        break
 
         if subset_matches:
             # Prefer the most specific match (the largest shared token set;

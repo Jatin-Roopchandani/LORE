@@ -35,10 +35,35 @@ judgement and no rule can settle it: a bare surname that is a subset of two
 or more candidates. `Major Sholto` normalizes to `sholto`, which nests inside
 both `thaddeus sholto` and `bartholomew sholto` — a murdered father and his
 two sons — so LORE refuses that merge and leaves the entities separate. Safe,
-but lossy: 17 declined merges on the two-novel corpus (`sholto`, `ferrier`,
-`smith`, `drebber`, `morstan`, `young`).
+but lossy: 36 refused pairs on the real corpus, over 17 distinct bare names
+(`sholto`, `ferrier`, `smith`, `drebber`, `morstan`, `young`, `lucy`,
+`agra`, `baker street`, …).
 
 `lore disambiguate` asks Gemini about exactly that residue, and nothing else.
+
+### One question per bare name, never pairwise
+
+A bare name is asked about **once**, with *every* rival it nests inside
+offered at the same time, and exactly one answer accepted:
+
+    mention:    Major Sholto
+    sentence:   Major Sholto had been dead for years
+    options:    1) Mr. Thaddeus Sholto  2) Mr. Bartholomew Sholto  none
+
+This is not a presentation detail — it is the correctness of the feature.
+Asked *pairwise*, the live model says yes to every superset: `Sholto` vs
+`Major Sholto` → Yes **and** `Sholto` vs `Thaddeus Sholto` → Yes; `Ferrier`
+vs `John Ferrier` → Yes **and** vs `Lucy Ferrier` → Yes. Each answer is
+individually reasonable — a bare surname really could be either man — and
+nothing in a pairwise question can see that it is one of several, so the
+aggregate fuses a murdered father into both his sons: exactly the outcome
+the ambiguity refusal exists to prevent. The grouped shape scored 12/12 on
+the eval, including answering `none` when the evidence does not
+disambiguate. The shape is doing the work, not the model.
+
+Grouping also *reduces* request count: on the real corpus 36 pairwise
+refusals collapse to **17** grouped questions, which is one batch instead of
+two.
 
     export GEMINI_API_KEY=...            # or GOOGLE_API_KEY
     uv run lore disambiguate --dry-run   # see the questions, send nothing
