@@ -1,6 +1,6 @@
 import pytest
 
-from lore.resolve.entityhood import is_probable_entity
+from lore.resolve.entityhood import is_generic_name, is_probable_entity
 
 
 @pytest.mark.parametrize("name, expected", [
@@ -92,3 +92,170 @@ def test_initial_as_the_capitalised_token_is_kept() -> None:
 
 def test_roman_numeral_as_the_capitalised_token_is_kept() -> None:
     assert is_probable_entity("Henry V") is True
+
+
+# --------------------------------------------------------------------------
+# Task 1h defect 1: bare pronouns were entities. `I` was the second-busiest
+# node in the whole graph (116 edges); nine pronoun nodes existed in all.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", [
+    "i", "he", "she", "we", "they", "you", "it", "me", "him", "her", "us",
+    "them",
+])
+def test_every_bare_pronoun_is_rejected_lowercase(name: str) -> None:
+    assert is_probable_entity(name) is False
+
+
+@pytest.mark.parametrize("name", [
+    "I", "He", "She", "We", "They", "You", "It", "Me", "Him", "Her", "Us",
+    "Them",
+])
+def test_every_bare_pronoun_is_rejected_capitalised(name: str) -> None:
+    assert is_probable_entity(name) is False
+
+
+@pytest.mark.parametrize("name", ["YOU", "HE", "I", "We", "You"])
+def test_the_pronoun_nodes_measured_in_the_live_graph_are_rejected(
+    name: str,
+) -> None:
+    assert is_probable_entity(name) is False
+
+
+@pytest.mark.parametrize("name", ["He.", "  I  ", "\tYou\n", "it,", "(we)"])
+def test_a_pronoun_with_whitespace_or_punctuation_is_still_rejected(
+    name: str,
+) -> None:
+    assert is_probable_entity(name) is False
+
+
+@pytest.mark.parametrize("name", [
+    "Ivan", "Ida", "Iris", "Wells", "Hera", "Item", "Mel", "Uso", "Sheila",
+    "Theydon", "Herr Muller", "He Xiaolong", "I. Ferrier",
+])
+def test_a_name_that_merely_starts_with_a_pronoun_survives(name: str) -> None:
+    assert is_probable_entity(name) is True
+
+
+def test_a_pronoun_that_is_only_part_of_a_longer_name_survives() -> None:
+    assert is_probable_entity("He Xiaolong") is True
+    assert is_probable_entity("The Us Weekly") is True
+
+
+# --------------------------------------------------------------------------
+# Task 1h defect 2: all-caps chapter headings were entities, and because a
+# long heading shares a token with many real names the resolver pulled real
+# characters into them — `john watson` merged onto a table-of-contents row.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", [
+    "CHAPTER II",
+    "CHAPTER III",
+    "CHAPTER IV",
+    "THE CONCLUSION",
+    "THE COUNTRY OF THE SAINTS",
+    "A FLIGHT FOR LIFE",
+    "A CONTINUATION OF THE REMINISCENCES OF JOHN WATSON, M.D.",
+    "A STUDY IN SCARLET",
+    "ON THE GREAT ALKALI PLAIN",
+    "OUR ADVERTISEMENT BRINGS A VISITOR",
+    "PART II",
+    "THE AVENGING ANGELS",
+    "THE FLOWER OF UTAH",
+    "THE LAURISTON GARDENS MYSTERY",
+    "THE SCIENCE OF DEDUCTION",
+    "TOBIAS GREGSON SHOWS WHAT HE CAN DO",
+    "WHAT JOHN RANCE HAD TO TELL",
+    "JOHN FERRIER TALKS WITH THE PROPHET",
+    "MR. SHERLOCK HOLMES",
+    "JOHN WATSON",
+])
+def test_all_caps_multi_word_headings_are_rejected(name: str) -> None:
+    assert is_probable_entity(name) is False
+
+
+@pytest.mark.parametrize("name", [
+    "Sherlock Holmes", "Dr. John Watson", "Mr. Lestrade", "John Ferrier",
+    "The Daily News", "the United States", "Mrs. Cecil Forrester",
+])
+def test_real_names_in_prose_case_survive_the_heading_rule(name: str) -> None:
+    assert is_probable_entity(name) is True
+
+
+@pytest.mark.parametrize("name", ["IRS", "FOUNDATION", "PROPHET", "M.D."])
+def test_a_single_all_caps_token_is_not_over_reached(name: str) -> None:
+    assert is_probable_entity(name) is True
+
+
+def test_uncased_multi_word_name_is_not_treated_as_all_caps() -> None:
+    # str.isupper() is False with no cased characters; the ordinary rule
+    # (no capitalised token) must be what rejects this, not the heading rule.
+    assert is_probable_entity("221 43") is False
+
+
+# --------------------------------------------------------------------------
+# Task 1h defect 3: the cross-book merge decision. `is_generic_name` is the
+# deterministic replacement for the 3B adjudicator, which measurably refused
+# `Sherlock Holmes` <-> `Mr. Sherlock Holmes` while accepting
+# `the police Inspector` <-> `the police Inspector`.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", [
+    "police inspector",
+    "the police Inspector",
+    "inspector",
+    "Inspector",
+    "INSPECTOR",
+    "the Inspector's",
+    "inspector.",
+    "the Inspector",
+    "captain",
+    "the Captain",
+    "the Doctor",
+    "friend, the Doctor",
+    "the woman",
+    "a man",
+    "the stranger",
+    "The Prisoner",
+    "servant",
+    "his companion",
+])
+def test_generic_names_are_generic(name: str) -> None:
+    assert is_generic_name(name) is True
+
+
+@pytest.mark.parametrize("name", [
+    "sherlock holmes",
+    "Sherlock Holmes",
+    "Mr. Sherlock Holmes",
+    "Inspector Lestrade",
+    "Doctor Watson",
+    "Dr. Watson",
+    "Captain Morstan",
+    "Colonel Sebastian Moran",
+    "Professor Moriarty",
+    "Lestrade",
+    "Brigham Young",
+    "Young",
+    "Jonathan Small",
+    "Small",
+    "Jefferson Hope",
+    "the Marchioness de Brinvilliers",
+    "Baker Street",
+    "the United States",
+])
+def test_distinctive_names_are_not_generic(name: str) -> None:
+    assert is_generic_name(name) is False
+
+
+def test_a_name_with_no_tokens_is_not_generic() -> None:
+    # "every token is generic" is vacuously true of no tokens; that must not
+    # become a refusal, so an empty name is reported distinctive.
+    assert is_generic_name("") is False
+    assert is_generic_name("   ") is False
+    assert is_generic_name("...") is False
+
+
+def test_one_real_name_beside_a_role_word_is_enough_to_be_distinctive() -> None:
+    assert is_generic_name("the police Inspector") is True
+    assert is_generic_name("the police Inspector Lestrade") is False

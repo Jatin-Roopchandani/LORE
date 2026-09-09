@@ -28,8 +28,12 @@ before anything is written, which node each incoming entity may own:
   * a persisted node whose `books` already contains this book_id is this
     same book rewriting itself — fused with NO adjudication, so a re-load
     is free and deterministic;
-  * a persisted node belonging to some *other* book must clear
-    `adjudicate` before being fused into;
+  * a persisted node belonging to some *other* book is fused into only if
+    the shared name is distinctive (`is_generic_name` is False). An id
+    collision means the two normalized names are IDENTICAL, which is not a
+    judgement call; what matters is whether such a name can name two
+    different people, and a stoplist answers that deterministically. This
+    deliberately replaces a call to `adjudicate` — see `_reconcile_ids`;
   * a refusal mints the next id in Task 3's collision chain
     (`entity_id_chain`), so both entities survive as separate nodes with
     their own edges.
@@ -67,12 +71,11 @@ from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.graph.artifacts import completed_unit_dirs, read_embeddings, read_triplets
 from lore.ingest.registry import chunks_for_book
-from lore.resolve.entityhood import is_probable_entity
+from lore.resolve.entityhood import is_generic_name, is_probable_entity
 from lore.resolve.normalize import entity_id, normalize_name
 from lore.resolve.predicates import normalize_predicates
 from lore.resolve.resolver import (
     Adjudicate,
-    CanonicalEntity,
     Mention,
     display_name,
     entity_id_chain,
@@ -268,12 +271,24 @@ async def _reconcile_ids(
     kuzu: KuzuStore,
     book_id: str,
     candidates: list[_NodeCandidate],
-    adjudicate: Adjudicate,
 ) -> tuple[dict[str, str], dict[str, _PersistedEntity]]:
     """Decide which persisted node, if any, each candidate may own.
 
-    Read-only: it queries Kuzu and may call `adjudicate`, but writes
-    nothing, so it stays inside phase 1's "no store mutated" guarantee.
+    Read-only: it queries Kuzu but writes nothing, so it stays inside phase
+    1's "no store mutated" guarantee.
+
+    Task 1h took the cross-book decision away from `adjudicate`. It is still
+    the resolver's pass-3 tie-breaker for *same-book* mentions whose names
+    differ (see `resolve_mentions`), and is still wired through `load_book`
+    to reach it; it is simply not asked here any more, because on the
+    rebuilt two-novel graph it answered anti-correlated with the truth —
+    it merged `the police Inspector` across the two books (Lestrade in one,
+    Athelney Jones in the other) and refused `Sherlock Holmes` <->
+    `Mr. Sherlock Holmes`, which normalize to the same string. Two rounds
+    of prompt tuning did not move it, so every case this function sees is
+    now decided by rule and none are left over for the model. It stays
+    `async` so that re-introducing an awaited decision here — should a
+    trustworthy adjudicator ever exist — costs no call-site churn.
     """
     chains = {
         candidate.id: list(
@@ -311,20 +326,19 @@ async def _reconcile_ids(
         )
 
         # 2. Otherwise every persisted homonym belongs to another book, and
-        #    fusing into one requires adjudication to approve it.
-        if chosen is None:
-            for cid in chain:
-                node = persisted.get(cid)
-                if node is None or cid in claimed:
-                    continue
-                if await adjudicate(
-                    CanonicalEntity(id=node.id, name=node.name, kind=node.kind,
-                                    aliases=node.aliases, book_ids=node.books),
-                    Mention(name=candidate.name, kind=candidate.kind,
-                            book_id=book_id, context=candidate.context),
-                ):
-                    chosen = cid
-                    break
+        #    all of them share this candidate's normalized name. Distinctive
+        #    names ("sherlock holmes") are the same entity in both books, so
+        #    fuse into the first free one. Generic names ("police inspector",
+        #    "captain") can name two different people, so fuse into none of
+        #    them and fall through to step 3 — which is Phase 2B's stated
+        #    intent, "the Captain in two unrelated novels stays two people",
+        #    now held by a rule instead of by a model that inverted it.
+        if chosen is None and not is_generic_name(candidate.base):
+            chosen = next(
+                (cid for cid in chain
+                 if cid in persisted and cid not in claimed),
+                None,
+            )
 
         # 3. Refused (or nothing to fuse with): take the next free slot, so
         #    both entities survive as separate nodes with their own edges.
@@ -435,7 +449,7 @@ async def load_book(
             context=context_for.get(alias.canonical_id, ""),
         ))
 
-    id_for, persisted = await _reconcile_ids(kuzu, book_id, candidates, adjudicate)
+    id_for, persisted = await _reconcile_ids(kuzu, book_id, candidates)
 
     node_writes: dict[str, dict] = {}
     for candidate in candidates:

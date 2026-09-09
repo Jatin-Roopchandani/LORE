@@ -559,7 +559,9 @@ async def test_two_books_one_captain_refused_stay_separate(tmp_path: Path) -> No
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     assert spy.calls == []  # nothing persisted yet, nothing to adjudicate
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
-    assert len(spy.calls) == 1  # the homonym, and only the homonym
+    # Task 1h: "captain" is generic in every token, so the refusal is now
+    # deterministic and the model is never asked.
+    assert spy.calls == []
 
     captains = _captains(kuzu)
     assert len(captains) == 2  # two nodes, not one
@@ -583,26 +585,129 @@ async def test_two_books_one_captain_refused_stay_separate(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_two_books_one_captain_approved_merges(tmp_path: Path) -> None:
+async def test_two_books_one_captain_stay_separate_even_when_approved(
+    tmp_path: Path,
+) -> None:
+    """Task 1h: an approving adjudicator can no longer fuse a generic name.
+
+    This test previously asserted the opposite — that approval merged the
+    two captains. The live graph showed the 3B model doing exactly that for
+    `the police Inspector` (Lestrade in book one, Athelney Jones in book
+    two) while refusing `Sherlock Holmes`, so the generic case is now
+    decided by rule and the model's answer is not consulted at all.
+    """
     config, conn, kuzu, lance = _env(tmp_path)
     _two_captains(config, conn)
     spy = _AdjudicateSpy(True)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
-    assert len(spy.calls) == 1
+    assert spy.calls == []
 
     captains = _captains(kuzu)
-    assert len(captains) == 1
-    assert captains[0][1] == tuple(sorted((BOOK, BOOK_B)))  # books unioned
-    edges = _rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
-                        " RETURN s.id, r.book_id, o.name")
-    assert {e[0] for e in edges} == {captains[0][0]}  # both edges on one node
+    assert len(captains) == 2  # still two people
+    assert {books for _id, books in captains} == {(BOOK,), (BOOK_B,)}
+    edges = sorted(
+        (r[0], r[1], r[2])
+        for r in _rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
+                             " RETURN s.id, r.book_id, o.name")
+    )
+    assert len(edges) == 2
+    by_book = {book: (sid, obj) for sid, book, obj in edges}
+    assert by_book[BOOK][1] == "Bo"
+    assert by_book[BOOK_B][1] == "Zed"
+    assert by_book[BOOK][0] != by_book[BOOK_B][0]  # two nodes, two edge sets
+    conn.close(); kuzu.close()
+
+
+def _two_holmeses(config, conn) -> None:
+    """Both books name the same distinctive person, spelled differently.
+
+    "Sherlock Holmes" and "Mr. Sherlock Holmes" normalize to the identical
+    string `sherlock holmes`, so their ids collide across books — the exact
+    pair the live graph left unmerged.
+    """
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "Sherlock Holmes", "OPPOSES", "Bo",
+             ["Sherlock Holmes", "Bo"], ["Character", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "Mr. Sherlock Holmes", "LOVES", "Zed",
+             ["Mr. Sherlock Holmes", "Zed"], ["Character", "Character"]),
+    ])
+
+
+def _holmeses(kuzu) -> list[tuple]:
+    return sorted(
+        (r[0], tuple(sorted(r[1] or ())))
+        for r in _rows(
+            kuzu, "MATCH (e:Entity)"
+                  " WHERE e.name IN ['Sherlock Holmes', 'Mr. Sherlock Holmes']"
+                  " RETURN e.id, e.books")
+    )
+
+
+@pytest.mark.asyncio
+async def test_two_books_one_holmes_merge_without_adjudication(
+    tmp_path: Path,
+) -> None:
+    """A distinctive cross-book homonym merges, and the model is not asked."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_holmeses(config, conn)
+    spy = _AdjudicateSpy(False)  # a model that would refuse, as the 3B does
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    assert spy.calls == []
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert spy.calls == []
+
+    holmeses = _holmeses(kuzu)
+    assert len(holmeses) == 1  # one node, not two
+    assert holmeses[0][1] == tuple(sorted((BOOK, BOOK_B)))  # books unioned
+
+    # Both books' edges hang off the single merged node.
+    edges = sorted(
+        (r[0], r[1], r[2])
+        for r in _rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
+                             " RETURN s.id, r.book_id, o.name")
+    )
+    assert len(edges) == 2
+    assert {e[0] for e in edges} == {holmeses[0][0]}
+    assert {(e[1], e[2]) for e in edges} == {(BOOK, "Bo"), (BOOK_B, "Zed")}
     conn.close(); kuzu.close()
 
 
 @pytest.mark.asyncio
-async def test_ana_and_the_ana_do_not_fuse_across_books(tmp_path: Path) -> None:
-    """The case reproduced in the round-0 report, asserted the right way."""
+async def test_merged_holmes_survives_a_reload_of_either_book(
+    tmp_path: Path,
+) -> None:
+    """The deterministic merge is idempotent and never re-adjudicated."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_holmeses(config, conn)
+    spy = _AdjudicateSpy(False)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    snapshot = _snapshot(kuzu, lance)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert spy.calls == []
+    assert _snapshot(kuzu, lance) == snapshot
+    assert len(_holmeses(kuzu)) == 1
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_ana_and_the_ana_fuse_across_books_after_task_1h(
+    tmp_path: Path,
+) -> None:
+    """`Ana` and `The Ana` normalize identically and neither token is generic.
+
+    Task 1h inverted this: before it, a refusing adjudicator kept them as
+    two nodes. `Ana` is distinctive, so the same rule that merges
+    `Sherlock Holmes` with `Mr. Sherlock Holmes` merges these, without the
+    model. The round-0 defect this test was written for was a *same-book*
+    over-merge; that guarantee lives in the resolver tests.
+    """
     config, conn, kuzu, lance = _env(tmp_path)
     a = [_chunk(BOOK, 1, 0)]
     _add_book(config, conn, BOOK, a, [
@@ -617,16 +722,21 @@ async def test_ana_and_the_ana_do_not_fuse_across_books(tmp_path: Path) -> None:
     spy = _AdjudicateSpy(False)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert spy.calls == []  # decided by rule, never by the model
     rows = sorted(
         (r[0], r[1], tuple(sorted(r[2] or ())))
         for r in _rows(kuzu, "MATCH (e:Entity) WHERE e.name IN ['Ana', 'The Ana']"
                              " RETURN e.id, e.name, e.books")
     )
-    assert len(rows) == 2
-    assert {(name, books) for _id, name, books in rows} == {
-        ("Ana", (BOOK,)), ("The Ana", (BOOK_B,)),
-    }
-    assert rows[0][0] != rows[1][0]  # genuinely distinct ids
+    assert len(rows) == 1
+    assert rows[0][2] == tuple(sorted((BOOK, BOOK_B)))  # one node, both books
+    edges = sorted(
+        (r[0], r[1], r[2])
+        for r in _rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
+                             " RETURN s.id, r.book_id, o.name")
+    )
+    assert {(e[1], e[2]) for e in edges} == {(BOOK, "Bo"), (BOOK_B, "Zed")}
+    assert {e[0] for e in edges} == {rows[0][0]}
     conn.close(); kuzu.close()
 
 
@@ -655,11 +765,11 @@ async def test_reloading_after_a_refused_merge_never_readjudicates(
     spy = _AdjudicateSpy(False)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
-    assert len(spy.calls) == 1
+    assert spy.calls == []  # Task 1h: the generic refusal is deterministic
     snapshot = _snapshot(kuzu, lance)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
-    assert len(spy.calls) == 1  # the suffixed node is found by its own book
+    assert spy.calls == []  # the suffixed node is found by its own book
     assert _snapshot(kuzu, lance) == snapshot
     conn.close(); kuzu.close()
 
@@ -687,18 +797,34 @@ async def test_dropped_edges_are_counted(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
-async def _load_two_captains_merged(tmp_path: Path, order: list[str]):
-    """A's chunk vector is 10.0, B's is 20.0, and the merge is approved."""
+# These centroid/lifecycle tests need an entity that genuinely SPANS both
+# books. Task 1h made "the Captain" un-mergeable by rule (every token
+# generic), so they carry a distinctive shared name instead; what they
+# assert — the centroid, and the book-removal lifecycle — is unchanged.
+_SHARED = "Mary Morstan"
+
+
+def _shared_nodes(kuzu) -> list[tuple]:
+    return sorted(
+        (r[0], tuple(sorted(r[1] or ())))
+        for r in _rows(
+            kuzu, f"MATCH (e:Entity) WHERE e.name = '{_SHARED}'"
+                  " RETURN e.id, e.books")
+    )
+
+
+async def _load_two_shared_merged(tmp_path: Path, order: list[str]):
+    """A's chunk vector is 10.0, B's is 20.0, and the name is distinctive."""
     config, conn, kuzu, lance = _env(tmp_path)
     a = [_chunk(BOOK, 1, 0)]
     _add_book(config, conn, BOOK, a, [
-        _row(a[0].id, BOOK, "the Captain", "OPPOSES", "Bo",
-             ["the Captain", "Bo"], ["Character", "Character"]),
+        _row(a[0].id, BOOK, _SHARED, "OPPOSES", "Bo",
+             [_SHARED, "Bo"], ["Character", "Character"]),
     ], firsts=[10.0])
     b = [_chunk(BOOK_B, 1, 0)]
     _add_book(config, conn, BOOK_B, b, [
-        _row(b[0].id, BOOK_B, "the Captain", "LOVES", "Zed",
-             ["the Captain", "Zed"], ["Character", "Character"]),
+        _row(b[0].id, BOOK_B, _SHARED, "LOVES", "Zed",
+             [_SHARED, "Zed"], ["Character", "Character"]),
     ], firsts=[20.0])
     spy = _AdjudicateSpy(True)
     for book in order:
@@ -711,14 +837,14 @@ async def _load_two_captains_merged(tmp_path: Path, order: list[str]):
 async def test_merged_entity_centroid_is_the_true_mean(
     tmp_path: Path, order: list[str]
 ) -> None:
-    config, conn, kuzu, lance = await _load_two_captains_merged(tmp_path, order)
-    captains = _captains(kuzu)
-    assert len(captains) == 1
-    assert captains[0][1] == tuple(sorted((BOOK, BOOK_B)))
+    config, conn, kuzu, lance = await _load_two_shared_merged(tmp_path, order)
+    shared = _shared_nodes(kuzu)
+    assert len(shared) == 1
+    assert shared[0][1] == tuple(sorted((BOOK, BOOK_B)))
     vectors = _entity_vectors(config)
     # 10.0 from book A's chunk, 20.0 from book B's — the mean is 15.0, and
     # it must not depend on which book was loaded last.
-    assert vectors[captains[0][0]][0] == pytest.approx(15.0)
+    assert vectors[shared[0][0]][0] == pytest.approx(15.0)
     conn.close(); kuzu.close()
 
 
@@ -726,14 +852,14 @@ async def test_merged_entity_centroid_is_the_true_mean(
 async def test_merged_centroid_survives_a_reload_of_either_book(
     tmp_path: Path,
 ) -> None:
-    config, conn, kuzu, lance = await _load_two_captains_merged(
+    config, conn, kuzu, lance = await _load_two_shared_merged(
         tmp_path, [BOOK, BOOK_B]
     )
-    captain = _captains(kuzu)[0][0]
+    shared = _shared_nodes(kuzu)[0][0]
     spy = _AdjudicateSpy(True)
     for book in (BOOK, BOOK_B, BOOK, BOOK_B):
         await load_book(config, conn, kuzu, lance, book, _embed, spy)
-        assert _entity_vectors(config)[captain][0] == pytest.approx(15.0)
+        assert _entity_vectors(config)[shared][0] == pytest.approx(15.0)
     assert spy.calls == []  # both books already own the node
     conn.close(); kuzu.close()
 
@@ -776,24 +902,24 @@ async def test_shared_entity_survives_reload_with_this_book_removed(
     config, conn, kuzu, lance = _env(tmp_path)
     a = [_chunk(BOOK, 1, 0), _chunk(BOOK, 1, 1)]
     a_rows = [
-        _row(a[0].id, BOOK, "the Captain", "OPPOSES", "Bo",
-             ["the Captain", "Bo"], ["Character", "Character"]),
+        _row(a[0].id, BOOK, _SHARED, "OPPOSES", "Bo",
+             [_SHARED, "Bo"], ["Character", "Character"]),
         _row(a[1].id, BOOK, "Ana", "LOVES", "Bo", ["Ana", "Bo"],
              ["Character", "Character"]),
     ]
     _add_book(config, conn, BOOK, a, a_rows, firsts=[10.0, 30.0])
     b = [_chunk(BOOK_B, 1, 0)]
     _add_book(config, conn, BOOK_B, b, [
-        _row(b[0].id, BOOK_B, "the Captain", "LOVES", "Zed",
-             ["the Captain", "Zed"], ["Character", "Character"]),
+        _row(b[0].id, BOOK_B, _SHARED, "LOVES", "Zed",
+             [_SHARED, "Zed"], ["Character", "Character"]),
     ], firsts=[20.0])
     spy = _AdjudicateSpy(True)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
-    captain = _captains(kuzu)[0][0]
-    assert _entity_vectors(config)[captain][0] == pytest.approx(15.0)
+    shared = _shared_nodes(kuzu)[0][0]
+    assert _entity_vectors(config)[shared][0] == pytest.approx(15.0)
 
-    # Re-extract book A without the Captain.
+    # Re-extract book A without the shared character.
     _write_unit(config, BOOK, a_rows[1:], [c.id for c in a], firsts=[10.0, 30.0])
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
 
@@ -801,11 +927,11 @@ async def test_shared_entity_survives_reload_with_this_book_removed(
         (r[0], r[1], tuple(sorted(r[2] or ())))
         for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.id, e.name, e.books")
     )
-    captains = [s for s in survivors if s[1] == "the Captain"]
-    assert len(captains) == 1                    # retained, not deleted
-    assert captains[0][2] == (BOOK_B,)           # this book removed from books
+    kept = [s for s in survivors if s[1] == _SHARED]
+    assert len(kept) == 1                        # retained, not deleted
+    assert kept[0][2] == (BOOK_B,)               # this book removed from books
     # Recomputed over book B's chunk alone.
-    assert _entity_vectors(config)[captain][0] == pytest.approx(20.0)
+    assert _entity_vectors(config)[shared][0] == pytest.approx(20.0)
     conn.close(); kuzu.close()
 
 
@@ -1045,4 +1171,88 @@ async def test_dropped_mentions_counts_exactly_the_rejections(
 
     report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     assert report.dropped_mentions == expected_drops == 3
+    conn.close(); kuzu.close()
+
+
+# --------------------------------------------------------------------------
+# Task 1h self-review probe: the deterministic cross-book rule meets the
+# `claimed` set. The live graph contains four nodes that normalize to
+# `sherlock holmes` ("Sherlock Holmes" and "Mr. Sherlock Holmes", twice
+# over), so a single load CAN present two candidates sharing one base while
+# another book already holds that base id. Nothing in the brief lists this.
+# --------------------------------------------------------------------------
+
+
+def _candidate(name: str, slot: int = 0, kind: str = "Character") -> "object":
+    """A candidate at position `slot` of its own base's collision chain.
+
+    `slot=1` is what `resolve_mentions` mints for a second, distinct entity
+    of the same normalized name inside ONE book, so a load can legitimately
+    hand `_reconcile_ids` two candidates that share a base but not an id.
+    """
+    from lore.graph.loader import _NodeCandidate
+    from lore.resolve.normalize import normalize_name
+    from lore.resolve.resolver import entity_id_chain
+
+    base = normalize_name(name)
+    cid = next(itertools.islice(entity_id_chain(base, kind), slot, slot + 1))
+    return _NodeCandidate(id=cid, base=base, name=name, kind=kind,
+                          aliases=(base,), books=())
+
+
+@pytest.mark.asyncio
+async def test_probe_two_same_base_candidates_meet_one_foreign_node(
+    tmp_path: Path,
+) -> None:
+    from lore.graph.loader import _reconcile_ids
+
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "Sherlock Holmes", "OPPOSES", "Bo",
+             ["Sherlock Holmes", "Bo"], ["Character", "Character"]),
+    ])
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    persisted_id = _rows(
+        kuzu, "MATCH (e:Entity) WHERE e.name = 'Sherlock Holmes' RETURN e.id"
+    )[0][0]
+
+    first = _candidate("Sherlock Holmes")
+    second = _candidate("Mr. Sherlock Holmes", slot=1)
+    assert first.base == second.base == "sherlock holmes"
+    id_for, _ = await _reconcile_ids(kuzu, BOOK_B, [first, second])
+
+    # One of them fuses into book A's node; the other takes a free slot in
+    # the chain rather than stealing the same id or crashing.
+    chosen = {id_for[first.id], id_for[second.id]}
+    assert len(chosen) == 2
+    assert persisted_id in chosen
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_probe_two_same_base_generic_candidates_take_free_slots(
+    tmp_path: Path,
+) -> None:
+    from lore.graph.loader import _reconcile_ids
+
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "the Captain", "OPPOSES", "Bo",
+             ["the Captain", "Bo"], ["Character", "Character"]),
+    ])
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    persisted_id = _rows(
+        kuzu, "MATCH (e:Entity) WHERE e.name = 'the Captain' RETURN e.id"
+    )[0][0]
+
+    first = _candidate("the Captain")
+    second = _candidate("Captain", slot=1)
+    assert first.base == second.base == "captain"
+    id_for, _ = await _reconcile_ids(kuzu, BOOK_B, [first, second])
+
+    chosen = {id_for[first.id], id_for[second.id]}
+    assert len(chosen) == 2
+    assert persisted_id not in chosen  # generic: book A's node is untouched
     conn.close(); kuzu.close()
