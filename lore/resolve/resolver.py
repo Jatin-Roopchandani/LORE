@@ -2,10 +2,13 @@
 
 Pass 1 is exact/alias matching on the normalized name — free, and it
 handles most of a book. Pass 2 embeds name plus local context and compares
-against same-kind candidates. Pass 3 asks an LLM, and only for the
-ambiguous middle. A merge across two different books ALWAYS requires
-pass 3 to approve it, so "the Captain" in two unrelated novels stays two
-people.
+against same-kind candidates, but first settles the same-book name-variant
+case by string matching alone: if one name's identity tokens nest inside
+the other's ("holmes" in "sherlock holmes"), that is not a judgement call
+and neither the embedder nor the LLM is consulted. Pass 3 asks an LLM, and
+only for the ambiguous middle. A merge across two different books ALWAYS
+requires pass 3 to approve it, so "the Captain" in two unrelated novels
+stays two people.
 
 Embeddings are computed lazily and cached: a brand-new entity with no
 existing same-kind candidates never touches the embedder (nothing to
@@ -101,6 +104,16 @@ def name_tokens(normalized: str) -> frozenset[str]:
         for token in normalized.split()
         if len(token) > 1 and token not in _FUNCTION_WORDS
     )
+
+
+def _tokens_nest(left: frozenset[str], right: frozenset[str]) -> bool:
+    """True when one of two non-empty token sets contains the other.
+
+    Both sides must be non-empty: the empty set is a subset of everything,
+    and a name whose tokens are all function words or initials must never
+    nest inside — and so merge with — an arbitrary other name.
+    """
+    return bool(left) and bool(right) and (left <= right or right <= left)
 
 
 def display_name(candidates: Iterable[str]) -> str:
@@ -232,7 +245,63 @@ async def resolve_mentions(
         chosen: str | None = None
         vector: list[float] | None = None
 
-        if candidates:
+        # Pass 2a — the name-variant shortcut, decided by string matching.
+        # If one name's identity tokens are a subset of the other's, they
+        # are the same entity: "holmes" ⊂ "sherlock holmes", "watson" ⊂
+        # "john watson". This is not a judgement call, so it deliberately
+        # takes the decision away from the local 3B, which two rounds of
+        # prompt tuning showed cannot be relied on for it — at HEAD the
+        # live model answered False to both 'Holmes'/'Sherlock Holmes' and
+        # 'Watson'/'Dr. Watson' while correctly answering False to
+        # 'John Ferrier'/'John Watson'. The subset test answers all three
+        # exactly, every time, for free, and it separates every real case
+        # in the corpus: `sierra blanco`/`sierra nevada`,
+        # `bond street`/`miles street` and `john ferrier`/`john rance`
+        # share a token but nest in neither direction, so they fall
+        # through to the similarity path below, unchanged.
+        #
+        # The rule is pairwise, so lifting it to an entity — which holds a
+        # SET of names — has to nest with EVERY alias the entity already
+        # carries, not merely with one of them or with their union.
+        # Otherwise a merged entity becomes a bridge between two names that
+        # never nested with each other, and one merge chains into a second:
+        # measured on the live corpus, `mary` merged with `mary morstan`,
+        # after which `morstan` nested with the union and fused Mary
+        # Morstan with her father Captain Morstan. `bartholomew` +
+        # `bartholomew sholto` then swallowing `sholto` (Major Sholto,
+        # another father) was the same chain. Requiring every alias blocks
+        # both — `{morstan}` does not nest with the alias `mary` — while
+        # still admitting every merge this task exists for, because those
+        # entities are single-alias at the moment the shortcut fires.
+        #
+        # SAME BOOK ONLY. A cross-book merge is still never made without
+        # `adjudicate` returning True — Phase 2B's whole point is that
+        # "the Captain" in two unrelated novels must not merge silently,
+        # and only a judgement call separates that from a real recurring
+        # character. Cross-book candidates therefore fall through below.
+        #
+        # Placed before the embedding batch is built, so a subset match
+        # costs no embedding call at all.
+        subset_matches = [
+            cid
+            for cid in candidates
+            if mention.book_id in books[cid]
+            and all(
+                _tokens_nest(mention_tokens, name_tokens(alias))
+                for alias in alias_sets[cid]
+            )
+        ]
+        if subset_matches:
+            # Prefer the most specific match (the largest shared token set;
+            # one side nests in the other, so that is the larger of the two
+            # names), and break a tie on the content-derived id so the
+            # choice stays a function of the mention set, not of iteration
+            # order.
+            chosen = min(
+                subset_matches,
+                key=lambda cid: (-len(alias_tokens[cid] & mention_tokens), cid),
+            )
+        elif candidates:
             # Pass 2 — embed this mention plus any not-yet-cached candidates,
             # in one batch, then compare against same-kind candidates.
             uncached = [cid for cid in candidates if cid not in vectors]

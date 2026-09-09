@@ -35,9 +35,14 @@ async def test_exact_and_honorific_forms_collapse_without_embedding() -> None:
         _never,
     )
     # "miss bennet" normalizes to "bennet", not "elizabeth bennet" — so this
-    # pair does NOT collapse on pass 1; it must reach the embedder.
-    assert calls, "second mention should have needed an embedding"
-    assert len(result.entities) >= 1
+    # pair does NOT collapse on pass 1. It reaches pass 2, where the
+    # token-subset shortcut ("bennet" nests inside "elizabeth bennet")
+    # settles it deterministically: one entity, and still no embedding.
+    # Before that shortcut existed this pair cost an embedding call, which
+    # is what this test used to assert.
+    assert len(result.entities) == 1
+    assert result.entities[0].aliases == ("bennet", "elizabeth bennet")
+    assert calls == [], "a subset match is settled by string matching alone"
 
 
 @pytest.mark.asyncio
@@ -524,3 +529,218 @@ async def test_a_shared_initial_is_not_a_shared_token() -> None:
         _always,
     )
     assert len(result.entities) == 2
+
+
+# --- Pass-2 token-subset shortcut -------------------------------------------
+#
+# `Holmes` vs `Sherlock Holmes` is not a judgement call, it is a name-variant
+# question with a deterministic answer. Same book + one name's tokens a subset
+# of the other's => same entity, decided by string matching, with no embedding
+# and no LLM. Every test below uses the all-identical embedder, so similarity
+# is 1.0 for every pair and cannot be what decides; the spies assert the
+# shortcut fired rather than the old similarity path.
+
+
+def _spy_adjudicate(seen: list[tuple[str, str]]):
+    async def adjudicate(canonical, mention):
+        seen.append((canonical.name, mention.name))
+        return False
+
+    return adjudicate
+
+
+@pytest.mark.asyncio
+async def test_subset_name_merges_without_embedding_or_adjudication() -> None:
+    calls: list[list[str]] = []
+    seen: list[tuple[str, str]] = []
+    result = await resolve_mentions(
+        [
+            Mention("Sherlock Holmes", "Character", "b1", "he rose from the chair"),
+            Mention("Holmes", "Character", "b1", "the note lay on the table"),
+        ],
+        _identical(calls),
+        _spy_adjudicate(seen),
+    )
+    assert len(result.entities) == 1
+    assert set(result.entities[0].aliases) == {"holmes", "sherlock holmes"}
+    assert result.entities[0].name == "Sherlock Holmes"
+    assert calls == [], "a subset match must cost no embedding call"
+    assert seen == [], "a subset match must not consult the 3B adjudicator"
+
+
+@pytest.mark.asyncio
+async def test_honorific_and_given_name_variant_merges_on_the_subset_rule() -> None:
+    # "Dr. John Watson" -> "john watson"; "Watson" -> "watson". The live 3B
+    # refuses this pair; the token subset answers it exactly.
+    calls: list[list[str]] = []
+    seen: list[tuple[str, str]] = []
+    result = await resolve_mentions(
+        [
+            Mention("Dr. John Watson", "Character", "b1", "he wrote it down"),
+            Mention("Watson", "Character", "b1", "a very different sentence"),
+        ],
+        _identical(calls),
+        _spy_adjudicate(seen),
+    )
+    assert len(result.entities) == 1
+    assert set(result.entities[0].aliases) == {"john watson", "watson"}
+    assert calls == []
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_a_shared_given_name_is_not_a_subset() -> None:
+    # The residual bad merge Task 1f left behind. "john ferrier" and
+    # "john watson" share a token but neither is a subset of the other, so
+    # the shortcut must not fire: the pair still goes down the similarity
+    # path and, with dissimilar contexts and a refusing adjudicator, stays
+    # two people.
+    calls: list[list[str]] = []
+    seen: list[tuple[str, str]] = []
+    # cosine 0.8: inside the 0.70-0.86 gray band, so pass 3 is consulted.
+    vectors = {"John Ferrier": [1.0, 0.0], "John Watson": [0.8, 0.6]}
+
+    async def embed(texts):
+        calls.append(list(texts))
+        return [vectors[t.split(" — ")[0]] for t in texts]
+
+    result = await resolve_mentions(
+        [
+            Mention("John Ferrier", "Character", "b1", "he farmed the valley"),
+            Mention("John Watson", "Character", "b1", "he wrote it down"),
+        ],
+        embed,
+        _spy_adjudicate(seen),
+    )
+    assert len(result.entities) == 2
+    assert calls, "a non-subset shared-token pair must still be embedded"
+    assert seen, "a non-subset shared-token pair must still reach pass 3"
+
+
+@pytest.mark.asyncio
+async def test_a_dog_is_not_a_subset_of_a_detective() -> None:
+    calls: list[list[str]] = []
+    seen: list[tuple[str, str]] = []
+    result = await resolve_mentions(
+        [
+            Mention("Holmes", "Character", "b1", "Toby led Holmes down the lane."),
+            Mention("Toby", "Character", "b1", "Toby led Holmes down the lane."),
+        ],
+        _identical(calls),
+        _spy_adjudicate(seen),
+    )
+    assert len(result.entities) == 2
+    assert calls == []
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_cross_book_subset_still_requires_adjudication() -> None:
+    # The Phase 2B guarantee the shortcut deliberately does NOT touch:
+    # "the Captain" in two unrelated novels must not merge silently, so a
+    # cross-book merge is still never made without `adjudicate` saying True.
+    seen: list[tuple[str, str]] = []
+    refused = await resolve_mentions(
+        [
+            Mention("Sherlock Holmes", "Character", "b1", "he rose"),
+            Mention("Holmes", "Character", "b2", "he frowned"),
+        ],
+        _identical(),
+        _spy_adjudicate(seen),
+    )
+    assert seen, "a cross-book subset pair must still reach adjudication"
+    assert len(refused.entities) == 2
+
+    approved = await resolve_mentions(
+        [
+            Mention("Sherlock Holmes", "Character", "b1", "he rose"),
+            Mention("Holmes", "Character", "b2", "he frowned"),
+        ],
+        _identical(),
+        _always,
+    )
+    assert len(approved.entities) == 1
+    assert set(approved.entities[0].book_ids) == {"b1", "b2"}
+
+
+@pytest.mark.asyncio
+async def test_subset_shortcut_is_gated_by_kind() -> None:
+    # A subset of a candidate of a DIFFERENT kind is not a match.
+    result = await resolve_mentions(
+        [
+            Mention("Baker Street", "Place", "b1", "they walked its length"),
+            Mention("Street", "Character", "b1", "they walked its length"),
+        ],
+        _identical(),
+        _always,
+    )
+    assert len(result.entities) == 2
+    assert {e.kind for e in result.entities} == {"Place", "Character"}
+
+
+@pytest.mark.asyncio
+async def test_identical_token_sets_are_still_pass_one_not_the_shortcut() -> None:
+    # Subset in BOTH directions is an exact normalized-name match, which
+    # pass 1 already collapses. The shortcut must not become a second path
+    # to the same merge: nothing is embedded and nothing is adjudicated.
+    calls: list[list[str]] = []
+    seen: list[tuple[str, str]] = []
+    result = await resolve_mentions(
+        [
+            Mention("Mr. Sherlock Holmes", "Character", "b1", "he rose"),
+            Mention("Sherlock Holmes", "Character", "b1", "he sat"),
+        ],
+        _identical(calls),
+        _spy_adjudicate(seen),
+    )
+    assert len(result.entities) == 1
+    assert result.entities[0].aliases == ("sherlock holmes",)
+    assert result.entities[0].name == "Mr. Sherlock Holmes"
+    assert calls == []
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_subset_shortcut_survives_a_contentless_name() -> None:
+    # Phase 2B skips an empty normalized name upstream; confirm the
+    # shortcut cannot be reached by one and does not crash on one.
+    result = await resolve_mentions(
+        [
+            Mention("...", "Character", "b1", "he rose"),
+            Mention("Holmes", "Character", "b1", "he rose"),
+            Mention("Sherlock Holmes", "Character", "b1", "he rose"),
+            Mention("---", "Character", "b1", "he rose"),
+        ],
+        _identical(),
+        _never,
+    )
+    assert len(result.entities) == 1
+    assert result.entities[0].name == "Sherlock Holmes"
+
+
+@pytest.mark.asyncio
+async def test_subset_shortcut_keeps_resolution_a_function_of_the_set() -> None:
+    import itertools
+
+    mentions = [
+        Mention("Sherlock Holmes", "Character", "b1", "he rose"),
+        Mention("Holmes", "Character", "b1", "the note lay there"),
+        Mention("Dr. John Watson", "Character", "b1", "he wrote it down"),
+        Mention("Watson", "Character", "b1", "a different sentence"),
+        Mention("Toby", "Character", "b1", "the dog trotted on"),
+    ]
+    baseline = None
+    for order in itertools.permutations(mentions):
+        result = await resolve_mentions(list(order), _identical(), _never)
+        signature = (
+            sorted((e.id, e.name, e.aliases, e.book_ids) for e in result.entities),
+            sorted(result.mention_map.items()),
+        )
+        if baseline is None:
+            baseline = signature
+        assert signature == baseline
+    assert baseline is not None
+    assert len(baseline[0]) == 3
+    assert {name for _, name, _, _ in baseline[0]} == {
+        "Sherlock Holmes", "Dr. John Watson", "Toby",
+    }
