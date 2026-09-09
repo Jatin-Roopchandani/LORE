@@ -893,19 +893,20 @@ async def test_an_ambiguous_pair_does_not_block_an_unrelated_similarity_merge(
 
 
 @pytest.mark.asyncio
-async def test_a_possessive_description_still_absorbs_the_person_it_names(
+async def test_a_possessive_description_no_longer_absorbs_the_person(
 ) -> None:
-    """A known, out-of-scope defect, pinned so it is not mistaken for this one.
+    """Task 1i pinned this as a known defect; Task 1k fixes it.
 
-    `Lucy Ferrier’s father` normalizes to `lucy ferrier s father` —
-    the curly-apostrophe possessive `normalize_name` does not strip — and
+    `Lucy Ferrier’s father` normalizes to `lucy ferrier s father` — the
+    curly-apostrophe possessive `normalize_name` does not strip — and
     `lucy ferrier` nests inside it with nothing else to be ambiguous with,
-    so the daughter is absorbed into the description of her father. The
-    ambiguity rule cannot see this: there is only ONE superset. It is the
-    normalizer's possessive bug, which this task does not touch.
+    so the daughter was absorbed into the description of her father. The
+    ambiguity rule cannot see this: there is only ONE superset. The Task 1k
+    guard reads the RAW surface form instead and declines the merge, so all
+    three survive.
 
     The bare `Lucy` IS ambiguous between the two and stays separate, which
-    is the part this task is responsible for.
+    is what Task 1i was responsible for and still holds.
     """
     embed = _embedder({
         "Lucy": [1.0, 0.0, 0.0],
@@ -920,10 +921,9 @@ async def test_a_possessive_description_still_absorbs_the_person_it_names(
     )
     lucy = [e for e in result.entities if e.aliases == ("lucy",)]
     assert len(lucy) == 1, "the ambiguous bare name stays its own entity"
-    assert any(
-        e.aliases == ("lucy ferrier", "lucy ferrier s father")
-        for e in result.entities
-    ), "and the possessive defect is still there, unfixed by this task"
+    assert sorted(e.aliases for e in result.entities) == [
+        ("lucy",), ("lucy ferrier",), ("lucy ferrier s father",)
+    ], "the daughter is no longer buried inside a description of her father"
 
 
 # --------------------------------------------------------------------------
@@ -1180,3 +1180,223 @@ async def test_superset_names_and_counts_agree() -> None:
     )
     assert names[("b2", "Character", "sholto")] == ()
     assert superset_counts(rows) == {k: len(v) for k, v in names.items()}
+
+
+# --- Task 1k: a definite description must not swallow a name ---------------
+#
+# The token-subset rule above is what correctly unifies `Holmes` with
+# `Sherlock Holmes`. Measured on the rebuilt graph it also did this:
+#
+#   'the base hospital at Peshawar'  <- absorbed 'peshawar'
+#   'boarding-house at Camberwell'   <- absorbed 'camberwell'
+#   "Lucy Ferrier's father"          <- absorbed 'lucy ferrier'
+#
+# A description's tokens are a superset of the name inside it, so the
+# description wins the merge and the real place or person stops being a
+# node at all. A description may exist as an entity; it must never be
+# allowed to swallow one. Every test below uses the all-identical embedder,
+# so similarity is 1.0 for every pair and only the rule can decide — which
+# also means the guard has to drop the declined candidate from the
+# SIMILARITY path too, not merely from the shortcut.
+
+
+@pytest.mark.asyncio
+async def test_a_description_does_not_swallow_the_place_it_names() -> None:
+    calls: list[list[str]] = []
+    seen: list[tuple[str, str]] = []
+    result = await resolve_mentions(
+        [
+            Mention("boarding-house at Camberwell", "Place", "b1", "he lodged there"),
+            Mention("Camberwell", "Place", "b1", "he lodged there"),
+        ],
+        _identical(calls),
+        _spy_adjudicate(seen),
+    )
+    assert len(result.entities) == 2
+    assert sorted(e.name for e in result.entities) == [
+        "Camberwell", "boarding-house at Camberwell",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_possessive_description_does_not_swallow_the_character() -> None:
+    # `Lucy Ferrier's father` NORMALIZES to `lucy ferrier father` — the
+    # possessive is stripped, so the description is only visible on the RAW
+    # surface form. A guard that looks at the normalized name sees an
+    # ordinary three-token name here and fires on nothing.
+    result = await resolve_mentions(
+        [
+            Mention("Lucy Ferrier's father", "Character", "b1", "he swore an oath"),
+            Mention("Lucy Ferrier", "Character", "b1", "she rode beside him"),
+        ],
+        _identical(),
+        _never,
+    )
+    assert len(result.entities) == 2
+    assert sorted(e.name for e in result.entities) == [
+        "Lucy Ferrier", "Lucy Ferrier's father",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_curly_apostrophe_possessive_is_detected_too() -> None:
+    # The corpus text uses U+2019, not the ASCII apostrophe, and
+    # `normalize_name`'s possessive regex only knows the ASCII one — so
+    # `Ferrier’s farm` normalizes to `ferrier s farm` and the stray `s` is
+    # dropped as a one-character token. Nothing but a raw-form test that
+    # knows both apostrophes catches this.
+    result = await resolve_mentions(
+        [
+            Mention("Ferrier’s farm", "Place", "b1", "the crops stood high"),
+            Mention("Ferrier", "Place", "b1", "the crops stood high"),
+        ],
+        _identical(),
+        _never,
+    )
+    assert len(result.entities) == 2
+    assert sorted(e.name for e in result.entities) == [
+        "Ferrier", "Ferrier’s farm",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_guard_leaves_the_working_name_variant_merges_alone() -> None:
+    # The whole point of the subset rule. None of these is description
+    # shaped, so all four still merge on string matching alone.
+    for full, bare, kind in [
+        ("Sherlock Holmes", "Holmes", "Character"),
+        ("Dr. John Watson", "Watson", "Character"),
+        ("Mr. Thaddeus Sholto", "Thaddeus", "Character"),
+        ("Upper-Norwood", "Norwood", "Place"),
+    ]:
+        calls: list[list[str]] = []
+        seen: list[tuple[str, str]] = []
+        result = await resolve_mentions(
+            [
+                Mention(full, kind, "b1", "he rose from the chair"),
+                Mention(bare, kind, "b1", "the note lay on the table"),
+            ],
+            _identical(calls),
+            _spy_adjudicate(seen),
+        )
+        assert len(result.entities) == 1, f"{bare} should still merge into {full}"
+        assert result.entities[0].name == full
+        assert calls == [], "a subset match must still cost no embedding call"
+        assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_a_leading_article_is_not_a_description() -> None:
+    # `The Daily News` and `the Marchioness de Brinvilliers` are real
+    # entities in the corpus. Only a possessive or an INTERNAL function word
+    # disqualifies a merge target; widening this into a leading-article test
+    # would lose both.
+    for full, bare, kind in [
+        ("The Daily News", "News", "Concept"),
+        ("the Marchioness de Brinvilliers", "Brinvilliers", "Character"),
+    ]:
+        result = await resolve_mentions(
+            [
+                Mention(full, kind, "b1", "it was printed that morning"),
+                Mention(bare, kind, "b1", "a second sentence entirely"),
+            ],
+            _identical(),
+            _never,
+        )
+        assert len(result.entities) == 1, f"{bare} should still merge into {full}"
+        assert result.entities[0].name == full
+
+
+@pytest.mark.asyncio
+async def test_an_apostrophe_that_is_not_possessive_is_not_a_description() -> None:
+    # `O'Brien` carries an apostrophe but no `'s`, so the possessive test
+    # must not fire on it.
+    result = await resolve_mentions(
+        [
+            Mention("Sergeant O'Brien", "Character", "b1", "he saluted"),
+            Mention("O'Brien", "Character", "b1", "a different sentence"),
+        ],
+        _identical(),
+        _never,
+    )
+    assert len(result.entities) == 1
+    assert result.entities[0].name == "Sergeant O'Brien"
+
+
+@pytest.mark.asyncio
+async def test_the_declined_merge_does_not_come_back_through_similarity() -> None:
+    # The ambiguity refusal above had to drop its candidate from the
+    # similarity pass as well, because an entity and its own name share an
+    # evidence sentence and the embedding measures co-occurrence. Same door,
+    # same lock: an approving adjudicator must not be able to reopen it
+    # either.
+    result = await resolve_mentions(
+        [
+            Mention("the broad valley of Utah", "Place", "b1", "it lay before them"),
+            Mention("Utah", "Place", "b1", "it lay before them"),
+        ],
+        _identical(),
+        _always,
+    )
+    assert len(result.entities) == 2
+
+
+@pytest.mark.asyncio
+async def test_the_guard_keeps_resolution_a_function_of_the_set() -> None:
+    import itertools
+
+    mentions = [
+        Mention("boarding-house at Camberwell", "Place", "b1", "a: he lodged there"),
+        Mention("Camberwell", "Place", "b1", "b: he lodged there"),
+        Mention("Lucy Ferrier's father", "Character", "b1", "c: he swore"),
+        Mention("Lucy Ferrier", "Character", "b1", "d: she rode"),
+        Mention("Sherlock Holmes", "Character", "b1", "e: he rose"),
+        Mention("Holmes", "Character", "b1", "f: the note lay there"),
+    ]
+    baseline = None
+    for order in itertools.permutations(mentions):
+        result = await resolve_mentions(list(order), _identical(), _never)
+        signature = (
+            sorted((e.id, e.name, e.aliases, e.book_ids) for e in result.entities),
+            sorted(result.mention_map.items()),
+        )
+        if baseline is None:
+            baseline = signature
+        assert signature == baseline
+    assert baseline is not None
+    assert {name for _, name, _, _ in baseline[0]} == {
+        "boarding-house at Camberwell", "Camberwell",
+        "Lucy Ferrier's father", "Lucy Ferrier",
+        "Sherlock Holmes",
+    }
+
+
+def test_description_shaped_names_against_the_measured_corpus_cases() -> None:
+    from lore.resolve.resolver import is_description_shaped
+
+    for name in [
+        "Lucy Ferrier's father",
+        "Lucy Ferrier’s father",
+        "Ferrier’s farm",
+        "foreigners in England",
+        "the broad valley of Utah",
+        "one of the main arteries of suburban London",
+        "the base hospital at Peshawar",
+        "boarding-house at Camberwell",
+    ]:
+        assert is_description_shaped(name), name
+    for name in [
+        "Mr. Thaddeus Sholto",
+        "John Ferrier",
+        "Sherlock Holmes",
+        "Baker Street",
+        "Scotland Yard",
+        "The Daily News",
+        "the Marchioness de Brinvilliers",
+        "O'Brien",
+        "Upper-Norwood",
+        "Of Mice",          # a leading function word is not internal
+        "Toby",
+        "",
+    ]:
+        assert not is_description_shaped(name), name

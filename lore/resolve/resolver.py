@@ -19,6 +19,7 @@ embed call.
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable, Container, Iterable, Iterator
 from dataclasses import dataclass, field
 
@@ -124,6 +125,89 @@ def tokens_nest(left: frozenset[str], right: frozenset[str]) -> bool:
     nest inside — and so merge with — an arbitrary other name.
     """
     return bool(left) and bool(right) and (left <= right or right <= left)
+
+
+# Task 1k — a definite description must not swallow the name inside it.
+#
+# The subset rule above is what correctly unifies `Holmes` with `Sherlock
+# Holmes`, but a definite description's tokens are a superset of the name
+# it is about, so the same rule let the description win. Measured on the
+# rebuilt two-novel graph (353 entities), 53 names were description-shaped
+# and 44 had absorbed something:
+#
+#     'the base hospital at Peshawar'  <- absorbed 'peshawar'
+#     'boarding-house at Camberwell'   <- absorbed 'camberwell'
+#     'the broad valley of Utah'       <- absorbed 'utah'
+#     'foreigners in England'          <- absorbed 'england'
+#     "Lucy Ferrier's father"          <- absorbed 'lucy ferrier'
+#
+# `Camberwell` had stopped being a node at all, so nothing could be asked
+# about it. The root cause is upstream — `is_probable_entity` admits any
+# phrase containing a capitalised token, so `foreigners in England` passes
+# as a name — and fixing that needs a re-extraction (Phase 7). Until then a
+# description may EXIST as an entity, but it may never be the TARGET of a
+# subset merge.
+#
+# TEST THE RAW SURFACE FORM, NEVER THE NORMALIZED ONE. `normalize_name`
+# strips possessives, so "Lucy Ferrier's father" -> 'lucy ferrier father',
+# which looks like an ordinary three-token name; a guard reading the
+# normalized string fires on nothing and the defect ships silently. And the
+# corpus text uses the CURLY apostrophe, which `normalize_name`'s ASCII-only
+# possessive regex does not even strip ("Ferrier’s farm" -> 'ferrier s
+# farm'), so both apostrophes have to be recognised here.
+_POSSESSIVE_SUFFIX = re.compile(r"['’]s\b")
+
+# INTERNAL function words only, and a much smaller list than
+# `_FUNCTION_WORDS` above. Do NOT "simplify" this into a leading-article
+# test: `The Daily News` and `the Marchioness de Brinvilliers` are real
+# entities in the corpus and must keep merging normally, and `de` joins the
+# parts of a name rather than describing a relation between two things.
+# Only a possessive or a function word AFTER the first token disqualifies.
+_DESCRIPTION_WORDS = frozenset({
+    "of", "in", "at", "on", "for", "with", "from", "to",
+})
+_EDGE_PUNCTUATION = ".,;:!?\"()[]"
+
+
+def is_description_shaped(raw_name: str) -> bool:
+    """True when a RAW surface form describes an entity instead of naming it.
+
+    "boarding-house at Camberwell" and "Lucy Ferrier's father" are
+    descriptions; "Mr. Thaddeus Sholto", "Baker Street", "Scotland Yard"
+    and "The Daily News" are names. Used only to disqualify a merge TARGET
+    (see `swallows_a_name`), so a false positive costs an under-merge —
+    two nodes a later pass can still join — while a false negative
+    destroys a real entity.
+    """
+    tokens = raw_name.split()
+    return any(_POSSESSIVE_SUFFIX.search(token) for token in tokens) or any(
+        token.strip(_EDGE_PUNCTUATION).casefold() in _DESCRIPTION_WORDS
+        for token in tokens[1:]
+    )
+
+
+def swallows_a_name(
+    left: str, right: str, descriptive: Container[str]
+) -> bool:
+    """True when the SUPERSET side of a nesting pair is description-shaped.
+
+    Direction is the whole point: `Camberwell` being absorbed INTO
+    `boarding-house at Camberwell` is the defect, so the guard applies to
+    the longer name, the one that would end up owning the node and its
+    display name. Two names with equal token sets are the same name written
+    two ways and neither swallows the other; two descriptions merging with
+    each other is not this defect (and is out of scope).
+
+    `descriptive` holds NORMALIZED names whose raw surface form was found
+    description-shaped, because that is the form an entity's aliases are
+    kept in.
+    """
+    left_tokens, right_tokens = name_tokens(left), name_tokens(right)
+    if left_tokens < right_tokens:
+        return right in descriptive
+    if right_tokens < left_tokens:
+        return left in descriptive
+    return False
 
 
 def superset_names(
@@ -311,6 +395,18 @@ async def resolve_mentions(
         (m.book_id, m.kind, normalize_name(m.name)) for m in ordered_mentions
     )
     nesting_counts = {key: len(names) for key, names in superset_map.items()}
+    # Task 1k — the normalized names whose RAW surface form is a definite
+    # description ("boarding-house at Camberwell", "Lucy Ferrier's father").
+    # Collected over the whole mention set, like the nesting counts above,
+    # so the answer is a property of the DATA and not of which mention of a
+    # name happens to be in hand: two raw forms can normalize to one name,
+    # and if either of them is a description the name is treated as one —
+    # the conservative direction, since the guard can only under-merge.
+    descriptive_names = {
+        normalize_name(m.name)
+        for m in ordered_mentions
+        if is_description_shaped(m.name)
+    }
 
     # Surface form and evidence per normalized name, over the whole mention
     # set — so a grouped question can name a rival that does not exist as
@@ -484,6 +580,31 @@ async def resolve_mentions(
                 for alias in alias_sets[cid]
             )
         ]
+        # Task 1k — a description may not be the TARGET of a subset merge.
+        # `Camberwell` nests inside `boarding-house at Camberwell` and
+        # `lucy ferrier` inside "Lucy Ferrier's father", and on the rebuilt
+        # graph the description won both, leaving no node for the real place
+        # or the real character. Declining is not the same as refusing an
+        # ambiguous nesting: there is no question to ask (Task 1j's residue
+        # is about which of two people a bare surname is), so these
+        # candidates are dropped silently.
+        #
+        # Dropped from the SIMILARITY path as well, for the same reason the
+        # ambiguity refusal is: a description and the name inside it share
+        # an evidence sentence, and the pass-2 embedding measures
+        # co-occurrence, so leaving the candidate in would let the very
+        # merge just declined come straight back through the other door.
+        declined = {
+            cid
+            for cid in nests
+            if any(
+                swallows_a_name(normalized, alias, descriptive_names)
+                for alias in alias_sets[cid]
+            )
+        }
+        if declined:
+            nests = [cid for cid in nests if cid not in declined]
+            candidates = [cid for cid in candidates if cid not in declined]
         subset_matches = [
             cid
             for cid in nests

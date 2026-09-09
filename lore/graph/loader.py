@@ -91,6 +91,7 @@ from lore.resolve.resolver import (
     Mention,
     display_name,
     entity_id_chain,
+    is_description_shaped,
     name_tokens,
     resolve_mentions,
     tokens_nest,
@@ -341,6 +342,39 @@ def _is_name_variant(
     )
 
 
+def _swallows_a_name(
+    left: list[frozenset[str]], left_name: str,
+    right: list[frozenset[str]], right_name: str,
+) -> bool:
+    """True when the SUPERSET side of a variant match is a DESCRIPTION.
+
+    Task 1k, the cross-book half. `foreigners in England` nests around
+    `england` and won it, and three of the eleven cross-book entities on
+    the rebuilt graph were junk of exactly this shape. A description may
+    exist as a node; it may not absorb the name inside it.
+
+    Both names here are RAW display names — `display_name` keeps the
+    longest raw surface form, which for a nesting pair is the superset
+    side, and the possessive that gives a description away survives only
+    there ("Lucy Ferrier's father" normalizes to `lucy ferrier father`).
+    An entity's persisted aliases are normalized, so they cannot be tested
+    and are not: the display name is the one that matters, because it is
+    the form that would end up naming the merged node.
+
+    Called only for pairs `_is_name_variant` already accepted, so every
+    form on each side nests with every form on the other and the union of
+    each side's tokens orders them. Equal unions are the same name written
+    two ways — neither swallows the other.
+    """
+    left_tokens = frozenset().union(*left)
+    right_tokens = frozenset().union(*right)
+    if left_tokens < right_tokens:
+        return is_description_shaped(right_name)
+    if right_tokens < left_tokens:
+        return is_description_shaped(left_name)
+    return False
+
+
 def _entities_owned_by(kuzu: KuzuStore, book_id: str) -> dict[str, _PersistedEntity]:
     """Every Entity node whose `books` currently names this book.
 
@@ -453,6 +487,14 @@ async def _reconcile_ids(
             # steps 1 and 2; re-deciding it here would undo that ruling.
             if node_id not in chains[candidate.id]
             and _is_name_variant(forms, node_forms)
+            # Task 1k: and the longer of the two names is not a definite
+            # description swallowing the shorter one. Dropped here rather
+            # than at match time so it is also uncounted in `matched_by`
+            # below — a merge that can never be made must not be what makes
+            # a real one look ambiguous.
+            and not _swallows_a_name(
+                forms, candidate.name, node_forms, searchable[node_id].name
+            )
         ]
         if found:
             variant_matches[candidate.id] = found

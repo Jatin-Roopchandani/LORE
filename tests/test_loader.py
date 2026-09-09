@@ -1913,3 +1913,101 @@ async def test_a_corrupt_answer_cache_does_not_break_a_load(tmp_path: Path) -> N
         disambiguation=DisambiguationStore(config.disambiguation_dir),
     )
     assert report.entities == 3
+
+
+# --------------------------------------------------------------------------
+# Task 1k: a definite description must not swallow a name across books
+# either. Three of the eleven cross-book entities on the rebuilt graph were
+# of this shape — `foreigners in England` had absorbed `England`, which is a
+# node real questions are asked about.
+
+
+@pytest.mark.asyncio
+async def test_a_cross_book_description_does_not_swallow_the_place(
+    tmp_path: Path,
+) -> None:
+    """`england` nests inside `foreigners in england`; they are not one place."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "England", "CONTAINS", "Bo",
+             ["England", "Bo"], ["Place", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "foreigners in England", "OPPOSES", "Zed",
+             ["foreigners in England", "Zed"], ["Place", "Character"]),
+    ])
+    spy = _AdjudicateSpy(True)  # even an approving model must not fuse these
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+
+    rows = sorted(
+        (r[0], r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(
+            kuzu,
+            "MATCH (e:Entity) WHERE e.name IN ['England', 'foreigners in England']"
+            " RETURN e.id, e.name, e.books")
+    )
+    assert len(rows) == 2, "England must survive as a node of its own"
+    assert {name for _id, name, _books in rows} == {
+        "England", "foreigners in England",
+    }
+    assert {books for _id, _name, books in rows} == {(BOOK,), (BOOK_B,)}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_cross_book_possessive_description_does_not_swallow_the_name(
+    tmp_path: Path,
+) -> None:
+    """The possessive is only visible on the RAW surface form.
+
+    `Lucy Ferrier's father` normalizes to `lucy ferrier father`, which nests
+    around `lucy ferrier` and looks like an ordinary three-token name.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "Lucy Ferrier", "LOVES", "Bo",
+             ["Lucy Ferrier", "Bo"], ["Character", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "Lucy Ferrier’s father", "OPPOSES", "Zed",
+             ["Lucy Ferrier’s father", "Zed"], ["Character", "Character"]),
+    ])
+    spy = _AdjudicateSpy(True)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+
+    rows = sorted(
+        (r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(
+            kuzu,
+            "MATCH (e:Entity) WHERE e.name IN ['Lucy Ferrier',"
+            " 'Lucy Ferrier’s father'] RETURN e.id, e.name, e.books")
+    )
+    assert len(rows) == 2
+    assert rows == [("Lucy Ferrier", (BOOK,)),
+                    ("Lucy Ferrier’s father", (BOOK_B,))]
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_the_cross_book_guard_leaves_watson_alone(tmp_path: Path) -> None:
+    """The guard must not cost the one merge the cross-book rule exists for.
+
+    Same body as `test_a_cross_book_name_variant_merges`, restated here so a
+    regression in the Task 1k guard names itself.
+    """
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_watsons(config, conn)
+    spy = _AdjudicateSpy(False)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    watsons = _watsons(kuzu)
+    assert len(watsons) == 1
+    assert watsons[0][1] == "Dr. John Watson"
+    assert watsons[0][3] == ("john watson", "watson")
+    conn.close(); kuzu.close()
