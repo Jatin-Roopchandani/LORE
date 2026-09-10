@@ -5,7 +5,7 @@ import pytest
 from lore.db.sqlite import open_db
 from lore.extract.embed import QUERY_PREFIX
 from lore.ingest.registry import chunks_by_id
-from lore.query.seed import canonical_ids, seed_entities
+from lore.query.seed import canonical_ids, live_entity_ids, seed_entities
 
 
 class FakeLance:
@@ -19,16 +19,36 @@ class FakeLance:
 
 
 class FakeKuzu:
-    """Answers the two shapes seed.py issues: ALIAS_OF hop and entity fetch."""
+    """Answers the three shapes seed.py issues: ALIAS_OF hop, REL degree,
+    entity fetch.
 
-    def __init__(self, aliases: dict[str, str], entities: dict[str, tuple]) -> None:
+    `degrees` defaults to "every known entity has an edge", which is what the
+    tests that predate the degree filter assume. Real Kuzu omits a degree-0
+    node from the aggregate result entirely rather than returning 0, so this
+    fake omits it too -- a fake that returned a 0 row would let a filter that
+    only checks membership pass while the real one let dead nodes through.
+    """
+
+    def __init__(
+        self,
+        aliases: dict[str, str],
+        entities: dict[str, tuple],
+        degrees: dict[str, int] | None = None,
+    ) -> None:
         self._aliases = aliases
         self._entities = entities
+        self._degrees = {i: 1 for i in entities} if degrees is None else degrees
 
     def execute(self, cypher: str, params: dict | None = None):
         params = params or {}
         if "ALIAS_OF" in cypher:
             return [[i, self._aliases[i]] for i in params["ids"] if i in self._aliases]
+        if ":REL]" in cypher:
+            return [
+                [i, self._degrees[i]]
+                for i in params["ids"]
+                if self._degrees.get(i, 0) > 0
+            ]
         return [list(self._entities[i]) for i in params["ids"] if i in self._entities]
 
 
@@ -139,3 +159,93 @@ async def test_a_missing_distance_sorts_last_not_first() -> None:
                          for i in ["e_missing", "e_real"]})
     seeds = await seed_entities("q", lance, kuzu, embed)
     assert [s.id for s in seeds] == ["e_real", "e_missing"]
+
+
+@pytest.mark.asyncio
+async def test_a_degree_zero_entity_is_not_a_seed_even_when_nearest() -> None:
+    # No REL edge touches it, so every template returns zero rows for it by
+    # construction: it is not a place a traversal can start.
+    async def embed(texts: list[str]) -> list[list[float]]:
+        return [[0.1] * 4]
+
+    lance = FakeLance([
+        {"chunk_id": "c0", "entity_ids": ["dead"], "_distance": 0.10},
+        {"chunk_id": "c1", "entity_ids": ["live"], "_distance": 0.90},
+    ])
+    kuzu = FakeKuzu(
+        {},
+        {
+            "dead": ("dead", "Church", "Place", ["b1"]),
+            "live": ("live", "Holmes", "Character", ["b1"]),
+        },
+        degrees={"live": 205},
+    )
+
+    seeds = await seed_entities("q", lance, kuzu, embed)
+
+    assert [s.id for s in seeds] == ["live"]
+
+
+@pytest.mark.asyncio
+async def test_the_degree_filter_runs_before_the_cap_not_after() -> None:
+    # Eight candidates, the two nearest dead. The cap must be spent on eight
+    # live entities, not on six survivors of a cap applied to the dead ones.
+    async def embed(texts: list[str]) -> list[list[float]]:
+        return [[0.1] * 4]
+
+    ids = [f"e{n}" for n in range(10)]
+    lance = FakeLance([
+        {"chunk_id": f"c{n}", "entity_ids": [i], "_distance": 0.1 * n}
+        for n, i in enumerate(ids)
+    ])
+    kuzu = FakeKuzu(
+        {},
+        {i: (i, i.upper(), "Character", ["b1"]) for i in ids},
+        degrees={i: 3 for i in ids[2:]},
+    )
+
+    seeds = await seed_entities("q", lance, kuzu, embed, k=10)
+
+    assert [s.id for s in seeds] == ids[2:10]
+
+
+@pytest.mark.asyncio
+async def test_max_seeds_defaults_to_eight_and_an_explicit_value_wins() -> None:
+    async def embed(texts: list[str]) -> list[list[float]]:
+        return [[0.1] * 4]
+
+    ids = [f"e{n}" for n in range(12)]
+    rows = [
+        {"chunk_id": f"c{n}", "entity_ids": [i], "_distance": 0.1 * n}
+        for n, i in enumerate(ids)
+    ]
+    kuzu = FakeKuzu({}, {i: (i, i.upper(), "Character", ["b1"]) for i in ids})
+
+    default = await seed_entities("q", FakeLance(rows), kuzu, embed, k=12)
+    assert [s.id for s in default] == ids[:8]
+
+    explicit = await seed_entities(
+        "q", FakeLance(rows), kuzu, embed, k=12, max_seeds=3
+    )
+    assert [s.id for s in explicit] == ids[:3]
+
+
+def test_the_degree_query_asks_for_undirected_rel_edges_on_the_given_ids() -> None:
+    # Pins the shape the fake answers against the shape seed.py sends: one
+    # batched aggregate over $ids, not one query per seed.
+    seen: list[str] = []
+
+    class Recorder(FakeKuzu):
+        def execute(self, cypher: str, params: dict | None = None):
+            seen.append(" ".join(cypher.split()))
+            return super().execute(cypher, params)
+
+    live_ids = live_entity_ids(
+        Recorder({}, {"e1": ("e1", "E1", "Character", ["b1"])}), ["e1", "e2"]
+    )
+
+    assert live_ids == ["e1"]
+    degree_query = next(q for q in seen if ":REL]" in q)
+    assert "MATCH (e:Entity)-[r:REL]-()" in degree_query
+    assert "WHERE e.id IN $ids" in degree_query
+    assert len(seen) == 1

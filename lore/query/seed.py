@@ -55,6 +55,28 @@ def canonical_ids(kuzu: _Kuzu, entity_ids: list[str]) -> list[str]:
     return seen
 
 
+def live_entity_ids(kuzu: _Kuzu, entity_ids: list[str]) -> list[str]:
+    """The subset that has at least one REL edge, in the order given.
+
+    A node with degree 0 is not a seed: no template can return a row for it,
+    so it can only ever spend a slot. Kuzu answers the aggregate by omitting
+    such a node from the result entirely rather than returning a 0 count, so
+    membership in the reply is the test. One batched query, not one per seed.
+    """
+    if not entity_ids:
+        return []
+    live = {
+        row[0]
+        for row in kuzu.execute(
+            "MATCH (e:Entity)-[r:REL]-() WHERE e.id IN $ids "
+            "RETURN e.id, count(r)",
+            {"ids": entity_ids},
+        )
+        if row[1]
+    }
+    return [i for i in entity_ids if i in live]
+
+
 async def seed_entities(
     question: str,
     lance: _Lance,
@@ -62,7 +84,7 @@ async def seed_entities(
     embed: Embed,
     *,
     k: int = 8,
-    max_seeds: int = 6,
+    max_seeds: int = 8,
 ) -> list[SeedEntity]:
     """The canonical entities the question's vector neighbourhood points at.
 
@@ -70,6 +92,15 @@ async def seed_entities(
     pass a raw embedder. Do NOT pass `make_ollama_pair`'s embed: that one
     applies DOCUMENT_PREFIX, and the mismatch degrades retrieval silently
     instead of failing.
+
+    `max_seeds` is 8, not a rounder 6, because 6 measurably excluded the
+    subject a question is named after. On the live stores, with degree-0
+    entities already dropped, `Mr. Jefferson Hope` is live rank 7 for "Why
+    did Jefferson Hope kill Enoch Drebber and Joseph Stangerson?" and
+    `Mr. Sherlock Holmes` -- the across_books route to the Sign of the Four
+    half of the Scotland Yard question -- is also live rank 7. Hope stays at
+    that rank at k=8, 16, 32 and 64, so widening retrieval does not reach
+    him; the cap was the wall. Do not "simplify" 8 back to 6.
     """
     vector = (await embed([QUERY_PREFIX + question]))[0]
     chunks = lance.search_chunks(vector, limit=k)
@@ -92,7 +123,11 @@ async def seed_entities(
         return []
 
     ordered = sorted(best, key=lambda i: (best[i], i))
-    resolved = canonical_ids(kuzu, ordered)
+    # Resolve aliases first, then drop the edgeless, then cap. In that order
+    # a dead node never occupies a live slot: on the live corpus `Church`
+    # ranked 3rd for Q2 of the acceptance set and `Millbank` 2nd for Q7, and
+    # neither can contribute a single row.
+    resolved = live_entity_ids(kuzu, canonical_ids(kuzu, ordered))
     rows = {
         row[0]: row
         for row in kuzu.execute(
