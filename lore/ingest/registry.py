@@ -107,3 +107,14 @@ def chunks_for_book(conn: sqlite3.Connection, book_id: str) -> list[Chunk]:
         )
         for r in rows
     ]
+
+
+def chunks_by_id(conn: sqlite3.Connection, ids: list[str]) -> dict[str, str]:
+    """Chunk text for the given ids. Unknown ids are simply absent."""
+    if not ids:
+        return {}
+    marks = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"SELECT id, text FROM chunks WHERE id IN ({marks})", ids
+    ).fetchall()
+    return {row[0]: row[1] for row in rows}
