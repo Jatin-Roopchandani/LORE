@@ -22,7 +22,16 @@ class OllamaProvider:
         self._model = config.model
         self._client = httpx.AsyncClient(base_url=config.host, timeout=120.0)
 
-    async def generate(self, prompt: str, schema: type[BaseModel]) -> BaseModel:
+    async def generate(
+        self,
+        prompt: str,
+        schema: type[BaseModel],
+        *,
+        options: dict | None = None,
+    ) -> BaseModel:
+        # `options` is merged over the default, caller keys winning. A
+        # decision that must be reproducible passes temperature 0 AND
+        # seed 0: see lore/graph/adjudicate.py for why both are needed.
         response = await self._client.post(
             "/api/chat",
             json={
@@ -30,7 +39,7 @@ class OllamaProvider:
                 "messages": [{"role": "user", "content": prompt}],
                 "format": schema.model_json_schema(),
                 "stream": False,
-                "options": {"num_predict": MAX_OUTPUT_TOKENS},
+                "options": {"num_predict": MAX_OUTPUT_TOKENS, **(options or {})},
             },
         )
         response.raise_for_status()

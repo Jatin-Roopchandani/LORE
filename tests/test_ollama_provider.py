@@ -61,6 +61,31 @@ async def test_generate_sends_an_explicit_output_cap() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generate_merges_caller_options_over_the_default() -> None:
+    # Query-time selection needs temperature 0 AND seed 0 to be a function
+    # of its inputs (see lore/graph/adjudicate.py); extraction must keep
+    # sending exactly what it sent before.
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content)["options"])
+        return httpx.Response(
+            200, json={"message": {"role": "assistant",
+                                   "content": '{"city": "Paris"}'}}
+        )
+
+    provider = _provider_with(handler)
+    await provider.generate("Capital of France as JSON.", Answer)
+    await provider.generate("Capital of France as JSON.", Answer,
+                            options={"temperature": 0, "seed": 0})
+    await provider.generate("Capital of France as JSON.", Answer,
+                            options={"num_predict": 64})
+    assert sent[0] == {"num_predict": MAX_OUTPUT_TOKENS}
+    assert sent[1] == {"num_predict": MAX_OUTPUT_TOKENS, "temperature": 0, "seed": 0}
+    assert sent[2] == {"num_predict": 64}
+
+
+@pytest.mark.asyncio
 async def test_generate_raises_provider_output_error_on_malformed_response() -> None:
     # FIX 4: a schema-validation failure must carry the raw text so dead
     # letters stay diagnosable, not just the bare exception string.
