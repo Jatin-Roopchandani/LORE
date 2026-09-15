@@ -5,7 +5,7 @@ A local-first literary knowledge graph: e-books in, entities/relationships out
 databases (Kuzu + LanceDB) with a hybrid graph-vector query agent, an MCP
 server, and a graph UI.
 
-See `SPEC.md` for the full design. Phase 0 status: foundation scaffold.
+See `SPEC.md` for the full design. Status: Phase 3 (the query agent) in progress.
 
 ## Quickstart
 
@@ -55,6 +55,128 @@ Google, at one request per question. The key comes from `GEMINI_API_KEY` /
 `~/.config/lore/gemini.env`. That file is refused unless its mode is 600, and
 the key is never read from `lore.toml`. With Gemini chosen and no key found,
 `ask` exits. It never quietly answers with the local model instead.
+
+## How it works: from book to answer
+
+LORE turns a book into a knowledge graph in three commands, then answers
+questions from that graph with citations.
+
+    lore ingest  ──►  lore process  ──►  (optional) lore disambiguate  ──►  lore ask
+    parse+chunk       extract + build        settle ambiguous                 answer
+                      the graph              surnames with Gemini
+
+### Where data lives
+
+| Store | Kind | Holds |
+|---|---|---|
+| **SQLite** (`data/lore.db`) | relational | Book catalog, **full chunk text**, the `jobs` table (the authority on which extraction units finished), the GPU quota ledger |
+| **Extraction artifacts** (Parquet under `data/`) | files | Raw model output per work unit: entities, relationships, evidence sentences, chunk vectors |
+| **Kuzu** (`data/kuzu/graph`) | graph, Cypher | Nodes `Book`, `Chapter`, `Chunk`, `Entity`; edges `HAS_CHAPTER`, `HAS_CHUNK`, `MENTIONS`, `ALIAS_OF`, and `REL` (the relationships, each carrying its predicate, evidence sentence and chunk id) |
+| **LanceDB** (`data/lancedb`) | vectors, 768-d | `chunks`: vector + text + `entity_ids`, the bridge from a passage to its graph entities; `entities`: entity vectors |
+| `data/disambiguation/answers.json` | JSON cache | Optional Gemini answers for ambiguous surnames |
+
+### Models
+
+| Model | Runs on | Used for |
+|---|---|---|
+| Qwen2.5-7B-Instruct (AWQ) | Kaggle T4, vLLM | Extraction (default) |
+| nomic-embed-text v1.5 | Kaggle during extraction; local Ollama otherwise | Chunk vectors, entity similarity, predicate mapping, question embedding |
+| qwen2.5:3b | Local Ollama | Resolution yes/no calls, choosing a graph search, answers (default), local extraction |
+| Gemini Flash Lite (3.1, then 3.5) | Google API, **opt-in** | Surname disambiguation; answers when `[lore.synthesis] provider = "gemini"` |
+
+### 1. `lore ingest`: parse and chunk (no models)
+
+    EPUB / PDF ─► chapters in spine order ─► drop Gutenberg front matter
+               ─► scenes (only ***, ---, ### are hard breaks)
+               ─► sentences per paragraph (pysbd) ─► ~1,500-char chunks
+               ─► SQLite: books row (status "chunked") + chunk rows
+
+Chunk ids are positional: `{book_id}:{chapter_seq}:{seq}`.
+
+### 2. `lore process`, part one: extraction
+
+The book's chunks are packed into work units. By default each unit runs as its
+own free Kaggle GPU session:
+
+- **Qwen2.5-7B-Instruct** on vLLM reads each chunk and emits entities,
+  relationships and the evidence sentence for each.
+- **nomic-embed-text v1.5** embeds every chunk (document prefix).
+
+Results come back as Parquet. A unit counts as finished only when its `jobs`
+row says so, never merely because its files exist, and GPU hours are recorded
+in the quota ledger. With `extraction_provider = "ollama"` the same step runs
+fully locally on qwen2.5:3b and nomic-embed-text: slower and weaker, but
+nothing leaves the machine.
+
+### 3. `lore process`, part two: building the graph
+
+    artifacts ─► filter non-entities (pronouns, descriptions, licence text)
+              ─► entity resolution ─► relationship mapping
+              ─► write Kuzu + LanceDB
+
+**Entity resolution** decides which mentions are the same thing, in three passes:
+
+| Pass | How | Model |
+|---|---|---|
+| 1. Exact name, alias, or name variant within a book (`Holmes` ⊂ `Sherlock Holmes`) | rules | none |
+| 2. Embedding similarity | cosine distance | nomic-embed-text |
+| 3. Borderline cases | yes/no question at temperature 0 | qwen2.5:3b |
+
+A bare name that fits **two or more** people (`Sholto` → Major, Thaddeus or
+Bartholomew) is refused rather than guessed: the entities stay separate and
+the question is recorded. Cross-book merges follow stricter rules.
+
+**Relationship mapping** maps each extracted verb ("distrusts") to one of ten
+curated predicates (`KILLS`, `OPPOSES`, `LOVES`, …) by embedding similarity.
+The original wording is kept alongside it.
+
+**Writes:** the whole graph to Kuzu; chunk vectors with their `entity_ids`, and
+entity vectors, to LanceDB.
+
+**Optional, `lore disambiguate`:** sends every recorded surname question to
+Gemini in one batched request and caches the answers; the next `lore process`
+applies them. See the Gemini section below.
+
+### 4. `lore ask`: answering a question
+
+    question
+      │ 1. EMBED       nomic-embed-text (query prefix)
+      ▼
+    LanceDB: the 8 most similar chunks ─► their entity_ids
+      │ 2. SEED        Kuzu: follow ALIAS_OF to canonical entities, drop any
+      │                with no relationships, keep the best 8
+      ▼
+      │ 3. SELECT      qwen2.5:3b (local, temperature 0) picks one of seven
+      │                fixed, read-only Cypher searches and numbered entities
+      ▼
+      │ 4. TRAVERSE    Kuzu runs that search ─► real directed edges
+      ▼
+      │ 5. ASSEMBLE    SQLite chunk text for those edges; duplicates removed;
+      │                books alternated; capped at 12,000 chars; numbered
+      ▼
+      │ 6. SYNTHESIZE  qwen2.5:3b (default) or Gemini Flash Lite (opt-in)
+      │                ─► claims, each with a passage number and a
+      │                   word-for-word quote
+      ▼
+      │ 7. VERIFY      code checks each quote is really in its passage;
+      │                failing claims are dropped; none left ─► refusal
+      ▼
+    answer + sources (book, chapter) + mode + the model that answered
+
+`ask` never writes: it opens SQLite read-only and Kuzu read-only, and treats a
+book as queryable when the graph holds a `Book` node for it.
+
+The model never writes Cypher: it chooses among seven hand-written templates
+(`neighbours`, `two_hop`, `path_between`, `by_predicate`, `shared_neighbours`,
+`across_books`, `chapter_window`), and every value binds as a parameter.
+
+Every answer reports one of four modes:
+
+- **graph**: a search returned edges, and the answer is built from them.
+- **vector-fallback**: the search returned nothing, or the model's choice was
+  invalid. The answer comes from plain vector search and **says so**.
+- **empty**: nothing in the library was close enough to start from.
+- **vector-baseline**: `--baseline`, vector search only, for comparison.
 
 ## Optional: the Gemini disambiguator (`lore disambiguate`)
 
