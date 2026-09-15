@@ -17,8 +17,13 @@ ROW_FIELDS: tuple[str, ...] = (
     "confidence", "book_id", "chapter_seq", "chunk_id",
 )
 
+# Every template binds the edge as a DIRECTED (a)-[r:REL]->(b), so subject
+# and object are always r's true endpoints. An undirected match with the
+# queried entity bound to one side reverses every incoming edge, and
+# aliasing a node r does not touch as subject invents an edge outright.
+# DISTINCT at the source makes LIMIT count facts, not repeats.
 _RETURN = (
-    "RETURN a.name AS subject, r.predicate AS predicate, "
+    "RETURN DISTINCT a.name AS subject, r.predicate AS predicate, "
     "r.predicate_raw AS predicate_raw, b.name AS object, "
     "r.evidence AS evidence, r.confidence AS confidence, "
     "r.book_id AS book_id, r.chapter_seq AS chapter_seq, "
@@ -42,8 +47,14 @@ TEMPLATES: dict[str, Template] = {
     "two_hop": Template(
         name="two_hop",
         cypher=(
-            "MATCH (a:Entity)-[:REL]-(m:Entity)-[r:REL]->(b:Entity) "
-            "WHERE a.id = $entity_id AND m.id <> a.id "
+            # The entity's neighbours first, then every edge that touches a
+            # neighbour and not the entity itself, in its true direction.
+            "MATCH (e:Entity)-[:REL]-(m:Entity) "
+            "WHERE e.id = $entity_id AND m.id <> e.id "
+            "WITH e, collect(DISTINCT m.id) AS mids "
+            "MATCH (a:Entity)-[r:REL]->(b:Entity) "
+            "WHERE (a.id IN mids OR b.id IN mids) "
+            "AND a.id <> e.id AND b.id <> e.id "
             + _RETURN + "LIMIT $limit"
         ),
         slots=("entity_id", "limit"),
@@ -56,8 +67,18 @@ TEMPLATES: dict[str, Template] = {
     "path_between": Template(
         name="path_between",
         cypher=(
-            "MATCH (a:Entity)-[:REL]-(m:Entity)-[r:REL]-(b:Entity) "
-            "WHERE a.id = $a_id AND b.id = $b_id "
+            # Intermediates linked to both, collected under OPTIONAL MATCH so
+            # a pair with only direct edges still returns them. Then: direct
+            # a-b edges, and both hops a-m and m-b, each either direction.
+            "MATCH (p:Entity), (q:Entity) WHERE p.id = $a_id AND q.id = $b_id "
+            "OPTIONAL MATCH (p)-[:REL]-(m:Entity)-[:REL]-(q) "
+            "WHERE m.id <> p.id AND m.id <> q.id "
+            "WITH p, q, collect(DISTINCT m.id) AS mids "
+            "MATCH (a:Entity)-[r:REL]->(b:Entity) "
+            "WHERE (a.id = p.id AND b.id = q.id) "
+            "OR (a.id = q.id AND b.id = p.id) "
+            "OR ((a.id = p.id OR a.id = q.id) AND b.id IN mids) "
+            "OR ((b.id = p.id OR b.id = q.id) AND a.id IN mids) "
             + _RETURN + "LIMIT $limit"
         ),
         slots=("a_id", "b_id", "limit"),
@@ -84,8 +105,8 @@ TEMPLATES: dict[str, Template] = {
     "shared_neighbours": Template(
         name="shared_neighbours",
         cypher=(
-            "MATCH (a:Entity)-[r:REL]-(b:Entity) "
-            "WHERE a.id IN [$a_id, $b_id] "
+            "MATCH (a:Entity)-[r:REL]->(b:Entity) "
+            "WHERE a.id IN [$a_id, $b_id] OR b.id IN [$a_id, $b_id] "
             + _RETURN + "LIMIT $limit"
         ),
         slots=("a_id", "b_id", "limit"),
@@ -98,9 +119,9 @@ TEMPLATES: dict[str, Template] = {
     "across_books": Template(
         name="across_books",
         cypher=(
-            "MATCH (a:Entity)-[r:REL]-(b:Entity) "
-            "WHERE a.id = $entity_id "
-            + _RETURN + "ORDER BY r.book_id, r.chapter_seq LIMIT $limit"
+            "MATCH (a:Entity)-[r:REL]->(b:Entity) "
+            "WHERE a.id = $entity_id OR b.id = $entity_id "
+            + _RETURN + "ORDER BY book_id, chapter_seq LIMIT $limit"
         ),
         slots=("entity_id", "limit"),
         description=(
@@ -112,10 +133,10 @@ TEMPLATES: dict[str, Template] = {
     "chapter_window": Template(
         name="chapter_window",
         cypher=(
-            "MATCH (a:Entity)-[r:REL]-(b:Entity) "
-            "WHERE a.id = $entity_id AND r.chapter_seq >= $lo "
-            "AND r.chapter_seq <= $hi "
-            + _RETURN + "ORDER BY r.chapter_seq LIMIT $limit"
+            "MATCH (a:Entity)-[r:REL]->(b:Entity) "
+            "WHERE (a.id = $entity_id OR b.id = $entity_id) "
+            "AND r.chapter_seq >= $lo AND r.chapter_seq <= $hi "
+            + _RETURN + "ORDER BY chapter_seq LIMIT $limit"
         ),
         slots=("entity_id", "lo", "hi", "limit"),
         description=(
