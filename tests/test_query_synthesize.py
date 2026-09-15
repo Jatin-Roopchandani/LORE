@@ -1,11 +1,18 @@
 import pytest
 
 from lore.query.models import EdgeRow, Evidence, Passage
-from lore.query.synthesize import REFUSAL, Synthesis, cited_numbers, synthesize
+from lore.query.synthesize import REFUSAL, Claim, Synthesis, synthesize, verify_claims
 
-P1 = Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Holmes spoke.")
-P2 = Passage(n=2, chunk_id="b1:2:0", book_id="b1", chapter_seq=2, text="Watson wrote.")
+P1 = Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1,
+             text="Holmes spoke of the case at length.")
+P2 = Passage(n=2, chunk_id="b1:2:0", book_id="b1", chapter_seq=2,
+             text="Watson wrote it all down in his notebook.")
 EV = Evidence(edges=(), passages=(P1, P2), truncated=False)
+
+GOOD1 = Claim(text="Holmes discussed the case.", passage=1,
+              quote="Holmes spoke of the case")
+GOOD2 = Claim(text="Watson took notes.", passage=2,
+              quote="wrote it all down in his notebook")
 
 
 def _generate(result: Synthesis, sink: dict | None = None):
@@ -24,34 +31,42 @@ def _edge(subject="Holmes", predicate="OPPOSES", raw="distrusts", obj="Moriarty"
 async def _prompt(evidence: Evidence, **kwargs) -> str:
     sink: dict = {}
     await synthesize("q", evidence, _generate(
-        Synthesis(answer="a [1]", can_answer=True), sink), mode="graph", **kwargs)
+        Synthesis(claims=[GOOD1], can_answer=True), sink), mode="graph", **kwargs)
     return sink["prompt"]
 
 
-async def _text(answer: str, can_answer: bool = True, evidence: Evidence = EV) -> str:
+async def _text(*claims: Claim, can_answer: bool = True, evidence: Evidence = EV) -> str:
     result = await synthesize(
-        "q", evidence, _generate(Synthesis(answer=answer, can_answer=can_answer)),
+        "q", evidence,
+        _generate(Synthesis(claims=list(claims), can_answer=can_answer)),
         mode="graph",
     )
     return result.text
 
 
-# --- the plan's seven ------------------------------------------------------
+def _dropped(*claims: Claim, passages=(P1, P2)) -> list[str]:
+    kept, dropped = verify_claims(Synthesis(claims=list(claims), can_answer=True),
+                                  passages)
+    assert kept == []
+    return [reason for _, reason in dropped]
+
+
+# --- the plan's seven, on the claims schema --------------------------------
 
 @pytest.mark.asyncio
 async def test_a_grounded_answer_keeps_its_passages() -> None:
     answer = await synthesize(
-        "q", EV, _generate(Synthesis(answer="Holmes spoke [1].", can_answer=True)),
+        "q", EV, _generate(Synthesis(claims=[GOOD1], can_answer=True)),
         mode="graph", template="neighbours",
     )
-    assert answer.text == "Holmes spoke [1]."
+    assert answer.text == "Holmes discussed the case. [1]"
     assert answer.mode == "graph" and answer.template == "neighbours"
     assert answer.passages == (P1, P2)
 
 
 @pytest.mark.asyncio
 async def test_the_model_refusing_produces_the_refusal_text() -> None:
-    assert await _text("I think maybe [1]...", can_answer=False) == REFUSAL
+    assert await _text(can_answer=False) == REFUSAL
 
 
 @pytest.mark.asyncio
@@ -75,7 +90,7 @@ async def test_no_passages_refuses_without_calling_the_model() -> None:
 async def test_the_prompt_numbers_every_passage_and_forbids_outside_knowledge() -> None:
     prompt = await _prompt(EV)
     assert "[1]" in prompt and "[2]" in prompt
-    assert "Holmes spoke." in prompt and "Watson wrote." in prompt
+    assert P1.text in prompt and P2.text in prompt
     assert "only" in prompt.lower()
 
 
@@ -90,7 +105,7 @@ async def test_edges_are_shown_to_the_model_when_present() -> None:
 @pytest.mark.asyncio
 async def test_the_note_travels_onto_the_answer() -> None:
     answer = await synthesize(
-        "q", EV, _generate(Synthesis(answer="a [1]", can_answer=True)),
+        "q", EV, _generate(Synthesis(claims=[GOOD1], can_answer=True)),
         mode="vector-fallback", note="the graph contributed nothing",
     )
     assert answer.note == "the graph contributed nothing"
@@ -103,7 +118,7 @@ async def test_truncated_evidence_is_disclosed_in_the_prompt() -> None:
     assert "truncated" in prompt.lower()
 
 
-# --- change 2: titles, not hex ids -----------------------------------------
+# --- Task 7 change 2: titles, not hex ids ----------------------------------
 
 @pytest.mark.asyncio
 async def test_passage_headers_and_edge_lines_show_book_titles() -> None:
@@ -127,7 +142,7 @@ async def test_a_missing_title_falls_back_to_the_book_id() -> None:
     assert "b1" in await _prompt(EV)  # no titles at all
 
 
-# --- change 3: relationship lines are leads, tied to a passage ------------
+# --- Task 7 change 3: relationship lines are leads, tied to a passage -----
 
 @pytest.mark.asyncio
 async def test_edge_lines_use_predicate_raw_and_the_kept_passage_number() -> None:
@@ -158,28 +173,104 @@ async def test_the_prompt_calls_relationships_possibly_wrong_leads() -> None:
     assert "cited passage" in prompt
 
 
-# --- change 4: a citation that points nowhere is a refusal ----------------
+# --- Task 7b: quote-checked claims -----------------------------------------
 
 @pytest.mark.asyncio
-async def test_an_answer_with_no_citation_is_refused() -> None:
-    assert await _text("Holmes spoke.") == REFUSAL
-
-
-@pytest.mark.asyncio
-async def test_an_out_of_range_citation_is_refused() -> None:
-    assert await _text("Holmes spoke [1] and Moriarty fled [3].") == REFUSAL
-    assert await _text("Holmes spoke [0].") == REFUSAL
-    assert await _text("Holmes spoke [1, 7].") == REFUSAL
+async def test_the_prompt_demands_word_for_word_quotes_checked_by_code() -> None:
+    prompt = (await _prompt(EV)).lower()
+    assert "word for word" in prompt
+    assert "checked" in prompt and "discarded" in prompt
+    assert "combine" in prompt
+    assert "can_answer" in prompt
 
 
 @pytest.mark.asyncio
-async def test_grouped_and_adjacent_citations_are_accepted() -> None:
-    assert await _text("Both wrote [1, 2].") == "Both wrote [1, 2]."
-    assert await _text("Both wrote [1][2].") == "Both wrote [1][2]."
-    assert await _text("Both wrote [1,2].") == "Both wrote [1,2]."
+async def test_a_claim_with_an_exact_quote_is_kept_and_ends_with_its_number() -> None:
+    kept, dropped = verify_claims(Synthesis(claims=[GOOD2], can_answer=True), EV.passages)
+    assert kept == [GOOD2] and dropped == []
+    text = await _text(GOOD2)
+    assert text.endswith(" [2]")
+    assert text == "Watson took notes. [2]"
 
 
-def test_cited_numbers_parses_the_accepted_forms_only() -> None:
-    assert cited_numbers("a [1] b [2, 3] c [4][5] d [6,7]") == [1, 2, 3, 4, 5, 6, 7]
-    assert cited_numbers("no citations here") == []
-    assert cited_numbers("a range [1-3] is not a citation form") == []
+@pytest.mark.asyncio
+async def test_kept_claims_are_joined_in_order_with_their_numbers() -> None:
+    assert await _text(GOOD1, GOOD2) == (
+        "Holmes discussed the case. [1] Watson took notes. [2]")
+
+
+def test_a_quote_from_a_different_passage_is_dropped() -> None:
+    # Q4's failure shape: a real quote, cited to a passage that does not say it.
+    misplaced = Claim(text="Watson took notes.", passage=1,
+                      quote="wrote it all down in his notebook")
+    assert _dropped(misplaced) == ["quote not in passage"]
+
+
+def test_an_out_of_range_passage_number_is_dropped() -> None:
+    assert _dropped(Claim(text="t", passage=3, quote="Holmes spoke of the case")) == [
+        "bad passage number"]
+    assert _dropped(Claim(text="t", passage=0, quote="Holmes spoke of the case")) == [
+        "bad passage number"]
+
+
+def test_a_three_word_quote_is_dropped_as_too_short() -> None:
+    assert _dropped(Claim(text="t", passage=1, quote="Holmes spoke of")) == [
+        "quote too short"]
+
+
+def test_a_quote_that_is_not_in_any_passage_is_dropped() -> None:
+    assert _dropped(Claim(text="t", passage=1, quote="Moriarty spoke of the case")) == [
+        "quote not in passage"]
+
+
+def test_normalisation_forgives_quotes_dashes_whitespace_and_case_only() -> None:
+    p = Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1,
+                text="“It’s a long—drawn   affair,”\nsaid Holmes – quietly.")
+    synthesis = Synthesis(can_answer=True, claims=[
+        Claim(text="a", passage=1, quote="\"it's A LONG-drawn affair,\" said holmes - quietly."),
+        Claim(text="b", passage=1, quote="  It’s a long–drawn affair  "),
+    ])
+    kept, dropped = verify_claims(synthesis, (p,))
+    assert [c.text for c in kept] == ["a", "b"] and dropped == []
+
+    one_word_changed = Claim(text="c", passage=1, quote="it's a short-drawn affair")
+    no_punctuation = Claim(text="d", passage=1, quote="its a long drawn affair")
+    assert _dropped(one_word_changed, no_punctuation, passages=(p,)) == [
+        "quote not in passage", "quote not in passage"]
+
+
+def test_a_quote_must_match_whole_words() -> None:
+    assert _dropped(Claim(text="t", passage=1, quote="olmes spoke of the cas")) == [
+        "quote not in passage"]
+
+
+@pytest.mark.asyncio
+async def test_all_claims_dropped_is_a_refusal() -> None:
+    bad = Claim(text="Moriarty fled.", passage=1, quote="Moriarty fled the scene")
+    assert await _text(bad) == REFUSAL
+    assert await _text() == REFUSAL  # no claims at all
+
+
+@pytest.mark.asyncio
+async def test_can_answer_false_refuses_even_with_valid_claims() -> None:
+    assert await _text(GOOD1, GOOD2, can_answer=False) == REFUSAL
+
+
+@pytest.mark.asyncio
+async def test_only_kept_claims_reach_the_answer() -> None:
+    bad = Claim(text="Holmes fled.", passage=2, quote="Holmes spoke of the case")
+    assert await _text(bad, GOOD2) == "Watson took notes. [2]"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_claims_collapse_to_one() -> None:
+    assert await _text(GOOD1, GOOD2, GOOD1) == (
+        "Holmes discussed the case. [1] Watson took notes. [2]")
+
+
+def test_dropped_claims_carry_the_claim_itself() -> None:
+    bad = Claim(text="t", passage=9, quote="Holmes spoke of the case")
+    kept, dropped = verify_claims(Synthesis(claims=[GOOD1, bad], can_answer=True),
+                                  EV.passages)
+    assert kept == [GOOD1]
+    assert dropped == [(bad, "bad passage number")]
