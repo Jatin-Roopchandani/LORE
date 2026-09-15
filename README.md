@@ -27,6 +27,35 @@ zero-egress extraction (slower, smaller model, no Kaggle involved).
 Extraction runs one work unit per Kaggle session. `work_unit_size` is 10 by
 default — verified on a Kaggle T4; larger units crash vLLM's engine mid-run.
 
+## Asking questions (`lore ask`)
+
+    uv run lore ask "Who owned the steam launch Aurora?"       # cited answer from the graph
+    uv run lore ask "Who owned the steam launch Aurora?" --baseline   # vector search alone
+
+`ask` is read-only. It answers from books that have been loaded into the
+graph by `lore process`. The model picks one of a fixed set of graph searches,
+then writes the answer as claims. Each claim must quote its cited passage word
+for word, and code drops any claim whose quote isn't there. Sources print as
+`[n] <book title>, chapter <n>`. The last line gives the mode (`graph`,
+`vector-fallback`, `vector-baseline` or `empty`), the search used and the model
+that answered.
+
+By default, both LLM calls run on the local Ollama model. To have answers
+written by Gemini Flash Lite instead, opt in:
+
+    [lore.synthesis]
+    provider = "gemini"   # default "ollama"
+    models = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
+
+With Gemini on identical evidence, the answers misread 0 of 11 cited quotes.
+The local 3B misread 8 of 11. Selection stays local, and the quote check
+applies either way. Opting in sends the question and its evidence passages to
+Google, at one request per question. The key comes from `GEMINI_API_KEY` /
+`GOOGLE_API_KEY`, or from a one-line `GEMINI_API_KEY=...` in
+`~/.config/lore/gemini.env`. That file is refused unless its mode is 600, and
+the key is never read from `lore.toml`. With Gemini chosen and no key found,
+`ask` exits. It never quietly answers with the local model instead.
+
 ## Optional: the Gemini disambiguator (`lore disambiguate`)
 
 Off by default, and not part of `lore process`. Entity resolution decides

@@ -246,24 +246,31 @@ def _centroid(vectors: list[list[float]]) -> list[float]:
     return [value / len(vectors) for value in total]
 
 
-def _entities_where(
-    kuzu: KuzuStore, predicate: str, params: dict
-) -> dict[str, _PersistedEntity]:
-    """Every Entity node matching `predicate`, by id.
+# One literal query per lookup, never a WHERE clause spliced into a shared
+# string (spec 2.2). The callers differ in query STRUCTURE, not in a value,
+# so each gets its own named query; only the row unpacking is shared.
+_ENTITIES_BY_ID = (
+    "MATCH (e:Entity) WHERE e.id IN $ids"
+    " RETURN e.id, e.name, e.kind, e.aliases, e.books"
+)
+_ENTITIES_BY_KIND = (
+    "MATCH (e:Entity) WHERE e.kind IN $kinds"
+    " RETURN e.id, e.name, e.kind, e.aliases, e.books"
+)
+_ENTITIES_BY_BOOK = (
+    "MATCH (e:Entity) WHERE list_contains(e.books, $book)"
+    " RETURN e.id, e.name, e.kind, e.aliases, e.books"
+)
 
-    The two callers below differ only in that WHERE clause, so the row
-    shape and its unpacking live here once.
-    """
+
+def _entities_from(rows) -> dict[str, _PersistedEntity]:
+    """Entity rows in the shape the three queries above return, by id."""
     return {
         row[0]: _PersistedEntity(
             id=row[0], name=row[1], kind=row[2],
             aliases=tuple(row[3] or ()), books=tuple(row[4] or ()),
         )
-        for row in kuzu.execute(
-            f"MATCH (e:Entity) WHERE {predicate}"
-            " RETURN e.id, e.name, e.kind, e.aliases, e.books",
-            params,
-        )
+        for row in rows
     }
 
 
@@ -273,7 +280,7 @@ def _persisted_entities(
     wanted = sorted(set(ids))
     if not wanted:
         return {}
-    return _entities_where(kuzu, "e.id IN $ids", {"ids": wanted})
+    return _entities_from(kuzu.execute(_ENTITIES_BY_ID, {"ids": wanted}))
 
 
 def _entities_of_kinds(
@@ -292,7 +299,7 @@ def _entities_of_kinds(
     wanted = sorted(set(kinds))
     if not wanted:
         return {}
-    return _entities_where(kuzu, "e.kind IN $kinds", {"kinds": wanted})
+    return _entities_from(kuzu.execute(_ENTITIES_BY_KIND, {"kinds": wanted}))
 
 
 def _alias_node_ids(kuzu: KuzuStore) -> set[str]:
@@ -383,9 +390,7 @@ def _entities_owned_by(kuzu: KuzuStore, book_id: str) -> dict[str, _PersistedEnt
     the book, and "who is in book X" answers with characters the book no
     longer contains.
     """
-    return _entities_where(
-        kuzu, "list_contains(e.books, $book)", {"book": book_id}
-    )
+    return _entities_from(kuzu.execute(_ENTITIES_BY_BOOK, {"book": book_id}))
 
 
 async def _reconcile_ids(

@@ -2011,3 +2011,33 @@ async def test_the_cross_book_guard_leaves_watson_alone(tmp_path: Path) -> None:
     assert watsons[0][1] == "Dr. John Watson"
     assert watsons[0][3] == ("john watson", "watson")
     conn.close(); kuzu.close()
+
+
+def test_no_loader_query_is_built_by_interpolation() -> None:
+    """Spec 2.2: values bind as parameters, and query TEXT is never assembled.
+
+    An f-string or `.format` over Cypher is where a value can slip into
+    structure. Every loader query must be a literal the reader can see whole.
+    """
+    import ast
+    import inspect
+
+    from lore.graph import loader
+
+    tree = ast.parse(inspect.getsource(loader))
+    cypher = re.compile(r"\b(MATCH|MERGE|CREATE|WHERE|RETURN|DELETE|SET)\b")
+    offenders = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            literal = "".join(
+                part.value for part in node.values
+                if isinstance(part, ast.Constant) and isinstance(part.value, str)
+            )
+            if cypher.search(literal):
+                offenders.append((node.lineno, literal))
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "format"
+                and isinstance(node.func.value, ast.Constant)
+                and cypher.search(str(node.func.value.value))):
+            offenders.append((node.lineno, node.func.value.value))
+    assert offenders == []

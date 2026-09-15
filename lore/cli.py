@@ -1,10 +1,12 @@
-"""LORE CLI. Phase 0 ships a single command: `lore doctor`."""
+"""LORE CLI."""
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import tempfile
 from pathlib import Path
 
+import httpx
 import typer
 
 from lore.config import LoreConfig
@@ -18,9 +20,12 @@ from lore.ingest.epub import parse_epub
 from lore.ingest.models import IngestError, book_id_for_file
 from lore.ingest.pdf import parse_pdf
 from lore.ingest.registry import forget_book, ingest_book, list_books
+from lore.inference.base import ProviderOutputError
 from lore.inference.gemini import (
     GeminiClient,
     GeminiError,
+    GeminiKeyFileError,
+    default_key_file,
     limits_for,
     resolve_api_key,
 )
@@ -29,12 +34,15 @@ from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
 from lore.orchestrator.quota import iso_week, week_report
 from lore.orchestrator.run import run_extraction
+from lore.query.agent import answer_question, make_query_models
 from lore.resolve.disambiguation import (
     MAX_BATCH,
     AnswerMismatchError,
     DisambiguationStore,
-    ask,
 )
+# Aliased: `ask` is also this CLI's query command below, and the later def
+# would silently shadow the import and break `lore disambiguate`.
+from lore.resolve.disambiguation import ask as ask_disambiguation
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -368,6 +376,16 @@ def process(
         )
         raise typer.Exit(1)
 
+    # Success path only: every failure above has already exited non-zero.
+    # Spec 5. `ask` does not gate on this (it asks the graph itself), so a
+    # book loaded before this line existed stays queryable without a backfill.
+    conn = open_db(config.sqlite_path)
+    try:
+        conn.execute("UPDATE books SET status = 'graphed' WHERE id = ?", (book_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
 
 @app.command()
 def disambiguate(
@@ -440,7 +458,7 @@ def disambiguate(
         # Same loop for the request and the close: httpx binds its sockets
         # to the loop that opened them.
         try:
-            return await ask(client, todo)
+            return await ask_disambiguation(client, todo)
         finally:
             await client.aclose()
 
@@ -506,3 +524,112 @@ def graph() -> None:
             typer.echo("  (none — 0 relationships loaded)")
     finally:
         store.close()
+
+
+_NO_GRAPH = "no books are loaded into the graph — run `lore process <book_id>`"
+
+
+@app.command()
+def ask(
+    question: str,
+    baseline: bool = typer.Option(
+        False, "--baseline", help="answer from vector search alone, no graph"
+    ),
+) -> None:
+    """Answer a question from the knowledge graph, with citations.
+
+    Note: every question makes at least two LLM calls (choosing how to
+    search, then writing the answer), so this is not instantaneous. The
+    choice always runs on the local model. The answer does too, unless
+    lore.toml opts in with [lore.synthesis] provider = "gemini", which sends
+    the question and its evidence passages to Google.
+
+    Read-only: nothing in the library is created or modified.
+    """
+    config = LoreConfig.load()
+
+    api_key = None
+    if config.synthesis.provider == "gemini":
+        try:
+            api_key = resolve_api_key(key_file=default_key_file())
+        except GeminiKeyFileError as exc:
+            typer.echo(f"ask failed: {exc}")
+            raise typer.Exit(2)
+        if api_key is None:
+            # Never fall back to the local model: the user chose Gemini's
+            # answers, and a silent downgrade would hide the quality drop.
+            typer.echo(
+                '[lore.synthesis] provider = "gemini" but no API key: set'
+                " GEMINI_API_KEY (or GOOGLE_API_KEY), or put one line"
+                " `GEMINI_API_KEY=...` in ~/.config/lore/gemini.env with mode"
+                ' 600. Or set provider = "ollama" to answer locally.'
+            )
+            raise typer.Exit(2)
+
+    # Opened read-only, and never via open_db/ensure_dirs: asking a question
+    # must not create, migrate or touch the library.
+    graph_path = config.kuzu_dir / "graph"
+    if not (graph_path.exists() and config.sqlite_path.is_file()
+            and config.lancedb_dir.is_dir()):
+        typer.echo(_NO_GRAPH)
+        raise typer.Exit(1)
+    try:
+        kuzu = KuzuStore(graph_path, read_only=True)
+    except RuntimeError as exc:
+        typer.echo(f"ask failed: could not open the graph: {exc}")
+        raise typer.Exit(1)
+    conn = None
+    try:
+        # Queryable means "has a Book node in the graph": ground truth, not
+        # books.status, which predates the graph for some loaded books.
+        graphed = {
+            row[0]: row[1]
+            for row in kuzu.execute("MATCH (b:Book) RETURN b.id, b.title")
+        }
+        if not graphed:
+            typer.echo(_NO_GRAPH)
+            raise typer.Exit(1)
+        conn = sqlite3.connect(f"file:{config.sqlite_path}?mode=ro", uri=True)
+        titles = {**graphed, **{b["id"]: b["title"] for b in list_books(conn)}}
+        lance = LanceStore(config.lancedb_dir)
+        models = make_query_models(config, api_key)
+
+        async def _run():
+            # The close MUST share the loop the requests ran on (see
+            # _load_book_sync): a second asyncio.run() around aclose()
+            # raises "Event loop is closed" after a successful answer.
+            try:
+                return await answer_question(conn, kuzu, lance, question, models,
+                                             baseline=baseline)
+            finally:
+                await models.aclose()
+
+        answer = asyncio.run(_run())
+    except httpx.ConnectError as exc:
+        typer.echo(f"ask failed: could not reach a model server"
+                   f" ({config.ollama.host} for Ollama): {exc}")
+        raise typer.Exit(1)
+    except (ValueError, RuntimeError, sqlite3.Error, httpx.HTTPError,
+            ProviderOutputError) as exc:
+        # GeminiError is a RuntimeError; its messages never carry the key.
+        typer.echo(f"ask failed: {exc}")
+        raise typer.Exit(1)
+    finally:
+        kuzu.close()
+        if conn is not None:
+            conn.close()
+
+    typer.echo(answer.text)
+    if answer.note:
+        typer.echo(f"\nnote: {answer.note}")
+    if answer.passages:
+        typer.echo("\nsources:")
+        for passage in answer.passages:
+            title = titles.get(passage.book_id) or passage.book_id
+            typer.echo(f"  [{passage.n}] {title}, chapter {passage.chapter_seq}")
+    line = f"mode: {answer.mode}"
+    if answer.template:
+        line += f" via {answer.template}"
+    if answer.model:
+        line += f" · answered by {answer.model}"
+    typer.echo(f"\n{line}")

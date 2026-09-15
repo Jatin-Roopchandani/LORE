@@ -26,7 +26,14 @@ _SCHEMA: list[str] = [
 
 
 class KuzuStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, read_only: bool = False) -> None:
+        if read_only:
+            # For readers such as `lore ask`: no directory, no schema, no
+            # migration, and Kuzu itself refuses any write. Opening a path
+            # with no database raises rather than creating one.
+            self._db = kuzu.Database(str(path), read_only=True)
+            self._conn = kuzu.Connection(self._db)
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         self._db = kuzu.Database(str(path))
         self._conn = kuzu.Connection(self._db)

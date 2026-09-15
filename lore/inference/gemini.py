@@ -10,9 +10,10 @@ Auth is the `x-goog-api-key` header. A Bearer token returns 401 — verified
 against the live endpoint, so do not "modernize" it.
 
 The key is read from the environment (`GEMINI_API_KEY`, then
-`GOOGLE_API_KEY`) and never from configuration. It is held only in the
-request header: nothing here logs it, writes it, or puts it in an
-exception message.
+`GOOGLE_API_KEY`), then from `~/.config/lore/gemini.env` when the caller
+passes that file, and never from lore.toml. The file is refused if its mode
+lets anyone but its owner read it. The key is held only in the request
+header: nothing here logs it, writes it, or puts it in an exception message.
 
 MODEL ORDER IS MEASURED, NOT CHRONOLOGICAL. Do not "helpfully" reorder it
 by version number. Against a 12-case eval built from the real corpus (6
@@ -43,12 +44,17 @@ next one", never "this model is broken".
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import stat
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import TypeVar
 
 import httpx
+from pydantic import BaseModel, ValidationError
 
 ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -72,6 +78,10 @@ DEFAULT_MODELS: tuple[str, ...] = (
     "gemini-3.6-flash",
     "gemini-3.7-flash",
 )
+# The Lite tier alone: 500 requests/day each. `lore ask`'s opt-in synthesis
+# defaults to these so a question never spends the Flash tier's 20/day,
+# which the disambiguator shares.
+LITE_MODELS: tuple[str, ...] = DEFAULT_MODELS[:2]
 MODEL_LIMITS: dict[str, ModelLimits] = {
     "gemini-3.1-flash-lite": ModelLimits(rpm=15, rpd=500),
     "gemini-3.5-flash-lite": ModelLimits(rpm=15, rpd=500),
@@ -84,6 +94,17 @@ MODEL_LIMITS: dict[str, ModelLimits] = {
 FALLBACK_LIMITS = ModelLimits(rpm=5, rpd=20)
 
 _KEY_VARIABLES = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
+_KEY_FILE_VARIABLE = "GEMINI_API_KEY"
+
+# Appended to a structured-generation prompt. Measured in Task 7c: with
+# responseMimeType JSON and this tail, Flash Lite returned schema-valid JSON
+# on 8 of 8 synthesis prompts.
+JSON_INSTRUCTION = (
+    "\n\nRespond with ONLY a JSON object (no prose, no code fences) matching "
+    "this JSON Schema:\n{schema}\n"
+)
+
+Model = TypeVar("Model", bound=BaseModel)
 
 # Statuses that mean "this model cannot serve this request" rather than
 # "the request is wrong". Every one of them is a reason to try the next
@@ -97,6 +118,10 @@ _CASCADE_STATUSES = {
 
 class GeminiError(RuntimeError):
     """A request failed. The message never carries the API key."""
+
+
+class GeminiKeyFileError(GeminiError):
+    """The key file exists but must not be trusted. Never carries the key."""
 
 
 class GeminiQuotaError(GeminiError):
@@ -113,14 +138,58 @@ def limits_for(model: str) -> ModelLimits:
     return MODEL_LIMITS.get(model, FALLBACK_LIMITS)
 
 
-def resolve_api_key(env: Mapping[str, str] | None = None) -> str | None:
-    """The key from the environment, or None. Never from a config file."""
+def default_key_file() -> Path:
+    """`~/.config/lore/gemini.env`: outside the repo, so never committed."""
+    return Path.home() / ".config" / "lore" / "gemini.env"
+
+
+def _key_from_file(path: Path) -> str | None:
+    try:
+        info = path.stat()
+    except FileNotFoundError:
+        return None
+    mode = stat.S_IMODE(info.st_mode)
+    if mode & ~0o600:
+        # Refuse rather than read: a key other accounts can read is a key
+        # that may already be theirs, and reading it anyway teaches nobody.
+        raise GeminiKeyFileError(
+            f"refusing to read {path}: its mode is {oct(mode)[2:]}, which lets"
+            f" someone other than its owner read it. Run `chmod 600 {path}`."
+        )
+    for line in path.read_text().splitlines():
+        name, sep, value = line.partition("=")
+        if sep and name.strip() == _KEY_FILE_VARIABLE:
+            value = value.strip().strip("'\"").strip()
+            if value:
+                return value
+    return None
+
+
+def resolve_api_key(
+    env: Mapping[str, str] | None = None, *, key_file: Path | None = None
+) -> str | None:
+    """The key from the environment, then from `key_file`, or None.
+
+    Never from lore.toml. `key_file` is opt-in per caller (normally
+    `default_key_file()`), so a caller that passes none reads the
+    environment only. Raises GeminiKeyFileError for a file others can read.
+    """
     source = os.environ if env is None else env
     for name in _KEY_VARIABLES:
         value = (source.get(name) or "").strip()
         if value:
             return value
+    if key_file is not None:
+        return _key_from_file(key_file)
     return None
+
+
+def _strip_fence(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.split("\n", 1)[1] if "\n" in stripped else ""
+        stripped = stripped.rsplit("```", 1)[0]
+    return stripped.strip()
 
 
 class GeminiClient:
@@ -173,7 +242,9 @@ class GeminiClient:
         if remaining > 0:
             await self._sleep(remaining)
 
-    async def _generate_one(self, model: str, prompt: str) -> str:
+    async def _generate_one(
+        self, model: str, prompt: str, generation_config: dict
+    ) -> str:
         await self._throttle(model)
         self._last_request_at[model] = self._now()
         self.requests_made += 1
@@ -186,10 +257,7 @@ class GeminiClient:
                          "content-type": "application/json"},
                 json={
                     "contents": [{"parts": [{"text": prompt}]}],
-                    # A merge decision must be a function of its inputs, not
-                    # a sample: the same corpus has to produce the same
-                    # graph. Same reason the Ollama adjudicator pins it.
-                    "generationConfig": {"temperature": 0},
+                    "generationConfig": generation_config,
                 },
             )
         except httpx.HTTPError as exc:
@@ -201,7 +269,8 @@ class GeminiClient:
             raise GeminiError(
                 f"HTTP {response.status_code}: the API key was rejected. Auth"
                 " is the `x-goog-api-key` header, not a Bearer token — check"
-                f" {' or '.join(_KEY_VARIABLES)} in your environment."
+                f" {' or '.join(_KEY_VARIABLES)} in your environment, or"
+                " ~/.config/lore/gemini.env."
             )
         if response.status_code in _CASCADE_STATUSES:
             limits = limits_for(model)
@@ -229,12 +298,13 @@ class GeminiClient:
             raise GeminiError(f"{model} returned an empty answer")
         return text
 
-    async def generate(self, prompt: str) -> str:
-        """One completion at temperature 0, from the first willing model."""
+    async def _cascade(
+        self, prompt: str, generation_config: dict, exhausted_hint: str
+    ) -> str:
         refusals: list[str] = []
         for model in self.models:
             try:
-                text = await self._generate_one(model, prompt)
+                text = await self._generate_one(model, prompt, generation_config)
             except GeminiQuotaError as exc:
                 refusals.append(str(exc))
                 continue
@@ -242,10 +312,45 @@ class GeminiClient:
             return text
         raise GeminiQuotaError(
             "every configured model refused the request — "
-            + "; ".join(refusals)
-            + ". Nothing was written to the answer cache; re-run"
-            " `lore disambiguate` when a daily budget resets."
+            + "; ".join(refusals) + ". " + exhausted_hint
         )
+
+    async def generate(self, prompt: str) -> str:
+        """One completion at temperature 0, from the first willing model."""
+        # A merge decision must be a function of its inputs, not a sample:
+        # the same corpus has to produce the same graph. Same reason the
+        # Ollama adjudicator pins it.
+        return await self._cascade(
+            prompt, {"temperature": 0},
+            "Nothing was written to the answer cache; re-run"
+            " `lore disambiguate` when a daily budget resets.",
+        )
+
+    async def generate_json(self, prompt: str, schema: type[Model]) -> Model:
+        """One schema-valid object at temperature 0, from the first willing model.
+
+        The shape measured in Task 7c: JSON response mime type, the schema
+        appended to the prompt, a stray code fence stripped, then strict
+        validation. Invalid output is an error, not a retry on the next
+        model: the cascade exists for capacity, not for second opinions.
+        """
+        text = await self._cascade(
+            prompt + JSON_INSTRUCTION.format(
+                schema=json.dumps(schema.model_json_schema())
+            ),
+            {"temperature": 0, "responseMimeType": "application/json"},
+            "Re-run when a daily budget resets, or set [lore.synthesis]"
+            ' provider = "ollama" to answer locally.',
+        )
+        try:
+            return schema.model_validate_json(_strip_fence(text))
+        except ValidationError as exc:
+            raise GeminiError(
+                f"{self.last_model} returned output that is not a valid"
+                f" {schema.__name__} JSON object ({exc.error_count()} error(s):"
+                f" {str(exc.errors()[0].get('msg'))[:200]}). Raw start:"
+                f" {text[:200]!r}"
+            ) from exc
 
     async def aclose(self) -> None:
         await self._client.aclose()

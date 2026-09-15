@@ -325,3 +325,71 @@ def test_process_labels_its_entity_count_as_canonical(
         result = runner.invoke(app, ["process", BOOK])
     assert result.exit_code == 0, result.output
     assert "4 canonical entities" in result.output
+
+
+def _book_status(tmp_path: Path) -> str:
+    from lore.db.sqlite import open_db
+
+    conn = open_db(tmp_path / "data" / "lore.db")
+    try:
+        return conn.execute("SELECT status FROM books WHERE id = ?", (BOOK,)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def _registered(tmp_path: Path) -> None:
+    from lore.db.sqlite import open_db
+
+    conn = open_db(tmp_path / "data" / "lore.db")
+    conn.execute("INSERT INTO books (id, title, author, source, file_path, status)"
+                 " VALUES (?, 'T', NULL, 'upload', '/x', 'chunked')", (BOOK,))
+    conn.commit()
+    conn.close()
+
+
+def test_a_successful_process_marks_the_book_graphed(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _registered(tmp_path)
+    report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
+                        chunks=1, mentions=1)
+    with (
+        patch("lore.cli.run_extraction",
+              return_value=RunReport(book_id=BOOK, units_total=1, units_completed=1)),
+        patch("lore.cli._load_book_sync", return_value=report),
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code == 0, result.output
+    assert _book_status(tmp_path) == "graphed"
+
+
+def test_a_partial_load_never_marks_the_book_graphed(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _registered(tmp_path)
+    with (
+        patch("lore.cli.run_extraction",
+              return_value=RunReport(book_id=BOOK, units_total=1, units_completed=1)),
+        patch("lore.cli._load_book_sync", side_effect=PartialLoadError("half")),
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code == 1
+    assert _book_status(tmp_path) == "chunked"
+
+
+def test_an_incomplete_extraction_never_marks_the_book_graphed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _registered(tmp_path)
+    report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
+                        chunks=1, mentions=1)
+    extraction = RunReport(book_id=BOOK, units_total=2, units_completed=1, units_failed=1)
+    with (
+        patch("lore.cli.run_extraction", return_value=extraction),
+        patch("lore.cli._load_book_sync", return_value=report),
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code == 1
+    assert _book_status(tmp_path) == "chunked"

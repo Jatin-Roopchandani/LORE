@@ -4,10 +4,11 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lore.inference.gemini import DEFAULT_MODELS
+from lore.inference.gemini import DEFAULT_MODELS, LITE_MODELS
 
 
 class OllamaConfig(BaseModel):
@@ -56,6 +57,31 @@ class DisambiguationConfig(BaseModel):
     models: list[str] = Field(default_factory=lambda: list(DEFAULT_MODELS))
 
 
+class SynthesisConfig(BaseModel):
+    """Who writes `lore ask`'s answers. Local by default; Gemini is opt-in.
+
+    Only synthesis switches: template selection stays on the local model
+    either way, and the quote check applies to both.
+
+    Measured on identical evidence (Phase 3 Task 7c): Gemini Flash Lite
+    scored 2 correct / 5 partial / 0 wrong with 0 of 11 claims misread;
+    the local 3B scored 0 / 3 / 1 with 8 of 11 misread. Choosing Gemini
+    sends the question and its evidence passages to Google.
+
+    `extra="forbid"` for the same reason as DisambiguationConfig: an
+    `api_key = "..."` line here must be a loud error, never a silently
+    ignored secret on its way into git. The key comes from the environment
+    or `~/.config/lore/gemini.env`, nowhere else.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["ollama", "gemini"] = "ollama"
+    # Lite only by default: 500 requests/day each, where the Flash tier's
+    # 20/day is shared with `lore disambiguate`. Used only for "gemini".
+    models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
     extraction_provider: str = "kaggle"  # "kaggle" | "ollama"
@@ -65,6 +91,7 @@ class LoreConfig(BaseModel):
     disambiguation: DisambiguationConfig = Field(
         default_factory=DisambiguationConfig
     )
+    synthesis: SynthesisConfig = Field(default_factory=SynthesisConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":

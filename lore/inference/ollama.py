@@ -18,9 +18,9 @@ _TRUNCATION_HINT_CHARS = MAX_OUTPUT_TOKENS * _CHARS_PER_TOKEN
 
 
 class OllamaProvider:
-    def __init__(self, config: OllamaConfig) -> None:
+    def __init__(self, config: OllamaConfig, *, timeout: float = 120.0) -> None:
         self._model = config.model
-        self._client = httpx.AsyncClient(base_url=config.host, timeout=120.0)
+        self._client = httpx.AsyncClient(base_url=config.host, timeout=timeout)
 
     async def generate(
         self,

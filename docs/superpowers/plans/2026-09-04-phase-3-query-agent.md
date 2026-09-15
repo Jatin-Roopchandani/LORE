@@ -1631,6 +1631,46 @@ git push
 
 **Two Phase 2B carry-ins land here.** Spec §2.2: `loader._entities_where` interpolates a predicate via f-string — change it to a bound parameter, keeping every loader test green. Spec §5: `lore process` sets `books.status = 'graphed'` on a successful load, so `ask` can tell which books are queryable.
 
+**Refinement to this task, recorded deliberately (Task 8 as shipped, per `task-8-brief.md`. The code blocks below are the original design, kept for the record).** Each item below is a deviation from the plan's steps.
+1. **Two generate callables, held in one object.** Selection and synthesis need different options, so the single `generate` is gone. `make_query_pair` is replaced by `make_query_models(config, api_key=None, *, ollama=None, gemini=None) -> QueryModels(embed, select, synthesize, synthesis_model, aclose)`.
+   - `select` always runs on Ollama with `SELECTION_OPTIONS = {"temperature": 0, "seed": 0}`.
+   - `synthesize` runs on Ollama with `SYNTHESIS_OPTIONS = {"temperature": 0, "seed": 0, "num_ctx": 12288}`, or on Gemini when opted in.
+   - `synthesis_model()` names the model that answered.
+   - `aclose` closes every client the object opened.
+   - The `ollama`/`gemini` parameters are test seams.
+2. **`answer_question(conn, kuzu, lance, question, models, *, baseline=False)`.**
+   - The plan's `config` parameter was unused, so it is dropped.
+   - `book_titles` is built once from `list_books` and passed on every path.
+3. **No prefix in the builder's embedder.** `seed_entities` already applies `QUERY_PREFIX` itself (Task 4), so a prefixing embedder would double it. `QUERY_PREFIX` is applied exactly once where a question is embedded: inside `seed_entities`, and in the agent's vector path. A test asserts every embedded text is `QUERY_PREFIX + question`. The embedder is still not `make_ollama_pair`'s, which applies `DOCUMENT_PREFIX`.
+4. **Opt-in `[lore.synthesis]`.**
+   - Config: `provider: Literal["ollama", "gemini"] = "ollama"`, `models = LITE_MODELS` (`gemini-3.1-flash-lite`, `gemini-3.5-flash-lite`), `extra="forbid"`. The committed `lore.toml` is unchanged, and a test pins it to `ollama`.
+   - Structured generation: `GeminiClient.generate_json(prompt, schema)` uses Task 7c's measured shape. It sends `generationConfig {"temperature": 0, "responseMimeType": "application/json"}`, appends the schema instruction, strips a code fence, and validates strictly. Invalid output raises `GeminiError` naming the model and schema; it is not cascaded.
+   - The cascade is shared with `generate`, and 401/403 stays fatal. The "every model refused" hint is now per call, so `ask` is not told to re-run `lore disambiguate`.
+   - Gemini with no key makes `ask` exit 2 without falling back.
+5. **Key file.** `resolve_api_key(env=None, *, key_file=None)` reads the environment, then `key_file`, and never `lore.toml`.
+   - A file with any mode bit beyond `0o600` raises `GeminiKeyFileError`, which names the path and mode and says `chmod 600`. The error never carries the key.
+   - The file is opt-in per caller. `ask` passes `default_key_file()` (`~/.config/lore/gemini.env`). `disambiguate` still reads the environment only: out of this task's scope, and its no-key test assumes it.
+   - Tests isolate `HOME`.
+6. **`Answer.model: str | None = None`.** It holds the Ollama model name, or the Gemini id from `last_model`. It stays `None` when no model was asked (the `empty` path, or no passages). A refusal returned by a model still names that model.
+7. **Queryable-book gate on ground truth.** A book is queryable if it has a `Book` node in Kuzu, not if `books.status == 'graphed'`. All five real books read `chunked`, including the two in the graph, so the plan's gate would refuse the real corpus.
+8. **`ask` is read-only by construction**, which the plan did not require.
+   - Kuzu opens with a new `KuzuStore(path, *, read_only=True)` mode: no mkdir, no DDL, and Kuzu refuses writes. `lore/db/kuzu_store.py` was not in the plan's file list.
+   - SQLite opens with `file:...?mode=ro`. There is no `open_db`, which migrates, and no `ensure_dirs`.
+   - A missing graph, `lore.db` or `lancedb/` gets the same "run `lore process`" refusal, and nothing is created.
+   - SQLite may still create its `-wal`/`-shm` side files on a read-only open.
+9. **Output.**
+   - Sources print `[n] <book title>, chapter <chapter_seq>`, falling back to the Kuzu title, then the book id.
+   - The last line is `mode: <mode>[ via <template>][ · answered by <model>]`.
+   - Errors also catch `httpx.HTTPError` (a `ConnectError` names the Ollama host), `sqlite3.Error` and `ProviderOutputError`, so a down model is one line with no traceback (spec §7).
+10. **`process` sets `graphed` only when it exits 0.** The update runs after the extraction-incomplete check. Step 5 put it before that block, which would have marked a book `graphed` while `process` exits 1.
+11. **Loader.** `_entities_where` had three callers, not two. It becomes three named literal queries (`_ENTITIES_BY_ID`, `_ENTITIES_BY_KIND`, `_ENTITIES_BY_BOOK`) plus a shared row unpacker, `_entities_from`. A new AST test asserts no loader Cypher is built by f-string or `.format`. Every existing loader test is untouched and green.
+12. **Tests.**
+   - The agent's `FakeKuzu` needs a `count(r)` branch for `live_entity_ids` (Task 4b).
+   - Fake `Synthesis` objects carry a real ≥ 4-word quote (Task 7b).
+   - `test_every_existing_subcommand_still_resolves` reads the command list from `cli.py`.
+13. **Name clash.** `cli.py` already imported `ask` from `lore.resolve.disambiguation`. A `def ask` command silently shadowed it, and `lore disambiguate` broke; five of its tests caught this. The import is now `ask as ask_disambiguation`.
+14. **Ollama timeout.** `OllamaProvider(config, *, timeout=120.0)` gained a backward-compatible `timeout`, and the query side builds it with `OLLAMA_TIMEOUT_S = 600`. On CPU at `num_ctx` 12288, Task 7b's real synthesis calls took 23–170 s. Q1 (153 s) and Q8 (170 s) exceed the old 120 s default, which would turn a slow answer into `ask failed: ReadTimeout`. `lore/inference/ollama.py` was not in the plan's file list.
+
 - [ ] **Step 1: Write the failing agent test**
 
 `tests/test_query_agent.py`:

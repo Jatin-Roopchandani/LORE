@@ -88,3 +88,24 @@ def test_entity_table_gains_books_on_an_old_database(tmp_path: Path) -> None:
     ]
     assert rows == [("e1", "A", ["a"])]  # the pre-existing row survives
     store.close()
+
+
+def test_read_only_reads_and_refuses_writes(tmp_path: Path) -> None:
+    import pytest
+
+    store = KuzuStore(tmp_path / "kuzu")
+    store.execute("CREATE (:Book {id: 'b1', title: 'T', author: ''})")
+    store.close()
+    reader = KuzuStore(tmp_path / "kuzu", read_only=True)
+    assert [tuple(r) for r in reader.execute("MATCH (b:Book) RETURN b.id")] == [("b1",)]
+    with pytest.raises(RuntimeError):
+        reader.execute("CREATE (:Book {id: 'b2', title: 'U', author: ''})")
+    reader.close()
+
+
+def test_read_only_never_creates_a_database(tmp_path: Path) -> None:
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        KuzuStore(tmp_path / "absent", read_only=True)
+    assert not (tmp_path / "absent").exists()

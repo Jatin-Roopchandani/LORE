@@ -157,3 +157,12 @@ async def test_live_roundtrip() -> None:
         "What is the capital of France? Respond as JSON.", Answer
     )
     assert "paris" in result.city.lower()
+
+
+async def test_the_request_timeout_defaults_to_120s_and_is_configurable() -> None:
+    default = OllamaProvider(OllamaConfig())
+    assert default._client.timeout.read == 120.0
+    patient = OllamaProvider(OllamaConfig(), timeout=600.0)
+    assert patient._client.timeout.read == 600.0
+    await default.aclose()
+    await patient.aclose()

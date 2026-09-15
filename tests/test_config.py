@@ -86,3 +86,46 @@ def test_an_api_key_in_the_config_file_is_refused(tmp_path: Path) -> None:
     with pytest.raises(Exception) as exc:
         LoreConfig.load(toml)
     assert "api_key" in str(exc.value)
+
+
+def test_synthesis_is_local_by_default(tmp_path: Path, monkeypatch) -> None:
+    # Opt-in: answers leave the machine only when the user says so.
+    monkeypatch.chdir(tmp_path)
+    cfg = LoreConfig.load()
+    assert cfg.synthesis.provider == "ollama"
+    # Lite only: 500 requests/day each. Flash gets 20 and is shared with
+    # the disambiguator.
+    assert cfg.synthesis.models == ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
+
+
+def test_synthesis_can_opt_into_gemini_from_toml(tmp_path: Path) -> None:
+    toml = tmp_path / "lore.toml"
+    toml.write_text('[lore.synthesis]\nprovider = "gemini"\nmodels = ["gemini-3.5-flash-lite"]\n')
+    cfg = LoreConfig.load(toml)
+    assert cfg.synthesis.provider == "gemini"
+    assert cfg.synthesis.models == ["gemini-3.5-flash-lite"]
+
+
+def test_synthesis_rejects_an_unknown_provider(tmp_path: Path) -> None:
+    import pytest
+
+    toml = tmp_path / "lore.toml"
+    toml.write_text('[lore.synthesis]\nprovider = "openai"\n')
+    with pytest.raises(Exception) as exc:
+        LoreConfig.load(toml)
+    assert "provider" in str(exc.value)
+
+
+def test_an_api_key_in_the_synthesis_section_is_refused(tmp_path: Path) -> None:
+    import pytest
+
+    toml = tmp_path / "lore.toml"
+    toml.write_text('[lore.synthesis]\nprovider = "gemini"\napi_key = "AIza-secret"\n')
+    with pytest.raises(Exception) as exc:
+        LoreConfig.load(toml)
+    assert "api_key" in str(exc.value)
+
+
+def test_the_committed_lore_toml_keeps_synthesis_local() -> None:
+    cfg = LoreConfig.load(Path(__file__).parent.parent / "lore.toml")
+    assert cfg.synthesis.provider == "ollama"

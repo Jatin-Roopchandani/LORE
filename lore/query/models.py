@@ -75,3 +75,7 @@ class Answer:
     mode: str
     template: str | None
     note: str | None
+    # The model that wrote (or refused) the answer: the Ollama model name,
+    # or the Gemini id the cascade actually reached. None when no model was
+    # asked, e.g. there was no evidence to show one.
+    model: str | None = None
