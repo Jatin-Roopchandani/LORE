@@ -1671,6 +1671,20 @@ git push
 13. **Name clash.** `cli.py` already imported `ask` from `lore.resolve.disambiguation`. A `def ask` command silently shadowed it, and `lore disambiguate` broke; five of its tests caught this. The import is now `ask as ask_disambiguation`.
 14. **Ollama timeout.** `OllamaProvider(config, *, timeout=120.0)` gained a backward-compatible `timeout`, and the query side builds it with `OLLAMA_TIMEOUT_S = 600`. On CPU at `num_ctx` 12288, Task 7b's real synthesis calls took 23–170 s. Q1 (153 s) and Q8 (170 s) exceed the old 120 s default, which would turn a slow answer into `ask failed: ReadTimeout`. `lore/inference/ollama.py` was not in the plan's file list.
 
+**Refinement 8b, recorded deliberately (per `task-8b-brief.md`, on the user's direction to prefer quality over running locally; items 1, 4, 6 and 9 above are amended, everything else stands).**
+1. **`[lore.selection]`** mirrors `[lore.synthesis]`: `provider: Literal["ollama", "gemini"] = "ollama"`, `models = LITE_MODELS`, `extra="forbid"`, no `api_key`. Code defaults stay `"ollama"` for both, so a checkout with no key still works. **The committed `lore.toml` sets both to `"gemini"`**, and the test that pinned it to `ollama` now pins both to `gemini`.
+2. **Routing.** `make_query_models` now builds each step from its own section. Selection on Gemini calls `GeminiClient.generate_json(prompt, TemplateChoice)`; on Ollama it keeps `SELECTION_OPTIONS`. With either step on Gemini and no key or client, it raises `ValueError` naming the section(s), and `ask` exits 2 with the same message shape. Neither step ever falls back to the local model.
+3. **One client.** When both steps are on Gemini they share one `GeminiClient`, so per-model throttling and RPM are counted once, and `aclose` closes it once. An injected `gemini` is always shared. Only two different `models` lists get two clients, because a client's cascade is fixed at construction.
+4. **Naming the selection model.** `QueryModels` gains `selection_model: Callable[[], str | None]`, and `Answer` gains `selection_model: str | None = None`. `Answer.model` is unchanged. The agent reads the selection model **straight after the selection call**, because with a shared client synthesis moves `last_model` afterwards. It is set on the `graph` path and on `vector-fallback` after a selection ran, including a rejected choice. It stays `None` for `--baseline` and `empty`. The last line is `mode: <mode>[ via <template>]` followed by `· selected by S · answered by A`, or `· selected and answered by X` when they are the same model. When only one is known, only that one is printed.
+5. **`across_books` limits per book.** `$limit` is now the number of facts per book, earliest chapters first, and the slots are unchanged. On Kuzu 0.11.3 the query uses `WITH DISTINCT` over the nine fields. Each fact becomes a `struct_pack` carrying a sort key: the chapter zero-padded, then every other field with a length prefix, so the key is injective. Rows are grouped by `book_id`, and the query keeps `list_sort(collect(key))[1:$limit]`, then unwinds and filters. Measured facts that shaped it:
+   - The slice is 1-based and inclusive.
+   - `list_sort` on a list of structs aborts with `KU_UNREACHABLE`.
+   - A `{...}` map literal would trip the no-interpolation guard.
+   - **`RETURN DISTINCT ... ORDER BY` with no `LIMIT` returns out of order about 27% of the time** (82 of 300 runs), so this template's final `RETURN` is plain. Dedup already happened at the source, and each fact is in exactly one book's list.
+
+   `test_every_template_is_bounded` accepts `[1:$limit]` as this template's bound. The description is unchanged. Holmes at 40: before 40 *A Study in Scarlet* / 0 *The Sign of the Four*; after 40 / 40, 0 false edges.
+6. **Measured and not fixed** (Holmes, `limit=40`, stable across 10 runs): `neighbours` 40 SiS / 0 SoF; `shared_neighbours` Holmes+Watson 40 / 0; `two_hop` 39 / 1; `chapter_window` over the full range about 15 / 25. `neighbours` and `shared_neighbours` drop *The Sign of the Four* entirely for Holmes.
+
 - [ ] **Step 1: Write the failing agent test**
 
 `tests/test_query_agent.py`:

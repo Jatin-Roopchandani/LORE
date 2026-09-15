@@ -240,6 +240,63 @@ def test_the_default_config_never_resolves_a_key(env: Path) -> None:
     assert not resolve.called
 
 
+# --- Task 8b: selection on Gemini, and naming both models -------------------
+
+def _answer(**changes):
+    from dataclasses import replace
+    return replace(ANSWER, **changes)
+
+
+@pytest.mark.parametrize("selected,answered,tail", [
+    ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite",
+     " · selected by gemini-3.1-flash-lite · answered by gemini-3.5-flash-lite"),
+    ("gemini-3.1-flash-lite", "gemini-3.1-flash-lite",
+     " · selected and answered by gemini-3.1-flash-lite"),
+    ("gemini-3.1-flash-lite", None, " · selected by gemini-3.1-flash-lite"),
+    (None, "gemini-3.1-flash-lite", " · answered by gemini-3.1-flash-lite"),
+], ids=["different", "same", "selection-only", "answer-only"])
+def test_ask_names_the_selection_model_and_the_answering_model(
+        env: Path, selected, answered, tail) -> None:
+    _library(env, graphed=True)
+    fake, _ = _returning(_answer(selection_model=selected, model=answered))
+    with patch("lore.cli.answer_question", fake):
+        result = runner.invoke(app, ["ask", "q"])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip().splitlines()[-1] == "mode: graph via by_predicate" + tail
+
+
+def test_selection_on_gemini_without_a_key_exits_and_does_not_fall_back(env: Path) -> None:
+    _library(env, graphed=True)
+    (env / "lore.toml").write_text('[lore.selection]\nprovider = "gemini"\n')
+    fake, calls = _returning(ANSWER)
+    with patch("lore.cli.answer_question", fake):
+        result = runner.invoke(app, ["ask", "q"])
+    assert result.exit_code == 2
+    assert calls == [], "never silently selected by the local model"
+    assert "[lore.selection]" in result.output
+    assert "GEMINI_API_KEY" in result.output
+
+
+def test_selection_on_gemini_alone_still_resolves_the_key(env: Path) -> None:
+    _library(env, graphed=True)
+    (env / "lore.toml").write_text('[lore.selection]\nprovider = "gemini"\n')
+    key_file = env / "home" / ".config" / "lore" / "gemini.env"
+    key_file.parent.mkdir(parents=True)
+    key_file.write_text(f"GEMINI_API_KEY={SECRET}\n")
+    key_file.chmod(0o600)
+    seen = {}
+
+    def spy(config, api_key=None, **kwargs):
+        seen["key"] = api_key
+        return object()
+
+    with patch("lore.cli.answer_question", _returning(ANSWER)[0]), \
+            patch("lore.cli.make_query_models", spy):
+        result = runner.invoke(app, ["ask", "q"])
+    assert seen == {"key": SECRET}
+    assert SECRET not in result.output
+
+
 # --- the CLI as a whole --------------------------------------------------------
 
 def test_every_existing_subcommand_still_resolves() -> None:

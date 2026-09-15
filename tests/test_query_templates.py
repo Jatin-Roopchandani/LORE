@@ -53,8 +53,12 @@ def test_row_fields_match_the_edge_row_dataclass() -> None:
 
 
 def test_every_template_is_bounded() -> None:
+    # across_books bounds each book by slicing, not the whole result by
+    # LIMIT (Task 8b): a global LIMIT could never reach a busy entity's
+    # second book.
     for name, template in TEMPLATES.items():
-        assert "LIMIT" in template.cypher.upper(), f"{name} is unbounded"
+        upper = template.cypher.upper()
+        assert "LIMIT" in upper or "[1:$LIMIT]" in upper, f"{name} is unbounded"
 
 
 def test_every_template_has_a_description_for_the_model() -> None:
@@ -83,6 +87,7 @@ _EDGES = [
     ("a", "KNOWS", "x", "c7", "b2", 3),
     ("m", "WORKS_FOR", "y", "c8", "b1", 5),      # beyond a neighbour, outgoing
     ("z", "OPPOSES", "m", "c9", "b1", 6),        # beyond a neighbour, incoming
+    ("a", "KNOWS", "y", "c10", "b1", 7),         # a's third b1 fact (Task 8b)
 ]
 
 _CALLS = {
@@ -198,3 +203,71 @@ def test_ordered_templates_keep_their_order_under_distinct(graph) -> None:
     window = _run(graph, "chapter_window")
     assert [r.chapter_seq for r in window] == sorted(r.chapter_seq for r in window)
     assert all(1 <= r.chapter_seq <= 4 for r in window)
+
+
+# --- Task 8b: across_books gives every book its own `limit` ---------------
+#
+# In the fixture, A has 3 facts in b1 (chapters 1, 4, 7) and 3 in b2
+# (chapters 1, 2, 3, one of them a parallel duplicate). M is in b1 only.
+# A single global LIMIT in book order returned only b1 for any limit <= 2,
+# which on the real graph meant 40 of Holmes's 59 A Study in Scarlet facts
+# and none of The Sign of the Four's 122.
+
+def _by_book(rows) -> dict[str, list]:
+    books: dict[str, list] = {}
+    for row in rows:
+        books.setdefault(row.book_id, []).append(row)
+    return books
+
+
+@pytest.mark.parametrize("limit", [1, 2])
+def test_across_books_limit_applies_per_book(graph, limit: int) -> None:
+    everything = _by_book(_run(graph, "across_books", limit=100))
+    capped = _by_book(_run(graph, "across_books", limit=limit))
+    # Book one has more than `limit` facts, and book two still appears.
+    assert len(everything["b1"]) > limit
+    assert set(capped) == {"b1", "b2"}
+    for book, rows in capped.items():
+        assert len(rows) == min(limit, len(everything[book]))
+        assert len(rows) == len(set(rows))
+        # The EARLIEST chapters of that book are the ones kept.
+        kept = [r.chapter_seq for r in rows]
+        dropped = sorted(set(everything[book]) - set(rows),
+                         key=lambda r: r.chapter_seq)
+        assert kept == sorted(kept)
+        assert all(max(kept) <= r.chapter_seq for r in dropped)
+
+
+def test_across_books_for_a_single_book_entity_is_the_first_limit_by_chapter(graph) -> None:
+    everything = _run(graph, "across_books", entity_id="m", limit=100)
+    assert {r.book_id for r in everything} == {"b1"}
+    rows = _run(graph, "across_books", entity_id="m", limit=2)
+    assert [r.chapter_seq for r in rows] == [1, 2]
+    assert {(r.subject, r.predicate, r.object, r.chunk_id) for r in rows} == {
+        _fact("a", "KNOWS", "m", "c1"),
+        _fact("m", "KNOWS", "b", "c2"),
+    }
+
+
+def test_across_books_under_a_per_book_limit_returns_only_real_edges(graph) -> None:
+    real = {
+        tuple(row) for row in graph.execute(
+            "MATCH (x:Entity)-[r:REL]->(y:Entity) "
+            "RETURN x.name, r.predicate, y.name, r.chunk_id, r.book_id, r.chapter_seq"
+        )
+    }
+    rows = _run(graph, "across_books", limit=1)
+    assert rows
+    assert all((r.subject, r.predicate, r.object, r.chunk_id, r.book_id,
+                r.chapter_seq) in real for r in rows)
+
+
+def test_across_books_order_is_reliable_not_lucky(graph) -> None:
+    # Kuzu 0.11.3 returns `RETURN DISTINCT ... ORDER BY` with no LIMIT out of
+    # order about one run in four, so one ordered run proves little. Twenty
+    # in a row would pass by luck well under 1% of the time.
+    for _ in range(20):
+        for limit in (1, 100):
+            keys = [(r.book_id, r.chapter_seq)
+                    for r in _run(graph, "across_books", limit=limit)]
+            assert keys == sorted(keys)

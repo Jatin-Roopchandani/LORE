@@ -79,3 +79,6 @@ class Answer:
     # or the Gemini id the cascade actually reached. None when no model was
     # asked, e.g. there was no evidence to show one.
     model: str | None = None
+    # The model that chose the search template, named the same way. None
+    # when no selection ran: --baseline, or no seed entities.
+    selection_model: str | None = None

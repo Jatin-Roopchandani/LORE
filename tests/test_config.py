@@ -126,6 +126,47 @@ def test_an_api_key_in_the_synthesis_section_is_refused(tmp_path: Path) -> None:
     assert "api_key" in str(exc.value)
 
 
-def test_the_committed_lore_toml_keeps_synthesis_local() -> None:
+def test_selection_is_local_by_default(tmp_path: Path, monkeypatch) -> None:
+    # The code default stays local for both query steps, so a checkout with
+    # no key and no network still answers.
+    monkeypatch.chdir(tmp_path)
+    cfg = LoreConfig.load()
+    assert cfg.selection.provider == "ollama"
+    assert cfg.selection.models == ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
+
+
+def test_selection_can_opt_into_gemini_from_toml(tmp_path: Path) -> None:
+    toml = tmp_path / "lore.toml"
+    toml.write_text('[lore.selection]\nprovider = "gemini"\nmodels = ["gemini-3.5-flash-lite"]\n')
+    cfg = LoreConfig.load(toml)
+    assert cfg.selection.provider == "gemini"
+    assert cfg.selection.models == ["gemini-3.5-flash-lite"]
+    assert cfg.synthesis.provider == "ollama", "the two steps switch independently"
+
+
+def test_selection_rejects_an_unknown_provider(tmp_path: Path) -> None:
+    import pytest
+
+    toml = tmp_path / "lore.toml"
+    toml.write_text('[lore.selection]\nprovider = "openai"\n')
+    with pytest.raises(Exception) as exc:
+        LoreConfig.load(toml)
+    assert "provider" in str(exc.value)
+
+
+def test_an_api_key_in_the_selection_section_is_refused(tmp_path: Path) -> None:
+    import pytest
+
+    toml = tmp_path / "lore.toml"
+    toml.write_text('[lore.selection]\nprovider = "gemini"\napi_key = "AIza-secret"\n')
+    with pytest.raises(Exception) as exc:
+        LoreConfig.load(toml)
+    assert "api_key" in str(exc.value)
+
+
+def test_the_committed_lore_toml_puts_both_query_steps_on_gemini() -> None:
+    # The user's decision (Task 8b): quality over running locally. The code
+    # defaults above stay "ollama"; only the committed project config opts in.
     cfg = LoreConfig.load(Path(__file__).parent.parent / "lore.toml")
-    assert cfg.synthesis.provider == "ollama"
+    assert cfg.selection.provider == "gemini"
+    assert cfg.synthesis.provider == "gemini"

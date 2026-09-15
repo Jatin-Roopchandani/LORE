@@ -539,30 +539,34 @@ def ask(
     """Answer a question from the knowledge graph, with citations.
 
     Note: every question makes at least two LLM calls (choosing how to
-    search, then writing the answer), so this is not instantaneous. The
-    choice always runs on the local model. The answer does too, unless
-    lore.toml opts in with [lore.synthesis] provider = "gemini", which sends
-    the question and its evidence passages to Google.
+    search, then writing the answer), so this is not instantaneous. Each
+    runs on the local model unless lore.toml sets [lore.selection] or
+    [lore.synthesis] provider = "gemini" (this project's lore.toml sets
+    both), which sends the question, its seed entity names and its evidence
+    passages to Google.
 
     Read-only: nothing in the library is created or modified.
     """
     config = LoreConfig.load()
 
     api_key = None
-    if config.synthesis.provider == "gemini":
+    remote = [f"[lore.{name}]" for name, section in (
+        ("selection", config.selection), ("synthesis", config.synthesis))
+        if section.provider == "gemini"]
+    if remote:
         try:
             api_key = resolve_api_key(key_file=default_key_file())
         except GeminiKeyFileError as exc:
             typer.echo(f"ask failed: {exc}")
             raise typer.Exit(2)
         if api_key is None:
-            # Never fall back to the local model: the user chose Gemini's
-            # answers, and a silent downgrade would hide the quality drop.
+            # Never fall back to the local model: the user chose Gemini, and
+            # a silent downgrade would hide the quality drop.
             typer.echo(
-                '[lore.synthesis] provider = "gemini" but no API key: set'
-                " GEMINI_API_KEY (or GOOGLE_API_KEY), or put one line"
+                f'{" and ".join(remote)} provider = "gemini" but no API key:'
+                " set GEMINI_API_KEY (or GOOGLE_API_KEY), or put one line"
                 " `GEMINI_API_KEY=...` in ~/.config/lore/gemini.env with mode"
-                ' 600. Or set provider = "ollama" to answer locally.'
+                ' 600. Or set provider = "ollama" to run that step locally.'
             )
             raise typer.Exit(2)
 
@@ -630,6 +634,13 @@ def ask(
     line = f"mode: {answer.mode}"
     if answer.template:
         line += f" via {answer.template}"
-    if answer.model:
-        line += f" · answered by {answer.model}"
+    # One name when one model did both jobs, both when they differ.
+    selected, answered = answer.selection_model, answer.model
+    if selected and selected == answered:
+        line += f" · selected and answered by {answered}"
+    else:
+        if selected:
+            line += f" · selected by {selected}"
+        if answered:
+            line += f" · answered by {answered}"
     typer.echo(f"\n{line}")

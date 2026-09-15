@@ -93,25 +93,42 @@ class FakeOllama:
 
 
 class FakeGemini:
-    def __init__(self, synthesis: Synthesis = GOOD, model="gemini-3.1-flash-lite"):
-        self.synthesis, self._model = synthesis, model
+    """Stands in for GeminiClient. `models` is the cascade's answer per call,
+    in order (the last one repeats), so a test can make selection and
+    synthesis land on different models of one shared client."""
+
+    def __init__(self, synthesis: Synthesis = GOOD, model="gemini-3.1-flash-lite",
+                 choice: TemplateChoice | None = None, models: list[str] | None = None):
+        self.synthesis, self.choice = synthesis, choice
+        self._models = list(models) if models else [model]
         self.prompts: list[tuple[str, type]] = []
         self.last_model = None
-        self.closed = False
+        self.closes = 0
+
+    @property
+    def closed(self):
+        return self.closes > 0
 
     async def generate_json(self, prompt, schema):
         self.prompts.append((prompt, schema))
-        self.last_model = self._model
-        return self.synthesis
+        self.last_model = self._models[min(len(self.prompts), len(self._models)) - 1]
+        return self.choice if schema is TemplateChoice else self.synthesis
 
     async def aclose(self):
-        self.closed = True
+        self.closes += 1
 
 
 CONFIG = LoreConfig()
 GEMINI_CONFIG = CONFIG.model_copy(update={
     "synthesis": CONFIG.synthesis.model_copy(update={"provider": "gemini"})
 })
+SELECT_GEMINI_CONFIG = CONFIG.model_copy(update={
+    "selection": CONFIG.selection.model_copy(update={"provider": "gemini"})
+})
+BOTH_GEMINI_CONFIG = GEMINI_CONFIG.model_copy(update={
+    "selection": CONFIG.selection.model_copy(update={"provider": "gemini"})
+})
+CHOICE = TemplateChoice(template="neighbours", entities=[1])
 
 
 def _local(choice=TemplateChoice(template="neighbours", entities=[1]), synthesis=GOOD):
@@ -260,6 +277,7 @@ async def test_gemini_answers_while_selection_stays_local(tmp_path: Path) -> Non
     assert answer.text == "Holmes talked the case over with Watson. [1]"
     # The model that actually answered, as the cascade reports it.
     assert answer.model == "gemini-3.5-flash-lite"
+    assert answer.selection_model == CONFIG.ollama.model
     assert [c[2] for c in _selection_calls(ollama)] == [SELECTION_OPTIONS]
     assert _synthesis_calls(ollama) == []
     (prompt, schema), = gemini.prompts
@@ -280,11 +298,16 @@ async def test_the_quote_check_applies_to_gemini_too(tmp_path: Path) -> None:
     conn.close()
 
 
-async def test_gemini_without_a_key_or_client_is_refused_not_downgraded() -> None:
+@pytest.mark.parametrize("config,section", [
+    (GEMINI_CONFIG, "[lore.synthesis]"),
+    (SELECT_GEMINI_CONFIG, "[lore.selection]"),
+    (BOTH_GEMINI_CONFIG, "[lore.selection]"),
+])
+async def test_gemini_without_a_key_or_client_is_refused_not_downgraded(config, section) -> None:
     with pytest.raises(ValueError) as exc:
-        make_query_models(GEMINI_CONFIG, ollama=FakeOllama(TemplateChoice(
-            template="neighbours", entities=[1])))
+        make_query_models(config, ollama=FakeOllama(CHOICE))
     assert "key" in str(exc.value)
+    assert section in str(exc.value)
 
 
 async def test_aclose_closes_every_client_it_holds() -> None:
@@ -303,6 +326,79 @@ async def test_aclose_closes_every_client_it_holds() -> None:
 def test_answer_model_defaults_to_none() -> None:
     answer = Answer(text="a", passages=(), mode="empty", template=None, note=None)
     assert answer.model is None
+    assert answer.selection_model is None
+
+
+# --- Task 8b: selection on Gemini ---------------------------------------------
+
+async def test_selection_on_gemini_uses_generate_json_and_synthesis_stays_local(
+        tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama = FakeOllama(CHOICE)
+    gemini = FakeGemini(choice=CHOICE, model="gemini-3.1-flash-lite")
+    models = make_query_models(SELECT_GEMINI_CONFIG, ollama=ollama, gemini=gemini)
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert answer.mode == "graph" and answer.template == "neighbours"
+    assert [schema for _, schema in gemini.prompts] == [TemplateChoice]
+    assert _selection_calls(ollama) == [], "never also asked the local model"
+    assert [c[2] for c in _synthesis_calls(ollama)] == [SYNTHESIS_OPTIONS]
+    assert answer.selection_model == "gemini-3.1-flash-lite"
+    assert answer.model == CONFIG.ollama.model
+    conn.close()
+
+
+async def test_both_steps_on_gemini_share_one_client_and_name_each_model(
+        tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama = FakeOllama(CHOICE)
+    # The cascade reaches a different model for each call. Selection's
+    # model must be read when selection ran, not after synthesis moved it.
+    gemini = FakeGemini(choice=CHOICE,
+                        models=["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"])
+    models = make_query_models(BOTH_GEMINI_CONFIG, ollama=ollama, gemini=gemini)
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert [schema for _, schema in gemini.prompts] == [TemplateChoice, Synthesis]
+    assert ollama.generated == []
+    assert answer.selection_model == "gemini-3.1-flash-lite"
+    assert answer.model == "gemini-3.5-flash-lite"
+    await models.aclose()
+    assert gemini.closes == 1 and ollama.closed
+    conn.close()
+
+
+def test_both_steps_on_gemini_build_exactly_one_client(monkeypatch) -> None:
+    # One client, so per-model throttling and the RPM budget are counted once.
+    import lore.query.agent as agent
+
+    built = []
+
+    class Recording:
+        def __init__(self, api_key, *, models):
+            built.append(tuple(models))
+
+    monkeypatch.setattr(agent, "GeminiClient", Recording)
+    make_query_models(BOTH_GEMINI_CONFIG, "k", ollama=FakeOllama(CHOICE))
+    assert built == [tuple(CONFIG.synthesis.models)]
+
+
+async def test_selection_model_names_the_local_model_and_is_none_when_not_asked(
+        tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    graph = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert graph.selection_model == CONFIG.ollama.model
+    # A rejected choice still ran selection, so the model is still named.
+    _, rejecting = _local(choice=TemplateChoice(template="invented", entities=[1]))
+    fallback = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q",
+                                     rejecting)
+    assert fallback.mode == "vector-fallback"
+    assert fallback.selection_model == CONFIG.ollama.model
+    baseline = await answer_question(conn, ExplodingKuzu(), FakeLance([SEED_ROW]), "q",
+                                     models, baseline=True)
+    assert baseline.selection_model is None
+    empty = await answer_question(conn, FakeKuzu([]), FakeLance([]), "q", models)
+    assert empty.selection_model is None
+    conn.close()
 
 
 def test_the_local_model_gets_a_cpu_sized_timeout() -> None:

@@ -37,24 +37,35 @@ graph by `lore process`. The model picks one of a fixed set of graph searches,
 then writes the answer as claims. Each claim must quote its cited passage word
 for word, and code drops any claim whose quote isn't there. Sources print as
 `[n] <book title>, chapter <n>`. The last line gives the mode (`graph`,
-`vector-fallback`, `vector-baseline` or `empty`), the search used and the model
-that answered.
+`vector-fallback`, `vector-baseline` or `empty`), the search used, and the
+models: `· selected by X · answered by Y`, or `· selected and answered by X`
+when one model did both.
 
-By default, both LLM calls run on the local Ollama model. To have answers
-written by Gemini Flash Lite instead, opt in:
+Each of the two LLM calls, choosing the search and writing the answer, has its
+own switch. The code default for both is the local Ollama model, so a checkout
+with no key and no network still works. **This project's `lore.toml` puts
+both on Gemini Flash Lite**, for quality:
+
+    [lore.selection]
+    provider = "gemini"   # code default "ollama"
 
     [lore.synthesis]
-    provider = "gemini"   # default "ollama"
-    models = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
+    provider = "gemini"   # code default "ollama"
+    # either section also takes models = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
 
-With Gemini on identical evidence, the answers misread 0 of 11 cited quotes.
-The local 3B misread 8 of 11. Selection stays local, and the quote check
-applies either way. Opting in sends the question and its evidence passages to
-Google, at one request per question. The key comes from `GEMINI_API_KEY` /
-`GOOGLE_API_KEY`, or from a one-line `GEMINI_API_KEY=...` in
+Measured on the frozen questions: Gemini honoured 24 of 24 search choices,
+identical across three runs. The local 3B honoured 21 of 24, and its choices
+changed between runs at temperature 0 and seed 0 with nothing else changed. On
+identical evidence, Gemini's answers misread 0 of 11 cited quotes and the 3B's
+misread 8 of 11. The quote check applies whichever model answers.
+
+With both on Gemini, a question costs two requests, and both share one client,
+so throttling counts them together. Gemini receives the question, the names of
+its seed entities and its evidence passages. The key comes from
+`GEMINI_API_KEY` / `GOOGLE_API_KEY`, or from a one-line `GEMINI_API_KEY=...` in
 `~/.config/lore/gemini.env`. That file is refused unless its mode is 600, and
-the key is never read from `lore.toml`. With Gemini chosen and no key found,
-`ask` exits. It never quietly answers with the local model instead.
+the key is never read from `lore.toml`. If either step is on Gemini and no key
+is found, `ask` exits. It never quietly uses the local model instead.
 
 ## How it works: from book to answer
 
@@ -81,8 +92,8 @@ questions from that graph with citations.
 |---|---|---|
 | Qwen2.5-7B-Instruct (AWQ) | Kaggle T4, vLLM | Extraction (default) |
 | nomic-embed-text v1.5 | Kaggle during extraction; local Ollama otherwise | Chunk vectors, entity similarity, predicate mapping, question embedding |
-| qwen2.5:3b | Local Ollama | Resolution yes/no calls, choosing a graph search, answers (default), local extraction |
-| Gemini Flash Lite (3.1, then 3.5) | Google API, **opt-in** | Surname disambiguation; answers when `[lore.synthesis] provider = "gemini"` |
+| qwen2.5:3b | Local Ollama | Resolution yes/no calls, local extraction; choosing a graph search and answers when a `lore.toml` leaves them on `"ollama"` (the code default) |
+| Gemini Flash Lite (3.1, then 3.5) | Google API, **opt-in** | Surname disambiguation; choosing a graph search (`[lore.selection]`) and answers (`[lore.synthesis]`), both on in this project's `lore.toml` |
 
 ### 1. `lore ingest`: parse and chunk (no models)
 
@@ -146,22 +157,25 @@ applies them. See the Gemini section below.
       │ 2. SEED        Kuzu: follow ALIAS_OF to canonical entities, drop any
       │                with no relationships, keep the best 8
       ▼
-      │ 3. SELECT      qwen2.5:3b (local, temperature 0) picks one of seven
-      │                fixed, read-only Cypher searches and numbered entities
+      │ 3. SELECT      Gemini Flash Lite (this lore.toml) or qwen2.5:3b (code
+      │                default), temperature 0, picks one of seven fixed,
+      │                read-only Cypher searches and numbered entities
       ▼
       │ 4. TRAVERSE    Kuzu runs that search ─► real directed edges
       ▼
       │ 5. ASSEMBLE    SQLite chunk text for those edges; duplicates removed;
       │                books alternated; capped at 12,000 chars; numbered
       ▼
-      │ 6. SYNTHESIZE  qwen2.5:3b (default) or Gemini Flash Lite (opt-in)
+      │ 6. SYNTHESIZE  Gemini Flash Lite (this lore.toml) or qwen2.5:3b (code
+      │                default)
       │                ─► claims, each with a passage number and a
       │                   word-for-word quote
       ▼
       │ 7. VERIFY      code checks each quote is really in its passage;
       │                failing claims are dropped; none left ─► refusal
       ▼
-    answer + sources (book, chapter) + mode + the model that answered
+    answer + sources (book, chapter) + mode + the models that selected
+    and answered
 
 `ask` never writes: it opens SQLite read-only and Kuzu read-only, and treats a
 book as queryable when the graph holds a `Book` node for it.
@@ -169,6 +183,10 @@ book as queryable when the graph holds a `Book` node for it.
 The model never writes Cypher: it chooses among seven hand-written templates
 (`neighbours`, `two_hop`, `path_between`, `by_predicate`, `shared_neighbours`,
 `across_books`, `chapter_window`), and every value binds as a parameter.
+Each search is capped at 40 facts, except `across_books`, which takes up to 40
+from **each** book, earliest chapters first. Otherwise a busy character's first
+book would fill the whole cap: Holmes has 59 facts in *A Study in Scarlet*,
+and a single cap of 40 returned none of his 122 in *The Sign of the Four*.
 
 Every answer reports one of four modes:
 

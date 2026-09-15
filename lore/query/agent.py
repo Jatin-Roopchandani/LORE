@@ -48,10 +48,11 @@ OLLAMA_TIMEOUT_S = 600.0
 class QueryModels:
     """The query side's models: one embedder and two generate callables.
 
-    Two callables, not one, because the jobs differ: selection always runs
-    on the local model with SELECTION_OPTIONS; synthesis runs on the local
-    model with SYNTHESIS_OPTIONS, or on Gemini when the user opted in.
-    `synthesis_model` names whichever model answered the last synthesis call.
+    Two callables, not one, because the jobs differ. Each runs on the local
+    model (selection with SELECTION_OPTIONS, synthesis with
+    SYNTHESIS_OPTIONS) or on Gemini, as `[lore.selection]` and
+    `[lore.synthesis]` say. `selection_model` and `synthesis_model` name the
+    model that answered that step's most recent call.
     """
 
     embed: Embed
@@ -59,6 +60,7 @@ class QueryModels:
     synthesize: Generate
     synthesis_model: Callable[[], str | None]
     aclose: Callable[[], Awaitable[None]]
+    selection_model: Callable[[], str | None]
 
 
 def make_query_models(
@@ -77,46 +79,97 @@ def make_query_models(
     once where a question is embedded (inside `seed_entities`, and in
     `_vector_answer` below), so it is never doubled.
 
-    With `[lore.synthesis] provider = "gemini"` and neither a key nor a
-    client, this raises rather than quietly answering with the local model:
-    that would hide the quality drop the user opted out of.
+    With either step on "gemini" and neither a key nor a client, this raises
+    rather than quietly using the local model: that would hide the quality
+    drop the user opted out of.
+
+    When both steps are on Gemini they share ONE client (an injected
+    `gemini` is always shared), so per-model throttling and the RPM budget
+    are counted once and `aclose` closes it once. Only two different
+    `models` lists get two clients, because a client's cascade is fixed.
     """
-    wants_gemini = config.synthesis.provider == "gemini"
-    if wants_gemini and gemini is None and not api_key:
+    remote_steps = [name for name, section in (("selection", config.selection),
+                                               ("synthesis", config.synthesis))
+                    if section.provider == "gemini"]
+    if remote_steps and gemini is None and not api_key:
         # Checked before any client opens, so a refusal leaks nothing.
-        raise ValueError('[lore.synthesis] provider = "gemini" needs an API key')
+        sections = " and ".join(f"[lore.{name}]" for name in remote_steps)
+        raise ValueError(f'{sections} provider = "gemini" needs an API key')
     local = ollama if ollama is not None else OllamaProvider(
         config.ollama, timeout=OLLAMA_TIMEOUT_S
     )
+    remotes: dict[tuple[str, ...], GeminiClient] = {}
+
+    def remote(models: list[str]) -> GeminiClient:
+        if gemini is not None:
+            return gemini
+        key = tuple(models)
+        if key not in remotes:
+            remotes[key] = GeminiClient(api_key, models=models)
+        return remotes[key]
 
     async def embed(texts: list[str]) -> list[list[float]]:
         return await local.embed(texts, model=config.extraction.embed_model_ollama)
 
-    async def select(prompt: str, schema: type[BaseModel]) -> BaseModel:
-        return await local.generate(prompt, schema, options=SELECTION_OPTIONS)
+    if config.selection.provider == "gemini":
+        selector = remote(config.selection.models)
 
-    if wants_gemini:
-        if gemini is None:
-            gemini = GeminiClient(api_key, models=config.synthesis.models)
-        remote = gemini
+        async def select(prompt: str, schema: type[BaseModel]) -> BaseModel:
+            return await selector.generate_json(prompt, schema)
+
+        def selection_model() -> str | None:
+            return selector.last_model
+    else:
+        async def select(prompt: str, schema: type[BaseModel]) -> BaseModel:
+            return await local.generate(prompt, schema, options=SELECTION_OPTIONS)
+
+        def selection_model() -> str | None:
+            return config.ollama.model
+
+    if config.synthesis.provider == "gemini":
+        writer = remote(config.synthesis.models)
 
         async def synthesize_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
-            return await remote.generate_json(prompt, schema)
+            return await writer.generate_json(prompt, schema)
 
-        async def aclose() -> None:
-            try:
-                await remote.aclose()
-            finally:
-                await local.aclose()
+        def synthesis_model() -> str | None:
+            return writer.last_model
+    else:
+        async def synthesize_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
+            return await local.generate(prompt, schema, options=SYNTHESIS_OPTIONS)
 
-        return QueryModels(embed, select, synthesize_with,
-                           lambda: remote.last_model, aclose)
+        def synthesis_model() -> str | None:
+            return config.ollama.model
 
-    async def synthesize_local(prompt: str, schema: type[BaseModel]) -> BaseModel:
-        return await local.generate(prompt, schema, options=SYNTHESIS_OPTIONS)
+    opened = [gemini] if gemini is not None and remote_steps else list(remotes.values())
 
-    return QueryModels(embed, select, synthesize_local,
-                       lambda: config.ollama.model, local.aclose)
+    async def aclose() -> None:
+        try:
+            for client in opened:
+                await client.aclose()
+        finally:
+            await local.aclose()
+
+    return QueryModels(embed, select, synthesize_with, synthesis_model, aclose,
+                       selection_model)
+
+
+async def _select(question, seeds, models: QueryModels):
+    """select_template(), plus the model that chose, read when it chose.
+
+    Read straight after the call, not at the end: with both steps on one
+    Gemini client, synthesis moves the client's `last_model` afterwards.
+    """
+    chosen_by = None
+
+    async def generate(prompt: str, schema: type[BaseModel]) -> BaseModel:
+        nonlocal chosen_by
+        result = await models.select(prompt, schema)
+        chosen_by = models.selection_model()
+        return result
+
+    call = await select_template(question, seeds, generate)
+    return call, chosen_by
 
 
 async def _synthesize(question, evidence, models: QueryModels, **kwargs) -> Answer:
@@ -164,12 +217,13 @@ async def answer_question(
             mode="empty", book_titles=titles,
         )
 
-    call = await select_template(question, seeds, models.select)
+    call, chosen_by = await _select(question, seeds, models)
     rows = run_template(kuzu, call) if call is not None else []
     if not rows:
-        return await _vector_answer(lance, question, models, titles,
-                                    mode="vector-fallback", note=GRAPH_EMPTY_NOTE)
-
-    evidence = assemble(conn, rows)
-    return await _synthesize(question, evidence, models, mode="graph",
-                             template=call.template, book_titles=titles)
+        answer = await _vector_answer(lance, question, models, titles,
+                                      mode="vector-fallback", note=GRAPH_EMPTY_NOTE)
+    else:
+        evidence = assemble(conn, rows)
+        answer = await _synthesize(question, evidence, models, mode="graph",
+                                   template=call.template, book_titles=titles)
+    return replace(answer, selection_model=chosen_by)

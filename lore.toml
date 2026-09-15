@@ -23,3 +23,14 @@ embed_model = "nomic-ai/nomic-embed-text-v1.5"
 embed_model_ollama = "nomic-embed-text"
 work_unit_size = 40          # safe since bfe61bf decoupled vLLM concurrency from unit size
 vllm_version = ""            # empty installs the latest vLLM on the kernel
+
+# `lore ask`'s two LLM steps. Code defaults are "ollama" for both, so a
+# checkout with no key still works; this project uses Gemini for both, for
+# quality (Phase 3 Tasks 7c and 8b). "gemini" sends the question, its seed
+# entity names and its evidence passages to Google. The key comes from
+# GEMINI_API_KEY or ~/.config/lore/gemini.env (mode 600), never from here.
+[lore.selection]
+provider = "gemini"
+
+[lore.synthesis]
+provider = "gemini"

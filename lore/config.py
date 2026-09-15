@@ -60,8 +60,8 @@ class DisambiguationConfig(BaseModel):
 class SynthesisConfig(BaseModel):
     """Who writes `lore ask`'s answers. Local by default; Gemini is opt-in.
 
-    Only synthesis switches: template selection stays on the local model
-    either way, and the quote check applies to both.
+    Template selection switches separately, in SelectionConfig. The quote
+    check applies whichever model answers.
 
     Measured on identical evidence (Phase 3 Task 7c): Gemini Flash Lite
     scored 2 correct / 5 partial / 0 wrong with 0 of 11 claims misread;
@@ -82,6 +82,26 @@ class SynthesisConfig(BaseModel):
     models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
 
 
+class SelectionConfig(BaseModel):
+    """Who picks `lore ask`'s search template. Local by default; Gemini is opt-in.
+
+    The mirror of SynthesisConfig, switched independently of it. Measured on
+    the frozen questions (Phase 3, before Task 8b): Gemini Flash Lite
+    honoured 24 of 24 choices, identical across three runs; the local 3B
+    honoured 21 of 24 and flipped choices between runs at temperature 0 and
+    seed 0 with nothing changed. Choosing Gemini sends the question and the
+    names of its seed entities to Google.
+
+    `extra="forbid"` for the same reason as DisambiguationConfig: no
+    `api_key` line may be silently accepted here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["ollama", "gemini"] = "ollama"
+    models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
     extraction_provider: str = "kaggle"  # "kaggle" | "ollama"
@@ -91,6 +111,7 @@ class LoreConfig(BaseModel):
     disambiguation: DisambiguationConfig = Field(
         default_factory=DisambiguationConfig
     )
+    selection: SelectionConfig = Field(default_factory=SelectionConfig)
     synthesis: SynthesisConfig = Field(default_factory=SynthesisConfig)
 
     @classmethod

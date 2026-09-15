@@ -30,6 +30,69 @@ _RETURN = (
     "r.chunk_id AS chunk_id "
 )
 
+
+def _sized(field: str) -> str:
+    """`field` prefixed by its zero-padded length, so a concatenation of
+    several is injective: no separator a value could contain is needed."""
+    return f"lpad(cast(size({field}) AS STRING), 10, '0') + {field}"
+
+
+# One sort key per distinct fact: chapter first (zero-padded, so it sorts as
+# a number), then every other field, length-prefixed so that two distinct
+# facts can never share a key.
+_FACT_KEY = " + ".join([
+    "lpad(cast(chapter_seq AS STRING), 10, '0')",
+    _sized("chunk_id"), _sized("predicate"), _sized("predicate_raw"),
+    _sized("subject"), _sized("object"),
+    _sized("cast(confidence AS STRING)"), _sized("evidence"),
+])
+
+# across_books: every book the entity appears in contributes up to $limit
+# facts, its earliest chapters first. A single `ORDER BY book_id ... LIMIT`
+# spent the whole budget on the first book: Holmes at 40 returned 40 rows of
+# A Study in Scarlet and none of The Sign of the Four's 122.
+#
+# Measured on Kuzu 0.11.3, and why it is built this way:
+# - a list slice `[1:n]` is 1-based and inclusive, and past the end it
+#   simply stops, so `[1:$limit]` is "the first $limit";
+# - `struct_pack(name := value)` builds each row (no `{...}` literal, which
+#   the no-interpolation guard forbids in template text);
+# - `list_sort` cannot sort a list of structs (it hits KU_UNREACHABLE), so
+#   the rows are collected as structs but the ORDER is taken from a sorted
+#   list of string keys, which does not depend on the order `collect` sees;
+# - DISTINCT happens once, in `WITH DISTINCT` before the keys are built, so
+#   the budget counts facts and exact parallel duplicates cannot use up a
+#   book's share. Each fact sits in exactly one book's list, so nothing after
+#   that can repeat a row;
+# - the final RETURN is deliberately NOT `RETURN DISTINCT`: in 0.11.3,
+#   `RETURN DISTINCT ... ORDER BY` with no LIMIT comes back out of order about
+#   one run in four (82 of 300 on a plain MATCH, the same through this
+#   pipeline), while plain `RETURN ... ORDER BY` was ordered 450 of 450. The
+#   other templates are unaffected because their ORDER BY carries a LIMIT.
+_ACROSS_BOOKS = (
+    "MATCH (a:Entity)-[r:REL]->(b:Entity) "
+    "WHERE a.id = $entity_id OR b.id = $entity_id "
+    "WITH DISTINCT a.name AS subject, r.predicate AS predicate, "
+    "r.predicate_raw AS predicate_raw, b.name AS object, "
+    "r.evidence AS evidence, r.confidence AS confidence, "
+    "r.book_id AS book_id, r.chapter_seq AS chapter_seq, "
+    "r.chunk_id AS chunk_id "
+    "WITH book_id, struct_pack(subject := subject, predicate := predicate, "
+    "predicate_raw := predicate_raw, object := object, evidence := evidence, "
+    "confidence := confidence, chapter_seq := chapter_seq, "
+    "chunk_id := chunk_id, k := " + _FACT_KEY + ") AS fact "
+    "WITH book_id, collect(fact) AS facts, "
+    "list_sort(collect(fact.k))[1:$limit] AS kept "
+    "UNWIND facts AS fact "
+    "WITH book_id, fact, kept WHERE list_contains(kept, fact.k) "
+    "RETURN fact.subject AS subject, fact.predicate AS predicate, "
+    "fact.predicate_raw AS predicate_raw, fact.object AS object, "
+    "fact.evidence AS evidence, fact.confidence AS confidence, "
+    "book_id AS book_id, fact.chapter_seq AS chapter_seq, "
+    "fact.chunk_id AS chunk_id "
+    "ORDER BY book_id, chapter_seq"
+)
+
 TEMPLATES: dict[str, Template] = {
     "neighbours": Template(
         name="neighbours",
@@ -118,11 +181,8 @@ TEMPLATES: dict[str, Template] = {
     ),
     "across_books": Template(
         name="across_books",
-        cypher=(
-            "MATCH (a:Entity)-[r:REL]->(b:Entity) "
-            "WHERE a.id = $entity_id OR b.id = $entity_id "
-            + _RETURN + "ORDER BY book_id, chapter_seq LIMIT $limit"
-        ),
+        # `limit` is PER BOOK here (Task 8b); see _ACROSS_BOOKS.
+        cypher=_ACROSS_BOOKS,
         slots=("entity_id", "limit"),
         description=(
             "One named thing's involvements across every book it appears "
