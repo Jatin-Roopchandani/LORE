@@ -32,6 +32,14 @@ class ExtractionConfig(BaseModel):
     embed_model_ollama: str = "nomic-embed-text"
     work_unit_size: int = 10  # 10 verified on a Kaggle T4; 40 crashes vLLM's engine
     vllm_version: str = ""  # empty = install latest on the kernel
+    # The cascade for `extraction_provider = "gemini"`. A field here rather
+    # than a new section: `extraction_provider` is a top-level string, and
+    # this section already holds each tier's model (`model` for Kaggle,
+    # `embed_model_ollama` for the local embedder). Lite only: 500
+    # requests/day each, and one chunk is one request. Measured on 22 chunks
+    # (extraction-eval-report.md), 3.1-flash-lite beat the Kaggle 7B on
+    # relationship precision (81% vs 61%) and entity kinds (1 wrong vs 56).
+    gemini_models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
 
 
 class DisambiguationConfig(BaseModel):
@@ -102,9 +110,33 @@ class SelectionConfig(BaseModel):
     models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
 
 
+class AdjudicationConfig(BaseModel):
+    """Who answers the resolver's borderline same-name merges during a load.
+
+    Local by default. The 3B's record on this graph (see
+    `lore.graph.loader._reconcile_ids`) is answers anti-correlated with the
+    truth, which is why the project's lore.toml moves it to Gemini. The
+    prompt is identical either way (`lore.graph.adjudicate._TEMPLATE`), and
+    Gemini answers are cached on disk so a reload spends no requests.
+    Choosing Gemini sends two entity names, their kinds, aliases and one
+    evidence sentence per question to Google.
+
+    `extra="forbid"` for the same reason as DisambiguationConfig: no
+    `api_key` line may be silently accepted here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["ollama", "gemini"] = "ollama"
+    models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
-    extraction_provider: str = "kaggle"  # "kaggle" | "ollama"
+    # "kaggle": free T4 burst. "ollama": fully local, zero egress.
+    # "gemini": each chunk's text goes to Google, one request per chunk;
+    # embeddings stay local on Ollama.
+    extraction_provider: Literal["kaggle", "ollama", "gemini"] = "kaggle"
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     kaggle: KaggleConfig = Field(default_factory=KaggleConfig)
     extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
@@ -113,6 +145,7 @@ class LoreConfig(BaseModel):
     )
     selection: SelectionConfig = Field(default_factory=SelectionConfig)
     synthesis: SynthesisConfig = Field(default_factory=SynthesisConfig)
+    adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
@@ -155,6 +188,11 @@ class LoreConfig(BaseModel):
         with no key and no config is byte-identical to today" testable.
         """
         return self.data_dir / "disambiguation"
+
+    @property
+    def adjudication_dir(self) -> Path:
+        """The Gemini adjudicator's answer cache. Never created eagerly."""
+        return self.data_dir / "adjudication"
 
     def ensure_dirs(self) -> None:
         for d in (

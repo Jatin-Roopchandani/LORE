@@ -403,3 +403,76 @@ def test_a_key_file_others_can_read_is_refused_and_says_why(tmp_path, mode: int)
 def test_the_default_key_file_lives_outside_the_repo(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     assert default_key_file() == tmp_path / ".config" / "lore" / "gemini.env"
+
+
+# --- Task R1: error classes a caller can act on -----------------------------
+
+from lore.inference.gemini import (  # noqa: E402
+    GeminiAuthError,
+    GeminiOutputError,
+    GeminiTransportError,
+)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+@pytest.mark.asyncio
+async def test_a_rejected_key_is_a_gemini_auth_error(status: int) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, text="denied")
+
+    with pytest.raises(GeminiAuthError) as exc:
+        await _client(handler).generate_json("p", _Pick)
+    assert SECRET not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_a_network_failure_is_a_transport_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route", request=request)
+
+    with pytest.raises(GeminiTransportError):
+        await _client(handler).generate("p")
+
+
+@pytest.mark.parametrize("body", [
+    {"candidates": []},
+    {"candidates": [{"content": {"parts": [{"text": "   "}]}}]},
+    _ok("not json"),
+])
+@pytest.mark.asyncio
+async def test_bad_model_output_is_an_output_error_carrying_the_raw_text(body) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    with pytest.raises(GeminiOutputError) as exc:
+        await _client(handler).generate_json("p", _Pick)
+    assert not isinstance(exc.value, GeminiQuotaError)
+    assert isinstance(exc.value.raw_output, str)
+
+
+@pytest.mark.asyncio
+async def test_the_output_error_keeps_the_raw_model_text_for_dead_letters() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_ok("{broken"))
+
+    with pytest.raises(GeminiOutputError) as exc:
+        await _client(handler).generate_json("p", _Pick)
+    assert exc.value.raw_output == "{broken"
+
+
+@pytest.mark.asyncio
+async def test_the_exhausted_hint_is_the_callers_to_choose() -> None:
+    # Task 8b finding 3: the JSON cascade's hint named only [lore.synthesis],
+    # which is wrong advice for extraction and adjudication.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, text="nope")
+
+    client = _client(handler, models=list(LITE_MODELS))
+    with pytest.raises(GeminiQuotaError) as exc:
+        await client.generate_json("p", _Pick, exhausted_hint="rerun with --resume")
+    assert "rerun with --resume" in str(exc.value)
+    assert "[lore.synthesis]" not in str(exc.value)
+    with pytest.raises(GeminiQuotaError) as exc:
+        await client.generate("p", exhausted_hint="adjudication hint")
+    assert "adjudication hint" in str(exc.value)
+    assert "disambiguate" not in str(exc.value)

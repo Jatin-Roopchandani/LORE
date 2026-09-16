@@ -1,8 +1,13 @@
 # LORE configuration — see lore/config.py for all keys and defaults.
 [lore]
 data_dir = "data"
-# "kaggle" (free T4 burst, default) | "ollama" (fully local, zero-egress)
-extraction_provider = "kaggle"
+# "kaggle" (free T4 burst, code default) | "ollama" (fully local, zero-egress)
+# | "gemini" (one request per chunk to Google; embeddings stay local on Ollama).
+# This project builds its graph with Gemini, for quality (Task R1): on 22
+# chunks judged against the text, Gemini 3.1 Flash Lite's relationships were
+# 81% supported vs the Kaggle 7B's 61%, with 1 wrong entity kind vs 56. The key
+# comes from GEMINI_API_KEY or ~/.config/lore/gemini.env (mode 600), never here.
+extraction_provider = "gemini"
 
 [lore.ollama]
 host = "http://localhost:11434"
@@ -21,7 +26,11 @@ extract_dataset_slug = "lore-extract-data"
 model = "Qwen/Qwen2.5-7B-Instruct-AWQ"
 embed_model = "nomic-ai/nomic-embed-text-v1.5"
 embed_model_ollama = "nomic-embed-text"
-work_unit_size = 40          # safe since bfe61bf decoupled vLLM concurrency from unit size
+# 10 for Gemini: a unit stopped by the daily quota re-runs whole on --resume,
+# so a small unit re-spends at most 9 requests. (Kaggle ran 40 safely since
+# bfe61bf decoupled vLLM concurrency from unit size.)
+work_unit_size = 10
+# gemini_models = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]   # the default
 vllm_version = ""            # empty installs the latest vLLM on the kernel
 
 # `lore ask`'s two LLM steps. Code defaults are "ollama" for both, so a
@@ -34,3 +43,17 @@ provider = "gemini"
 
 [lore.synthesis]
 provider = "gemini"
+
+# The resolver's borderline merge questions during `lore process`. Code
+# default "ollama"; the local 3B answered against the truth on this graph
+# (lore/graph/loader.py). "gemini" sends the same prompt (two names, kinds,
+# aliases, one evidence sentence) and caches every answer in
+# data/adjudication/answers.json, so a reload spends zero requests.
+[lore.adjudication]
+provider = "gemini"
+
+# Record ambiguous bare surnames during `lore process`; `lore disambiguate`
+# answers them in one Gemini request (12/12 on the eval), and the next
+# `lore process --skip-extract` applies the answers.
+[lore.disambiguation]
+enabled = true

@@ -13,7 +13,7 @@ from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.db.sqlite import open_db, schema_version
-from lore.graph.adjudicate import make_ollama_pair
+from lore.graph.adjudicate import make_gemini_pair, make_ollama_pair
 from lore.graph.loader import PartialLoadError, load_book
 from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
@@ -32,6 +32,7 @@ from lore.inference.gemini import (
 from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
+from lore.orchestrator.local import missing_gemini_key_message
 from lore.orchestrator.quota import iso_week, week_report
 from lore.orchestrator.run import run_extraction
 from lore.query.agent import answer_question, make_query_models
@@ -194,6 +195,38 @@ def books() -> None:
         )
 
 
+def _graph_build_key(
+    config: LoreConfig, command: str, *, extracting: bool, loading: bool
+) -> str | None:
+    """The Gemini key the graph build needs, or None if no step is on Gemini.
+
+    Checked before any unit is dispatched or any store is opened. Never
+    falls back to a local model: the user chose Gemini, and a silent
+    downgrade would hide the quality drop.
+    """
+    settings: list[str] = []
+    alternatives: list[str] = []
+    if extracting and config.extraction_provider == "gemini":
+        settings.append('extraction_provider = "gemini"')
+        alternatives.append('extraction_provider = "kaggle" or "ollama"')
+    if loading and config.adjudication.provider == "gemini":
+        settings.append('[lore.adjudication] provider = "gemini"')
+        alternatives.append('[lore.adjudication] provider = "ollama"')
+    if not settings:
+        return None
+    try:
+        api_key = resolve_api_key(key_file=default_key_file())
+    except GeminiKeyFileError as exc:
+        typer.echo(f"{command} failed: {exc}")
+        raise typer.Exit(2)
+    if api_key is None:
+        typer.echo(missing_gemini_key_message(
+            settings, "set " + ", or ".join(alternatives) + " to run without Gemini"
+        ))
+        raise typer.Exit(2)
+    return api_key
+
+
 @app.command()
 def extract(
     book_id: str,
@@ -201,23 +234,27 @@ def extract(
 ) -> None:
     """Extract entities and relationships for an ingested book."""
     config = LoreConfig.load()
+    api_key = _graph_build_key(config, "extract", extracting=True, loading=False)
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     try:
         report = run_extraction(
             config, conn, book_id, resume=resume,
             on_event=lambda message: typer.echo(f"       {message}"),
+            api_key=api_key,
         )
     except ValueError as exc:
         typer.echo(f"extract failed: {exc}")
         raise typer.Exit(1)
     finally:
         conn.close()
-    typer.echo(
+    summary = (
         f"{report.book_id}: {report.units_completed}/{report.units_total} units, "
-        f"{report.chunks_ok} chunks extracted, {report.chunks_dead} dead-lettered, "
-        f"{report.gpu_hours:.2f} GPU-hours"
+        f"{report.chunks_ok} chunks extracted, {report.chunks_dead} dead-lettered"
     )
+    if config.extraction_provider == "kaggle":
+        summary += f", {report.gpu_hours:.2f} GPU-hours"
+    typer.echo(summary)
     if report.stopped_reason:
         typer.echo(f"stopped early — {report.stopped_reason}")
         if report.units_completed < report.units_total:
@@ -243,11 +280,17 @@ def quota() -> None:
     )
 
 
-def _load_book_sync(config: LoreConfig, conn, book_id: str):
+def _load_book_sync(config: LoreConfig, conn, book_id: str, api_key: str | None = None):
     """Own the event loop and the store handles for one load."""
+    # The pair is built first: a missing key refuses before a store opens.
+    # Gemini answers are cached in data/adjudication/, so a reload asks only
+    # questions it has never had answered.
+    if config.adjudication.provider == "gemini":
+        embed, adjudicate, aclose = make_gemini_pair(config, api_key)
+    else:
+        embed, adjudicate, aclose = make_ollama_pair(config)
     kuzu = KuzuStore(config.kuzu_dir / "graph")
     lance = LanceStore(config.lancedb_dir)
-    embed, adjudicate, aclose = make_ollama_pair(config)
     # Opt-in, default-off, and offline either way: the store only records
     # the merges the resolver refused and reads answers a previous `lore
     # disambiguate` already paid for. No API call happens in a load.
@@ -287,9 +330,15 @@ def process(
 
     Note: even with --skip-extract, loading re-runs the resolver's
     adjudication against whatever the graph already holds, so a reload
-    still does real LLM work — it is not free or instantaneous.
+    still does real work — it is not instantaneous. On the local model that
+    is real LLM work; on Gemini ([lore.adjudication] provider = "gemini")
+    answered questions come from data/adjudication/answers.json and only
+    new ones spend requests.
     """
     config = LoreConfig.load()
+    api_key = _graph_build_key(
+        config, "process", extracting=not skip_extract, loading=True
+    )
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     extraction = None
@@ -298,8 +347,16 @@ def process(
             extraction = run_extraction(
                 config, conn, book_id, resume=resume,
                 on_event=lambda message: typer.echo(f"       {message}"),
+                api_key=api_key,
             )
-        report = _load_book_sync(config, conn, book_id)
+        # A Gemini run stops when no model can serve (quota, key, network).
+        # Loading the half-extracted book now would spend adjudication
+        # requests on questions the finished book will ask differently, so
+        # the load waits for --resume.
+        halted = (extraction is not None and config.extraction_provider == "gemini"
+                  and bool(extraction.stopped_reason))
+        if not halted:
+            report = _load_book_sync(config, conn, book_id, api_key=api_key)
     except PartialLoadError as exc:
         # The graph committed but the vector write did not: the book is
         # genuinely half-loaded. Never report success or mark it ready —
@@ -315,6 +372,14 @@ def process(
         raise typer.Exit(1)
     finally:
         conn.close()
+    if halted:
+        typer.echo(f"extraction stopped early — {extraction.stopped_reason}")
+        typer.echo(
+            f"extraction: {extraction.units_completed}/{extraction.units_total}"
+            f" units run; the graph was NOT loaded. Rerun `lore process"
+            f" {book_id} --resume` to finish it."
+        )
+        raise typer.Exit(1)
     typer.echo(
         # "canonical" because each merged alias is ALSO persisted as its own
         # node, linked by ALIAS_OF: `lore graph` counts those too, so the
@@ -399,8 +464,8 @@ def disambiguate(
     tier is counted per DAY: 500 requests on the Lite models, 20 on
     Flash. Every pending question goes in one request and every answer is
     cached, so a whole corpus costs ONE request on first use and ZERO on
-    every reload. Deliberately separate from `lore process`, which stays
-    local, fast and offline.
+    every reload. Deliberately separate from `lore process`, which only
+    records these questions.
     """
     config = LoreConfig.load()
     config.ensure_dirs()
@@ -435,11 +500,17 @@ def disambiguate(
             typer.echo(f"     {question.evidence}")
         return
 
-    api_key = resolve_api_key()
+    try:
+        api_key = resolve_api_key(key_file=default_key_file())
+    except GeminiKeyFileError as exc:
+        typer.echo(f"disambiguate failed: {exc}")
+        typer.echo(f"{len(todo)} question(s) still pending; 0 requests spent.")
+        raise typer.Exit(2)
     if api_key is None:
         typer.echo(
             "no API key: set GEMINI_API_KEY (or GOOGLE_API_KEY) in your"
-            " environment. A free key comes from"
+            " environment, or put one line `GEMINI_API_KEY=...` in"
+            " ~/.config/lore/gemini.env with mode 600. A free key comes from"
             " https://aistudio.google.com/apikey — it is never read from"
             " lore.toml, so it cannot end up in git."
         )

@@ -13,6 +13,19 @@ from lore.extract.prompts import build_prompt
 from lore.extract.schemas import ChunkExtraction
 
 
+class ExtractionHalted(RuntimeError):
+    """The provider cannot serve ANY chunk right now; stop, never dead-letter.
+
+    A dead letter says "this chunk's output was bad". A spent daily quota, a
+    rejected key or an unreachable server says nothing about the chunk, and
+    dead-lettering on it would silently mark every remaining chunk of the
+    book dead. So this propagates out of `extract_chunks`, un-retried: the
+    unit fails and `--resume` runs it again later. Only a provider raises
+    it (the Gemini tier does; the Ollama and Kaggle tiers never do, so their
+    retry-then-dead-letter behaviour is unchanged).
+    """
+
+
 @dataclass(frozen=True)
 class ChunkInput:
     chunk_id: str
@@ -60,6 +73,8 @@ async def extract_chunks(
         for _ in range(max_attempts):
             try:
                 extraction = await provider.generate(prompt, ChunkExtraction)
+            except ExtractionHalted:
+                raise
             except Exception as exc:  # provider or validation failure
                 last_error = exc
                 continue

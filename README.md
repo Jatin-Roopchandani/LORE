@@ -1,7 +1,7 @@
 # LORE — Local Orchestration & Relational Extraction
 
 A local-first literary knowledge graph: e-books in, entities/relationships out
-(extracted on free Kaggle GPUs or fully locally), served from embedded
+(extracted by Gemini Flash Lite, on free Kaggle GPUs, or fully locally), served from embedded
 databases (Kuzu + LanceDB) with a hybrid graph-vector query agent, an MCP
 server, and a graph UI.
 
@@ -14,18 +14,23 @@ See `SPEC.md` for the full design. Status: Phase 3 (the query agent) in progress
     uv run lore doctor --kaggle   # + full free-tier GPU round trip (slow)
     uv run lore ingest book.epub  # parse + chunk + register a book (.epub/.pdf)
     uv run lore books             # list the ingested library
-    uv run lore extract <book_id> # extract entities + relationships (Kaggle T4s)
+    uv run lore extract <book_id> # extract entities + relationships (Gemini in this lore.toml)
     uv run lore extract <book_id> --resume   # continue after an interrupted run
     uv run lore process <book_id> # extract, resolve entities, load the graph
     uv run lore process <book_id> --skip-extract   # reload the graph only
     uv run lore graph             # node/edge counts and the busiest entities
-    uv run lore quota             # this week's free-tier GPU budget
+    uv run lore quota             # this week's free-tier GPU budget (Kaggle only)
 
-Set `extraction_provider = "ollama"` in `lore.toml` for fully local,
-zero-egress extraction (slower, smaller model, no Kaggle involved).
+`extraction_provider` picks who reads the chunks:
 
-Extraction runs one work unit per Kaggle session. `work_unit_size` is 10 by
-default — verified on a Kaggle T4; larger units crash vLLM's engine mid-run.
+| Value | Where | Notes |
+|---|---|---|
+| `"gemini"` (**this project's `lore.toml`**) | Google API, one request per chunk | Best measured quality. Needs a key (see below). Embeddings stay local on Ollama |
+| `"kaggle"` (code default) | Free Kaggle T4, Qwen2.5-7B on vLLM | One work unit per Kaggle session; GPU hours go in the quota ledger |
+| `"ollama"` | This machine, qwen2.5:3b | Zero egress; slower and weaker |
+
+Extraction runs in work units of `work_unit_size` chunks (code default 10,
+verified on a Kaggle T4; this `lore.toml` sets 10 for Gemini, see below).
 
 ## Asking questions (`lore ask`)
 
@@ -72,9 +77,9 @@ is found, `ask` exits. It never quietly uses the local model instead.
 LORE turns a book into a knowledge graph in three commands, then answers
 questions from that graph with citations.
 
-    lore ingest  ──►  lore process  ──►  (optional) lore disambiguate  ──►  lore ask
-    parse+chunk       extract + build        settle ambiguous                 answer
-                      the graph              surnames with Gemini
+    lore ingest  ──►  lore process  ──►  lore disambiguate  ──►  lore process --skip-extract  ──►  lore ask
+    parse+chunk       extract + build     settle ambiguous       apply the answers                 answer
+                      the graph           surnames (Gemini)      (0 new requests)
 
 ### Where data lives
 
@@ -84,16 +89,17 @@ questions from that graph with citations.
 | **Extraction artifacts** (Parquet under `data/`) | files | Raw model output per work unit: entities, relationships, evidence sentences, chunk vectors |
 | **Kuzu** (`data/kuzu/graph`) | graph, Cypher | Nodes `Book`, `Chapter`, `Chunk`, `Entity`; edges `HAS_CHAPTER`, `HAS_CHUNK`, `MENTIONS`, `ALIAS_OF`, and `REL` (the relationships, each carrying its predicate, evidence sentence and chunk id) |
 | **LanceDB** (`data/lancedb`) | vectors, 768-d | `chunks`: vector + text + `entity_ids`, the bridge from a passage to its graph entities; `entities`: entity vectors |
-| `data/disambiguation/answers.json` | JSON cache | Optional Gemini answers for ambiguous surnames |
+| `data/disambiguation/answers.json` | JSON cache | Gemini answers for ambiguous surnames |
+| `data/adjudication/answers.json` | JSON cache | Gemini's yes/no answers to borderline merges, keyed by a hash of provider + prompt, so a reload spends zero requests |
 
 ### Models
 
 | Model | Runs on | Used for |
 |---|---|---|
-| Qwen2.5-7B-Instruct (AWQ) | Kaggle T4, vLLM | Extraction (default) |
-| nomic-embed-text v1.5 | Kaggle during extraction; local Ollama otherwise | Chunk vectors, entity similarity, predicate mapping, question embedding |
-| qwen2.5:3b | Local Ollama | Resolution yes/no calls, local extraction; choosing a graph search and answers when a `lore.toml` leaves them on `"ollama"` (the code default) |
-| Gemini Flash Lite (3.1, then 3.5) | Google API, **opt-in** | Surname disambiguation; choosing a graph search (`[lore.selection]`) and answers (`[lore.synthesis]`), both on in this project's `lore.toml` |
+| Gemini Flash Lite (3.1, then 3.5) | Google API, **opt-in in code, on in this project's `lore.toml`** | Extraction (`extraction_provider = "gemini"`), resolution yes/no calls (`[lore.adjudication]`), surname disambiguation, choosing a graph search (`[lore.selection]`) and answers (`[lore.synthesis]`) |
+| nomic-embed-text v1.5 | Local Ollama; on Kaggle only during Kaggle extraction | Chunk vectors, entity similarity, predicate mapping, question embedding |
+| Qwen2.5-7B-Instruct (AWQ) | Kaggle T4, vLLM | Extraction when `extraction_provider = "kaggle"` (the code default) |
+| qwen2.5:3b | Local Ollama | Every step above when its setting is left on `"ollama"` (the code default), and `extraction_provider = "ollama"` |
 
 ### 1. `lore ingest`: parse and chunk (no models)
 
@@ -106,18 +112,55 @@ Chunk ids are positional: `{book_id}:{chapter_seq}:{seq}`.
 
 ### 2. `lore process`, part one: extraction
 
-The book's chunks are packed into work units. By default each unit runs as its
-own free Kaggle GPU session:
+The book's chunks are packed into work units, and every unit produces the same
+Parquet artifacts whichever provider ran it. A unit counts as finished only when
+its `jobs` row says so, never merely because its files exist.
 
-- **Qwen2.5-7B-Instruct** on vLLM reads each chunk and emits entities,
-  relationships and the evidence sentence for each.
-- **nomic-embed-text v1.5** embeds every chunk (document prefix).
+**`extraction_provider = "gemini"` (this project's `lore.toml`).** For each unit:
 
-Results come back as Parquet. A unit counts as finished only when its `jobs`
-row says so, never merely because its files exist, and GPU hours are recorded
-in the quota ledger. With `extraction_provider = "ollama"` the same step runs
-fully locally on qwen2.5:3b and nomic-embed-text: slower and weaker, but
-nothing leaves the machine.
+- **nomic-embed-text** on local Ollama embeds every chunk (document prefix)
+  first, so a stopped Ollama fails the unit before any Gemini request is spent.
+- **Gemini Flash Lite** reads the chunks **one per request**, in order, with the
+  same extraction prompt the other providers use. One client serves the whole
+  run, so its per-model throttle (15 requests/minute) holds across units.
+- The manifest's `model` names the model(s) that actually answered
+  (`gemini-3.1-flash-lite`, or a comma-joined list if the cascade fell through).
+
+Measured on 22 chunks, same prompt, every fact judged against the text
+(Phase 3 extraction eval): relationships supported **81%** (Gemini) vs **61%**
+(Kaggle 7B), wrong entity kinds **1 vs 56**, key facts found **26/35 vs 22/35**.
+Gemini did not repeat "Hope KILLS Lucy", "Holmes KILLS Athelney Jones" or the
+Wiggins-as-a-Place kind split. Sending several chunks in one request lost about
+two thirds of the relationships, which is why it is one chunk per request. Both
+Holmes novels (407 chunks) are 407 requests, about 30 minutes, inside one Lite
+model's 500 requests/day.
+
+Two kinds of failure are handled differently:
+
+- **Bad output** (empty, or JSON that fails the schema): the chunk is retried
+  once, then dead-lettered, exactly as for the other providers.
+- **No model can serve** (every model returned 429/503/404, the key was
+  rejected, or the API is unreachable): nothing is dead-lettered. The unit is
+  marked `failed` with the reason, the run stops, and `lore process` does not
+  load the half-extracted book. When the daily budget resets,
+  `lore extract <book_id> --resume` (or `lore process <book_id> --resume`)
+  continues from the first unfinished unit. `work_unit_size = 10` keeps the
+  requests a re-run unit spends again to at most 9.
+
+Gemini receives each chunk's text. The key is read as for `lore ask` (below);
+with no key, `extract` and `process` exit before dispatching anything.
+
+**`extraction_provider = "kaggle"` (code default).** Each unit runs as its own
+free Kaggle GPU session: **Qwen2.5-7B-Instruct** on vLLM reads each chunk, and
+nomic-embed-text embeds them. GPU hours are recorded in the quota ledger.
+
+**`extraction_provider = "ollama"`.** The same step fully locally on qwen2.5:3b
+and nomic-embed-text: slower and weaker, but nothing leaves the machine.
+
+A book must be extracted with **one** packing. Its completed `jobs` rows are what
+the load reads, so completed units from an older run at a different
+`work_unit_size` would cover the same chunks twice; the load refuses that
+rather than mixing two extractions into one graph.
 
 ### 3. `lore process`, part two: building the graph
 
@@ -131,7 +174,18 @@ nothing leaves the machine.
 |---|---|---|
 | 1. Exact name, alias, or name variant within a book (`Holmes` ⊂ `Sherlock Holmes`) | rules | none |
 | 2. Embedding similarity | cosine distance | nomic-embed-text |
-| 3. Borderline cases | yes/no question at temperature 0 | qwen2.5:3b |
+| 3. Borderline cases | yes/no question at temperature 0 | Gemini Flash Lite (this `lore.toml`, `[lore.adjudication] provider = "gemini"`) or qwen2.5:3b (code default) |
+
+Pass 3 sends the same prompt to either model and reads the verdict the same way
+("yes…" merges, anything else does not). The local 3B's record on this graph
+was answers that ran against the truth, which is why this project moves it to
+Gemini. Gemini's answers are cached in `data/adjudication/answers.json` as each
+arrives, keyed by a hash of the provider and the full prompt, so reloading a
+book re-asks nothing it has already been answered. If the quota runs out
+mid-load, the load fails with that reason before anything is written; it never
+treats an unanswered question as "no", because that would quietly under-merge
+the graph. The answers already received stay cached, so re-running
+`lore process <book_id> --skip-extract` after the reset only pays for the rest.
 
 A bare name that fits **two or more** people (`Sholto` → Major, Thaddeus or
 Bartholomew) is refused rather than guessed: the entities stay separate and
@@ -144,9 +198,9 @@ The original wording is kept alongside it.
 **Writes:** the whole graph to Kuzu; chunk vectors with their `entity_ids`, and
 entity vectors, to LanceDB.
 
-**Optional, `lore disambiguate`:** sends every recorded surname question to
-Gemini in one batched request and caches the answers; the next `lore process`
-applies them. See the Gemini section below.
+**`lore disambiguate`** (enabled in this `lore.toml`): sends every recorded
+surname question to Gemini in one batched request and caches the answers; the
+next `lore process --skip-extract` applies them. See the Gemini section below.
 
 ### 4. `lore ask`: answering a question
 
@@ -196,9 +250,10 @@ Every answer reports one of four modes:
 - **empty**: nothing in the library was close enough to start from.
 - **vector-baseline**: `--baseline`, vector search only, for comparison.
 
-## Optional: the Gemini disambiguator (`lore disambiguate`)
+## The Gemini disambiguator (`lore disambiguate`)
 
-Off by default, and not part of `lore process`. Entity resolution decides
+Off in the code default, **enabled in this project's `lore.toml`**, and not
+part of `lore process`. Entity resolution decides
 almost everything with deterministic rules; **one** class genuinely needs
 judgement and no rule can settle it: a bare surname that is a subset of two
 or more candidates. `Major Sholto` normalizes to `sholto`, which nests inside
@@ -234,7 +289,7 @@ Grouping also *reduces* request count: on the real corpus 36 pairwise
 refusals collapse to **17** grouped questions, which is one batch instead of
 two.
 
-    export GEMINI_API_KEY=...            # or GOOGLE_API_KEY
+    export GEMINI_API_KEY=...            # or GOOGLE_API_KEY, or ~/.config/lore/gemini.env
     uv run lore disambiguate --dry-run   # see the questions, send nothing
     uv run lore disambiguate             # one batched request, answers cached
     uv run lore process <book_id> --skip-extract   # apply the answers
@@ -248,8 +303,9 @@ Enable the load-side half in `lore.toml`:
     #           "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.7-flash"]
 
 A free key comes from <https://aistudio.google.com/apikey>. It is read from
-the environment only — never from `lore.toml`, which would put it in git; an
-`api_key` line there is a hard config error rather than a silent no-op.
+the environment or `~/.config/lore/gemini.env` (mode 600) — never from
+`lore.toml`, which would put it in git; an `api_key` line there is a hard
+config error rather than a silent no-op.
 
 ### Quota, and why the design looks like this
 
@@ -263,9 +319,10 @@ Free-tier limits, measured from the console:
 Twenty a day on the Flash tier is what shaped this feature, and it still
 governs the fallbacks:
 
-* **The API is not in the load path.** `lore process` stays local, fast and
-  offline; it only records the questions it refused. The quota is spent by a
-  separate, deliberate command.
+* **The disambiguation API is not in the load path.** A load only records the
+  surname questions it refused; the quota for them is spent by a separate,
+  deliberate command. (Pass-3 adjudication, when `[lore.adjudication]` is on
+  Gemini, is a different, cached call that does run during the load.)
 * **One request for the whole corpus.** All pending questions go in a single
   numbered batch. 17 questions is ~2k tokens against a 250,000 TPM ceiling —
   token budget is a non-issue, request count is everything.
@@ -297,13 +354,17 @@ rotated — is rejected outright and nothing is cached.
 
 Sending these questions to Google sends the mention, the entity names, and
 **one evidence sentence of the book's text** per question, off your machine.
-**Google may train on free-tier data.** That is the tradeoff for the free key;
-everything else in LORE runs locally or on Kaggle. The feature is off by
-default for exactly this reason, and `--dry-run` shows precisely what would
-be sent before anything is.
+**Google may train on free-tier data.** That is the tradeoff for the free key.
+With this project's `lore.toml`, extraction also sends **every chunk of every
+book**, adjudication sends names and an evidence sentence per borderline merge,
+and `lore ask` sends questions and passages. Every one of those settings
+defaults to local in code, and `--dry-run` shows precisely what
+`lore disambiguate` would send before anything is.
 
 Verified: the disambiguation quality was checked against real corpus cases —
 four live cases originally, then a 12-case eval across the model cascade.
-**Not yet verified: the end-to-end pipeline against live quota.** No
+**Not yet verified: the end-to-end pipeline against live quota.** No full
 `lore process` → `lore disambiguate` → `lore process` cycle has been run
-against the real API; every test in this repo stubs the transport.
+against the real API; every test in this repo stubs the transport. Gemini
+extraction and adjudication were each smoke-tested live on a handful of
+requests (Task R1), not on a whole book.

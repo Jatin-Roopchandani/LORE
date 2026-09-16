@@ -393,3 +393,88 @@ def test_an_incomplete_extraction_never_marks_the_book_graphed(
         result = runner.invoke(app, ["process", BOOK])
     assert result.exit_code == 1
     assert _book_status(tmp_path) == "chunked"
+
+
+# --- Task R1: Gemini for the graph build -----------------------------------
+
+def _no_key(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+
+def test_process_with_gemini_adjudication_and_no_key_refuses_before_loading(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _no_key(tmp_path, monkeypatch)
+    (tmp_path / "lore.toml").write_text('[lore.adjudication]\nprovider = "gemini"\n')
+    with (
+        patch("lore.cli.run_extraction") as extract,
+        patch("lore.cli._load_book_sync") as load,
+    ):
+        result = runner.invoke(app, ["process", BOOK, "--skip-extract"])
+    assert result.exit_code == 2, result.output
+    assert not extract.called and not load.called
+    assert '[lore.adjudication] provider = "gemini"' in result.output
+    assert "no API key" in result.output
+
+
+def test_process_names_both_gemini_steps_when_both_lack_a_key(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _no_key(tmp_path, monkeypatch)
+    (tmp_path / "lore.toml").write_text(
+        '[lore]\nextraction_provider = "gemini"\n[lore.adjudication]\nprovider = "gemini"\n')
+    with patch("lore.cli.run_extraction") as extract:
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code == 2
+    assert not extract.called
+    assert 'extraction_provider = "gemini"' in result.output
+    assert "[lore.adjudication]" in result.output
+
+
+def test_process_passes_one_key_to_extraction_and_load(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "k-env")
+    (tmp_path / "lore.toml").write_text(
+        '[lore]\nextraction_provider = "gemini"\n[lore.adjudication]\nprovider = "gemini"\n')
+    report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
+                        chunks=1, mentions=1)
+    with (
+        patch("lore.cli.run_extraction",
+              return_value=RunReport(book_id=BOOK, units_total=1, units_completed=1)) as extract,
+        patch("lore.cli._load_book_sync", return_value=report) as load,
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code == 0, result.output
+    assert extract.call_args.kwargs["api_key"] == "k-env"
+    assert load.call_args.kwargs["api_key"] == "k-env"
+
+
+def test_process_does_not_load_a_gemini_extraction_that_stopped_early(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Loading a half-extracted book would spend adjudication requests on
+    # questions the finished book asks differently. Stop, and say --resume.
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "k-env")
+    (tmp_path / "lore.toml").write_text('[lore]\nextraction_provider = "gemini"\n')
+    stopped = RunReport(book_id=BOOK, units_total=3, units_completed=1, units_failed=1,
+                        stopped_reason="Gemini cannot extract right now: HTTP 429")
+    with (
+        patch("lore.cli.run_extraction", return_value=stopped),
+        patch("lore.cli._load_book_sync") as load,
+    ):
+        result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code == 1
+    assert not load.called
+    assert "HTTP 429" in result.output
+    assert f"lore process {BOOK} --resume" in result.output
+    assert "process failed" not in result.output
+    assert "canonical entities" not in result.output

@@ -81,6 +81,8 @@ def _run(tmp_path, monkeypatch, argv, client=None, key="AIza-test"):
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    # Hermetic: never read the developer's real ~/.config/lore/gemini.env.
+    monkeypatch.setenv("HOME", str(tmp_path))
     if key is None:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     else:
@@ -99,6 +101,30 @@ def test_no_key_spends_nothing_and_says_what_to_set(
     assert result.exit_code != 0
     assert "GEMINI_API_KEY" in result.output
     assert "0 request" in result.output
+
+
+def test_the_key_file_is_read_like_ask_reads_it(tmp_path: Path, monkeypatch) -> None:
+    # Task R1: the graph rebuild runs `lore disambiguate` with the key kept
+    # in ~/.config/lore/gemini.env, as `ask`, `extract` and `process` read it.
+    _seed(tmp_path)
+    seen: dict = {}
+
+    def fake_client(api_key, **kwargs):
+        seen["key"] = api_key
+        raise RuntimeError("stop before any request")
+
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    key_file = tmp_path / ".config" / "lore" / "gemini.env"
+    key_file.parent.mkdir(parents=True)
+    key_file.write_text("GEMINI_API_KEY=from-file\n")
+    key_file.chmod(0o600)
+    with patch("lore.cli.GeminiClient", side_effect=fake_client):
+        runner.invoke(app, ["disambiguate"])
+    assert seen.get("key") == "from-file"
 
 
 def test_nothing_pending_spends_nothing(tmp_path: Path, monkeypatch) -> None:

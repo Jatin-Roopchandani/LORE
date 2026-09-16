@@ -113,3 +113,34 @@ async def test_progress_callback_reports_each_chunk() -> None:
         on_progress=lambda done, total: seen.append((done, total)),
     )
     assert seen == [(1, 2), (2, 2)]
+
+
+# --- Task R1: a provider that cannot serve ANY chunk halts the unit ---------
+
+from lore.extract.runner import ExtractionHalted  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_a_halted_provider_propagates_and_dead_letters_nothing() -> None:
+    # "Daily quota used up" is not a property of the chunk. Dead-lettering
+    # it would silently mark hundreds of good chunks dead; the unit must
+    # fail instead so `--resume` picks it up when the budget resets.
+    provider = ScriptedProvider([VALID, ExtractionHalted("quota gone")])
+    with pytest.raises(ExtractionHalted, match="quota gone"):
+        await extract_chunks(
+            [ChunkInput("b:1:0", "a"), ChunkInput("b:1:1", "b"),
+             ChunkInput("b:1:2", "c")],
+            provider,
+        )
+    # No retry either: a second attempt against an exhausted budget only
+    # spends another request.
+    assert len(provider.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_ordinary_errors_still_retry_then_dead_letter_unchanged() -> None:
+    # The Ollama path's behaviour is untouched: anything that is not an
+    # ExtractionHalted is a per-chunk failure, exactly as before.
+    provider = ScriptedProvider([RuntimeError("HTTP 500"), RuntimeError("HTTP 500")])
+    result = await extract_chunks([ChunkInput("b:1:0", "t")], provider)
+    assert [d.chunk_id for d in result.dead_letters] == ["b:1:0"]

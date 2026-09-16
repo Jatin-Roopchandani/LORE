@@ -1,4 +1,4 @@
-"""Dispatch loop: work units to Kaggle and back, resumably.
+"""Dispatch loop: work units to Kaggle (or a local/Gemini tier) and back, resumably.
 
 Each unit is idempotent — chunk IDs are deterministic, so re-running a
 unit reproduces exactly the same work and overwrites its own artifacts.
@@ -6,6 +6,7 @@ Nothing is marked complete until its outputs validate.
 """
 from __future__ import annotations
 
+import asyncio
 import shutil
 import sqlite3
 import tempfile
@@ -14,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lore.config import LoreConfig
+from lore.extract.runner import ExtractionHalted
 from lore.ingest.registry import chunks_for_book
 from lore.kaggle_api.client import KaggleClient
 from lore.orchestrator import quota
@@ -82,6 +84,38 @@ def _estimate_hours(unit: WorkUnit) -> float:
     return 0.25 + len(unit.chunks) * 1.5 / 3600.0
 
 
+class _UnitHalted(Exception):
+    """A unit failed because its provider cannot serve ANY unit right now.
+
+    Internal to this module: the unit is already marked failed when this is
+    raised, and `run_extraction` ends the run instead of failing every
+    remaining unit the same way (each attempt would spend requests).
+    """
+
+
+def _run_unit_here(
+    conn: sqlite3.Connection,
+    unit: WorkUnit,
+    execute: Callable[[], object],
+    on_event: Callable[[str], None] | None,
+) -> tuple[bool, float, int, int]:
+    """The job-state flow for a tier that runs from this process."""
+    set_unit_state(conn, unit.book_id, unit.unit_id, "dispatched")
+    try:
+        summary = execute()
+    except Exception as exc:
+        set_unit_state(conn, unit.book_id, unit.unit_id, "failed", error=str(exc)[:4000])
+        if on_event is not None:
+            on_event(f"{unit.unit_id}: failed — {exc}")
+        if isinstance(exc, ExtractionHalted):
+            raise _UnitHalted(str(exc)) from exc
+        return False, 0.0, 0, 0
+    set_unit_state(conn, unit.book_id, unit.unit_id, "completed")
+    if on_event is not None:
+        on_event(f"{unit.unit_id}: {summary.chunks_ok} ok, {summary.chunks_dead} dead")
+    return True, 0.0, summary.chunks_ok, summary.chunks_dead
+
+
 def _run_unit(
     config: LoreConfig,
     conn: sqlite3.Connection,
@@ -91,20 +125,12 @@ def _run_unit(
 ) -> tuple[bool, float, int, int]:
     dest = config.extractions_dir / unit.book_id / unit.unit_id
     if config.extraction_provider == "ollama":
-        import asyncio
+        from lore.orchestrator import local
 
-        from lore.orchestrator.local import run_unit_local
-
-        set_unit_state(conn, unit.book_id, unit.unit_id, "dispatched")
-        try:
-            summary = asyncio.run(run_unit_local(config, unit, dest))
-        except Exception as exc:
-            set_unit_state(conn, unit.book_id, unit.unit_id, "failed", error=str(exc))
-            if on_event is not None:
-                on_event(f"{unit.unit_id}: failed — {exc}")
-            return False, 0.0, 0, 0
-        set_unit_state(conn, unit.book_id, unit.unit_id, "completed")
-        return True, 0.0, summary.chunks_ok, summary.chunks_dead
+        return _run_unit_here(
+            conn, unit, lambda: asyncio.run(local.run_unit_local(config, unit, dest)),
+            on_event,
+        )
     week = quota.iso_week()
     quota.check_budget(conn, _estimate_hours(unit), week)
     quota.record_dispatch(conn, unit.unit_id, _estimate_hours(unit), week)
@@ -163,7 +189,15 @@ def run_extraction(
     resume: bool = False,
     client_factory: Callable[[object], object] | None = None,
     on_event: Callable[[str], None] | None = None,
+    api_key: str | None = None,
+    gemini_tier_factory: Callable[[LoreConfig], object] | None = None,
 ) -> RunReport:
+    """Run every (pending) unit of a book through the configured provider.
+
+    `extraction_provider = "gemini"` needs a key: `api_key`, else the
+    environment or ~/.config/lore/gemini.env. Without one this raises
+    ValueError before any unit is queued. `gemini_tier_factory` is for tests.
+    """
     chunks = chunks_for_book(conn, book_id)
     if not chunks:
         raise ValueError(f"no chunks registered for book {book_id}")
@@ -176,10 +210,47 @@ def run_extraction(
         for unit in units
         if not (resume and unit_state(conn, unit.unit_id) == "completed")
     ]
+    tier = None
+    if pending and config.extraction_provider == "gemini":
+        from lore.orchestrator.local import make_gemini_tier
+
+        # Built before any unit is queued, so a missing key refuses cleanly
+        # with the jobs table untouched.
+        tier = (gemini_tier_factory or (lambda cfg: make_gemini_tier(cfg, api_key)))(
+            config
+        )
+
     for unit in pending:
         set_unit_state(conn, book_id, unit.unit_id, "queued")
 
     if not pending:
+        return report
+
+    if tier is not None:
+        # ONE event loop for every unit and the close: the shared client's
+        # connection pool is bound to the loop that opened it.
+        with asyncio.Runner() as loop:
+            try:
+                for unit in pending:
+                    dest = config.extractions_dir / unit.book_id / unit.unit_id
+                    try:
+                        ok, _hours, chunks_ok, chunks_dead = _run_unit_here(
+                            conn, unit,
+                            lambda unit=unit, dest=dest: loop.run(tier.run(unit, dest)),
+                            on_event,
+                        )
+                    except _UnitHalted as exc:
+                        report.units_failed += 1
+                        report.stopped_reason = str(exc)
+                        break
+                    report.chunks_ok += chunks_ok
+                    report.chunks_dead += chunks_dead
+                    if ok:
+                        report.units_completed += 1
+                    else:
+                        report.units_failed += 1
+            finally:
+                loop.run(tier.aclose())
         return report
 
     make_client = client_factory or (lambda cfg: KaggleClient(cfg))

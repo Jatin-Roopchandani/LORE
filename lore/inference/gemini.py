@@ -124,6 +124,29 @@ class GeminiKeyFileError(GeminiError):
     """The key file exists but must not be trusted. Never carries the key."""
 
 
+class GeminiAuthError(GeminiError):
+    """HTTP 401/403: the key was rejected. Fatal; never cascaded."""
+
+
+class GeminiTransportError(GeminiError):
+    """The API could not be reached at all (DNS, connect, timeout)."""
+
+
+class GeminiOutputError(GeminiError):
+    """A model answered, but not with a usable answer.
+
+    Empty candidates, blank text, or JSON that fails the schema. This is the
+    one Gemini failure that is about the REQUEST's content rather than about
+    capacity, so extraction retries it and then dead-letters the chunk. It
+    carries the raw text (like `ProviderOutputError`) so the dead letter
+    stays diagnosable.
+    """
+
+    def __init__(self, message: str, raw_output: str = "") -> None:
+        super().__init__(message)
+        self.raw_output = raw_output
+
+
 class GeminiQuotaError(GeminiError):
     """No model in the cascade could serve the request.
 
@@ -261,12 +284,14 @@ class GeminiClient:
                 },
             )
         except httpx.HTTPError as exc:
-            raise GeminiError(f"could not reach the Gemini API: {exc}") from exc
+            raise GeminiTransportError(
+                f"could not reach the Gemini API: {exc}"
+            ) from exc
 
         if response.status_code in (401, 403):
             # Fatal, and never cascaded: a rejected key will be rejected by
             # every model, so trying four more only wastes time.
-            raise GeminiError(
+            raise GeminiAuthError(
                 f"HTTP {response.status_code}: the API key was rejected. Auth"
                 " is the `x-goog-api-key` header, not a Bearer token — check"
                 f" {' or '.join(_KEY_VARIABLES)} in your environment, or"
@@ -288,14 +313,14 @@ class GeminiClient:
         payload = response.json()
         candidates = payload.get("candidates") or []
         if not candidates:
-            raise GeminiError(
+            raise GeminiOutputError(
                 f"{model} returned no candidates"
                 f" (promptFeedback={payload.get('promptFeedback')})"
             )
         parts = (candidates[0].get("content") or {}).get("parts") or []
         text = "".join(str(part.get("text") or "") for part in parts)
         if not text.strip():
-            raise GeminiError(f"{model} returned an empty answer")
+            raise GeminiOutputError(f"{model} returned an empty answer", text)
         return text
 
     async def _cascade(
@@ -315,18 +340,27 @@ class GeminiClient:
             + "; ".join(refusals) + ". " + exhausted_hint
         )
 
-    async def generate(self, prompt: str) -> str:
-        """One completion at temperature 0, from the first willing model."""
+    async def generate(
+        self, prompt: str, *, exhausted_hint: str | None = None
+    ) -> str:
+        """One completion at temperature 0, from the first willing model.
+
+        `exhausted_hint` ends the message of the GeminiQuotaError raised when
+        every model refuses; the default is the disambiguator's advice.
+        """
         # A merge decision must be a function of its inputs, not a sample:
         # the same corpus has to produce the same graph. Same reason the
         # Ollama adjudicator pins it.
         return await self._cascade(
             prompt, {"temperature": 0},
+            exhausted_hint if exhausted_hint is not None else
             "Nothing was written to the answer cache; re-run"
             " `lore disambiguate` when a daily budget resets.",
         )
 
-    async def generate_json(self, prompt: str, schema: type[Model]) -> Model:
+    async def generate_json(
+        self, prompt: str, schema: type[Model], *, exhausted_hint: str | None = None
+    ) -> Model:
         """One schema-valid object at temperature 0, from the first willing model.
 
         The shape measured in Task 7c: JSON response mime type, the schema
@@ -339,17 +373,19 @@ class GeminiClient:
                 schema=json.dumps(schema.model_json_schema())
             ),
             {"temperature": 0, "responseMimeType": "application/json"},
+            exhausted_hint if exhausted_hint is not None else
             "Re-run when a daily budget resets, or set [lore.synthesis]"
             ' provider = "ollama" to answer locally.',
         )
         try:
             return schema.model_validate_json(_strip_fence(text))
         except ValidationError as exc:
-            raise GeminiError(
+            raise GeminiOutputError(
                 f"{self.last_model} returned output that is not a valid"
                 f" {schema.__name__} JSON object ({exc.error_count()} error(s):"
                 f" {str(exc.errors()[0].get('msg'))[:200]}). Raw start:"
-                f" {text[:200]!r}"
+                f" {text[:200]!r}",
+                text,
             ) from exc
 
     async def aclose(self) -> None:

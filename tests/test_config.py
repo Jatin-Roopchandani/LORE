@@ -170,3 +170,54 @@ def test_the_committed_lore_toml_puts_both_query_steps_on_gemini() -> None:
     cfg = LoreConfig.load(Path(__file__).parent.parent / "lore.toml")
     assert cfg.selection.provider == "gemini"
     assert cfg.synthesis.provider == "gemini"
+
+
+# --- Task R1: Gemini for the graph build -----------------------------------
+
+def test_extraction_provider_accepts_gemini_and_rejects_unknown(tmp_path: Path) -> None:
+    import pytest
+
+    toml = tmp_path / "lore.toml"
+    toml.write_text('[lore]\nextraction_provider = "gemini"\n')
+    assert LoreConfig.load(toml).extraction_provider == "gemini"
+    toml.write_text('[lore]\nextraction_provider = "openai"\n')
+    with pytest.raises(Exception) as exc:
+        LoreConfig.load(toml)
+    assert "extraction_provider" in str(exc.value)
+
+
+def test_gemini_extraction_models_default_to_the_lite_tier(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = LoreConfig.load()
+    assert cfg.extraction.gemini_models == ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
+
+
+def test_adjudication_is_local_by_default_with_lite_models(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = LoreConfig.load()
+    assert cfg.adjudication.provider == "ollama"
+    assert cfg.adjudication.models == ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
+    assert cfg.adjudication_dir == Path("data") / "adjudication"
+
+
+def test_adjudication_can_opt_into_gemini_and_refuses_unknowns(tmp_path: Path) -> None:
+    import pytest
+
+    toml = tmp_path / "lore.toml"
+    toml.write_text('[lore.adjudication]\nprovider = "gemini"\nmodels = ["gemini-3.5-flash-lite"]\n')
+    cfg = LoreConfig.load(toml)
+    assert cfg.adjudication.provider == "gemini"
+    assert cfg.adjudication.models == ["gemini-3.5-flash-lite"]
+    for bad in ('provider = "openai"', 'provider = "gemini"\napi_key = "AIza-secret"'):
+        toml.write_text(f"[lore.adjudication]\n{bad}\n")
+        with pytest.raises(Exception):
+            LoreConfig.load(toml)
+
+
+def test_the_committed_lore_toml_builds_the_graph_with_gemini() -> None:
+    # The user's decision (Task R1): quality over running locally, for the
+    # graph build too. Code defaults stay local.
+    cfg = LoreConfig.load(Path(__file__).parent.parent / "lore.toml")
+    assert cfg.extraction_provider == "gemini"
+    assert cfg.adjudication.provider == "gemini"
+    assert cfg.disambiguation.enabled is True

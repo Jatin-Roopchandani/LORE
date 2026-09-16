@@ -2041,3 +2041,33 @@ def test_no_loader_query_is_built_by_interpolation() -> None:
                 and cypher.search(str(node.func.value.value))):
             offenders.append((node.lineno, node.func.value.value))
     assert offenders == []
+
+
+# --------------------------------------------------------------------------
+# Task R1: two completed packings of one book must never load together.
+# --------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_a_chunk_covered_by_two_completed_units_refuses_to_load(
+    tmp_path: Path,
+) -> None:
+    # Measured on the live library: A Study in Scarlet's completed jobs are
+    # size-10 unit ids and The Sign of the Four's are size-40. Re-extracting
+    # a book at another work_unit_size mints new unit ids and leaves the old
+    # rows `completed`, and the loader would silently read both extractions
+    # (7B and Gemini) into one graph. Refuse, before any store is touched.
+    config, conn, kuzu, lance = _setup(tmp_path)
+    stale = f"{BOOK}-u0000-bbbb"
+    d = config.extractions_dir / BOOK / stale
+    d.mkdir(parents=True, exist_ok=True)
+    source = config.extractions_dir / BOOK / UNIT
+    for name in ("triplets.parquet", "embeddings.parquet"):
+        (d / name).write_bytes((source / name).read_bytes())
+    set_unit_state(conn, BOOK, stale, "completed")
+    with pytest.raises(ValueError) as exc:
+        await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    message = str(exc.value)
+    assert "more than one completed" in message
+    assert f"{BOOK}:1:0" in message and "extract_unit" in message
+    assert _rows(kuzu, "MATCH (e:Entity) RETURN e.id") == []
+    conn.close(); kuzu.close()

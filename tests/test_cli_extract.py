@@ -80,3 +80,55 @@ def test_quota_reports_the_week(tmp_path: Path, monkeypatch) -> None:
     result = runner.invoke(app, ["quota"])
     assert result.exit_code == 0
     assert "remaining" in result.output.lower()
+
+
+# --- Task R1: extraction_provider = "gemini" needs a key up front ----------
+
+def _no_key(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+
+def test_extract_on_gemini_without_a_key_refuses_before_any_unit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _no_key(tmp_path, monkeypatch)
+    (tmp_path / "lore.toml").write_text('[lore]\nextraction_provider = "gemini"\n')
+    _seed(tmp_path)
+    with patch("lore.cli.run_extraction") as run:
+        result = runner.invoke(app, ["extract", BOOK])
+    assert result.exit_code == 2, result.output
+    assert not run.called
+    assert 'extraction_provider = "gemini"' in result.output
+    assert "no API key" in result.output and "gemini.env" in result.output
+
+
+def test_extract_on_gemini_passes_the_resolved_key(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GEMINI_API_KEY", "k-from-env")
+    (tmp_path / "lore.toml").write_text('[lore]\nextraction_provider = "gemini"\n')
+    _seed(tmp_path)
+    report = RunReport(book_id=BOOK, units_total=1, units_completed=1, chunks_ok=3)
+    with patch("lore.cli.run_extraction", return_value=report) as run:
+        result = runner.invoke(app, ["extract", BOOK])
+    assert result.exit_code == 0, result.output
+    assert run.call_args.kwargs["api_key"] == "k-from-env"
+    assert "k-from-env" not in result.output
+    # Gemini spends no Kaggle GPU; do not report GPU-hours as if it did.
+    assert "GPU-hours" not in result.output
+
+
+def test_extract_on_kaggle_needs_no_key(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _no_key(tmp_path, monkeypatch)
+    _seed(tmp_path)
+    report = RunReport(book_id=BOOK, units_total=1, units_completed=1)
+    with patch("lore.cli.run_extraction", return_value=report) as run:
+        result = runner.invoke(app, ["extract", BOOK])
+    assert result.exit_code == 0, result.output
+    assert run.call_args.kwargs["api_key"] is None

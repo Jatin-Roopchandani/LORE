@@ -641,7 +641,25 @@ async def load_book(
         raise ValueError(f"no completed extraction units for book {book_id}")
 
     triplets = read_triplets(dirs)
-    embeddings = {row["chunk_id"]: list(row["vector"]) for row in read_embeddings(dirs)}
+    embedding_rows = read_embeddings(dirs)
+    # Every completed unit embeds each of its chunks exactly once, so a chunk
+    # embedded twice means two completed units cover it: stale `completed`
+    # job rows from a different packing (another work_unit_size, or an older
+    # run). Loading both would silently mix two extractions into one graph.
+    covered: dict[str, int] = {}
+    for row in embedding_rows:
+        covered[row["chunk_id"]] = covered.get(row["chunk_id"], 0) + 1
+    overlap = sorted(chunk_id for chunk_id, count in covered.items() if count > 1)
+    if overlap:
+        raise ValueError(
+            f"book {book_id}: {len(overlap)} chunk(s), e.g. {overlap[0]}, are"
+            " covered by more than one completed extraction unit. The jobs"
+            " table holds completed units from two different packings (a"
+            " changed work_unit_size, or an older run), and loading both would"
+            " mix two extractions into one graph. Delete this book's stale"
+            " `extract_unit` job rows (and their directories) and re-extract."
+        )
+    embeddings = {row["chunk_id"]: list(row["vector"]) for row in embedding_rows}
     chunks = chunks_for_book(conn, book_id)
     chapter_of = {chunk.id: chunk.chapter_seq for chunk in chunks}
 
