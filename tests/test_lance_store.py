@@ -58,3 +58,50 @@ def test_delete_entities(tmp_path: Path) -> None:
     ])
     store.delete_entities(["e1"])
     assert store.count("entities") == 1
+
+
+# --- Task 9b: stored chunk vectors, for ranking graph evidence -------------
+
+
+def _unit(i: int) -> list[float]:
+    v = [0.0] * EMBED_DIM
+    v[i] = 1.0
+    return v
+
+
+def test_chunk_vectors_returns_vectors_for_known_ids_and_omits_unknown(tmp_path: Path) -> None:
+    store = LanceStore(tmp_path / "lancedb")
+    store.add_chunks([
+        {"vector": _unit(0), "chunk_id": "b1:1:0", "book_id": "b1",
+         "chapter_seq": 1, "text": "one", "entity_ids": []},
+        {"vector": _unit(1), "chunk_id": "b2:9:3", "book_id": "b2",
+         "chapter_seq": 9, "text": "two", "entity_ids": []},
+        {"vector": _unit(2), "chunk_id": "b1:2:0", "book_id": "b1",
+         "chapter_seq": 2, "text": "three", "entity_ids": []},
+    ])
+    vectors = store.chunk_vectors(["b1:1:0", "b2:9:3", "nowhere", "it's:quoted"])
+    assert set(vectors) == {"b1:1:0", "b2:9:3"}
+    assert vectors["b1:1:0"] == _unit(0)
+    assert vectors["b2:9:3"] == _unit(1)
+
+
+def test_chunk_vectors_of_no_ids_is_empty(tmp_path: Path) -> None:
+    store = LanceStore(tmp_path / "lancedb")
+    store.add_chunks([
+        {"vector": _unit(0), "chunk_id": "b1:1:0", "book_id": "b1",
+         "chapter_seq": 1, "text": "one", "entity_ids": []},
+    ])
+    assert store.chunk_vectors([]) == {}
+
+
+def test_chunk_vectors_is_not_truncated_to_a_default_page(tmp_path: Path) -> None:
+    # LanceDB's query builder defaults to 10 rows; a ranker handed only the
+    # first page would quietly rank every other candidate last.
+    store = LanceStore(tmp_path / "lancedb")
+    ids = [f"b1:{i}:0" for i in range(30)]
+    store.add_chunks([
+        {"vector": _unit(i), "chunk_id": c, "book_id": "b1", "chapter_seq": i,
+         "text": "t", "entity_ids": []}
+        for i, c in enumerate(ids)
+    ])
+    assert set(store.chunk_vectors(ids)) == set(ids)

@@ -618,6 +618,12 @@ def ask(
 
     Read-only: nothing in the library is created or modified.
     """
+    if not question.strip():
+        # Checked before anything opens or any model is asked: a blank
+        # question still embeds to a vector, and Task 9's `lore ask ""`
+        # came back with a confident answer about Jonathan Small.
+        typer.echo("ask failed: the question is blank; ask a question in words.")
+        raise typer.Exit(2)
     config = LoreConfig.load()
 
     api_key = None

@@ -1,8 +1,10 @@
 from pathlib import Path
 
+import pytest
+
 from lore.db.sqlite import open_db
 from lore.query.models import EdgeRow, TemplateCall
-from lore.query.subgraph import assemble, passages_from_chunks, run_template
+from lore.query.subgraph import assemble, passages_from_chunks, relevance, run_template
 
 
 class FakeKuzu:
@@ -206,4 +208,112 @@ def test_single_book_over_budget_still_cuts_the_latest_chapters(tmp_path: Path) 
     assert evidence.truncated is True
     assert [(p.n, p.chunk_id) for p in evidence.passages] == [
         (1, "b1:1:0"), (2, "b1:2:0")]
+    conn.close()
+
+
+# --- Task 9b: select by relevance to the question, cite in reading order ---
+#
+# Task 9's graph agent lost to plain vector search because evidence was
+# ordered by chapter and then cut, so the earliest chapters survived rather
+# than the passages that answer the question.
+
+
+def _edge(book: str, ch: int, chunk_id: str, subject: str = "A") -> EdgeRow:
+    return EdgeRow(subject, "P", "p", "B", "e", 0.5, book, ch, chunk_id)
+
+
+def test_relevance_is_the_dot_product_with_each_stored_vector() -> None:
+    scores = relevance([1.0, 0.0], {"c1": [0.6, 0.8], "c2": [0.0, 1.0]})
+    assert scores == {"c1": pytest.approx(0.6), "c2": pytest.approx(0.0)}
+
+
+def test_a_relevant_late_chapter_survives_the_cap_and_early_noise_is_dropped(
+        tmp_path: Path) -> None:
+    # THE regression test for Task 9: the budget fits two passages, the
+    # answer sits in chapter 12, and chapters 1-4 are irrelevant.
+    conn = open_db(tmp_path / "lore.db")
+    rows = []
+    for ch in (1, 2, 3, 4, 12):
+        chunk_id = f"b1:{ch}:0"
+        _seed(conn, chunk_id, "x" * 100, chapter_seq=ch)
+        rows.append(_edge("b1", ch, chunk_id))
+    scores = {"b1:1:0": 0.10, "b1:2:0": 0.20, "b1:3:0": 0.55,
+              "b1:4:0": 0.15, "b1:12:0": 0.90}
+    evidence = assemble(conn, rows, max_chars=200, scores=scores)
+    assert evidence.truncated is True
+    assert [p.chunk_id for p in evidence.passages] == ["b1:3:0", "b1:12:0"]
+    conn.close()
+
+
+def test_ranked_selection_keeps_both_books_when_one_book_scores_highest(
+        tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    rows = _two_books(conn, per_book=4, size=100)
+    # Every b1 passage outscores every b2 passage.
+    scores = {f"b1:{ch}:0": 0.9 - ch / 100 for ch in range(1, 5)}
+    scores.update({f"b2:{ch}:0": 0.3 - ch / 100 for ch in range(1, 5)})
+    evidence = assemble(conn, rows, max_chars=300, scores=scores)
+    assert {p.book_id for p in evidence.passages} == {"b1", "b2"}
+    assert len(evidence.passages) == 3
+    conn.close()
+
+
+def test_ranked_selection_takes_each_books_most_relevant_not_its_earliest(
+        tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    rows = _two_books(conn, per_book=4, size=100)
+    scores = {"b1:1:0": 0.1, "b1:2:0": 0.2, "b1:3:0": 0.3, "b1:4:0": 0.8,
+              "b2:1:0": 0.1, "b2:2:0": 0.7, "b2:3:0": 0.2, "b2:4:0": 0.6}
+    evidence = assemble(conn, rows, max_chars=400, scores=scores)
+    assert {p.chunk_id for p in evidence.passages} == {
+        "b1:4:0", "b1:3:0", "b2:2:0", "b2:4:0"}
+    conn.close()
+
+
+def test_ranked_passages_are_numbered_in_reading_order(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    rows = _two_books(conn, per_book=3, size=100)
+    scores = {"b1:1:0": 0.1, "b1:2:0": 0.5, "b1:3:0": 0.9,
+              "b2:1:0": 0.8, "b2:2:0": 0.2, "b2:3:0": 0.6}
+    evidence = assemble(conn, rows, max_chars=400, scores=scores)
+    assert [(p.n, p.chunk_id) for p in evidence.passages] == [
+        (1, "b1:2:0"), (2, "b1:3:0"), (3, "b2:1:0"), (4, "b2:3:0")]
+    conn.close()
+
+
+def test_a_chunk_with_no_stored_vector_ranks_last_but_is_not_dropped(
+        tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    for ch in (1, 2, 3):
+        _seed(conn, f"b1:{ch}:0", "x" * 100, chapter_seq=ch)
+    rows = [_edge("b1", ch, f"b1:{ch}:0") for ch in (1, 2, 3)]
+    # b1:1:0 has no vector, and a negative cosine is still a real score.
+    scores = {"b1:2:0": -0.2, "b1:3:0": 0.4}
+    capped = assemble(conn, rows, max_chars=200, scores=scores)
+    assert [p.chunk_id for p in capped.passages] == ["b1:2:0", "b1:3:0"]
+    roomy = assemble(conn, rows, max_chars=1000, scores=scores)
+    assert [p.chunk_id for p in roomy.passages] == ["b1:1:0", "b1:2:0", "b1:3:0"]
+    conn.close()
+
+
+def test_ranked_edges_follow_their_chunks_relevance_and_stay_deduped(
+        tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    for ch in (1, 2):
+        _seed(conn, f"b1:{ch}:0", "x" * 10, chapter_seq=ch)
+    early = _edge("b1", 1, "b1:1:0", subject="Early")
+    late = _edge("b1", 2, "b1:2:0", subject="Late")
+    ghost = _edge("b1", 3, "ghost", subject="Ghost")
+    evidence = assemble(conn, [early, ghost, late, early],
+                        scores={"b1:1:0": 0.1, "b1:2:0": 0.9})
+    assert evidence.edges == (late, early, ghost)
+    conn.close()
+
+
+def test_ranked_selection_never_truncates_to_nothing(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    _seed(conn, "b1:1:0", "x" * 500)
+    evidence = assemble(conn, [_edge("b1", 1, "b1:1:0")], max_chars=100,
+                        scores={"b1:1:0": 0.5})
+    assert [p.chunk_id for p in evidence.passages] == ["b1:1:0"]
     conn.close()

@@ -249,3 +249,31 @@ def test_the_degree_query_asks_for_undirected_rel_edges_on_the_given_ids() -> No
     assert "MATCH (e:Entity)-[r:REL]-()" in degree_query
     assert "WHERE e.id IN $ids" in degree_query
     assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_precomputed_question_vector_is_used_without_embedding_again() -> None:
+    # Task 9b: the agent embeds the question once and reuses the vector for
+    # seeding and for ranking evidence.
+    async def embed(texts: list[str]) -> list[list[float]]:
+        raise AssertionError("must not embed when a vector is supplied")
+
+    lance = FakeLance([{"chunk_id": "b:1:0", "entity_ids": ["e1"], "_distance": 0.1}])
+    kuzu = FakeKuzu({}, {"e1": ("e1", "Holmes", "Character", ["b1"])})
+    seeds = await seed_entities("q", lance, kuzu, embed, vector=[0.3] * 4)
+    assert [s.id for s in seeds] == ["e1"]
+    assert lance.searched_with == [0.3] * 4
+
+
+@pytest.mark.asyncio
+async def test_embed_question_applies_the_query_prefix_once() -> None:
+    from lore.query.seed import embed_question
+
+    seen: list[str] = []
+
+    async def embed(texts: list[str]) -> list[list[float]]:
+        seen.extend(texts)
+        return [[0.2] * 4 for _ in texts]
+
+    assert await embed_question("who?", embed) == [0.2] * 4
+    assert seen == [QUERY_PREFIX + "who?"]

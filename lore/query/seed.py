@@ -77,6 +77,16 @@ def live_entity_ids(kuzu: _Kuzu, entity_ids: list[str]) -> list[str]:
     return [i for i in entity_ids if i in live]
 
 
+async def embed_question(question: str, embed: Embed) -> list[float]:
+    """The question's one query vector, with QUERY_PREFIX applied here.
+
+    Pass a raw embedder. Do NOT pass `make_ollama_pair`'s embed: that one
+    applies DOCUMENT_PREFIX, and the mismatch degrades retrieval silently
+    instead of failing.
+    """
+    return (await embed([QUERY_PREFIX + question]))[0]
+
+
 async def seed_entities(
     question: str,
     lance: _Lance,
@@ -85,6 +95,7 @@ async def seed_entities(
     *,
     k: int = 8,
     max_seeds: int = 8,
+    vector: list[float] | None = None,
 ) -> list[SeedEntity]:
     """The canonical entities the question's vector neighbourhood points at.
 
@@ -101,8 +112,13 @@ async def seed_entities(
     half of the Scotland Yard question -- is also live rank 7. Hope stays at
     that rank at k=8, 16, 32 and 64, so widening retrieval does not reach
     him; the cap was the wall. Do not "simplify" 8 back to 6.
+
+    `vector`, when given, is the question's vector from `embed_question`,
+    and `embed` is not called: the agent embeds once and reuses that vector
+    to rank the evidence.
     """
-    vector = (await embed([QUERY_PREFIX + question]))[0]
+    if vector is None:
+        vector = await embed_question(question, embed)
     chunks = lance.search_chunks(vector, limit=k)
 
     # LanceDB returns a squared-L2 distance, not a similarity. Both sides

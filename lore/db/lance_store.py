@@ -77,6 +77,30 @@ class LanceStore:
             for row in rows
         ]
 
+    def chunk_vectors(self, chunk_ids: list[str]) -> dict[str, list[float]]:
+        """chunk_id -> stored vector, for the ids that have a row.
+
+        The query agent ranks a template's candidate passages against the
+        question with these. An unknown id is simply absent. `limit(None)`
+        is explicit for the same reason as in `chunk_entity_vectors`: the
+        builder's default page would leave most candidates unscored, and an
+        unscored candidate ranks last.
+        """
+        if not chunk_ids:
+            return {}
+        quoted = ", ".join(
+            "'" + c.replace("'", "''") + "'" for c in sorted(set(chunk_ids))
+        )
+        rows = (
+            self._db.open_table("chunks")
+            .search()
+            .where(f"chunk_id IN ({quoted})")
+            .select(["chunk_id", "vector"])
+            .limit(None)
+            .to_list()
+        )
+        return {row["chunk_id"]: list(row["vector"]) for row in rows}
+
     def delete_chunks_for_book(self, book_id: str) -> None:
         escaped = book_id.replace("'", "''")
         self._db.open_table("chunks").delete(f"book_id = '{escaped}'")

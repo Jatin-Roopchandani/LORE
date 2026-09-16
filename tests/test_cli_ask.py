@@ -311,3 +311,20 @@ def test_every_existing_subcommand_still_resolves() -> None:
     for name in commands:
         result = runner.invoke(app, [name, "--help"])
         assert result.exit_code == 0, (name, result.output)
+
+
+# --- Task 9b: a blank question is not a question -------------------------------
+
+@pytest.mark.parametrize("question", ["", "   ", "\t\n"])
+def test_a_blank_question_is_rejected_before_anything_opens(env: Path, question) -> None:
+    # Task 9: `lore ask ""` answered about Jonathan Small with exit 0.
+    fake, calls = _returning(ANSWER)
+    with patch("lore.cli.answer_question", fake), \
+            patch("lore.cli.make_query_models") as models, \
+            patch("lore.cli.KuzuStore") as kuzu:
+        result = runner.invoke(app, ["ask", question])
+    assert result.exit_code != 0
+    assert "question" in result.output.lower()
+    assert "lore process" not in result.output   # not the no-library message
+    assert calls == [] and not models.called and not kuzu.called
+    assert not (env / "data").exists()

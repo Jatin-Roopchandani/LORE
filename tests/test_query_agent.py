@@ -33,14 +33,27 @@ EDGE = [["Holmes", "OPPOSES", "distrusts", "Moriarty", "ev", 0.9, "b1", 1, "b1:1
 
 
 class FakeLance:
-    def __init__(self, rows): self._rows = rows
+    def __init__(self, rows, vectors=None):
+        self._rows = rows
+        # Stored chunk vectors for ranking; by default every seed row's chunk
+        # has one, pointing the same way as FakeOllama's question vector.
+        self._vectors = vectors if vectors is not None else {
+            r["chunk_id"]: [0.5] * 4 for r in rows}
+        self.vector_requests: list[list[str]] = []
+
     def search_chunks(self, vector, limit=5): return self._rows[:limit]
+
+    def chunk_vectors(self, chunk_ids):
+        self.vector_requests.append(list(chunk_ids))
+        return {c: self._vectors[c] for c in chunk_ids if c in self._vectors}
 
 
 class FakeKuzu:
     """Answers seed_entities' three lookups, and returns `edges` for a template."""
 
-    def __init__(self, edge_rows): self._edges = edge_rows
+    def __init__(self, edge_rows):
+        self._edges = edge_rows
+        self.template_params: list[dict] = []
 
     def execute(self, cypher, params=None):
         if "ALIAS_OF" in cypher:
@@ -49,6 +62,7 @@ class FakeKuzu:
             return [["e1", 3]]
         if "RETURN e.id, e.name" in cypher:
             return [["e1", "Holmes", "Character", ["b1"]]]
+        self.template_params.append(dict(params or {}))
         return self._edges
 
 
@@ -239,7 +253,8 @@ async def test_every_embedded_query_carries_the_query_prefix_once(tmp_path: Path
     ollama, models = _local()
     await answer_question(conn, FakeKuzu([]), FakeLance([SEED_ROW]), "who?", models)
     texts = [t for batch, _ in ollama.embedded for t in batch]
-    assert texts == [QUERY_PREFIX + "who?", QUERY_PREFIX + "who?"]  # seed, fallback
+    # Embedded once and reused: seeding and the fallback share one vector.
+    assert texts == [QUERY_PREFIX + "who?"]
     assert {model for _, model in ollama.embedded} == {CONFIG.extraction.embed_model_ollama}
     conn.close()
 
@@ -424,3 +439,93 @@ def test_make_query_models_builds_its_ollama_with_that_timeout(monkeypatch) -> N
     monkeypatch.setattr(agent, "OllamaProvider", Recording)
     make_query_models(CONFIG)
     assert seen["timeout"] == agent.OLLAMA_TIMEOUT_S
+
+
+# --- Task 9b: one question vector; evidence ranked by relevance ----------------
+
+async def test_the_graph_path_embeds_the_question_exactly_once(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    lance = FakeLance([SEED_ROW])
+    answer = await answer_question(conn, FakeKuzu(EDGE), lance, "who?", models)
+    assert answer.mode == "graph"
+    assert [batch for batch, _ in ollama.embedded] == [[QUERY_PREFIX + "who?"]]
+    # ...and that vector ranked the template's chunks.
+    assert lance.vector_requests == [["b1:1:0"]]
+    conn.close()
+
+
+async def test_templates_are_asked_for_the_wide_candidate_pool(tmp_path: Path) -> None:
+    from lore.query.agent import CANDIDATE_LIMIT
+
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    kuzu = FakeKuzu(EDGE)
+    await answer_question(conn, kuzu, FakeLance([SEED_ROW]), "q", models)
+    assert [p["limit"] for p in kuzu.template_params] == [CANDIDATE_LIMIT]
+    conn.close()
+
+
+async def test_graph_evidence_keeps_the_relevant_late_passage_over_early_ones(
+        tmp_path: Path) -> None:
+    # Task 9's failure end to end: three early chunks and one late one, a
+    # budget that holds two, and the late one is what the question is about.
+    conn = _conn(tmp_path)
+    edges, vectors = [], {}
+    for ch, direction in ((2, [-1.0, 0.0, 0.0, 0.0]), (3, [0.0, 1.0, 0.0, 0.0]),
+                          (4, [0.0, 0.0, 1.0, 0.0]), (12, [0.5, 0.5, 0.5, 0.5])):
+        chunk_id = f"b1:{ch}:0"
+        conn.execute("INSERT INTO chunks (id, book_id, chapter_seq, scene_seq, seq, text)"
+                     " VALUES (?, 'b1', ?, 0, 0, ?)",
+                     (chunk_id, ch, f"MARK{ch} " + "x" * 5000))
+        edges.append(["Holmes", "OPPOSES", "distrusts", "Moriarty", "ev", 0.9,
+                      "b1", ch, chunk_id])
+        vectors[chunk_id] = direction
+    conn.commit()
+    ollama, models = _local(synthesis=Synthesis(claims=[], can_answer=False))
+    await answer_question(conn, FakeKuzu(edges), FakeLance([SEED_ROW], vectors),
+                          "q", models)
+    (prompt, _, _), = _synthesis_calls(ollama)
+    assert "MARK12" in prompt
+    assert "MARK2 " not in prompt
+    conn.close()
+
+
+async def test_a_question_below_the_relevance_floor_is_an_empty_answer(tmp_path: Path) -> None:
+    # Vector search always returns a nearest chunk, so "no seeds" never
+    # happens on a real library; the floor is what makes `empty` reachable.
+    from lore.query.agent import RELEVANCE_FLOOR
+
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    # squared L2 on unit vectors: cosine = 1 - d/2
+    far = {**SEED_ROW, "_distance": 2 * (1 - (RELEVANCE_FLOOR - 0.01))}
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([far]), "zqxjkv", models)
+    assert answer.mode == "empty"
+    assert answer.text == REFUSAL
+    assert answer.model is None and answer.selection_model is None
+    assert ollama.generated == [], "no selection and no synthesis call"
+    conn.close()
+
+
+async def test_a_question_above_the_relevance_floor_is_not_empty(tmp_path: Path) -> None:
+    from lore.query.agent import RELEVANCE_FLOOR
+
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    near = {**SEED_ROW, "_distance": 2 * (1 - (RELEVANCE_FLOOR + 0.01))}
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([near]), "q", models)
+    assert answer.mode == "graph"
+    conn.close()
+
+
+async def test_the_floor_does_not_apply_to_the_baseline(tmp_path: Path) -> None:
+    from lore.query.agent import RELEVANCE_FLOOR
+
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    far = {**SEED_ROW, "_distance": 2 * (1 - (RELEVANCE_FLOOR - 0.01))}
+    answer = await answer_question(conn, ExplodingKuzu(), FakeLance([far]), "q", models,
+                                   baseline=True)
+    assert answer.mode == "vector-baseline"
+    conn.close()

@@ -25,20 +25,55 @@ def run_template(kuzu, call: TemplateCall) -> list[EdgeRow]:
     ]
 
 
-def _interleaved(items: list[_Item]) -> list[_Item]:
-    """Round-robin across books, in book_id order, chapter order within each.
+def relevance(question_vector: list[float],
+              chunk_vectors: dict[str, list[float]]) -> dict[str, float]:
+    """chunk_id -> cosine similarity to the question, as a plain dot product.
 
-    Without this the cap cuts from the end of the reading-order list, and
-    because book ids sort, that end is always one whole book: a cross-book
-    question would silently lose its second book.
+    Both sides are unit-normalised nomic vectors (measured |v| = 1.0000 on
+    the live index, see seed.py), so the dot product IS the cosine; no
+    re-normalisation is done. A chunk with no stored vector is simply
+    absent, and `assemble` ranks an absent chunk last.
     """
+    return {
+        chunk_id: sum(q * c for q, c in zip(question_vector, vector))
+        for chunk_id, vector in chunk_vectors.items()
+    }
+
+
+def _round_robin(books: dict[str, list[_Item]]) -> list[_Item]:
+    """One item from each book per turn, books in book_id order.
+
+    Without this a cap cuts one whole book: in reading order that is always
+    the later book id, and by relevance it is whichever book scores lower,
+    so a cross-book question would silently lose a book.
+    """
+    if len(books) < 2:
+        return [item for items in books.values() for item in items]
+    return [item for turn in zip_longest(*(books[b] for b in sorted(books)))
+            for item in turn if item is not None]
+
+
+def _interleaved(items: list[_Item]) -> list[_Item]:
+    """Round-robin across books, chapter order within each."""
     books: dict[str, list[_Item]] = {}
     for item in items:  # items arrive in (book, chapter) order
         books.setdefault(item[1], []).append(item)
-    if len(books) < 2:
-        return items
-    return [item for turn in zip_longest(*books.values()) for item in turn
-            if item is not None]
+    return _round_robin(books)
+
+
+def _relevance_key(scores: dict[str, float], chunk_id: str) -> tuple[bool, float]:
+    """Most relevant first, and a chunk with no score after every scored
+    one, whatever the sign of their cosines."""
+    return (chunk_id not in scores, -scores.get(chunk_id, 0.0))
+
+
+def _by_relevance(items: list[_Item], scores: dict[str, float]) -> list[_Item]:
+    """Each book's items most-relevant first (reading order breaks ties),
+    then round-robin across books."""
+    books: dict[str, list[_Item]] = {}
+    for item in sorted(items, key=lambda i: (_relevance_key(scores, i[0]), i[1], i[2], i[0])):
+        books.setdefault(item[1], []).append(item)
+    return _round_robin(books)
 
 
 def _capped(items: list[_Item], max_chars: int) -> tuple[list[_Item], bool]:
@@ -55,8 +90,18 @@ def _capped(items: list[_Item], max_chars: int) -> tuple[list[_Item], bool]:
 
 
 def assemble(conn: sqlite3.Connection, rows: list[EdgeRow], *,
-             max_chars: int = MAX_EVIDENCE_CHARS) -> Evidence:
-    """Deduped, ordered, capped evidence for the rows a template returned.
+             max_chars: int = MAX_EVIDENCE_CHARS,
+             scores: dict[str, float] | None = None) -> Evidence:
+    """Deduped, selected, capped evidence for the rows a template returned.
+
+    Without `scores`, passages are selected in reading order (round-robin
+    across books) and the cap cuts the latest chapters. With `scores`
+    (chunk_id -> relevance to the question, from `relevance`), passages are
+    selected most-relevant first, still round-robin across books, so the
+    cap cuts the LEAST RELEVANT passages instead: Task 9's graph agent lost
+    to plain vector search because a chapter-ordered cut kept each book's
+    earliest chapters and dropped the ones that answered the question.
+    Either way the kept passages are numbered in (book, chapter) order.
 
     Chunk text lives in SQLite, not in Kuzu's Chunk node -- the node
     carries only ids and positions.
@@ -78,7 +123,13 @@ def assemble(conn: sqlite3.Connection, rows: list[EdgeRow], *,
 
     texts = chunks_by_id(conn, [c for c, _, _ in ordered])
     items = [(c, b, s, texts[c]) for c, b, s in ordered if c in texts]
-    kept, truncated = _capped(_interleaved(items), max_chars)
+    selection = _interleaved(items) if scores is None else _by_relevance(items, scores)
+    kept, truncated = _capped(selection, max_chars)
+
+    if scores is not None:
+        # Relationship lines follow their passage's relevance (stable, so
+        # equally relevant edges keep the template's order).
+        edges = tuple(sorted(edges, key=lambda r: _relevance_key(scores, r.chunk_id)))
 
     # Number in reading order so citations still read chronologically.
     rank = {item[0]: index for index, item in enumerate(items)}

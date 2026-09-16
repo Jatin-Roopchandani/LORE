@@ -206,10 +206,11 @@ next `lore process --skip-extract` applies them. See the Gemini section below.
 
 ### 4. `lore ask`: answering a question
 
-    question
-      │ 1. EMBED       nomic-embed-text (query prefix)
+    question (a blank one is refused before anything opens)
+      │ 1. EMBED       nomic-embed-text (query prefix), once per question
       ▼
     LanceDB: the 8 most similar chunks ─► their entity_ids
+      │                (nearest chunk under 0.62 cosine ─► mode empty)
       │ 2. SEED        Kuzu: follow ALIAS_OF to canonical entities, drop any
       │                with no relationships, keep the best 8
       ▼
@@ -217,10 +218,12 @@ next `lore process --skip-extract` applies them. See the Gemini section below.
       │                default), temperature 0, picks one of seven fixed,
       │                read-only Cypher searches and numbered entities
       ▼
-      │ 4. TRAVERSE    Kuzu runs that search ─► real directed edges
+      │ 4. TRAVERSE    Kuzu runs that search ─► up to 250 real directed edges
       ▼
       │ 5. ASSEMBLE    SQLite chunk text for those edges; duplicates removed;
+      │                passages ranked by similarity to the question vector,
       │                books alternated; capped at 12,000 chars; numbered
+      │                in reading order
       ▼
       │ 6. SYNTHESIZE  Gemini Flash Lite (this lore.toml) or qwen2.5:3b (code
       │                default)
@@ -239,10 +242,14 @@ book as queryable when the graph holds a `Book` node for it.
 The model never writes Cypher: it chooses among seven hand-written templates
 (`neighbours`, `two_hop`, `path_between`, `by_predicate`, `shared_neighbours`,
 `across_books`, `chapter_window`), and every value binds as a parameter.
-Each search is capped at 40 facts, except `across_books`, which takes up to 40
-from **each** book, earliest chapters first. Otherwise a busy character's first
-book would fill the whole cap: Holmes has 59 facts in *A Study in Scarlet*,
-and a single cap of 40 returned none of his 122 in *The Sign of the Four*.
+Each search returns up to 250 facts (`across_books`: up to 250 from **each**
+book), more than any single entity in the Holmes graph has, so the search
+decides what is *connected* and does not cut it by chapter. The question then
+decides what *matters*: every candidate passage is scored by cosine similarity
+between the question's vector and the chunk's stored vector, and passages are
+kept most relevant first, one book at a time in turn, until 12,000 characters.
+Cutting by chapter instead kept the earliest chapters and lost the passages
+that answered the question.
 
 Every answer reports one of four modes:
 
