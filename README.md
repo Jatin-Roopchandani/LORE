@@ -19,6 +19,8 @@ See `SPEC.md` for the full design. Status: Phase 3 (the query agent) in progress
     uv run lore process <book_id> # extract, resolve entities, load the graph
     uv run lore process <book_id> --skip-extract   # reload the graph only
     uv run lore graph             # node/edge counts and the busiest entities
+    uv run lore ask "how are Holmes and Watson connected?"   # cited answer from the graph
+    uv run lore ask "..." --baseline   # vector search alone, for comparison
     uv run lore quota             # this week's free-tier GPU budget (Kaggle only)
 
 `extraction_provider` picks who reads the chunks:
