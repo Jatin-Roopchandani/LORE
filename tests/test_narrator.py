@@ -545,10 +545,12 @@ async def test_unresolved_first_person_edges_drop_exactly_as_before(tmp_path) ->
     _write_book(config, conn, BOOK, _narrated_rows(BOOK))
     baseline = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     baseline_edges, baseline_names = _edges(kuzu), _names(kuzu)
-    # Today's behaviour, pinned: "I" and "the narrator" edges are dropped and
-    # the capitalised "Narrator" survives as its own node.
-    assert baseline.dropped_edges == 2
-    assert "Narrator" in baseline_names
+    # Today's behaviour, pinned: "I", "the narrator" AND the capitalised
+    # "Narrator" edges all drop — a bare narrator role is not an entity
+    # (lore.resolve.entityhood). Previously pinned as `dropped_edges == 2`
+    # with "Narrator" surviving as its own node.
+    assert baseline.dropped_edges == 4
+    assert "Narrator" not in baseline_names
     assert not baseline.first_person_checked
     assert (baseline.narrator, baseline.first_person_rewrites) == ("", 0)
 
