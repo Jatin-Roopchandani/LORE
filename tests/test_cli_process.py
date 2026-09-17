@@ -478,3 +478,20 @@ def test_process_does_not_load_a_gemini_extraction_that_stopped_early(
     assert f"lore process {BOOK} --resume" in result.output
     assert "process failed" not in result.output
     assert "canonical entities" not in result.output
+
+
+def test_process_reports_dropped_self_loops(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
+                        chunks=1, mentions=1, self_loop_edges=4)
+    with patch("lore.cli._load_book_sync", return_value=report):
+        result = runner.invoke(app, ["process", BOOK, "--skip-extract"])
+    assert result.exit_code == 0, result.output
+    assert "4 self-loop edge(s) dropped" in result.output
+
+    quiet = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
+                       chunks=1, mentions=1)
+    with patch("lore.cli._load_book_sync", return_value=quiet):
+        result = runner.invoke(app, ["process", BOOK, "--skip-extract"])
+    assert "self-loop" not in result.output

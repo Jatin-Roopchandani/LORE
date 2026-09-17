@@ -545,3 +545,21 @@ async def test_ask_with_no_questions_spends_nothing() -> None:
     client = _stub_client(handler)
     assert await ask(client, []) == {}
     assert client.requests_made == 0
+
+
+def test_an_echo_that_repeats_the_kind_label_still_maps() -> None:
+    # Measured live (Task 11a, gemini-3.5-flash-lite): the model echoed
+    # "Ferrier (Character)", copying the prompt's own "name: Ferrier
+    # (Character)" line, and the whole batch was rejected. The kind is part
+    # of the question, so it still identifies it; any OTHER suffix mismatches.
+    questions = _corpus()
+    answers = parse_batch_answers(questions, _answer_text([
+        (1, "Sholto (Character)", "1"),
+        (2, "Ferrier (character)", "none"),
+        (3, "Smith", "2"),
+    ]))
+    assert answers[questions[0].key] == "id-major-sholto"
+    with pytest.raises(AnswerMismatchError):
+        parse_batch_answers(questions, _answer_text([
+            (1, "Sholto (Place)", "1"), (2, "Ferrier", "none"), (3, "Smith", "2"),
+        ]))

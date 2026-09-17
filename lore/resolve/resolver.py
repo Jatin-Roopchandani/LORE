@@ -24,7 +24,7 @@ from collections.abc import Awaitable, Callable, Container, Iterable, Iterator
 from dataclasses import dataclass, field
 
 from lore.resolve.disambiguation import Candidate, Question
-from lore.resolve.normalize import entity_id, normalize_name
+from lore.resolve.normalize import entity_id, leading_titles, normalize_name
 from lore.resolve.predicates import cosine
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
@@ -226,6 +226,14 @@ def superset_names(
 
     Token sets that are EQUAL are not listed: `john h watson m d` and
     `john watson` are the same name written two ways, not two people.
+
+    Task 11a — and the same holds AMONG the longer names: supersets that
+    share one token set are one rival, listed once under its alphabetically
+    smallest spelling. Measured on A Study in Scarlet, bare `watson` nested
+    inside `john watson`, `john watson m d` and `john h watson m d` — all
+    {john, watson} — and counting three rivals refused the merge and split
+    Watson into two nodes (110 and 56 edges). Every spelling of one token set
+    merges into one entity (equal sets always nest), so any of them names it.
     """
     grouped: dict[tuple[str, str], set[str]] = {}
     for book_id, kind, normalized in mentions:
@@ -237,10 +245,13 @@ def superset_names(
         for name, mine in tokens.items():
             if not mine:
                 continue
-            found[(book_id, kind, name)] = tuple(sorted(
-                other for other, theirs in tokens.items()
-                if other != name and theirs and mine < theirs
-            ))
+            rivals: dict[frozenset[str], str] = {}
+            for other, theirs in tokens.items():
+                if other != name and theirs and mine < theirs:
+                    current = rivals.get(theirs)
+                    if current is None or other < current:
+                        rivals[theirs] = other
+            found[(book_id, kind, name)] = tuple(sorted(rivals.values()))
     return found
 
 
@@ -472,6 +483,8 @@ async def resolve_mentions(
     books: dict[str, set[str]] = {}
     vectors: dict[str, list[float]] = {}  # lazily populated cache
     raw_names: dict[str, set[str]] = {}  # every raw surface form seen, for display
+    # Task 11a: every title an entity's surface forms carry ("major", "mr").
+    titles: dict[str, set[str]] = {}
 
     for mention in ordered_mentions:
         normalized = normalize_name(mention.name)
@@ -480,6 +493,31 @@ async def resolve_mentions(
             continue
         mention_tokens = name_tokens(normalized)
         key = (mention.name, mention.kind, mention.book_id)
+        mention_titles = leading_titles(mention.name)
+
+        def title_conflict(cid: str) -> bool:
+            """Task 11a — this surface form and the entity carry only
+            DIFFERENT titles, so they are not one person by name alone.
+
+            `normalize_name` strips titles, so "Major Sholto" and "Mr.
+            Sholto" are one name, and every decision about `sholto` used to
+            apply to both. Measured on the two novels, exactly three names
+            carry two different titles and each is two people: Major/Mr.
+            Sholto (the father, and a son: "Tonga KILLS Major John Sholto"
+            was Bartholomew), Captain/Miss Morstan (father and daughter),
+            Mr./Mrs. Smith. An untitled form conflicts with nothing, so
+            "Sholto" and "Holmes" still join by name.
+
+            Applied at every NAME-based door — pass 1, the pass-2a subset
+            shortcut, a disambiguation answer — and to the similarity path
+            too, for the reason the ambiguity refusal is: an entity and its
+            own surname share evidence, so the embedding would bring the
+            refused merge straight back.
+            """
+            theirs = titles[cid]
+            return bool(mention_titles) and bool(theirs) and not (
+                mention_titles & theirs
+            )
 
         # Pass 1 — exact or alias match, same kind, same book. Restricted to
         # a book the canonical already spans: a normalized-name match across
@@ -491,11 +529,13 @@ async def resolve_mentions(
                 if kinds[cid] == mention.kind
                 and mention.book_id in books[cid]
                 and normalized in aliases
+                and not title_conflict(cid)
             ),
             None,
         )
         if hit is not None:
             raw_names[hit].add(mention.name)
+            titles[hit] |= mention_titles
             result.mention_map[key] = hit
             continue
 
@@ -519,6 +559,7 @@ async def resolve_mentions(
             cid
             for cid in alias_sets
             if kinds[cid] == mention.kind and alias_tokens[cid] & mention_tokens
+            and not title_conflict(cid)
         ]
         chosen: str | None = None
         vector: list[float] | None = None
@@ -746,6 +787,7 @@ async def resolve_mentions(
             alias_tokens[chosen] = set(mention_tokens)
             books[chosen] = {mention.book_id}
             raw_names[chosen] = {mention.name}
+            titles[chosen] = set(mention_titles)
             if vector is not None:
                 # Reuse the vector already computed above instead of an
                 # extra embed call; entities created with no candidates to
@@ -760,6 +802,7 @@ async def resolve_mentions(
             alias_tokens[chosen] |= mention_tokens
             books[chosen].add(mention.book_id)
             raw_names[chosen].add(mention.name)
+            titles[chosen] |= mention_titles
             if is_new_alias:
                 result.aliases.append(
                     AliasRecord(

@@ -304,6 +304,13 @@ def parse_batch_answers(
     answers: dict[str, str] = {}
     for number, (echoed, choice) in sorted(parsed.items()):
         question = questions[number - 1]
+        # The prompt labels each name "name: <mention> (<kind>)", and a model
+        # may echo that whole label (measured live on gemini-3.5-flash-lite,
+        # Task 11a). The kind is the question's own, so the echo still
+        # identifies the question; any other suffix does not.
+        kind_suffix = f"({question.kind})".casefold()
+        if echoed.casefold().endswith(kind_suffix):
+            echoed = echoed[: -len(kind_suffix)]
         if _squash(echoed) != _squash(question.mention):
             raise AnswerMismatchError(
                 f"answer {number} echoes {echoed!r} but question {number} asked"

@@ -1400,3 +1400,135 @@ def test_description_shaped_names_against_the_measured_corpus_cases() -> None:
         "",
     ]:
         assert not is_description_shaped(name), name
+
+
+# --- Task 11a: names with EQUAL token sets are one rival, not several ------
+#
+# Measured on A Study in Scarlet: bare `watson` nested inside `john watson`,
+# `john watson m d` and `john h watson m d`. Initials and the "M.D." letters
+# are single characters and carry no identity, so all three are the SAME
+# token set {john, watson}, i.e. one person written three ways. Counting them
+# as three rivals made `watson` "ambiguous", refused its merge, and split
+# Watson into "Doctor Watson" (110 edges) and "John H. Watson, M.D." (56).
+
+
+def test_superset_count_is_over_distinct_token_sets() -> None:
+    from lore.resolve.resolver import superset_counts, superset_names
+
+    rows = [
+        ("b1", "Character", "watson"),
+        ("b1", "Character", "john watson"),
+        ("b1", "Character", "john watson m d"),
+        ("b1", "Character", "john h watson m d"),
+    ]
+    assert superset_counts(rows)[("b1", "Character", "watson")] == 1
+    assert len(superset_names(rows)[("b1", "Character", "watson")]) == 1
+
+
+def test_superset_count_still_sees_two_different_people() -> None:
+    from lore.resolve.resolver import superset_counts
+
+    rows = [
+        ("b1", "Character", "sholto"),
+        ("b1", "Character", "thaddeus sholto"),
+        ("b1", "Character", "thaddeus j sholto"),  # same man, an initial
+        ("b1", "Character", "bartholomew sholto"),
+    ]
+    assert superset_counts(rows)[("b1", "Character", "sholto")] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_bare_name_joins_one_person_written_several_ways() -> None:
+    mentions = [
+        Mention("Doctor Watson", "Character", "b1", "a: the doctor"),
+        Mention("Dr. Watson", "Character", "b1", "b: apply Dr. Watson"),
+        Mention("John Watson", "Character", "b1", "c: John Watson"),
+        Mention("John Watson, M.D.", "Character", "b1", "d: reprinted"),
+        Mention("John H. Watson, M.D.", "Character", "b1", "e: reminiscences"),
+    ]
+    recorded: list = []
+    embed = _embedder({})
+    result = await resolve_mentions(mentions, embed, _never,
+                                    record_ambiguous=recorded.append)
+    assert len(result.entities) == 1
+    assert recorded == []
+    targets = {result.mention_map[(m.name, m.kind, m.book_id)] for m in mentions}
+    assert len(targets) == 1
+
+
+# --- Task 11a: one name, two titles, two people ------------------------------
+#
+# `normalize_name` strips the title, so "Major Sholto", "Mr. Sholto" and
+# "Sholto" are one name, `sholto`, and every decision about that name used to
+# apply to all three. Measured on The Sign of the Four: the cached answer for
+# the grouped `sholto` question (asked with "Major Sholto was strolling on the
+# beach") merged it into Major John Sholto, and Small's "I never raised hand
+# against Mr. Sholto. It was that little hell-hound Tonga who shot one of his
+# cursed darts into him" (14:0, Bartholomew) became "Tonga KILLS Major John
+# Sholto". Across both novels exactly three names carry two different
+# titles, and each is two people: Major/Mr. Sholto, Captain/Miss Morstan,
+# Mr./Mrs. Smith. Showing the model six passages per name instead of one
+# sentence was tried live on gemini-3.5-flash-lite: told to pick an option only
+# if every passage meant it, it still picked the Major; asked for one verdict
+# per passage and merged only on unanimity, it refused the Major but also lost
+# five correct merges and made two new wrong ones (London -> South London,
+# Nevada -> Sierra Nevada). So the rule is deterministic: a surface form never
+# joins an entity by NAME alone when its title conflicts with every title that
+# entity is written with.
+
+
+@pytest.mark.asyncio
+async def test_a_conflicting_title_does_not_join_on_pass_one() -> None:
+    result = await resolve_mentions([
+        Mention("Mr. Smith", "Character", "b1", "a: the boatman"),
+        Mention("Mrs. Smith", "Character", "b1", "b: his wife"),
+    ], _embedder({}), _always)
+    assert len(result.entities) == 2
+
+
+@pytest.mark.asyncio
+async def test_equal_or_absent_titles_still_join() -> None:
+    result = await resolve_mentions([
+        Mention("Dr. Watson", "Character", "b1", "a"),
+        Mention("Doctor Watson", "Character", "b1", "b"),
+        Mention("Watson", "Character", "b1", "c"),
+        Mention("Mr. Holmes", "Character", "b1", "d"),
+        Mention("Holmes", "Character", "b1", "e"),
+        Mention("Sherlock Holmes", "Character", "b1", "f"),
+    ], _embedder({}), _never)
+    assert len(result.entities) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_conflicting_title_does_not_join_through_a_name_variant() -> None:
+    # "Miss Morstan" nests inside "Captain Arthur Morstan" unambiguously, and
+    # the identical embedder would merge them on similarity too.
+    same = [1.0, 0.0, 0.0]
+    result = await resolve_mentions([
+        Mention("Captain Arthur Morstan", "Character", "b1", "a: the father"),
+        Mention("Miss Morstan", "Character", "b1", "a: the father"),
+    ], _embedder({"Captain Arthur Morstan": same, "Miss Morstan": same}), _always)
+    assert len(result.entities) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_bare_name_answer_does_not_carry_a_conflicting_title_with_it() -> None:
+    mentions = [
+        Mention("Major John Sholto", "Character", "b1", "a: the major"),
+        Mention("Major Sholto", "Character", "b1", "b: strolling on the beach"),
+        Mention("Sholto", "Character", "b1", "c: I have killed him in my sleep"),
+        Mention("Mr. Sholto", "Character", "b1", "d: never raised hand against"),
+        Mention("Thaddeus Sholto", "Character", "b1", "e: the twin"),
+        Mention("Bartholomew Sholto", "Character", "b1", "f: the other twin"),
+    ]
+    result = await resolve_mentions(
+        mentions, _embedder({}), _never,
+        decide_ambiguous=_picks("Major John Sholto"),
+    )
+    target = {m.name: result.mention_map[(m.name, m.kind, m.book_id)] for m in mentions}
+    assert target["Major Sholto"] == target["Major John Sholto"]
+    assert target["Sholto"] == target["Major John Sholto"]
+    assert target["Mr. Sholto"] not in {
+        target["Major John Sholto"], target["Thaddeus Sholto"],
+        target["Bartholomew Sholto"],
+    }

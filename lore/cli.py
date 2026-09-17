@@ -412,6 +412,11 @@ def process(
             f"{report.dropped_edges} edge(s) dropped — an endpoint was named"
             " nowhere in the book"
         )
+    if report.self_loop_edges:
+        typer.echo(
+            f"{report.self_loop_edges} self-loop edge(s) dropped — subject and"
+            " object are the same entity"
+        )
     if report.first_person_checked:
         typer.echo(
             f"{report.first_person_rewrites} first-person endpoint(s) rewritten to"

@@ -57,6 +57,33 @@ def normalize_name(name: str) -> str:
         return ""
 
 
+# Two spellings of one title are one title ("Dr. Watson", "Doctor Watson").
+_TITLE_SPELLINGS = {"dr": "doctor", "st": "saint", "ms": "miss"}
+
+
+def leading_titles(name: str) -> frozenset[str]:
+    """The titles `normalize_name` strips from the front of a surface form.
+
+    Task 11a. Stripping them is what lets "Mr. Darcy" and "Darcy" be one
+    name — and also what makes "Major Sholto" and "Mr. Sholto", or "Captain
+    Morstan" and "Miss Morstan", one name when they are two people. The
+    resolver uses these to keep a conflicting title from joining an entity
+    by name alone (see `resolve_mentions`).
+
+    Empty for a name that is nothing but a title ("the Captain"): there the
+    title IS the name, and `normalize_name` keeps it.
+    """
+    text = _NON_WORD.sub(" ", _POSSESSIVE.sub("", name.casefold()))
+    tokens = text.split()
+    while tokens and tokens[0] in _ARTICLES:
+        tokens = tokens[1:]
+    titles: set[str] = set()
+    while tokens and tokens[0] in HONORIFICS:
+        titles.add(_TITLE_SPELLINGS.get(tokens[0], tokens[0]))
+        tokens = tokens[1:]
+    return frozenset(titles) if tokens else frozenset()
+
+
 def entity_id(normalized_name: str, kind: str) -> str:
     digest = hashlib.sha256(f"{normalized_name}|{kind}".encode()).hexdigest()
     return f"e{digest[:12]}"

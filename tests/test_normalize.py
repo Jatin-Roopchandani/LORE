@@ -55,3 +55,17 @@ def test_contentless_input_yields_empty() -> None:
     assert normalize_name("") == ""
     assert normalize_name("   ") == ""
     assert normalize_name("...") == ""
+
+
+# Task 11a — the title a surface form carries, which `normalize_name` strips.
+def test_leading_titles_are_the_honorifics_normalize_strips() -> None:
+    from lore.resolve.normalize import leading_titles
+
+    assert leading_titles("Major Sholto") == frozenset({"major"})
+    assert leading_titles("Mr. Sholto") == frozenset({"mr"})
+    assert leading_titles("the Captain Morstan") == frozenset({"captain"})
+    assert leading_titles("Sholto") == frozenset()
+    # Spellings of one title are one title.
+    assert leading_titles("Dr. Watson") == leading_titles("Doctor Watson")
+    # A name that is nothing BUT a title keeps it as its name, not its title.
+    assert leading_titles("the Captain") == frozenset()

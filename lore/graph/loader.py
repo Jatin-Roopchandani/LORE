@@ -115,6 +115,8 @@ class LoadReport:
     chunks: int = 0
     mentions: int = 0
     dropped_edges: int = 0
+    # Task 11a: edges whose subject and object resolved to ONE entity.
+    self_loop_edges: int = 0
     dropped_mentions: int = 0
     boilerplate_chunks: int = 0
     # Task 10c. `first_person_checked` is True when speaker resolution ran;
@@ -313,21 +315,23 @@ def _entities_of_kinds(
     return _entities_from(kuzu.execute(_ENTITIES_BY_KIND, {"kinds": wanted}))
 
 
-def _alias_node_ids(kuzu: KuzuStore) -> set[str]:
-    """Every Entity node that exists only as another entity's surface form.
+def _alias_targets(kuzu: KuzuStore) -> dict[str, tuple[str, ...]]:
+    """Every Entity node that exists only as another entity's surface form,
+    mapped to the canonical node(s) it is ALIAS_OF.
 
     An ALIAS_OF source is not an entity in its own right — `Watson` and
     `Dr. John Watson` are one person and one of them is only a spelling. It
     must therefore take no part in the cross-book variant search: as a
     match it is a duplicate of its own canonical, and counting it would
-    make every genuine variant pair look ambiguous and refuse it.
+    make every genuine variant pair look ambiguous and refuse it. Nor may
+    another book's entity settle ON it (Task 11a, see `_reconcile_ids`).
     """
-    return {
-        row[0]
-        for row in kuzu.execute(
-            "MATCH (a:Entity)-[:ALIAS_OF]->(:Entity) RETURN DISTINCT a.id"
-        )
-    }
+    targets: dict[str, set[str]] = {}
+    for alias, canonical in kuzu.execute(
+        "MATCH (a:Entity)-[:ALIAS_OF]->(c:Entity) RETURN a.id, c.id"
+    ):
+        targets.setdefault(alias, set()).add(canonical)
+    return {alias: tuple(sorted(found)) for alias, found in targets.items()}
 
 
 def _name_forms(base: str, aliases: tuple[str, ...]) -> list[frozenset[str]]:
@@ -462,7 +466,9 @@ async def _reconcile_ids(
     # different people, which is exactly what the Task 1h stoplist is for,
     # and that is true whichever side of the match it sits on.
     searchable = _entities_of_kinds(kuzu, (c.kind for c in candidates))
-    alias_nodes = _alias_node_ids(kuzu)
+    alias_targets = _alias_targets(kuzu)
+    alias_nodes = set(alias_targets)
+    own_ids = {candidate.id for candidate in candidates}
     variant_index: dict[str, list[tuple[str, str, list[frozenset[str]]]]] = {}
     for node in searchable.values():
         node_base = _base_normalized(node.id, node.name, node.kind, node.aliases)
@@ -586,6 +592,29 @@ async def _reconcile_ids(
                 pick = found[0][1]
             if pick is not None and pick not in claimed:
                 chosen = pick
+                persisted.setdefault(chosen, searchable[chosen])
+
+        # 2c. Task 11a — never settle an entity on another entity's ALIAS
+        #    node. Steps 1 and 2 key on the id chain, and an alias node's id
+        #    is the hash of a spelling: measured on the two novels, A Study
+        #    in Scarlet resolved `watson` into "John H. Watson, M.D." and
+        #    wrote `Watson` as an ALIAS_OF node, then The Sign of the Four's
+        #    own canonical `watson` hashed to that node and fused into it.
+        #    Every Sign of the Four edge hung on the spelling, and Watson was
+        #    two nodes (110 and 56 edges). The alias node names its
+        #    canonical, so the entity belongs THERE.
+        #
+        #    Only for a real entity (an alias candidate is meant to land on
+        #    an alias node), only for a single unambiguous target, and never
+        #    onto an id this load is writing as one of its own entities —
+        #    that ALIAS_OF edge is this book's stale opinion of itself, and
+        #    this load's resolution has just overruled it.
+        if chosen is not None and not candidate.is_alias:
+            targets = alias_targets.get(chosen, ())
+            if (len(targets) == 1 and targets[0] != chosen
+                    and targets[0] not in claimed and targets[0] not in own_ids
+                    and targets[0] in searchable):
+                chosen = targets[0]
                 persisted.setdefault(chosen, searchable[chosen])
 
         # 3. Refused (or nothing to fuse with): take the next free slot, so
@@ -780,12 +809,26 @@ async def load_book(
     id_for, persisted = await _reconcile_ids(kuzu, book_id, candidates)
 
     node_writes: dict[str, dict] = {}
+    # Task 11a: nodes whose outgoing ALIAS_OF edges this load re-decides.
+    realias: set[str] = set()
     for candidate in candidates:
         target = id_for[candidate.id]
         node = persisted.get(target)
         # `node` is present only for a same-book rewrite or an approved
         # cross-book merge; a refusal minted a fresh id, so nothing of the
         # other book's entity leaks into it.
+        #
+        # Task 11a: a node that ONLY this book owned is rewritten from
+        # this load, not unioned with its old self. An id is a hash of a
+        # normalized name, so after a resolution change the same id can name
+        # a different entity: measured on a reload of The Sign of the Four,
+        # "Mr. Sholto" kept the display name "Major Sholto" and two nodes
+        # came out named "Captain Morstan". Another book's claim on a node is
+        # still unioned — that is its data, not this book's stale copy.
+        if node is not None and set(node.books) <= {book_id}:
+            node = None
+        if node is None or not candidate.is_alias:
+            realias.add(target)
         node_writes[target] = {
             "id": target,
             "name": display_name(
@@ -816,7 +859,15 @@ async def load_book(
         for key, target in resolution.mention_map.items()
     }
     alias_statements: list[Statement] = []
+    canonical_ids = {entity.id for entity in resolution.entities}
     for alias in alias_records:
+        if alias.alias_id in canonical_ids:
+            # Task 11a. The alias's id is ALSO a canonical entity of this
+            # load: a title kept "Mrs. Smith" apart from "Mr. Smith", who
+            # joined "Mr. Mordecai Smith", and both surface forms normalize
+            # to `smith`. The node belongs to the entity; an ALIAS_OF from it
+            # would send every seed on her to the boatman (`canonical_ids`).
+            continue
         alias_target = id_for.get(alias.alias_id, alias.alias_id)
         canonical_target = id_for.get(alias.canonical_id, alias.canonical_id)
         if alias_target == canonical_target:
@@ -886,6 +937,15 @@ async def load_book(
         # endpoint is already resolved, so the mention is added rather
         # than the faithfully-extracted edge dropped.
         chunk_entities.setdefault(chunk_id, set()).update((subject_id, object_id))
+        if subject_id == object_id:
+            # Task 11a. An edge from an entity to itself carries no graph
+            # information, and on the Gemini graph it was always wrong: 31 of
+            # 1,075 edges, 8 of them "X KILLS X" where the text says X died,
+            # the rest "Holmes INTERACTS_WITH Holmes" and the like. Decided on
+            # the RESOLVED ids, so two surface forms of one entity count too.
+            # The chunk still mentions the entity (added just above).
+            report.self_loop_edges += 1
+            continue
         raw = str(row.get("predicate") or "")
         rel_statements.append((
             "MATCH (s:Entity {id: $s}), (o:Entity {id: $o})"
@@ -919,6 +979,16 @@ async def load_book(
         statements.append((
             "MATCH (e:Entity {id: $id}) SET e.books = $books",
             {"id": node_id, "books": list(released[node_id].books)},
+        ))
+    # Task 11a. ALIAS_OF edges are MERGEd and were never removed, so a
+    # reload kept every alias decision any earlier resolution made. A node
+    # this load writes as a real entity, or one only this book owns, has its
+    # outgoing ALIAS_OF re-decided below (`alias_statements`). Another book's
+    # alias node keeps its edges: that decision is the other book's.
+    for node_id in sorted(realias):
+        statements.append((
+            "MATCH (a:Entity {id: $id})-[r:ALIAS_OF]->(:Entity) DELETE r",
+            {"id": node_id},
         ))
     statements.append(
         ("MERGE (b:Book {id: $id}) SET b.title = $title, b.author = $author",

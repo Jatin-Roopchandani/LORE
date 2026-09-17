@@ -388,9 +388,12 @@ async def test_probe_all_self_referential_triplets(tmp_path: Path) -> None:
     ])
     report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     assert report.entities == 1
+    # Task 11a: an edge from an entity to itself carries no information and
+    # is dropped (and counted); the entity and its MENTIONS stay.
     loops = _rows(kuzu, "MATCH (a:Entity)-[r:REL]->(b:Entity) WHERE a.id = b.id"
                         " RETURN r.predicate")
-    assert sorted(loops) == [("BECOMES",), ("EXPERIENCES",)]
+    assert loops == []
+    assert (report.rel_edges, report.self_loop_edges) == (0, 2)
     assert report.mentions == 1
     conn.close(); kuzu.close()
 
@@ -2070,4 +2073,149 @@ async def test_a_chunk_covered_by_two_completed_units_refuses_to_load(
     assert "more than one completed" in message
     assert f"{BOOK}:1:0" in message and "extract_unit" in message
     assert _rows(kuzu, "MATCH (e:Entity) RETURN e.id") == []
+    conn.close(); kuzu.close()
+
+
+# --------------------------------------------------------------------------
+# Task 11a — self-loop edges and the cross-book alias-node split.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_self_loop_edges_are_dropped_and_counted(tmp_path: Path) -> None:
+    # Measured on the Gemini graph: 31 edges whose two endpoints are one
+    # entity, 8 of them "X KILLS X" where the text says X died. Two surface
+    # forms of one entity count too: they only become a loop after resolution.
+    config, conn, kuzu, lance = _env(tmp_path)
+    chunks = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, chunks, [
+        _row(chunks[0].id, BOOK, "Ana", "KILLS", "Ana", ["Ana"], ["Character"]),
+        _row(chunks[0].id, BOOK, "Holmes", "INTERACTS_WITH", "Sherlock Holmes",
+             ["Holmes", "Sherlock Holmes"], ["Character", "Character"]),
+        _row(chunks[0].id, BOOK, "Ana", "LOVES", "Bo", ["Ana", "Bo"],
+             ["Character", "Character"]),
+    ])
+    report = await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert report.rel_edges == 1
+    assert report.self_loop_edges == 2
+    assert report.dropped_edges == 0, "a self-loop is not an unnamed endpoint"
+    assert _rows(kuzu, "MATCH (a:Entity)-[r:REL]->(b:Entity) WHERE a.id = b.id"
+                       " RETURN r.predicate") == []
+    # The chunk still MENTIONS the entity: it is named there, only the edge
+    # carried no information.
+    mentioned = sorted(r[0] for r in _rows(
+        kuzu, "MATCH (c:Chunk)-[:MENTIONS]->(e:Entity) RETURN e.name"))
+    assert mentioned == ["Ana", "Bo", "Sherlock Holmes"]
+    conn.close(); kuzu.close()
+
+
+def _watson_alias_in_one_book(config, conn) -> None:
+    """Book A writes the full name and the bare one; book B only the bare one.
+
+    A resolves `watson` into `john watson`, so `Watson` is only an ALIAS node
+    in A. B's own canonical `watson` hashes to that alias node's id.
+    """
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "John Watson", "LOVES", "Bo",
+             ["John Watson", "Bo"], ["Character", "Character"]),
+        _row(a[0].id, BOOK, "Watson", "OPPOSES", "Cy",
+             ["Watson", "Cy"], ["Character", "Character"]),
+    ])
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, "Dr. Watson", "LOVES", "Zed",
+             ["Dr. Watson", "Zed"], ["Character", "Character"]),
+    ])
+
+
+def _watson_edge_nodes(kuzu) -> dict[str, set[str]]:
+    """Watson-named node -> the books of the REL edges hanging on it."""
+    found: dict[str, set[str]] = {}
+    for name, book in _rows(
+        kuzu, "MATCH (s:Entity)-[r:REL]->(:Entity) WHERE s.name CONTAINS 'Watson'"
+              " RETURN s.name, r.book_id"):
+        found.setdefault(name, set()).add(book)
+    return found
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", [[BOOK, BOOK_B], [BOOK_B, BOOK]])
+async def test_a_bare_name_that_is_an_alias_in_another_book_joins_its_canonical(
+    tmp_path: Path, order: list[str]
+) -> None:
+    # Task 11a, measured: on A Study in Scarlet `watson` became an alias of
+    # "John H. Watson, M.D."; The Sign of the Four's own `watson` has the
+    # alias node's id, fused into THAT node by id collision, and Watson ended
+    # up as two nodes, 110 edges on the alias and 56 on the canonical.
+    config, conn, kuzu, lance = _env(tmp_path)
+    _watson_alias_in_one_book(config, conn)
+    for book in order:
+        await load_book(config, conn, kuzu, lance, book, _embed, _never)
+    assert _watson_edge_nodes(kuzu) == {"John Watson": {BOOK, BOOK_B}}
+    snapshot = _snapshot(kuzu, lance)
+    for book in order + order:
+        await load_book(config, conn, kuzu, lance, book, _embed, _never)
+    assert _snapshot(kuzu, lance) == snapshot
+    conn.close(); kuzu.close()
+
+
+# Task 11a — a canonical entity is never another entity's alias, and a reload
+# rewrites a node only this book owns from this load, not from its old self.
+#
+# The title rule makes these reachable on real data: "Mr. Smith" joins "Mr.
+# Mordecai Smith", so `smith` is an ALIAS id, and "Mrs. Smith" — a different
+# person — becomes its own entity with that very id. Measured on the offline
+# replay: "Mr. Sholto" (17 edges) was written ALIAS_OF "Major John Sholto",
+# which `canonical_ids` would follow straight back to the father; and on a
+# reload over the existing graph it also kept the old display name "Major
+# Sholto", while two nodes ended up named "Captain Morstan".
+
+
+def _smiths(with_wife: bool, title: str = "Mr."):
+    rows = [
+        _row(f"{BOOK}:1:0", BOOK, f"{title} Mordecai Smith", "LOVES", "Bo",
+             [f"{title} Mordecai Smith", "Bo"], ["Character", "Character"],
+             evidence="a: the boatman"),
+        _row(f"{BOOK}:1:0", BOOK, f"{title} Smith", "OPPOSES", "Cy",
+             [f"{title} Smith", "Cy"], ["Character", "Character"],
+             evidence="b: he rowed"),
+    ]
+    if with_wife:
+        rows.append(_row(f"{BOOK}:1:0", BOOK, "Mrs. Smith", "LOVES", "Zed",
+                         ["Mrs. Smith", "Zed"], ["Character", "Character"],
+                         evidence="c: Mrs. Smith waited"))
+    return rows
+
+
+@pytest.mark.asyncio
+async def test_a_canonical_entity_is_never_written_as_an_alias(tmp_path: Path) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _add_book(config, conn, BOOK, [_chunk(BOOK, 1, 0)], _smiths(with_wife=True))
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    edges = dict(_rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity) RETURN o.name, s.name"))
+    assert edges["Zed"] == "Mrs. Smith"
+    assert edges["Bo"] == edges["Cy"] == "Mr. Mordecai Smith"
+    assert _rows(kuzu, "MATCH (a:Entity)-[:ALIAS_OF]->(:Entity) MATCH (a)-[r:REL]-()"
+                       " RETURN a.name") == []
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_reload_after_reextraction_equals_a_fresh_load(tmp_path: Path) -> None:
+    fresh_config, fresh_conn, fresh_kuzu, fresh_lance = _env(tmp_path / "fresh")
+    # "Captain Smith" is a LONGER name than "Mrs. Smith", so a reload that
+    # kept the node's old display name would visibly keep the wrong one.
+    _add_book(fresh_config, fresh_conn, BOOK, [_chunk(BOOK, 1, 0)],
+              _smiths(True, "Captain"))
+    await load_book(fresh_config, fresh_conn, fresh_kuzu, fresh_lance, BOOK, _embed, _never)
+    expected = _snapshot(fresh_kuzu, fresh_lance)
+    fresh_conn.close(); fresh_kuzu.close()
+
+    config, conn, kuzu, lance = _env(tmp_path / "reload")
+    _add_book(config, conn, BOOK, [_chunk(BOOK, 1, 0)], _smiths(False, "Captain"))
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    _write_unit(config, BOOK, _smiths(True, "Captain"), [f"{BOOK}:1:0"])
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert _snapshot(kuzu, lance) == expected
     conn.close(); kuzu.close()
