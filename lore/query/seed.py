@@ -6,7 +6,9 @@ and those ids become traversal seeds.
 """
 from __future__ import annotations
 
-from typing import Awaitable, Callable, Protocol
+import re
+from dataclasses import dataclass
+from typing import Awaitable, Callable, Iterable, Protocol, Sequence
 
 from lore.extract.embed import QUERY_PREFIX
 from lore.query.models import SeedEntity
@@ -96,6 +98,7 @@ async def seed_entities(
     k: int = 8,
     max_seeds: int = 8,
     vector: list[float] | None = None,
+    named: Sequence[SeedEntity] = (),
 ) -> list[SeedEntity]:
     """The canonical entities the question's vector neighbourhood points at.
 
@@ -116,6 +119,9 @@ async def seed_entities(
     `vector`, when given, is the question's vector from `embed_question`,
     and `embed` is not called: the agent embeds once and reuses that vector
     to rank the evidence.
+
+    `named` (from `named_seeds`) come first and are not counted against
+    `max_seeds`; a vector seed that is also named appears once, as named.
     """
     if vector is None:
         vector = await embed_question(question, embed)
@@ -136,7 +142,7 @@ async def seed_entities(
                 best[entity_id] = score
 
     if not best:
-        return []
+        return list(named)
 
     ordered = sorted(best, key=lambda i: (best[i], i))
     # Resolve aliases first, then drop the edgeless, then cap. In that order
@@ -144,24 +150,131 @@ async def seed_entities(
     # ranked 3rd for Q2 of the acceptance set and `Millbank` 2nd for Q7, and
     # neither can contribute a single row.
     resolved = live_entity_ids(kuzu, canonical_ids(kuzu, ordered))
+    # Named seeds do not spend the vector cap (Task 10d): John Ferrier, named
+    # in Q3, sat at live rank 9 and was cut.
+    taken = {seed.id for seed in named}
+    vector_seeds = _entities(kuzu, [i for i in resolved if i not in taken], best)
+    return [*named, *vector_seeds[:max_seeds]]
+
+
+def _entities(kuzu: _Kuzu, entity_ids: list[str],
+              best: dict[str, float]) -> list[SeedEntity]:
+    """SeedEntity per id, in the order given; an id with no node is skipped."""
+    if not entity_ids:
+        return []
     rows = {
         row[0]: row
         for row in kuzu.execute(
             "MATCH (e:Entity) WHERE e.id IN $ids "
             "RETURN e.id, e.name, e.kind, e.books",
-            {"ids": resolved},
+            {"ids": entity_ids},
         )
     }
-    seeds: list[SeedEntity] = []
-    for entity_id in resolved:
-        row = rows.get(entity_id)
-        if row is None:
-            continue
-        seeds.append(
-            SeedEntity(
-                id=row[0], name=row[1], kind=row[2],
-                books=tuple(row[3] or ()),
-                score=best.get(entity_id, float("inf")),
-            )
-        )
-    return seeds[:max_seeds]
+    return [
+        SeedEntity(id=row[0], name=row[1], kind=row[2], books=tuple(row[3] or ()),
+                   score=best.get(entity_id, float("inf")))
+        for entity_id in entity_ids
+        if (row := rows.get(entity_id)) is not None
+    ]
+
+
+# --- Task 10d: entities the question names outright ---------------------------
+
+_TOKEN = re.compile(r"\w+")
+# Stripped from the front of a name before it is indexed, so "The Aurora"
+# is also found as "Aurora". Never a name on their own.
+_ARTICLES = frozenset({"the", "a", "an"})
+# Titles and forms of address. A name made only of these ("Mr.", "the
+# Doctor") would match every question that uses the word, so it is not
+# indexed; with a real name beside it ("Mr. Fox") it is.
+_TITLES = frozenset({
+    "mr", "mrs", "miss", "ms", "master", "dr", "doctor", "sir", "madam", "lady",
+    "lord", "captain", "major", "colonel", "general", "lieutenant", "sergeant",
+    "inspector", "constable", "professor", "rev", "reverend", "father", "mother",
+    "brother", "sister", "uncle", "aunt", "young", "old", "st", "saint", "king",
+    "queen", "prince", "princess", "of",
+})
+MIN_ONE_WORD_NAME = 4
+
+
+def _qualifies(tokens: tuple[str, ...]) -> bool:
+    """A phrase is a usable name: some word in it is not a title or article,
+    and it is either several words or one word of MIN_ONE_WORD_NAME+ letters."""
+    core = tuple(t for t in tokens if t not in _ARTICLES)
+    if not any(t not in _TITLES for t in core):
+        return False
+    return len(core) >= 2 or len(core[0]) >= MIN_ONE_WORD_NAME
+
+
+@dataclass(frozen=True)
+class NameIndex:
+    """Lower-cased word sequence -> the entity ids with that name or alias."""
+
+    phrases: dict[tuple[str, ...], tuple[str, ...]]
+    longest: int
+
+    @classmethod
+    def from_rows(cls, rows: Iterable[Sequence]) -> "NameIndex":
+        """`rows` are (entity id, name, aliases)."""
+        phrases: dict[tuple[str, ...], list[str]] = {}
+        for entity_id, name, aliases in rows:
+            for text in (name, *(aliases or ())):
+                tokens = tuple(_TOKEN.findall(str(text or "").lower()))
+                forms = {tokens}
+                while tokens and tokens[0] in _ARTICLES:
+                    tokens = tokens[1:]
+                    forms.add(tokens)
+                for form in forms:
+                    if form and _qualifies(form):
+                        ids = phrases.setdefault(form, [])
+                        if entity_id not in ids:
+                            ids.append(entity_id)
+        return cls(phrases={k: tuple(sorted(v)) for k, v in phrases.items()},
+                   longest=max((len(k) for k in phrases), default=0))
+
+
+def load_name_index(kuzu: _Kuzu) -> NameIndex:
+    """Every entity's name and aliases, in ONE read. Call once per question."""
+    return NameIndex.from_rows(
+        (row[0], row[1], row[2])
+        for row in kuzu.execute("MATCH (e:Entity) RETURN e.id, e.name, e.aliases")
+    )
+
+
+def named_entity_ids(text: str, index: NameIndex) -> list[str]:
+    """Entity ids whose name or alias appears in `text` as a whole phrase.
+
+    Case-insensitive, on word boundaries, in order of appearance. A match
+    lying inside a longer match is not a second match: "Jefferson Hope"
+    does not also name the node "Jefferson". One exception to
+    case-insensitivity: in a question written with capitals, a lower-case
+    single word is ordinary prose ("a small boat"), not the name "Small".
+    In an all-lower-case question casing says nothing, so it still counts.
+    """
+    words = list(_TOKEN.finditer(text))
+    lowered = [w.group().lower() for w in words]
+    cased = any(ch.isupper() for ch in text)
+    spans: list[tuple[int, int, tuple[str, ...]]] = []
+    for size in range(min(index.longest, len(words)), 0, -1):
+        for start in range(len(words) - size + 1):
+            ids = index.phrases.get(tuple(lowered[start:start + size]))
+            if not ids:
+                continue
+            if size == 1 and cased and words[start].group().islower():
+                continue
+            if any(a <= start and start + size <= b for a, b, _ in spans):
+                continue
+            spans.append((start, start + size, ids))
+    found: list[str] = []
+    for _, _, ids in sorted(spans):
+        for entity_id in ids:
+            if entity_id not in found:
+                found.append(entity_id)
+    return found
+
+
+async def named_seeds(kuzu: _Kuzu, entity_ids: Sequence[str]) -> list[SeedEntity]:
+    """Named entity ids as seeds: resolved to their canonical, edgeless dropped,
+    in the order given. Uncapped; the caller's vector seeds carry the cap."""
+    resolved = live_entity_ids(kuzu, canonical_ids(kuzu, list(entity_ids)))
+    return _entities(kuzu, resolved, {i: 0.0 for i in resolved})

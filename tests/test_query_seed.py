@@ -277,3 +277,101 @@ async def test_embed_question_applies_the_query_prefix_once() -> None:
 
     assert await embed_question("who?", embed) == [0.2] * 4
     assert seen == [QUERY_PREFIX + "who?"]
+
+
+# --- Task 10d: entities the question names outright ---------------------------
+
+from lore.query.seed import NameIndex, load_name_index, named_entity_ids  # noqa: E402
+
+NAMES = NameIndex.from_rows([
+    ("hope", "Mr. Jefferson Hope", ["jefferson hope", "hope"]),
+    ("ferrier", "John Ferrier", ["ferrier"]),
+    ("lucy", "Lucy Ferrier", []),
+    ("jeff", "Jefferson", []),
+    ("dog", "Toby", []),
+    ("ann", "Ann", []),          # 3 letters: never matched alone
+    ("mr", "Mr.", []),           # a title alone is not a name
+    ("doc", "the Doctor", []),   # nor is a title behind an article
+    ("police", "the police", []),
+    ("small", "Small", []),
+])
+
+
+def test_a_whole_phrase_name_matches_case_insensitively_in_order() -> None:
+    assert named_entity_ids("how is JOHN FERRIER connected to jefferson hope?",
+                            NAMES) == ["ferrier", "hope"]
+
+
+def test_a_name_inside_a_longer_matched_name_is_not_a_second_match() -> None:
+    # "Jefferson" (its own node) and "Ferrier" sit inside longer matches.
+    assert named_entity_ids("Why did Jefferson Hope visit Lucy Ferrier?", NAMES) == [
+        "hope", "lucy"]
+
+
+def test_word_boundaries_hold() -> None:
+    assert named_entity_ids("Hopeful Tobyish people", NAMES) == []
+
+
+def test_a_three_letter_name_never_matches_but_a_multi_word_one_may() -> None:
+    assert named_entity_ids("Did Ann see him?", NAMES) == []
+    short = NameIndex.from_rows([("ab", "Al Bo", [])])
+    assert named_entity_ids("where did al bo go", short) == ["ab"]
+
+
+def test_titles_and_articles_alone_are_not_names() -> None:
+    assert named_entity_ids("Did Mr. Smith call the Doctor?", NAMES) == []
+
+
+def test_a_generic_phrase_hits_only_an_entity_literally_named_that() -> None:
+    assert named_entity_ids("when did the police arrive?", NAMES) == ["police"]
+    assert named_entity_ids("when did the police arrive?",
+                            NameIndex.from_rows([("x", "Scotland Yard", [])])) == []
+
+
+def test_a_lowercase_word_in_a_capitalised_question_is_not_a_one_word_name() -> None:
+    # "small" in ordinary prose is an adjective; in an all-lowercase question
+    # casing says nothing, so it may still be the name.
+    assert named_entity_ids("Who rowed a small boat?", NAMES) == []
+    assert named_entity_ids("Where was Small caught?", NAMES) == ["small"]
+    assert named_entity_ids("where was small caught?", NAMES) == ["small"]
+
+
+@pytest.mark.asyncio
+async def test_named_seeds_come_first_and_do_not_use_the_vector_cap() -> None:
+    from lore.query.seed import named_seeds
+
+    async def embed(texts: list[str]) -> list[list[float]]:
+        return [[0.1] * 4]
+
+    entities = {i: (i, i.upper(), "Character", ["b1"]) for i in ["e1", "e2", "e3", "n1"]}
+    kuzu = FakeKuzu({"alias_n": "n1"}, entities, degrees={"e1": 1, "e2": 1, "e3": 1, "n1": 2})
+    named = await named_seeds(kuzu, ["alias_n", "dead"])
+    assert [s.id for s in named] == ["n1"]  # resolved through ALIAS_OF; dead dropped
+    lance = FakeLance([
+        {"chunk_id": "c1", "entity_ids": ["e1", "n1"], "_distance": 0.1},
+        {"chunk_id": "c2", "entity_ids": ["e2"], "_distance": 0.2},
+        {"chunk_id": "c3", "entity_ids": ["e3"], "_distance": 0.3},
+    ])
+    seeds = await seed_entities("q", lance, kuzu, embed, max_seeds=2, named=named)
+    assert [s.id for s in seeds] == ["n1", "e1", "e2"]
+
+
+def test_load_name_index_reads_names_and_aliases_from_a_real_graph(tmp_path: Path) -> None:
+    from lore.db.kuzu_store import KuzuStore
+
+    store = KuzuStore(tmp_path / "graph")
+    store.execute("CREATE (:Entity {id: 'h', name: 'Mr. Jefferson Hope', kind: 'Character',"
+                  " aliases: ['jefferson hope'], books: ['b1']})")
+    store.execute("CREATE (:Entity {id: 'f', name: 'John Ferrier', kind: 'Character',"
+                  " aliases: [], books: ['b1']})")
+    queries: list[str] = []
+
+    class Counting:
+        def execute(self, cypher, params=None):
+            queries.append(cypher)
+            return store.execute(cypher, params)
+
+    index = load_name_index(Counting())
+    assert len(queries) == 1, "one batched read per ask"
+    assert named_entity_ids("Did jefferson hope know John Ferrier?", index) == ["h", "f"]
+    store.close()

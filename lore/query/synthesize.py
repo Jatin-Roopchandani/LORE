@@ -21,7 +21,7 @@ answers anyway. Whoever builds `generate` for synthesis must pass a
 from __future__ import annotations
 
 import re
-from typing import Awaitable, Callable, Iterable
+from typing import Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
 
@@ -32,6 +32,13 @@ Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
 REFUSAL = "The loaded books do not contain enough to answer that."
 
 MIN_QUOTE_WORDS = 4
+# A quote with an ellipsis is checked segment by segment; each segment must
+# carry this many words on its own, so "... the ring ..." proves nothing.
+MIN_SEGMENT_WORDS = 3
+
+# Said when the model could not answer the whole question but some of its
+# claims verified: those claims are the answer, and the user is told so.
+PARTIAL_NOTE = "the passages only partly answer the question"
 
 BAD_PASSAGE = "bad passage number"
 TOO_SHORT = "quote too short"
@@ -48,10 +55,16 @@ Quotes are checked by code. Any claim whose quote is not found, exactly as
 written, in the passage it names is discarded. A claim must say only what
 its quote says; do not combine passages into something neither one states.
 Use only what the passages say. If they do not contain the answer, set
-can_answer to false rather than guessing.
+can_answer to false rather than guessing. If they answer only part of it,
+set can_answer to false and still give the claims they do support. A claim
+states something the passages say; never make a claim about what the
+passages leave out.
+To quote words that are not next to each other in the passage, join the
+pieces with "..."; every piece must be copied word for word, in the
+passage's order, and be at least {min_segment} words long.
 
 Question: {question}
-{relations}
+{checklist}{relations}
 Passages:
 {passages}
 {truncation}"""
@@ -70,6 +83,7 @@ _CHARS = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"',
                         "–": "-", "—": "-"})
 _SPACE = re.compile(r"\s+")
 _WORD = re.compile(r"\w")
+_ELLIPSIS = re.compile(r"\.\.\.|…")
 
 
 class Claim(BaseModel):
@@ -87,10 +101,34 @@ def _normalise(text: str) -> str:
     return _SPACE.sub(" ", text.lower().translate(_CHARS)).strip()
 
 
-def _quote_in(quote: str, text: str) -> bool:
+def _find(quote: str, text: str, start: int = 0) -> re.Match | None:
     # Whole words at both ends: "olmes spoke" is not a quote of "Holmes spoke".
     pattern = r"(?<!\w)" + re.escape(quote) + r"(?!\w)"
-    return re.search(pattern, text) is not None
+    return re.compile(pattern).search(text, start)
+
+
+def _words(text: str) -> int:
+    return sum(1 for w in text.split(" ") if _WORD.search(w))
+
+
+def _segments(quote: str) -> list[str]:
+    """The quote split at each "..." / "…", blank ends dropped."""
+    return [part.strip() for part in _ELLIPSIS.split(quote) if part.strip()]
+
+
+def _segments_in(segments: list[str], text: str) -> bool:
+    """Every segment found in `text`, each after the previous one ends.
+
+    The earliest match of each segment leaves the most room for the rest,
+    so this greedy scan finds an in-order placement whenever one exists.
+    """
+    position = 0
+    for segment in segments:
+        found = _find(segment, text, position)
+        if found is None:
+            return False
+        position = found.end()
+    return True
 
 
 def verify_claims(
@@ -102,17 +140,24 @@ def verify_claims(
     least MIN_QUOTE_WORDS words (a short quote matches almost anywhere and
     proves nothing), and the quote appears in THAT passage after
     normalisation. Order is preserved; nothing is deduplicated here.
+
+    A quote with an ellipsis ("..." or "…") is split there. Each segment
+    needs MIN_SEGMENT_WORDS words, the segments together MIN_QUOTE_WORDS,
+    and every segment must be found in that same passage, in order, under
+    the same whole-word rule.
     """
     texts = {p.n: _normalise(p.text) for p in passages}
     kept: list[Claim] = []
     dropped: list[tuple[Claim, str]] = []
     for claim in synthesis.claims:
-        quote = _normalise(claim.quote)
+        segments = _segments(_normalise(claim.quote))
         if claim.passage not in texts:
             dropped.append((claim, BAD_PASSAGE))
-        elif sum(1 for w in quote.split(" ") if _WORD.search(w)) < MIN_QUOTE_WORDS:
+        elif (sum(_words(s) for s in segments) < MIN_QUOTE_WORDS
+              or (len(segments) > 1 and min(_words(s) for s in segments)
+                  < MIN_SEGMENT_WORDS)):
             dropped.append((claim, TOO_SHORT))
-        elif not _quote_in(quote, texts[claim.passage]):
+        elif not _segments_in(segments, texts[claim.passage]):
             dropped.append((claim, NOT_IN_PASSAGE))
         else:
             kept.append(claim)
@@ -155,7 +200,8 @@ def _relation_line(edge: EdgeRow, n: int, book_titles: dict[str, str] | None) ->
 
 
 def _build_prompt(
-    question: str, evidence: Evidence, book_titles: dict[str, str] | None = None
+    question: str, evidence: Evidence, book_titles: dict[str, str] | None = None,
+    checklist: Sequence[str] = (),
 ) -> str:
     lines = _relation_lines(evidence, book_titles)
     relations = _RELATIONS.format(lines="\n".join(lines)) if lines else ""
@@ -167,7 +213,12 @@ def _build_prompt(
         "\nSome evidence was truncated to fit; answer from what is shown.\n"
         if evidence.truncated else ""
     )
-    return _PROMPT.format(min_words=MIN_QUOTE_WORDS, question=question,
+    covers = (
+        "Make sure the answer covers:\n" + "\n".join(f"- {c}" for c in checklist) + "\n"
+        if len(checklist) > 1 else ""
+    )
+    return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
+                          question=question, checklist=covers,
                           relations=relations, passages=passages,
                           truncation=truncation)
 
@@ -181,17 +232,20 @@ async def synthesize(
     template: str | None = None,
     note: str | None = None,
     book_titles: dict[str, str] | None = None,
+    checklist: Sequence[str] = (),
 ) -> Answer:
-    def answer(text: str) -> Answer:
+    """`checklist`: the question's sub-questions; shown only when there are
+    several, so a partial answer is visible as partial."""
+    def answer(text: str, extra_note: str | None = None) -> Answer:
+        notes = "; ".join(n for n in (note, extra_note) if n) or None
         return Answer(text=text, passages=evidence.passages, mode=mode,
-                      template=template, note=note)
+                      template=template, note=notes)
 
     if not evidence.passages:
         return answer(REFUSAL)
 
-    result = await generate(_build_prompt(question, evidence, book_titles), Synthesis)
-    if not result.can_answer:
-        return answer(REFUSAL)
+    result = await generate(
+        _build_prompt(question, evidence, book_titles, checklist), Synthesis)
 
     # The answer is written by code, from claims whose quotes were found in
     # the passage they cite. Nothing the model wrote outside a kept claim
@@ -199,4 +253,6 @@ async def synthesize(
     kept, _ = verify_claims(result, evidence.passages)
     if not kept:
         return answer(REFUSAL)
-    return answer(_compose(kept))
+    # can_answer=false with verified claims is a partial answer, not a
+    # refusal: Task 10a measured H6 and H4 discarding verified gold claims.
+    return answer(_compose(kept), None if result.can_answer else PARTIAL_NOTE)

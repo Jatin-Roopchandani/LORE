@@ -19,6 +19,7 @@ from lore.query.agent import (
     answer_question,
     make_query_models,
 )
+from lore.query.decompose import SubQuestions
 from lore.query.models import Answer
 from lore.query.select import TemplateChoice
 from lore.query.synthesize import REFUSAL, Claim, Synthesis
@@ -56,6 +57,8 @@ class FakeKuzu:
         self.template_params: list[dict] = []
 
     def execute(self, cypher, params=None):
+        if "e.aliases" in cypher or "b:Book" in cypher:  # Task 10d's reads
+            return []
         if "ALIAS_OF" in cypher:
             return []
         if "count(r)" in cypher:
@@ -295,8 +298,10 @@ async def test_gemini_answers_while_selection_stays_local(tmp_path: Path) -> Non
     assert answer.selection_model == CONFIG.ollama.model
     assert [c[2] for c in _selection_calls(ollama)] == [SELECTION_OPTIONS]
     assert _synthesis_calls(ollama) == []
-    (prompt, schema), = gemini.prompts
-    assert schema is Synthesis
+    # Task 10d changed this. It was `(prompt, schema), = gemini.prompts` with
+    # `schema is Synthesis`: decomposition now runs on the synthesis provider.
+    assert [schema for _, schema in gemini.prompts] == [SubQuestions, Synthesis]
+    prompt = gemini.prompts[-1][0]
     assert f"({TITLE}, chapter 1)" in prompt
     conn.close()
 
@@ -368,11 +373,16 @@ async def test_both_steps_on_gemini_share_one_client_and_name_each_model(
     ollama = FakeOllama(CHOICE)
     # The cascade reaches a different model for each call. Selection's
     # model must be read when selection ran, not after synthesis moved it.
+    # Task 10d changed this. It was models=[3.1, 3.5] and
+    # `[schema ...] == [TemplateChoice, Synthesis]`: decomposition is now the
+    # first call on the shared client.
     gemini = FakeGemini(choice=CHOICE,
-                        models=["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"])
+                        models=["gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
+                                "gemini-3.5-flash-lite"])
     models = make_query_models(BOTH_GEMINI_CONFIG, ollama=ollama, gemini=gemini)
     answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
-    assert [schema for _, schema in gemini.prompts] == [TemplateChoice, Synthesis]
+    assert [schema for _, schema in gemini.prompts] == [SubQuestions, TemplateChoice,
+                                                        Synthesis]
     assert ollama.generated == []
     assert answer.selection_model == "gemini-3.1-flash-lite"
     assert answer.model == "gemini-3.5-flash-lite"
@@ -504,7 +514,10 @@ async def test_a_question_below_the_relevance_floor_is_an_empty_answer(tmp_path:
     assert answer.mode == "empty"
     assert answer.text == REFUSAL
     assert answer.model is None and answer.selection_model is None
-    assert ollama.generated == [], "no selection and no synthesis call"
+    # Task 10d changed this. It was `assert ollama.generated == []`: the floor
+    # now reads the best score over the sub-questions, so decomposition runs
+    # first. Still no selection and no synthesis call.
+    assert _selection_calls(ollama) == [] and _synthesis_calls(ollama) == []
     conn.close()
 
 
@@ -528,4 +541,322 @@ async def test_the_floor_does_not_apply_to_the_baseline(tmp_path: Path) -> None:
     answer = await answer_question(conn, ExplodingKuzu(), FakeLance([far]), "q", models,
                                    baseline=True)
     assert answer.mode == "vector-baseline"
+    conn.close()
+
+
+# --- Task 10d: vector union, decomposition, named seeds, budget ----------------
+
+from lore.query.agent import (  # noqa: E402
+    GEMINI_EVIDENCE_CHARS,
+    VECTOR_K,
+    evidence_budget,
+)
+from lore.query.templates import MAX_EVIDENCE_CHARS  # noqa: E402
+
+
+def _chunk(conn, chunk_id, text, chapter):
+    conn.execute("INSERT INTO chunks (id, book_id, chapter_seq, scene_seq, seq, text)"
+                 " VALUES (?, 'b1', ?, 0, ?, ?)", (chunk_id, chapter, chapter, text))
+    conn.commit()
+
+
+def _row(chunk_id, entity_ids, distance, chapter, text=""):
+    return {"chunk_id": chunk_id, "entity_ids": entity_ids, "_distance": distance,
+            "book_id": "b1", "chapter_seq": chapter, "text": text}
+
+
+class VectorLance:
+    """search_chunks answers by which vector asked; chunk vectors are stored."""
+
+    def __init__(self, rows_by_vector, vectors):
+        self._rows, self._vectors = rows_by_vector, vectors
+        self.searches: list[tuple] = []
+
+    def search_chunks(self, vector, limit=5):
+        self.searches.append((tuple(vector), limit))
+        return self._rows.get(tuple(vector), [])[:limit]
+
+    def chunk_vectors(self, chunk_ids):
+        return {c: self._vectors[c] for c in chunk_ids if c in self._vectors}
+
+
+class EntityKuzu:
+    """Edges per entity; every entity with edges is live and canonical."""
+
+    def __init__(self, edges_by_entity, names=()):
+        self._edges, self._names = edges_by_entity, list(names)
+        self.template_params: list[dict] = []
+        self.name_reads = 0
+
+    def execute(self, cypher, params=None):
+        params = params or {}
+        if "e.aliases" in cypher:
+            self.name_reads += 1
+            return [list(r) for r in self._names]
+        if "b:Book" in cypher:
+            return [["A Study in Scarlet"]]
+        if "ALIAS_OF" in cypher:
+            return []
+        if "count(r)" in cypher:
+            return [[i, 1] for i in params["ids"] if self._edges.get(i)]
+        if "RETURN e.id, e.name" in cypher:
+            return [[i, i.upper(), "Character", ["b1"]] for i in params["ids"]]
+        self.template_params.append(dict(params))
+        return self._edges.get(params.get("entity_id"), [])
+
+
+def _edge_row(chunk_id, chapter, subject):
+    return [subject, "UNCATEGORIZED", "met", "X", "ev", 0.9, "b1", chapter, chunk_id]
+
+
+def _scripted(vectors_by_text, sub_questions, choices, synthesis=None, *,
+              evidence_chars=MAX_EVIDENCE_CHARS):
+    """QueryModels whose every answer is scripted and every call recorded."""
+    calls = {"embed": [], "decompose": [], "select": [], "synthesize": []}
+
+    async def embed(texts):
+        calls["embed"].append(list(texts))
+        return [vectors_by_text[t] for t in texts]
+
+    async def decompose(prompt, schema):
+        calls["decompose"].append(prompt)
+        return SubQuestions(sub_questions=sub_questions)
+
+    async def select(prompt, schema):
+        calls["select"].append(prompt)
+        return choices[len(calls["select"]) - 1]
+
+    async def synthesize(prompt, schema):
+        calls["synthesize"].append(prompt)
+        return synthesis or Synthesis(claims=[], can_answer=False)
+
+    async def aclose():
+        return None
+
+    models = QueryModels(embed, select, synthesize, lambda: "writer", aclose,
+                         lambda: "chooser", decompose=decompose,
+                         evidence_chars=evidence_chars)
+    return models, calls
+
+
+A, B, Q = [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.6, 0.6, 0.529]
+
+
+async def test_the_union_adds_a_vector_only_chunk_to_the_evidence(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    _chunk(conn, "b1:9:0", "VECTORONLY passage with no edges at all", 9)
+    lance = VectorLance(
+        {tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1), _row("b1:9:0", [], 0.3, 9)]},
+        {"b1:1:0": Q, "b1:9:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    models, calls = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"],
+                              [TemplateChoice(template="neighbours", entities=[1])])
+    answer = await answer_question(conn, kuzu, lance, "who?", models)
+    assert answer.mode == "graph"
+    assert [p.chunk_id for p in answer.passages] == ["b1:1:0", "b1:9:0"]
+    assert "VECTORONLY" in calls["synthesize"][0]
+    # The union uses the baseline's k and the question's own vector.
+    assert (tuple(Q), VECTOR_K) in lance.searches
+    conn.close()
+
+
+async def test_a_single_part_question_is_todays_pipeline_plus_the_union(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]}, {"b1:1:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    models, calls = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"],
+                              [TemplateChoice(template="neighbours", entities=[1])])
+    answer = await answer_question(conn, kuzu, lance, "who?", models)
+    assert calls["embed"] == [[QUERY_PREFIX + "who?"]], "embedded once"
+    assert len(calls["decompose"]) == 1 and len(calls["select"]) == 1
+    assert answer.template == "neighbours"
+    assert answer.sub_questions == ("who?",)
+    assert "covers" not in calls["synthesize"][0].lower()
+    assert kuzu.name_reads == 1
+    conn.close()
+
+
+async def test_malformed_decomposition_falls_back_to_the_question(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()  # FakeOllama answers SubQuestions with a Synthesis
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert answer.mode == "graph"
+    assert answer.sub_questions == ("q",)
+    assert len(_selection_calls(ollama)) == 1
+    conn.close()
+
+
+async def test_decomposition_runs_on_the_synthesis_provider_deterministically(
+        tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    (_, _, options), = [c for c in ollama.generated if c[1] is SubQuestions]
+    assert options == SELECTION_OPTIONS
+
+    ollama = FakeOllama(CHOICE)
+    gemini = FakeGemini()
+    models = make_query_models(GEMINI_CONFIG, ollama=ollama, gemini=gemini)
+    await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert [s for _, s in gemini.prompts][0] is SubQuestions
+    assert not [c for c in ollama.generated if c[1] is SubQuestions]
+    conn.close()
+
+
+async def test_a_two_part_question_gets_both_parts_before_a_second_for_either(
+        tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    big = "x" * 5000  # the ollama budget (12,000) holds two
+    for chunk_id, ch in (("b1:2:0", 2), ("b1:3:0", 3), ("b1:4:0", 4)):
+        _chunk(conn, chunk_id, f"MARK{ch} " + big, ch)
+    question = "Who is A, and why B?"
+    subs = ["Who is A?", "Why B?"]
+    lance = VectorLance(
+        {tuple(Q): [_row("b1:2:0", ["ea"], 0.4, 2)],
+         tuple(A): [_row("b1:2:0", ["ea"], 0.1, 2), _row("b1:3:0", ["ea"], 0.2, 3)],
+         tuple(B): [_row("b1:4:0", ["eb"], 0.5, 4)]},
+        # b1:3:0 is A's second-best and still outscores B's best on B.
+        {"b1:2:0": [0.95, 0.0, 0.0], "b1:3:0": [0.9, 0.0, 0.0], "b1:4:0": [0.0, 0.3, 0.0]})
+    kuzu = EntityKuzu({"ea": [_edge_row("b1:2:0", 2, "A"), _edge_row("b1:3:0", 3, "A")],
+                       "eb": [_edge_row("b1:4:0", 4, "B")]})
+    models, calls = _scripted(
+        {QUERY_PREFIX + question: Q, QUERY_PREFIX + subs[0]: A, QUERY_PREFIX + subs[1]: B},
+        subs,
+        [TemplateChoice(template="neighbours", entities=[1]),
+         TemplateChoice(template="two_hop", entities=[1])])
+    answer = await answer_question(conn, kuzu, lance, question, models)
+    assert answer.mode == "graph"
+    assert [p.chunk_id for p in answer.passages] == ["b1:2:0", "b1:4:0"]
+    assert answer.template == "neighbours+two_hop"
+    assert answer.sub_questions == tuple(subs)
+    # One selection per part, each asked about its own part.
+    assert len(calls["select"]) == 2
+    assert "Question: Who is A?" in calls["select"][0]
+    assert "Question: Why B?" in calls["select"][1]
+    # Sub-questions are embedded together, once; the question once.
+    assert sorted(t for batch in calls["embed"] for t in batch) == sorted(
+        QUERY_PREFIX + t for t in [question, *subs])
+    # Synthesis answers the ORIGINAL question, with the parts as a checklist.
+    prompt = calls["synthesize"][0]
+    assert f"Question: {question}" in prompt
+    assert "- Who is A?" in prompt and "- Why B?" in prompt
+    # Decomposition is told the graph's books, so "in each novel" can split.
+    assert "A Study in Scarlet" in calls["decompose"][0]
+    conn.close()
+
+
+async def test_template_names_are_deduplicated_in_part_order(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    subs = ["one?", "two?", "three?"]
+    rows = {tuple(v): [_row("b1:1:0", ["e1"], 0.2, 1)] for v in (Q, A, B, [0.0, 0.0, 1.0])}
+    lance = VectorLance(rows, {"b1:1:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    models, _ = _scripted(
+        {QUERY_PREFIX + "q": Q, QUERY_PREFIX + "one?": A, QUERY_PREFIX + "two?": B,
+         QUERY_PREFIX + "three?": [0.0, 0.0, 1.0]}, subs,
+        [TemplateChoice(template="two_hop", entities=[1]),
+         TemplateChoice(template="neighbours", entities=[1]),
+         TemplateChoice(template="two_hop", entities=[1])])
+    answer = await answer_question(conn, kuzu, lance, "q", models)
+    assert answer.template == "two_hop+neighbours"
+    conn.close()
+
+
+async def test_named_entities_are_seeded_first_for_every_part(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]}, {"b1:1:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")],
+                       "ferrier": [_edge_row("b1:1:0", 1, "Ferrier")]},
+                      names=[("ferrier", "John Ferrier", ["ferrier"])])
+    models, calls = _scripted({QUERY_PREFIX + "Who was John Ferrier?": Q},
+                              ["Who was John Ferrier?"],
+                              [TemplateChoice(template="neighbours", entities=[1])])
+    await answer_question(conn, kuzu, lance, "Who was John Ferrier?", models)
+    assert "1) FERRIER" in calls["select"][0] and "2) E1" in calls["select"][0]
+    assert kuzu.template_params[0]["entity_id"] == "ferrier"
+    conn.close()
+
+
+async def test_the_floor_reads_the_best_part_not_the_whole_question(tmp_path: Path) -> None:
+    from lore.query.agent import RELEVANCE_FLOOR
+
+    conn = _conn(tmp_path)
+    far = 2 * (1 - (RELEVANCE_FLOOR - 0.05))
+    near = 2 * (1 - (RELEVANCE_FLOOR + 0.05))
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], far, 1)],
+                         tuple(A): [_row("b1:1:0", ["e1"], near, 1)],
+                         tuple(B): [_row("b1:1:0", ["e1"], far, 1)]}, {"b1:1:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    vectors = {QUERY_PREFIX + "q": Q, QUERY_PREFIX + "a?": A, QUERY_PREFIX + "b?": B}
+    choice = TemplateChoice(template="neighbours", entities=[1])
+    models, _ = _scripted(vectors, ["a?", "b?"], [choice, choice])
+    assert (await answer_question(conn, kuzu, lance, "q", models)).mode == "graph"
+    models, calls = _scripted(vectors, ["b?"], [choice])
+    answer = await answer_question(conn, kuzu, lance, "q", models)
+    assert answer.mode == "empty" and calls["select"] == [] and calls["synthesize"] == []
+    conn.close()
+
+
+async def test_an_empty_traversal_falls_back_to_every_parts_vector_passages(
+        tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    _chunk(conn, "b1:9:0", "MARKB passage", 9)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)],
+                         tuple(A): [_row("b1:1:0", ["e1"], 0.2, 1)],
+                         tuple(B): [_row("b1:9:0", ["e1"], 0.3, 9)]},
+                        {"b1:1:0": A, "b1:9:0": B})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    choice = TemplateChoice(template="invented", entities=[1])
+    models, calls = _scripted({QUERY_PREFIX + "q": Q, QUERY_PREFIX + "a?": A,
+                               QUERY_PREFIX + "b?": B}, ["a?", "b?"], [choice, choice])
+    answer = await answer_question(conn, kuzu, lance, "q", models)
+    assert answer.mode == "vector-fallback"
+    assert answer.note == GRAPH_EMPTY_NOTE
+    assert answer.template is None
+    assert [p.chunk_id for p in answer.passages] == ["b1:1:0", "b1:9:0"]
+    conn.close()
+
+
+def test_the_evidence_budget_follows_the_synthesis_provider() -> None:
+    assert evidence_budget("ollama") == MAX_EVIDENCE_CHARS == 12_000
+    assert evidence_budget("gemini") == GEMINI_EVIDENCE_CHARS
+    assert GEMINI_EVIDENCE_CHARS > MAX_EVIDENCE_CHARS
+    assert make_query_models(CONFIG, ollama=FakeOllama(CHOICE)).evidence_chars == 12_000
+    gemini = make_query_models(GEMINI_CONFIG, ollama=FakeOllama(CHOICE), gemini=FakeGemini())
+    assert gemini.evidence_chars == GEMINI_EVIDENCE_CHARS
+    # Selection's provider does not decide it: synthesis reads the evidence.
+    select_only = make_query_models(SELECT_GEMINI_CONFIG, ollama=FakeOllama(CHOICE),
+                                    gemini=FakeGemini())
+    assert select_only.evidence_chars == 12_000
+
+
+async def test_the_agent_assembles_within_the_models_budget(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    for ch in (2, 3):
+        _chunk(conn, f"b1:{ch}:0", f"MARK{ch} " + "x" * 900, ch)
+    lance = VectorLance({tuple(Q): [_row("b1:2:0", ["e1"], 0.1, 2),
+                                    _row("b1:3:0", ["e1"], 0.2, 3)]},
+                        {"b1:2:0": Q, "b1:3:0": [0.1, 0.1, 0.1]})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:2:0", 2, "H"), _edge_row("b1:3:0", 3, "H")]})
+    choice = [TemplateChoice(template="neighbours", entities=[1])]
+    small, _ = _scripted({QUERY_PREFIX + "q": Q}, ["q"], choice, evidence_chars=1000)
+    assert [p.chunk_id for p in (await answer_question(conn, kuzu, lance, "q", small)).passages
+            ] == ["b1:2:0"]
+    roomy, _ = _scripted({QUERY_PREFIX + "q": Q}, ["q"], choice, evidence_chars=5000)
+    assert len((await answer_question(conn, kuzu, lance, "q", roomy)).passages) == 2
+    conn.close()
+
+
+def test_answer_gains_sub_questions_without_breaking_old_constructions() -> None:
+    answer = Answer(text="a", passages=(), mode="empty", template=None, note=None)
+    assert answer.sub_questions == ()
+
+
+async def test_baseline_stays_undecomposed(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    answer = await answer_question(conn, ExplodingKuzu(), FakeLance([SEED_ROW]), "q", models,
+                                   baseline=True)
+    assert not [c for c in ollama.generated if c[1] is SubQuestions]
+    assert answer.sub_questions == ()
     conn.close()

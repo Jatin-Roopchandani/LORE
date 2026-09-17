@@ -328,3 +328,28 @@ def test_a_blank_question_is_rejected_before_anything_opens(env: Path, question)
     assert "lore process" not in result.output   # not the no-library message
     assert calls == [] and not models.called and not kuzu.called
     assert not (env / "data").exists()
+
+
+# --- Task 10d: the sub-questions, when there is more than one ------------------
+
+def test_ask_prints_sub_questions_under_the_mode_line_when_there_are_several(
+        env: Path) -> None:
+    _library(env, graphed=True)
+    fake, _ = _returning(_answer(sub_questions=("Who is A?", "Why did B go?")))
+    with patch("lore.cli.answer_question", fake):
+        result = runner.invoke(app, ["ask", "q"])
+    assert result.exit_code == 0, result.output
+    last_two = result.output.strip().splitlines()[-2:]
+    assert last_two[0].startswith("mode: graph via by_predicate")
+    assert last_two[1] == "sub-questions: Who is A? | Why did B go?"
+
+
+@pytest.mark.parametrize("subs", [(), ("q",)], ids=["none", "one"])
+def test_ask_prints_no_sub_question_line_for_one_part(env: Path, subs) -> None:
+    _library(env, graphed=True)
+    fake, _ = _returning(_answer(sub_questions=subs))
+    with patch("lore.cli.answer_question", fake):
+        result = runner.invoke(app, ["ask", "q"])
+    assert result.exit_code == 0, result.output
+    assert "sub-questions" not in result.output
+    assert result.output.strip().splitlines()[-1].startswith("mode: graph")

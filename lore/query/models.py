@@ -82,3 +82,7 @@ class Answer:
     # The model that chose the search template, named the same way. None
     # when no selection ran: --baseline, or no seed entities.
     selection_model: str | None = None
+    # The parts the question was split into, in order (Task 10d). A
+    # one-part question holds itself; empty when no decomposition ran
+    # (--baseline), so constructions that predate it still work.
+    sub_questions: tuple[str, ...] = ()

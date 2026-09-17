@@ -317,3 +317,88 @@ def test_ranked_selection_never_truncates_to_nothing(tmp_path: Path) -> None:
                         scores={"b1:1:0": 0.5})
     assert [p.chunk_id for p in evidence.passages] == ["b1:1:0"]
     conn.close()
+
+
+# --- Task 10d: vector passages join; every sub-question gets its turn ----------
+
+from lore.query.subgraph import assemble_ranked  # noqa: E402
+
+
+def test_a_vector_only_chunk_joins_the_evidence(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    _seed(conn, "b1:1:0", "graph passage")
+    _seed(conn, "b1:5:0", "vector passage", chapter_seq=5)
+    evidence = assemble_ranked(conn, [_edge("b1", 1, "b1:1:0")],
+                               extra_chunks=[("b1:5:0", "b1", 5)],
+                               score_lists=[{"b1:1:0": 0.2, "b1:5:0": 0.9}])
+    assert [(p.n, p.chunk_id) for p in evidence.passages] == [(1, "b1:1:0"), (2, "b1:5:0")]
+    conn.close()
+
+
+def test_a_chunk_from_both_sources_appears_once(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    _seed(conn, "b1:1:0", "shared passage")
+    edge = _edge("b1", 1, "b1:1:0")
+    evidence = assemble_ranked(conn, [edge, edge],
+                               extra_chunks=[("b1:1:0", "b1", 1), ("b1:1:0", "b1", 1)],
+                               score_lists=[{"b1:1:0": 0.5}, {"b1:1:0": 0.4}])
+    assert [p.chunk_id for p in evidence.passages] == ["b1:1:0"]
+    assert evidence.edges == (edge,)
+    conn.close()
+
+
+def test_every_part_gets_a_passage_before_any_part_gets_a_second(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    for ch in (1, 2, 3, 4):
+        _seed(conn, f"b1:{ch}:0", "x" * 100, chapter_seq=ch)
+    rows = [_edge("b1", ch, f"b1:{ch}:0") for ch in (1, 2, 3, 4)]
+    part_a = {"b1:1:0": 0.9, "b1:2:0": 0.8, "b1:3:0": 0.1, "b1:4:0": 0.1}
+    part_b = {"b1:1:0": 0.3, "b1:2:0": 0.0, "b1:3:0": 0.5, "b1:4:0": 0.0}
+    evidence = assemble_ranked(conn, rows, score_lists=[part_a, part_b], max_chars=200)
+    # b1:2:0 outscores part B's best passage, but B gets its first turn first.
+    assert [p.chunk_id for p in evidence.passages] == ["b1:1:0", "b1:3:0"]
+    assert evidence.truncated is True
+    conn.close()
+
+
+def test_a_part_whose_next_chunk_is_already_taken_moves_down_its_list(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    for ch in (1, 2, 3):
+        _seed(conn, f"b1:{ch}:0", "x" * 100, chapter_seq=ch)
+    rows = [_edge("b1", ch, f"b1:{ch}:0") for ch in (1, 2, 3)]
+    same_top = {"b1:1:0": 0.9, "b1:2:0": 0.1, "b1:3:0": 0.5}
+    other = {"b1:1:0": 0.9, "b1:2:0": 0.6, "b1:3:0": 0.1}
+    evidence = assemble_ranked(conn, rows, score_lists=[same_top, other], max_chars=200)
+    assert [p.chunk_id for p in evidence.passages] == ["b1:1:0", "b1:2:0"]
+    conn.close()
+
+
+def test_one_part_ranks_like_assemble_with_scores(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    rows = _two_books(conn, per_book=4, size=100)
+    scores = {"b1:1:0": 0.1, "b1:2:0": 0.2, "b1:3:0": 0.3, "b1:4:0": 0.8,
+              "b2:1:0": 0.1, "b2:2:0": 0.7, "b2:3:0": 0.2, "b2:4:0": 0.6}
+    single = assemble(conn, rows, max_chars=400, scores=scores)
+    ranked = assemble_ranked(conn, rows, score_lists=[scores], max_chars=400)
+    assert ranked.passages == single.passages
+    assert ranked.truncated == single.truncated
+    conn.close()
+
+
+def test_relationship_lines_keep_only_edges_whose_chunk_is_kept(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    _seed(conn, "b1:1:0", "x" * 100)
+    _seed(conn, "b1:2:0", "x" * 100, chapter_seq=2)
+    kept = _edge("b1", 1, "b1:1:0", subject="Kept")
+    cut = _edge("b1", 2, "b1:2:0", subject="Cut")
+    evidence = assemble_ranked(conn, [cut, kept], max_chars=150,
+                               score_lists=[{"b1:1:0": 0.9, "b1:2:0": 0.1}])
+    assert evidence.edges == (kept,)
+    conn.close()
+
+
+def test_no_rows_and_no_vector_chunks_is_empty(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    evidence = assemble_ranked(conn, [], score_lists=[{}])
+    assert evidence.passages == () and evidence.edges == ()
+    conn.close()

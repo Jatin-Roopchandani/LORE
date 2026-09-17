@@ -5,25 +5,34 @@ model does each of the two LLM jobs.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Awaitable, Callable
 
 from pydantic import BaseModel
 
 from lore.config import LoreConfig
+from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import list_books
-from lore.query.models import Answer, Evidence
-from lore.query.seed import embed_question, seed_entities
+from lore.query.decompose import decompose
+from lore.query.models import Answer, EdgeRow, Evidence
+from lore.query.seed import (
+    embed_question,
+    load_name_index,
+    named_entity_ids,
+    named_seeds,
+    seed_entities,
+)
 from lore.query.select import select_template
 from lore.query.subgraph import (
-    assemble,
+    assemble_ranked,
     passages_from_chunks,
     relevance,
     run_template,
 )
 from lore.query.synthesize import synthesize
+from lore.query.templates import MAX_EVIDENCE_CHARS
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
@@ -74,6 +83,28 @@ CANDIDATE_LIMIT = 250
 # Twelve questions on one library is a small sample, and short questions
 # score lowest, so re-measure before moving this on another corpus.
 RELEVANCE_FLOOR = 0.62
+# How many nearest passages --baseline answers from, and so how many every
+# graph answer is also given, per sub-question (Task 10d): Task 10a found
+# 31% of the gold chunks in the vector top 8 never reached the graph
+# evidence. The same k and the same question vector as the baseline.
+VECTOR_K = 5
+# The evidence budget when Gemini writes the answer. MAX_EVIDENCE_CHARS
+# (12,000) was sized for the local 3B's 12,288-token context and stays the
+# Ollama budget. On the Holmes library the median chunk is ~1,473 chars, so
+# 12,000 holds ~8 passages: 2 per part for a 4-part question, and Task 10a
+# found gold cut by the budget at a median 0.014 cosine below the line.
+# 36,000 holds ~24 median passages: 6 per part at 4 parts, 12 at 2.
+# Request size: ~9k tokens of passages (~4 chars/token), plus relationship
+# lines, instructions and the answer, keeps the one synthesis call under
+# ~20k tokens and a whole ask (decomposition, up to 4 selections, synthesis)
+# near 25k -- about a tenth of the Lite tier's free per-minute token
+# allowance, so the 15 RPM ceiling, not tokens, still bounds throughput.
+GEMINI_EVIDENCE_CHARS = 36_000
+
+
+def evidence_budget(provider: str) -> int:
+    """Characters of passages synthesis may read, by who writes the answer."""
+    return GEMINI_EVIDENCE_CHARS if provider == "gemini" else MAX_EVIDENCE_CHARS
 
 
 @dataclass(frozen=True)
@@ -85,6 +116,11 @@ class QueryModels:
     SYNTHESIS_OPTIONS) or on Gemini, as `[lore.selection]` and
     `[lore.synthesis]` say. `selection_model` and `synthesis_model` name the
     model that answered that step's most recent call.
+
+    `decompose` splits the question into parts; it runs on the synthesis
+    provider at temperature 0. None means no decomposition: every question
+    is one part. `evidence_chars` is the evidence budget, which follows the
+    synthesis provider (`evidence_budget`).
     """
 
     embed: Embed
@@ -93,6 +129,8 @@ class QueryModels:
     synthesis_model: Callable[[], str | None]
     aclose: Callable[[], Awaitable[None]]
     selection_model: Callable[[], str | None]
+    decompose: Generate | None = field(default=None)
+    evidence_chars: int = MAX_EVIDENCE_CHARS
 
 
 def make_query_models(
@@ -164,11 +202,18 @@ def make_query_models(
         async def synthesize_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
             return await writer.generate_json(prompt, schema)
 
+        # The synthesis client and cascade; generate_json runs at temperature 0.
+        decompose_with = synthesize_with
+
         def synthesis_model() -> str | None:
             return writer.last_model
     else:
         async def synthesize_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
             return await local.generate(prompt, schema, options=SYNTHESIS_OPTIONS)
+
+        async def decompose_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
+            # A short prompt, deterministic like selection.
+            return await local.generate(prompt, schema, options=SELECTION_OPTIONS)
 
         def synthesis_model() -> str | None:
             return config.ollama.model
@@ -183,7 +228,8 @@ def make_query_models(
             await local.aclose()
 
     return QueryModels(embed, select, synthesize_with, synthesis_model, aclose,
-                       selection_model)
+                       selection_model, decompose=decompose_with,
+                       evidence_chars=evidence_budget(config.synthesis.provider))
 
 
 async def _select(question, seeds, models: QueryModels):
@@ -219,10 +265,32 @@ async def _synthesize(question, evidence, models: QueryModels, **kwargs) -> Answ
 
 async def _vector_answer(lance, question, vector, models, titles, *, mode,
                          note) -> Answer:
-    passages = passages_from_chunks(lance.search_chunks(vector, limit=5))
+    passages = passages_from_chunks(lance.search_chunks(vector, limit=VECTOR_K))
     evidence = Evidence(edges=(), passages=passages, truncated=False)
     return await _synthesize(question, evidence, models, mode=mode, note=note,
                              book_titles=titles)
+
+
+def _cosine(row: dict) -> float:
+    # Squared L2 on unit vectors -> cosine; a row with no distance is farthest.
+    return 1 - float(row.get("_distance", float("inf"))) / 2
+
+
+async def _parts(question, vector, models: QueryModels, kuzu):
+    """(sub-question, its vector) pairs. A part identical to the question
+    reuses its vector; the others are embedded together in one call."""
+    parts = [question]
+    if models.decompose is not None:
+        # The graph's books, not the registry's: only those can be searched,
+        # and "in each novel" should split into exactly those.
+        graphed = sorted({str(row[0]) for row in kuzu.execute(
+            "MATCH (b:Book) RETURN b.title") if row[0]})
+        parts = await decompose(question, models.decompose, book_titles=graphed)
+    fresh = [part for part in parts if part != question]
+    vectors = {question: vector}
+    if fresh:
+        vectors.update(zip(fresh, await models.embed([QUERY_PREFIX + p for p in fresh])))
+    return [(part, vectors[part]) for part in parts]
 
 
 async def answer_question(
@@ -236,40 +304,86 @@ async def answer_question(
 ) -> Answer:
     titles = {book["id"]: book["title"] for book in list_books(conn)}
 
-    # Embedded once: the same vector seeds the traversal, ranks its evidence
-    # and, on a fallback, searches the passages.
+    # Embedded once: the question's vector finds the baseline's passages on
+    # every path, and ranks the evidence when the question has one part.
     vector = await embed_question(question, models.embed)
 
     if baseline:
+        # Unchanged by Task 10d: no decomposition, no union.
         return await _vector_answer(lance, question, vector, models, titles,
                                     mode="vector-baseline", note=None)
 
-    nearest = lance.search_chunks(vector, limit=1)
-    best = max((1 - float(row.get("_distance", float("inf"))) / 2 for row in nearest),
-               default=float("-inf"))
-    seeds = ([] if best < RELEVANCE_FLOOR else
-             await seed_entities(question, lance, kuzu, models.embed, vector=vector))
-    if not seeds:
-        # A legitimate empty answer, not a failure: nothing in the library
-        # is close enough to the question to start a traversal from, either
-        # because the nearest passage is under RELEVANCE_FLOOR or because it
-        # bridges to no live entity.
-        return await _synthesize(
-            question, Evidence(edges=(), passages=(), truncated=False), models,
-            mode="empty", book_titles=titles,
-        )
+    empty = Evidence(edges=(), passages=(), truncated=False)
+    # The baseline's passages for the whole question, then each part's.
+    nearest: dict[tuple, list[dict]] = {tuple(vector): lance.search_chunks(
+        vector, limit=VECTOR_K)}
+    if not nearest[tuple(vector)]:
+        # Vector search returns a nearest chunk whenever there is any chunk,
+        # so no part could find one either: skip decomposition.
+        return await _synthesize(question, empty, models, mode="empty",
+                                 book_titles=titles)
 
-    call, chosen_by = await _select(question, seeds, models)
-    rows = run_template(kuzu, call) if call is not None else []
-    if not rows:
-        answer = await _vector_answer(lance, question, vector, models, titles,
-                                      mode="vector-fallback", note=GRAPH_EMPTY_NOTE)
-    else:
-        # The graph decided what is connected; the question decides what
-        # matters within it.
-        candidates = sorted({row.chunk_id for row in rows})
-        scores = relevance(vector, lance.chunk_vectors(candidates))
-        evidence = assemble(conn, rows, scores=scores)
+    parts = await _parts(question, vector, models, kuzu)
+    sub_questions = tuple(part for part, _ in parts)
+    for v in (v for _, v in parts):
+        if tuple(v) not in nearest:
+            nearest[tuple(v)] = lance.search_chunks(v, limit=VECTOR_K)
+    best = max((_cosine(row) for _, v in parts for row in nearest[tuple(v)]),
+               default=float("-inf"))
+    if best < RELEVANCE_FLOOR:
+        # A legitimate empty answer, not a failure: nothing in the library
+        # is close enough to any part of the question to start from.
+        return await _synthesize(question, empty, models, mode="empty",
+                                 book_titles=titles)
+
+    # Every name and alias in one read per question, not one per part.
+    names = load_name_index(kuzu)
+    named_in_question = named_entity_ids(question, names)
+    rows: list[EdgeRow] = []
+    templates: list[str] = []
+    chosen_by: list[str] = []
+    seeded = False
+    for part, part_vector in parts:
+        # A part's own names first, then the whole question's: a rewritten
+        # part may have dropped a name the question gave.
+        named = await named_seeds(kuzu, list(dict.fromkeys(
+            named_entity_ids(part, names) + named_in_question)))
+        seeds = await seed_entities(part, lance, kuzu, models.embed,
+                                    vector=part_vector, named=named)
+        if not seeds:
+            continue
+        seeded = True
+        call, model = await _select(part, seeds, models)
+        if model and model not in chosen_by:
+            chosen_by.append(model)
+        if call is None:
+            continue
+        if call.template not in templates:
+            templates.append(call.template)
+        rows.extend(run_template(kuzu, call))
+
+    if not seeded:
+        # None of the nearest passages bridges to a live entity.
+        return await _synthesize(question, empty, models, mode="empty",
+                                 book_titles=titles)
+
+    # The graph decided what is connected and vector search what is near;
+    # each part of the question decides what matters for it.
+    extra = [(str(row["chunk_id"]), str(row.get("book_id", "")),
+              int(row.get("chapter_seq", 0)))
+             for found in nearest.values() for row in found]
+    candidates = sorted({row.chunk_id for row in rows} | {c for c, _, _ in extra})
+    stored = lance.chunk_vectors(candidates)
+    evidence = assemble_ranked(conn, rows, extra_chunks=extra,
+                               max_chars=models.evidence_chars,
+                               score_lists=[relevance(v, stored) for _, v in parts])
+    if rows:
         answer = await _synthesize(question, evidence, models, mode="graph",
-                                   template=call.template, book_titles=titles)
-    return replace(answer, selection_model=chosen_by)
+                                   template="+".join(templates), book_titles=titles,
+                                   checklist=sub_questions)
+    else:
+        answer = await _synthesize(question, evidence, models, mode="vector-fallback",
+                                   note=GRAPH_EMPTY_NOTE, book_titles=titles,
+                                   checklist=sub_questions)
+    return replace(answer, selection_model="+".join(chosen_by) or None,
+                   sub_questions=sub_questions)

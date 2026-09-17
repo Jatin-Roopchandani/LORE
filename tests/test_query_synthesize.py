@@ -1,7 +1,14 @@
 import pytest
 
 from lore.query.models import EdgeRow, Evidence, Passage
-from lore.query.synthesize import REFUSAL, Claim, Synthesis, synthesize, verify_claims
+from lore.query.synthesize import (
+    PARTIAL_NOTE,
+    REFUSAL,
+    Claim,
+    Synthesis,
+    synthesize,
+    verify_claims,
+)
 
 P1 = Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1,
              text="Holmes spoke of the case at length.")
@@ -252,8 +259,87 @@ async def test_all_claims_dropped_is_a_refusal() -> None:
 
 
 @pytest.mark.asyncio
-async def test_can_answer_false_refuses_even_with_valid_claims() -> None:
-    assert await _text(GOOD1, GOOD2, can_answer=False) == REFUSAL
+async def test_can_answer_false_keeps_verified_claims_as_a_partial_answer() -> None:
+    # Task 10d changed this. It was `can_answer_false_refuses_even_with_valid_claims`:
+    #     assert await _text(GOOD1, GOOD2, can_answer=False) == REFUSAL
+    # Task 10a measured H6 and H4 throwing away verified gold claims that way.
+    answer = await synthesize(
+        "q", EV, _generate(Synthesis(claims=[GOOD1, GOOD2], can_answer=False)),
+        mode="graph")
+    assert answer.text == "Holmes discussed the case. [1] Watson took notes. [2]"
+    assert answer.note == PARTIAL_NOTE
+    assert "partly" in PARTIAL_NOTE
+
+
+@pytest.mark.asyncio
+async def test_can_answer_false_with_no_surviving_claim_refuses() -> None:
+    bad = Claim(text="Moriarty fled.", passage=1, quote="Moriarty fled the scene")
+    assert await _text(bad, can_answer=False) == REFUSAL
+    answer = await synthesize("q", EV, _generate(Synthesis(claims=[], can_answer=False)),
+                              mode="graph")
+    assert answer.text == REFUSAL and answer.note is None
+
+
+@pytest.mark.asyncio
+async def test_a_partial_answer_keeps_an_existing_note_too() -> None:
+    answer = await synthesize(
+        "q", EV, _generate(Synthesis(claims=[GOOD1], can_answer=False)),
+        mode="vector-fallback", note="the graph had nothing")
+    assert answer.note.startswith("the graph had nothing")
+    assert PARTIAL_NOTE in answer.note
+
+
+# --- Task 10d: quotes with an ellipsis ----------------------------------------
+
+LONG = Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1,
+               text="The ring, man, the ring: that was what he came back for. "
+                    "He pretended to be drunk at the gate, and the constable let him go.")
+OTHER = Passage(n=2, chunk_id="b1:2:0", book_id="b1", chapter_seq=2,
+                text="He pretended to be drunk at the gate, said the cabman.")
+
+
+def _kept(quote: str, passage: int = 1) -> bool:
+    kept, _ = verify_claims(
+        Synthesis(claims=[Claim(text="t", passage=passage, quote=quote)], can_answer=True),
+        (LONG, OTHER))
+    return bool(kept)
+
+
+@pytest.mark.parametrize("dots", ["...", "…", " ... "])
+def test_an_ellipsis_quote_whose_segments_verify_in_order_is_kept(dots) -> None:
+    assert _kept(f"that was what he came back for{dots}pretended to be drunk at the gate")
+
+
+def test_an_ellipsis_quote_with_segments_out_of_order_is_dropped() -> None:
+    reasons = _dropped(Claim(text="t", passage=1,
+                             quote="pretended to be drunk at the gate ... "
+                                   "that was what he came back for"), passages=(LONG, OTHER))
+    assert reasons == ["quote not in passage"]
+
+
+def test_an_ellipsis_segment_from_a_different_passage_is_dropped() -> None:
+    # Each segment exists somewhere, but not both in passage 2.
+    assert not _kept("that was what he came back for ... pretended to be drunk at the gate",
+                     passage=2)
+    assert _dropped(Claim(text="t", passage=2,
+                          quote="that was what he came back for ... said the cabman"),
+                    passages=(LONG, OTHER)) == ["quote not in passage"]
+
+
+def test_every_ellipsis_segment_needs_three_words_and_the_quote_four() -> None:
+    assert _dropped(Claim(text="t", passage=1, quote="the ring ... came back for"),
+                    passages=(LONG, OTHER)) == ["quote too short"]
+    assert _kept("The ring, man, ... came back for")  # 3 + 3 words
+
+
+def test_a_leading_or_trailing_ellipsis_is_not_a_segment() -> None:
+    assert _dropped(Claim(text="t", passage=1, quote="... came back for ..."),
+                    passages=(LONG, OTHER)) == ["quote too short"]  # 4 words overall
+    assert _kept("...that was what he came back for...")
+
+
+def test_ellipsis_segments_still_match_whole_words() -> None:
+    assert not _kept("hat was what he came ... pretended to be drunk")
 
 
 @pytest.mark.asyncio
@@ -274,3 +360,25 @@ def test_dropped_claims_carry_the_claim_itself() -> None:
                                   EV.passages)
     assert kept == [GOOD1]
     assert dropped == [(bad, "bad passage number")]
+
+
+# --- Task 10d: the sub-questions as a checklist ---------------------------------
+
+@pytest.mark.asyncio
+async def test_sub_questions_reach_the_prompt_as_a_checklist() -> None:
+    sink: dict = {}
+    await synthesize("Who and why?", EV, _generate(Synthesis(claims=[GOOD1], can_answer=True),
+                                                   sink),
+                     mode="graph", checklist=["Who did it?", "Why did they?"])
+    prompt = sink["prompt"]
+    assert "Question: Who and why?" in prompt
+    assert "make sure the answer covers" in prompt.lower()
+    assert "- Who did it?" in prompt and "- Why did they?" in prompt
+
+
+@pytest.mark.asyncio
+async def test_a_single_part_gets_no_checklist() -> None:
+    sink: dict = {}
+    await synthesize("q", EV, _generate(Synthesis(claims=[GOOD1], can_answer=True), sink),
+                     mode="graph", checklist=["q"])
+    assert "covers" not in sink["prompt"].lower()

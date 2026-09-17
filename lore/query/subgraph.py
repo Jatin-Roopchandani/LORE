@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 from itertools import zip_longest
+from typing import Iterable, Sequence
 
 from lore.ingest.registry import chunks_by_id
 from lore.query.models import EdgeRow, Evidence, Passage, TemplateCall
@@ -132,6 +133,81 @@ def assemble(conn: sqlite3.Connection, rows: list[EdgeRow], *,
         edges = tuple(sorted(edges, key=lambda r: _relevance_key(scores, r.chunk_id)))
 
     # Number in reading order so citations still read chronologically.
+    rank = {item[0]: index for index, item in enumerate(items)}
+    kept.sort(key=lambda item: rank[item[0]])
+    passages = tuple(
+        Passage(n=index + 1, chunk_id=c, book_id=b, chapter_seq=s, text=t)
+        for index, (c, b, s, t) in enumerate(kept)
+    )
+    return Evidence(edges=edges, passages=passages, truncated=truncated)
+
+
+def _next_unseen(lists: list[list[_Item]]) -> list[_Item]:
+    """One item from each list per turn, each list's next item not yet taken.
+
+    So every sub-question gets its best passage before any gets a second.
+    """
+    merged: list[_Item] = []
+    seen: set[str] = set()
+    positions = [0] * len(lists)
+    while True:
+        moved = False
+        for index, items in enumerate(lists):
+            while positions[index] < len(items) and items[positions[index]][0] in seen:
+                positions[index] += 1
+            if positions[index] < len(items):
+                item = items[positions[index]]
+                seen.add(item[0])
+                merged.append(item)
+                moved = True
+        if not moved:
+            return merged
+
+
+def assemble_ranked(
+    conn: sqlite3.Connection,
+    rows: list[EdgeRow],
+    *,
+    score_lists: Sequence[dict[str, float]],
+    extra_chunks: Iterable[tuple[str, str, int]] = (),
+    max_chars: int = MAX_EVIDENCE_CHARS,
+) -> Evidence:
+    """Evidence from template rows plus vector passages, for one or more parts.
+
+    `extra_chunks` are (chunk_id, book_id, chapter_seq) of passages that come
+    from vector search rather than from an edge (Task 10d): the graph
+    evidence never holds less than the baseline had. A chunk from both
+    sources appears once.
+
+    `score_lists` holds one chunk_id -> relevance map per sub-question. Each
+    becomes its own ranked, book-fair list, as in `assemble`, and the budget
+    is filled round-robin across the lists. With one list this selects
+    exactly what `assemble(..., scores=)` does. Passages are numbered in
+    reading order, and only edges whose passage was kept are returned.
+    """
+    edges = tuple(dict.fromkeys(rows))
+    positions: dict[str, tuple[str, int]] = {}
+    for row in edges:
+        positions.setdefault(row.chunk_id, (row.book_id, row.chapter_seq))
+    for chunk_id, book_id, chapter_seq in extra_chunks:
+        positions.setdefault(chunk_id, (book_id, chapter_seq))
+    if not positions:
+        return Evidence(edges=(), passages=(), truncated=False)
+
+    ordered = sorted(positions.items(), key=lambda kv: (kv[1][0], kv[1][1], kv[0]))
+    texts = chunks_by_id(conn, [c for c, _ in ordered])
+    items = [(c, b, s, texts[c]) for c, (b, s) in ordered if c in texts]
+    lists = [_by_relevance(items, scores) for scores in score_lists] or [_interleaved(items)]
+    kept, truncated = _capped(_next_unseen(lists), max_chars)
+
+    kept_ids = {item[0] for item in kept}
+
+    def best(chunk_id: str) -> tuple[bool, float]:
+        return min(_relevance_key(scores, chunk_id) for scores in score_lists) \
+            if score_lists else (False, 0.0)
+
+    edges = tuple(sorted((e for e in edges if e.chunk_id in kept_ids),
+                         key=lambda e: best(e.chunk_id)))
     rank = {item[0]: index for index, item in enumerate(items)}
     kept.sort(key=lambda item: rank[item[0]])
     passages = tuple(
