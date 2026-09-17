@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -163,9 +164,20 @@ def validated_narrator(answer: NarratorAnswer, supplied_text: str) -> str | None
     if not answer.first_person:
         return None
     name = _squash(answer.narrator_name)
-    if not _acceptable_name(name) or name not in _squash(supplied_text):
+    if not _acceptable_name(name):
         return None
-    return name
+    text = _squash(supplied_text)
+    if name in text:
+        return name
+    # Every word of the name written somewhere in the text also counts. Flash
+    # Lite was measured answering "John Watson" for a book whose opening says
+    # "John H. Watson, M.D." and "Watson": a correct answer that exact matching
+    # rejected. A word the text never contains ("John Smith") still rejects.
+    words = set(re.findall(r"[a-z0-9]+", text.casefold()))
+    name_words = [w for w in re.findall(r"[a-z0-9]+", name.casefold()) if len(w) >= 2]
+    if name_words and all(w in words for w in name_words):
+        return name
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -485,16 +497,27 @@ def make_first_person_resolver(
     """
 
     async def hint_for(book_id: str, chunks: list[Chunk]) -> str | None:
-        passages = opening_passages(chunks)
-        if not passages:
-            return None
-        prompt = render_prompt(passages)
-        key = NarratorCache.key(book_id, prompt, provider)
-        answer = narrator_cache.get(key)
-        if answer is None:
-            answer, model = await ask_narrator(prompt)
-            narrator_cache.put(key, answer, model)
-        return validated_narrator(answer, "\n\n".join(p.text for p in passages))
+        # Two attempts, the second over a wider opening. Only an answer that is
+        # usable is cached: a first-person answer with no valid name (measured:
+        # an EMPTY name for The Sign of the Four) must not pin the book hintless
+        # for every later reload. A "not first person" answer is usable as-is.
+        for budget in (OPENING_BUDGET_CHARS, 2 * OPENING_BUDGET_CHARS):
+            passages = opening_passages(chunks, budget=budget)
+            if not passages:
+                return None
+            prompt = render_prompt(passages)
+            key = NarratorCache.key(book_id, prompt, provider)
+            answer = narrator_cache.get(key)
+            model = None
+            fresh = answer is None
+            if fresh:
+                answer, model = await ask_narrator(prompt)
+            name = validated_narrator(answer, "\n\n".join(p.text for p in passages))
+            if name or not answer.first_person:
+                if fresh:
+                    narrator_cache.put(key, answer, model)
+                return name
+        return None
 
     async def resolve(
         book_id: str, chunks: list[Chunk], rows: list[dict]

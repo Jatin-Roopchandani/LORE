@@ -175,6 +175,18 @@ def test_a_narrator_name_that_is_not_in_the_supplied_text_is_unknown() -> None:
         NarratorAnswer(first_person=True, narrator_name="I"), text) is None
 
 
+def test_a_narrator_name_whose_every_word_is_in_the_text_is_accepted() -> None:
+    # Measured in the real reload: Flash Lite answered "John Watson" for A Study
+    # in Scarlet, whose opening says "John H. Watson, M.D." and "Watson". Exact
+    # substring matching rejected a correct answer and left the book hintless.
+    text = "BEING A REPRINT FROM THE REMINISCENCES OF JOHN H. WATSON, M.D. “Well, Watson?”"
+    assert validated_narrator(
+        NarratorAnswer(first_person=True, narrator_name="John Watson"), text) == "John Watson"
+    # A word the text never contains still rejects the name.
+    assert validated_narrator(
+        NarratorAnswer(first_person=True, narrator_name="John Smith"), text) is None
+
+
 # --- per-passage speaker questions --------------------------------------------
 
 def test_first_person_sentences_are_grouped_per_chunk_unique_and_sorted() -> None:
@@ -278,6 +290,57 @@ def _resolver(tmp_path, fake):
     return make_first_person_resolver(
         fake.narrator, fake.speakers,
         NarratorCache(tmp_path / "narrators"), SpeakerCache(tmp_path / "speakers"))
+
+
+class _SequenceNarrator(_FakeAsk):
+    """Narrator answers served in order; speakers answered like _FakeAsk."""
+
+    def __init__(self, hints, by_chunk):
+        super().__init__(None, by_chunk)
+        self.hints = list(hints)
+
+    async def narrator(self, prompt):
+        self.narrator_prompts.append(prompt)
+        return self.hints.pop(0), "model-a"
+
+
+async def test_an_unusable_hint_is_retried_once_and_never_cached(tmp_path) -> None:
+    # Measured: The Sign of the Four's hint came back first_person=True with an
+    # EMPTY name, was cached, and would have left every reload hintless.
+    fake = _SequenceNarrator(
+        [NarratorAnswer(first_person=True, narrator_name=""),
+         NarratorAnswer(first_person=True, narrator_name="Watson")],
+        {"1878": _items(("Watson", "certain"), ("Watson", "certain")),
+         "the ring": _items(("Jefferson Hope", "certain"))})
+    resolution = await _resolver(tmp_path, fake)("sis", BOOKCHUNKS, ROWS)
+    assert len(fake.narrator_prompts) == 2
+    assert resolution.narrator_hint == "Watson"
+    stored = json.loads((tmp_path / "narrators" / "answers.json").read_text())
+    assert [v["narrator_name"] for v in stored.values()] == ["Watson"]
+    again = _SequenceNarrator([], fake.by_chunk)
+    await _resolver(tmp_path, again)("sis", BOOKCHUNKS, ROWS)
+    assert again.narrator_prompts == []
+
+
+async def test_a_hint_that_fails_twice_is_none_and_nothing_is_cached(tmp_path) -> None:
+    fake = _SequenceNarrator(
+        [NarratorAnswer(first_person=True, narrator_name=""),
+         NarratorAnswer(first_person=True, narrator_name="Moriarty")],
+        {"1878": _items(("Watson", "certain"), ("Watson", "certain")),
+         "the ring": _items(("Jefferson Hope", "certain"))})
+    resolution = await _resolver(tmp_path, fake)("sis", BOOKCHUNKS, ROWS)
+    assert len(fake.narrator_prompts) == 2 and resolution.narrator_hint == ""
+    assert not (tmp_path / "narrators" / "answers.json").is_file()
+
+
+async def test_a_book_that_is_not_first_person_is_cached_without_a_retry(tmp_path) -> None:
+    fake = _SequenceNarrator(
+        [NarratorAnswer(first_person=False, narrator_name="")],
+        {"1878": _items(("Watson", "certain"), ("Watson", "certain")),
+         "the ring": _items(("Jefferson Hope", "certain"))})
+    resolution = await _resolver(tmp_path, fake)("sis", BOOKCHUNKS, ROWS)
+    assert len(fake.narrator_prompts) == 1 and resolution.narrator_hint == ""
+    assert (tmp_path / "narrators" / "answers.json").is_file()
 
 
 async def test_the_resolver_asks_per_chunk_and_a_reload_spends_nothing(tmp_path) -> None:
