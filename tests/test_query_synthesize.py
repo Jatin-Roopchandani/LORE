@@ -666,3 +666,88 @@ async def test_the_cap_applies_per_part() -> None:
     assert f"why {MAX_CLAIMS - 1}. [2]" in answer.text
     assert f"why {MAX_CLAIMS}." not in answer.text
     assert "Stangerson shot her father. [3]" in answer.text
+
+
+# --- Task 11b: near-duplicate claims collapse -------------------------------------
+
+HABIT = Passage(n=1, chunk_id="b2:4:0", book_id="b2", chapter_seq=4,
+                text="With a long, thin forefinger he adjusted the tiny needle and pressed "
+                     "down the piston. His sinewy forearm was dotted and scarred with "
+                     "innumerable puncture-marks. Twice a day for many weeks I had watched "
+                     "this ritual, and my patience with it had worn thin.")
+HABIT2 = Passage(n=2, chunk_id="b2:5:0", book_id="b2", chapter_seq=5,
+                 text="Twice a day for many weeks I had watched this ritual, the clerk "
+                      "wrote in his own diary.")
+HABIT_EV = Evidence(edges=(), passages=(HABIT, HABIT2), truncated=False)
+
+WATCHED = Claim(text="The narrator has watched the doctor perform this injection twice a day "
+                     "for many weeks.", passage=1,
+                quote="Twice a day for many weeks I had watched this ritual")
+WATCHED_AGAIN = Claim(text="The narrator had watched the doctor perform this habit twice a day "
+                           "for many weeks.", passage=1,
+                      quote="for many weeks I had watched this ritual, and my patience")
+
+
+async def _habit_text(*claims: Claim) -> str:
+    return await _text(*claims, evidence=HABIT_EV)
+
+
+@pytest.mark.asyncio
+async def test_a_near_duplicate_claim_is_dropped_keeping_the_first() -> None:
+    other = Claim(text="The doctor pressed down the piston.", passage=1,
+                  quote="adjusted the tiny needle and pressed down the piston")
+    assert await _habit_text(WATCHED, other, WATCHED_AGAIN) == (
+        f"{WATCHED.text} [1] {other.text} [1]")
+    assert await _habit_text(WATCHED_AGAIN, WATCHED) == f"{WATCHED_AGAIN.text} [1]"
+
+
+@pytest.mark.asyncio
+async def test_a_contained_quote_counts_as_the_same_evidence() -> None:
+    inner = WATCHED_AGAIN.model_copy(update={"quote": "Twice a day for many weeks"})
+    assert await _habit_text(WATCHED, inner) == f"{WATCHED.text} [1]"
+
+
+@pytest.mark.asyncio
+async def test_distinct_facts_from_the_same_quote_both_survive() -> None:
+    quote = "pressed down the piston. His sinewy forearm was dotted and scarred"
+    syringe = Claim(text="The doctor used a syringe on himself.", passage=1, quote=quote)
+    scars = Claim(text="The doctor's forearm is scarred with puncture marks.", passage=1,
+                  quote=quote)
+    assert await _habit_text(syringe, scars) == f"{syringe.text} [1] {scars.text} [1]"
+
+
+@pytest.mark.asyncio
+async def test_similar_claims_citing_different_passages_both_survive() -> None:
+    elsewhere = WATCHED_AGAIN.model_copy(update={
+        "passage": 2, "quote": "Twice a day for many weeks I had watched this ritual"})
+    assert await _habit_text(WATCHED, elsewhere) == (
+        f"{WATCHED.text} [1] {elsewhere.text} [2]")
+
+
+@pytest.mark.asyncio
+async def test_similar_claims_with_unrelated_quotes_in_one_passage_both_survive() -> None:
+    apart = WATCHED_AGAIN.model_copy(update={
+        "quote": "his sinewy forearm was dotted and scarred"})
+    assert await _habit_text(WATCHED, apart) == f"{WATCHED.text} [1] {apart.text} [1]"
+
+
+@pytest.mark.asyncio
+async def test_near_duplicates_from_different_parts_collapse() -> None:
+    prompts: list[str] = []
+    both = Evidence(edges=(), passages=(HABIT, HABIT2), truncated=False,
+                    shares=((1,), (1, 2)))
+    answer = await synthesize_parts(
+        "q", SUBS, both,
+        _per_part([Synthesis(claims=[WATCHED], can_answer=True),
+                   Synthesis(claims=[WATCHED_AGAIN], can_answer=True)], prompts),
+        mode="graph")
+    assert answer.text == f"{WATCHED.text} [1]"
+    assert answer.note is None  # the second part did keep a claim
+
+
+@pytest.mark.asyncio
+async def test_claims_differing_only_in_a_number_both_survive() -> None:
+    quote = "Twice a day for many weeks I had watched this ritual"
+    first = Claim(text="He watched it 2 times a day.", passage=1, quote=quote)
+    second = Claim(text="He watched it 3 times a day.", passage=1, quote=quote)
+    assert await _habit_text(first, second) == f"{first.text} [1] {second.text} [1]"

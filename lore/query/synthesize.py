@@ -194,12 +194,75 @@ def _capped(synthesis: Synthesis) -> Synthesis:
     return synthesis.model_copy(update={"claims": synthesis.claims[:MAX_CLAIMS]})
 
 
+# Near-duplicate claims (Task 11b). Per-part synthesis lets two sub-questions
+# that saw one passage restate the same fact in slightly different words.
+# Word overlap of the claim texts is Jaccard over their content words: lower
+# case, letters and digits only, minus the function words below and single
+# letters (the "s" of "Holmes's"). A number is kept at any length.
+NEAR_DUPLICATE_OVERLAP = 0.6
+_TOKEN = re.compile(r"[^\W_]+")
+_FUNCTION_WORDS = frozenset("""
+a an the and or but nor of to in on at by for from with as into onto upon about
+is are was were be been being am has have had having do does did this that these
+those it its he him his she her they them their i me my we us our you your
+not no so than then there here which who whom whose what when where why how
+""".split())
+
+
+def _content_words(text: str) -> frozenset[str]:
+    return frozenset(w for w in _TOKEN.findall(text.lower())
+                     if (len(w) > 1 or w.isdigit()) and w not in _FUNCTION_WORDS)
+
+
+def _overlap(a: str, b: str) -> float:
+    left, right = _content_words(a), _content_words(b)
+    union = left | right
+    return len(left & right) / len(union) if union else 1.0
+
+
+def _numbers(text: str) -> frozenset[str]:
+    return frozenset(w for w in _TOKEN.findall(text) if w.isdigit())
+
+
+def _runs(quote: str, size: int) -> set[tuple[str, ...]]:
+    """Every run of `size` consecutive words inside one ellipsis segment."""
+    runs: set[tuple[str, ...]] = set()
+    for segment in _segments(_normalise(quote)):
+        words = _TOKEN.findall(segment)
+        runs.update(tuple(words[i:i + size]) for i in range(len(words) - size + 1))
+    return runs
+
+
+def _same_evidence(a: Claim, b: Claim) -> bool:
+    """Same passage, and quotes that are identical or share a run of
+    MIN_QUOTE_WORDS words -- which a quote contained in the other does."""
+    if a.passage != b.passage:
+        return False
+    if _normalise(a.quote) == _normalise(b.quote):
+        return True
+    return bool(_runs(a.quote, MIN_QUOTE_WORDS) & _runs(b.quote, MIN_QUOTE_WORDS))
+
+
+def _near_duplicate(a: Claim, b: Claim) -> bool:
+    """Both conditions, so distinct facts drawn from one quote survive: the
+    same evidence is not enough without claim texts that say the same. Claims
+    that state different numbers are different facts however alike the rest."""
+    return (_same_evidence(a, b)
+            and _numbers(a.text) == _numbers(b.text)
+            and _overlap(a.text, b.text) >= NEAR_DUPLICATE_OVERLAP)
+
+
 def _compose(claims: list[Claim]) -> str:
+    """Kept claims in order; an exact or near duplicate of an earlier kept
+    claim is left out, so the first wording wins."""
     parts: list[str] = []
+    shown: list[Claim] = []
     for claim in claims:
         part = f"{claim.text.strip()} [{claim.passage}]"
-        if part not in parts:
-            parts.append(part)
+        if part in parts or any(_near_duplicate(earlier, claim) for earlier in shown):
+            continue
+        parts.append(part)
+        shown.append(claim)
     return " ".join(parts)
 
 
@@ -319,7 +382,8 @@ async def synthesize_parts(
     claims against only those, so every `[n]` resolves to the one passage
     list the CLI prints.
 
-    Kept claims are composed in sub-question order, exact duplicates once.
+    Kept claims are composed in sub-question order, exact and near
+    duplicates once (see `_near_duplicate`).
     A part with no kept claim (or no passages, which is not asked) is named
     in the partial note; only when no part keeps a claim is it a refusal.
     `can_answer` does not decide partiality here: whether a part kept a
