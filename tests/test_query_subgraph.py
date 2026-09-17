@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from lore.db.sqlite import open_db
-from lore.query.models import EdgeRow, TemplateCall
+from lore.query.models import EdgeRow, Evidence, TemplateCall
 from lore.query.subgraph import assemble, passages_from_chunks, relevance, run_template
 
 
@@ -379,7 +379,8 @@ def test_one_part_ranks_like_assemble_with_scores(tmp_path: Path) -> None:
     scores = {"b1:1:0": 0.1, "b1:2:0": 0.2, "b1:3:0": 0.3, "b1:4:0": 0.8,
               "b2:1:0": 0.1, "b2:2:0": 0.7, "b2:3:0": 0.2, "b2:4:0": 0.6}
     single = assemble(conn, rows, max_chars=400, scores=scores)
-    ranked = assemble_ranked(conn, rows, score_lists=[scores], max_chars=400)
+    # Task 10e: book-fair only when asked for (the no-decomposition fallback).
+    ranked = assemble_ranked(conn, rows, score_lists=[scores], max_chars=400, book_fair=True)
     assert ranked.passages == single.passages
     assert ranked.truncated == single.truncated
     conn.close()
@@ -402,3 +403,72 @@ def test_no_rows_and_no_vector_chunks_is_empty(tmp_path: Path) -> None:
     evidence = assemble_ranked(conn, [], score_lists=[{}])
     assert evidence.passages == () and evidence.edges == ()
     conn.close()
+
+
+# --- Task 10e: pure relevance within a part; each part's share -----------------
+
+
+def test_within_a_part_a_less_relevant_other_book_chunk_no_longer_displaces_a_better_one(
+        tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    rows = _two_books(conn, per_book=3, size=100)
+    scores = {"b1:1:0": 0.9, "b1:2:0": 0.8, "b1:3:0": 0.7,
+              "b2:1:0": 0.2, "b2:2:0": 0.1, "b2:3:0": 0.0}
+    evidence = assemble_ranked(conn, rows, score_lists=[scores], max_chars=300)
+    assert [p.chunk_id for p in evidence.passages] == ["b1:1:0", "b1:2:0", "b1:3:0"]
+    conn.close()
+
+
+def test_book_fair_ranking_is_kept_for_the_fallback_path(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    rows = _two_books(conn, per_book=3, size=100)
+    scores = {"b1:1:0": 0.9, "b1:2:0": 0.8, "b1:3:0": 0.7,
+              "b2:1:0": 0.2, "b2:2:0": 0.1, "b2:3:0": 0.0}
+    evidence = assemble_ranked(conn, rows, score_lists=[scores], max_chars=300,
+                               book_fair=True)
+    assert [p.chunk_id for p in evidence.passages] == ["b1:1:0", "b1:2:0", "b2:1:0"]
+    conn.close()
+
+
+def test_each_part_shares_its_own_passages_and_the_ones_it_ranked_but_another_took(
+        tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    for ch in (1, 2, 3, 4, 5):
+        _seed(conn, f"b1:{ch}:0", "x" * 100, chapter_seq=ch)
+    rows = [_edge("b1", ch, f"b1:{ch}:0") for ch in (1, 2, 3, 4, 5)]
+    # A takes 1 then 2. B's best is 1 (taken by A), so B takes 3, then 4.
+    part_a = {"b1:1:0": 0.9, "b1:2:0": 0.8, "b1:3:0": 0.1, "b1:4:0": 0.0, "b1:5:0": 0.3}
+    part_b = {"b1:1:0": 0.9, "b1:2:0": 0.1, "b1:3:0": 0.8, "b1:4:0": 0.7, "b1:5:0": 0.0}
+    evidence = assemble_ranked(conn, rows, score_lists=[part_a, part_b], max_chars=400)
+    assert [p.chunk_id for p in evidence.passages] == ["b1:1:0", "b1:2:0", "b1:3:0", "b1:4:0"]
+    # Passage numbers are the global ones.
+    assert evidence.shares == ((1, 2), (1, 3, 4))
+    conn.close()
+
+
+def test_a_part_whose_turn_falls_past_the_budget_shares_nothing_it_did_not_reach(
+        tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    for ch in (1, 2, 3):
+        _seed(conn, f"b1:{ch}:0", "x" * 100, chapter_seq=ch)
+    rows = [_edge("b1", ch, f"b1:{ch}:0") for ch in (1, 2, 3)]
+    part_a = {"b1:1:0": 0.9, "b1:2:0": 0.1, "b1:3:0": 0.0}
+    part_b = {"b1:1:0": 0.0, "b1:2:0": 0.9, "b1:3:0": 0.1}
+    part_c = {"b1:1:0": 0.1, "b1:2:0": 0.0, "b1:3:0": 0.9}
+    evidence = assemble_ranked(conn, rows, score_lists=[part_a, part_b, part_c],
+                               max_chars=200)
+    assert [p.chunk_id for p in evidence.passages] == ["b1:1:0", "b1:2:0"]
+    assert evidence.shares == ((1,), (2,), ())
+    conn.close()
+
+
+def test_one_part_shares_every_kept_passage(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    rows = _two_books(conn, per_book=2, size=100)
+    evidence = assemble_ranked(conn, rows, score_lists=[{}], max_chars=1000)
+    assert evidence.shares == ((1, 2, 3, 4),)
+    conn.close()
+
+
+def test_evidence_gains_shares_without_breaking_old_constructions() -> None:
+    assert Evidence(edges=(), passages=(), truncated=False).shares == ()

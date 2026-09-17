@@ -56,6 +56,10 @@ class Evidence:
     edges: tuple[EdgeRow, ...]
     passages: tuple[Passage, ...]
     truncated: bool
+    # One tuple of passage numbers (`Passage.n`) per sub-question, in
+    # sub-question order: the passages that part answers from (Task 10e).
+    # Empty when the evidence was not assembled per part.
+    shares: tuple[tuple[int, ...], ...] = ()
 
 
 @dataclass(frozen=True)

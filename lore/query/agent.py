@@ -15,7 +15,7 @@ from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import list_books
-from lore.query.decompose import decompose
+from lore.query.decompose import split
 from lore.query.models import Answer, EdgeRow, Evidence
 from lore.query.seed import (
     embed_question,
@@ -31,7 +31,7 @@ from lore.query.subgraph import (
     relevance,
     run_template,
 )
-from lore.query.synthesize import synthesize
+from lore.query.synthesize import synthesize, synthesize_parts
 from lore.query.templates import MAX_EVIDENCE_CHARS
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
@@ -250,8 +250,10 @@ async def _select(question, seeds, models: QueryModels):
     return call, chosen_by
 
 
-async def _synthesize(question, evidence, models: QueryModels, **kwargs) -> Answer:
-    """synthesize(), with Answer.model set only if a model was actually asked."""
+async def _synthesize(question, evidence, models: QueryModels, *,
+                      sub_questions=None, **kwargs) -> Answer:
+    """synthesize() -- or synthesize_parts() when `sub_questions` is given --
+    with Answer.model set only if a model was actually asked."""
     asked = False
 
     async def generate(prompt: str, schema: type[BaseModel]) -> BaseModel:
@@ -259,7 +261,10 @@ async def _synthesize(question, evidence, models: QueryModels, **kwargs) -> Answ
         asked = True
         return await models.synthesize(prompt, schema)
 
-    answer = await synthesize(question, evidence, generate, **kwargs)
+    if sub_questions is None:
+        answer = await synthesize(question, evidence, generate, **kwargs)
+    else:
+        answer = await synthesize_parts(question, sub_questions, evidence, generate, **kwargs)
     return replace(answer, model=models.synthesis_model() if asked else None)
 
 
@@ -277,20 +282,23 @@ def _cosine(row: dict) -> float:
 
 
 async def _parts(question, vector, models: QueryModels, kuzu):
-    """(sub-question, its vector) pairs. A part identical to the question
-    reuses its vector; the others are embedded together in one call."""
-    parts = [question]
+    """(sub-question, its vector) pairs, and whether decomposition succeeded.
+    A part identical to the question reuses its vector; the others are
+    embedded together in one call."""
+    parts = None
     if models.decompose is not None:
         # The graph's books, not the registry's: only those can be searched,
         # and "in each novel" should split into exactly those.
         graphed = sorted({str(row[0]) for row in kuzu.execute(
             "MATCH (b:Book) RETURN b.title") if row[0]})
-        parts = await decompose(question, models.decompose, book_titles=graphed)
+        parts = await split(question, models.decompose, book_titles=graphed)
+    decomposed = parts is not None
+    parts = parts or [question]
     fresh = [part for part in parts if part != question]
     vectors = {question: vector}
     if fresh:
         vectors.update(zip(fresh, await models.embed([QUERY_PREFIX + p for p in fresh])))
-    return [(part, vectors[part]) for part in parts]
+    return [(part, vectors[part]) for part in parts], decomposed
 
 
 async def answer_question(
@@ -323,7 +331,7 @@ async def answer_question(
         return await _synthesize(question, empty, models, mode="empty",
                                  book_titles=titles)
 
-    parts = await _parts(question, vector, models, kuzu)
+    parts, decomposed = await _parts(question, vector, models, kuzu)
     sub_questions = tuple(part for part, _ in parts)
     for v in (v for _, v in parts):
         if tuple(v) not in nearest:
@@ -374,16 +382,24 @@ async def answer_question(
              for found in nearest.values() for row in found]
     candidates = sorted({row.chunk_id for row in rows} | {c for c, _, _ in extra})
     stored = lance.chunk_vectors(candidates)
+    # Task 10e: within a part, relevance alone decides; a question about
+    # each book is already one part per book. Book fairness is kept only on
+    # the no-decomposition fallback -- decomposition failed or was not run,
+    # or one part was searched across books -- so Task 6's guarantee that a
+    # cross-book answer keeps both books survives there.
+    book_fair = len(parts) == 1 and (not decomposed or "across_books" in templates)
     evidence = assemble_ranked(conn, rows, extra_chunks=extra,
                                max_chars=models.evidence_chars,
-                               score_lists=[relevance(v, stored) for _, v in parts])
+                               score_lists=[relevance(v, stored) for _, v in parts],
+                               book_fair=book_fair)
+    # One synthesis call per part, over its own share (synthesize_parts).
     if rows:
         answer = await _synthesize(question, evidence, models, mode="graph",
                                    template="+".join(templates), book_titles=titles,
-                                   checklist=sub_questions)
+                                   sub_questions=sub_questions)
     else:
         answer = await _synthesize(question, evidence, models, mode="vector-fallback",
                                    note=GRAPH_EMPTY_NOTE, book_titles=titles,
-                                   checklist=sub_questions)
+                                   sub_questions=sub_questions)
     return replace(answer, selection_model="+".join(chosen_by) or None,
                    sub_questions=sub_questions)

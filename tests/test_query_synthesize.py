@@ -382,3 +382,195 @@ async def test_a_single_part_gets_no_checklist() -> None:
     await synthesize("q", EV, _generate(Synthesis(claims=[GOOD1], can_answer=True), sink),
                      mode="graph", checklist=["q"])
     assert "covers" not in sink["prompt"].lower()
+
+
+# --- Task 10e: quotation marks do not decide a quote ---------------------------
+
+SPEECH = Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1,
+                 text="“And his name is?”\n\n“Arthur Charpentier, sub-lieutenant,” cried "
+                      "Gregson. ‘Hope’s ring,’ he said, 'is lost.' The boys' hats were wet.")
+
+
+def _speech_kept(quote: str) -> bool:
+    kept, _ = verify_claims(
+        Synthesis(claims=[Claim(text="t", passage=1, quote=quote)], can_answer=True),
+        (SPEECH,))
+    return bool(kept)
+
+
+@pytest.mark.parametrize("quote", [
+    "And his name is? “Arthur Charpentier, sub-lieutenant,” cried Gregson",  # closing ” left out
+    "And his name is?” Arthur Charpentier, sub-lieutenant, cried Gregson",   # opening “ left out
+    '"And his name is? Arthur Charpentier, sub-lieutenant," cried Gregson',  # straight, misplaced
+    "And his name is? Arthur Charpentier, sub-lieutenant, cried Gregson",    # none at all
+    "Hope's ring, he said, is lost.",                                        # ‘ ’ and ' as marks
+    "The boys hats were wet.",                                               # trailing ' mark
+], ids=["no-closing", "no-opening", "straight", "none", "single-marks", "plural-possessive"])
+def test_a_quote_differing_only_in_quotation_marks_is_kept(quote) -> None:
+    assert _speech_kept(quote)
+
+
+def test_an_apostrophe_inside_a_word_still_counts() -> None:
+    assert _speech_kept("‘Hope’s ring,’ he said")
+    assert _speech_kept("Hope's ring, he said")  # ' vs ’ inside the word
+    # Dropping an in-word apostrophe is a different word, not a quotation mark.
+    assert not _speech_kept("Hopes ring, he said, is lost")
+
+
+def test_a_quote_with_one_word_changed_still_fails_despite_quotation_marks() -> None:
+    assert not _speech_kept("And his name is? “Arthur Charpentier, sub-lieutenant,” cried Lestrade")
+    assert not _speech_kept("“And her name is?” “Arthur Charpentier")
+
+
+# --- Task 10e: one synthesis call per sub-question, merged ----------------------
+
+from lore.query.synthesize import synthesize_parts  # noqa: E402
+
+S1 = Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1,
+             text="Hope loved Lucy Ferrier and swore to avenge her.")
+S2 = Passage(n=2, chunk_id="b1:2:0", book_id="b1", chapter_seq=2,
+             text="Drebber had forced Lucy into a marriage she hated.")
+S3 = Passage(n=3, chunk_id="b1:3:0", book_id="b1", chapter_seq=3,
+             text="Stangerson shot her father John Ferrier dead.")
+PARTS_EV = Evidence(edges=(_edge(subject="Drebber", chunk="b1:2:0", chapter=2),),
+                    passages=(S1, S2, S3), truncated=False,
+                    shares=((1, 2), (3,)))
+WHY_D = Claim(text="Drebber forced Lucy to marry him.", passage=2,
+              quote="forced Lucy into a marriage")
+WHY_S = Claim(text="Stangerson shot her father.", passage=3,
+              quote="Stangerson shot her father")
+SUBS = ("Why kill Drebber?", "Why kill Stangerson?")
+
+
+def _per_part(results: list[Synthesis], prompts: list[str]):
+    async def generate(prompt: str, schema):
+        prompts.append(prompt)
+        return results[len(prompts) - 1]
+    return generate
+
+
+@pytest.mark.asyncio
+async def test_each_sub_question_gets_its_own_call_over_its_own_passages() -> None:
+    prompts: list[str] = []
+    answer = await synthesize_parts(
+        "Why did Hope kill Drebber and Stangerson?", SUBS, PARTS_EV,
+        _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                   Synthesis(claims=[WHY_S], can_answer=True)], prompts),
+        mode="graph", template="path_between")
+    assert len(prompts) == 2
+    first, second = prompts
+    assert "Question: Why kill Drebber?" in first and "Question: Why kill Stangerson?" in second
+    # The original question travels as context to both.
+    assert all("Why did Hope kill Drebber and Stangerson?" in p for p in prompts)
+    # Each call sees only its share, under its GLOBAL number.
+    assert "[1] (b1, chapter 1)" in first and "[2] (b1, chapter 2)" in first
+    assert S3.text not in first
+    assert "[3] (b1, chapter 3)" in second and S1.text not in second and S2.text not in second
+    # A lead is shown only beside a passage the call can cite.
+    assert "Drebber —distrusts→" in first and "Drebber —distrusts→" not in second
+    # Composed in sub-question order, numbering global, every passage kept.
+    assert answer.text == ("Drebber forced Lucy to marry him. [2] "
+                           "Stangerson shot her father. [3]")
+    assert answer.passages == (S1, S2, S3)
+    assert answer.note is None
+    assert answer.mode == "graph" and answer.template == "path_between"
+
+
+@pytest.mark.asyncio
+async def test_a_claim_citing_a_passage_outside_its_share_is_dropped() -> None:
+    prompts: list[str] = []
+    stray = Claim(text="Stangerson shot her father.", passage=3,
+                  quote="Stangerson shot her father")  # passage 3 is not part one's
+    answer = await synthesize_parts(
+        "q", SUBS, PARTS_EV,
+        _per_part([Synthesis(claims=[stray, WHY_D], can_answer=True),
+                   Synthesis(claims=[WHY_S], can_answer=True)], prompts), mode="graph")
+    assert answer.text == ("Drebber forced Lucy to marry him. [2] "
+                           "Stangerson shot her father. [3]")
+
+
+@pytest.mark.asyncio
+async def test_exact_duplicate_claims_across_parts_appear_once() -> None:
+    prompts: list[str] = []
+    shared = Evidence(edges=(), passages=(S1, S2, S3), truncated=False,
+                      shares=((1, 2), (2, 3)))
+    answer = await synthesize_parts(
+        "q", SUBS, shared,
+        _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                   Synthesis(claims=[WHY_D, WHY_S], can_answer=True)], prompts), mode="graph")
+    assert answer.text == ("Drebber forced Lucy to marry him. [2] "
+                           "Stangerson shot her father. [3]")
+
+
+@pytest.mark.asyncio
+async def test_a_sub_question_with_no_kept_claim_is_named_in_the_partial_note() -> None:
+    prompts: list[str] = []
+    bad = Claim(text="Stangerson fled.", passage=3, quote="Stangerson fled to Utah alone")
+    answer = await synthesize_parts(
+        "q", SUBS, PARTS_EV,
+        _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                   Synthesis(claims=[bad], can_answer=True)], prompts),
+        mode="graph", note="earlier note")
+    assert answer.text == "Drebber forced Lucy to marry him. [2]"
+    assert answer.note.startswith("earlier note")
+    assert PARTIAL_NOTE in answer.note
+    assert "not found: Why kill Stangerson?" in answer.note
+    assert "Why kill Drebber?" not in answer.note
+
+
+@pytest.mark.asyncio
+async def test_can_answer_false_on_a_part_with_kept_claims_is_not_partial() -> None:
+    prompts: list[str] = []
+    answer = await synthesize_parts(
+        "q", SUBS, PARTS_EV,
+        _per_part([Synthesis(claims=[WHY_D], can_answer=False),
+                   Synthesis(claims=[WHY_S], can_answer=False)], prompts), mode="graph")
+    assert answer.note is None
+    assert answer.text.endswith("[3]")
+
+
+@pytest.mark.asyncio
+async def test_no_sub_question_keeping_a_claim_is_a_refusal() -> None:
+    prompts: list[str] = []
+    answer = await synthesize_parts(
+        "q", SUBS, PARTS_EV,
+        _per_part([Synthesis(claims=[], can_answer=False),
+                   Synthesis(claims=[], can_answer=False)], prompts), mode="graph")
+    assert answer.text == REFUSAL and answer.note is None
+    assert len(prompts) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_sub_question_with_no_passages_is_not_asked_and_is_not_found() -> None:
+    prompts: list[str] = []
+    empty_share = Evidence(edges=(), passages=(S1, S2, S3), truncated=False,
+                           shares=((1, 2, 3), ()))
+    answer = await synthesize_parts(
+        "q", SUBS, empty_share,
+        _per_part([Synthesis(claims=[WHY_D, WHY_S], can_answer=True)], prompts), mode="graph")
+    assert len(prompts) == 1
+    assert "not found: Why kill Stangerson?" in answer.note
+
+
+@pytest.mark.asyncio
+async def test_a_single_part_question_is_one_call_exactly_as_today() -> None:
+    today: dict = {}
+    await synthesize("Who?", EV, _generate(Synthesis(claims=[GOOD1], can_answer=False),
+                                           today), mode="graph")
+    prompts: list[str] = []
+    answer = await synthesize_parts(
+        "Who?", ("Who?",), EV,
+        _per_part([Synthesis(claims=[GOOD1], can_answer=False)], prompts), mode="graph")
+    assert prompts == [today["prompt"]]
+    assert answer.text == "Holmes discussed the case. [1]"
+    assert answer.note == PARTIAL_NOTE  # can_answer=false keeps today's meaning
+
+
+@pytest.mark.asyncio
+async def test_parts_without_shares_fall_back_to_one_call_over_everything() -> None:
+    prompts: list[str] = []
+    answer = await synthesize_parts(
+        "q", SUBS, EV, _per_part([Synthesis(claims=[GOOD1], can_answer=True)], prompts),
+        mode="graph")
+    assert len(prompts) == 1 and "- Why kill Drebber?" in prompts[0]
+    assert answer.text == "Holmes discussed the case. [1]"

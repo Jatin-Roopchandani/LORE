@@ -736,10 +736,13 @@ async def test_a_two_part_question_gets_both_parts_before_a_second_for_either(
     # Sub-questions are embedded together, once; the question once.
     assert sorted(t for batch in calls["embed"] for t in batch) == sorted(
         QUERY_PREFIX + t for t in [question, *subs])
-    # Synthesis answers the ORIGINAL question, with the parts as a checklist.
-    prompt = calls["synthesize"][0]
-    assert f"Question: {question}" in prompt
-    assert "- Who is A?" in prompt and "- Why B?" in prompt
+    # Task 10e: one synthesis call per part, over that part's own passages
+    # under their global numbers, with the original question for context.
+    first, second = calls["synthesize"]
+    assert "Question: Who is A?" in first and "Question: Why B?" in second
+    assert question in first and question in second
+    assert "[1] (A Study in Scarlet, chapter 2)\nMARK2" in first and "MARK4" not in first
+    assert "[2] (A Study in Scarlet, chapter 4)\nMARK4" in second and "MARK2" not in second
     # Decomposition is told the graph's books, so "in each novel" can split.
     assert "A Study in Scarlet" in calls["decompose"][0]
     conn.close()
@@ -859,4 +862,103 @@ async def test_baseline_stays_undecomposed(tmp_path: Path) -> None:
                                    baseline=True)
     assert not [c for c in ollama.generated if c[1] is SubQuestions]
     assert answer.sub_questions == ()
+    conn.close()
+
+
+# --- Task 10e: per-part synthesis; book fairness only on the fallback path -----
+
+async def test_a_two_part_answer_is_composed_in_part_order_and_names_a_missing_part(
+        tmp_path: Path) -> None:
+    from lore.query.synthesize import PARTIAL_NOTE
+
+    conn = open_db(tmp_path / "lore.db")
+    conn.execute("INSERT INTO books (id, title, author, source, file_path, status)"
+                 " VALUES ('b1', 'Book', NULL, 'upload', '/x', 'chunked')")
+    conn.commit()
+    _chunk(conn, "b1:1:0", "Alpha rode the grey horse home at dawn.", 1)
+    _chunk(conn, "b1:2:0", "Beta hid the letters beneath the floorboards.", 2)
+    _chunk(conn, "b1:3:0", "Gamma never spoke of the matter again.", 3)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)],
+                         tuple(A): [_row("b1:1:0", ["e1"], 0.1, 1)],
+                         tuple(B): [_row("b1:2:0", ["e1"], 0.1, 2)],
+                         (0.0, 0.0, 1.0): [_row("b1:3:0", ["e1"], 0.1, 3)]},
+                        {"b1:1:0": A, "b1:2:0": B, "b1:3:0": [0.0, 0.0, 1.0]})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "H")]})
+    subs = ["a?", "b?", "c?"]
+    replies = [Synthesis(claims=[Claim(text="Alpha rode home.", passage=1,
+                                       quote="rode the grey horse home")], can_answer=True),
+               Synthesis(claims=[], can_answer=False),
+               Synthesis(claims=[Claim(text="Gamma kept silent.", passage=3,
+                                       quote="never spoke of the matter")], can_answer=True)]
+    models, calls = _scripted({QUERY_PREFIX + "q": Q, QUERY_PREFIX + "a?": A,
+                               QUERY_PREFIX + "b?": B, QUERY_PREFIX + "c?": [0.0, 0.0, 1.0]},
+                              subs, [CHOICE, CHOICE, CHOICE])
+
+    async def synthesize(prompt, schema):
+        calls["synthesize"].append(prompt)
+        return replies[len(calls["synthesize"]) - 1]
+
+    models = QueryModels(models.embed, models.select, synthesize, lambda: "writer",
+                         models.aclose, lambda: "chooser", decompose=models.decompose)
+    answer = await answer_question(conn, kuzu, lance, "q", models)
+    assert len(calls["synthesize"]) == 3
+    assert answer.text == "Alpha rode home. [1] Gamma kept silent. [3]"
+    assert [p.n for p in answer.passages] == [1, 2, 3]
+    assert PARTIAL_NOTE in answer.note and "not found: b?" in answer.note
+    assert answer.model == "writer" and answer.mode == "graph"
+    conn.close()
+
+
+def _two_book_setup(tmp_path: Path):
+    conn = _conn(tmp_path)
+    conn.execute("INSERT INTO books (id, title, author, source, file_path, status)"
+                 " VALUES ('b2', 'Other', NULL, 'upload', '/y', 'chunked')")
+    big = "x" * 5000  # the ollama budget (12,000) holds two
+    for chunk_id, book, ch in (("b1:2:0", "b1", 2), ("b1:3:0", "b1", 3), ("b2:2:0", "b2", 2)):
+        conn.execute("INSERT INTO chunks (id, book_id, chapter_seq, scene_seq, seq, text)"
+                     " VALUES (?, ?, ?, 0, ?, ?)", (chunk_id, book, ch, ch, f"{chunk_id} {big}"))
+    conn.commit()
+    near, less = [0.95, 0.0, 0.0], [0.9, 0.0, 0.0]
+    lance = VectorLance({tuple(Q): [_row("b1:2:0", ["e1"], 0.1, 2)]},
+                        {"b1:2:0": near, "b1:3:0": less, "b2:2:0": [0.1, 0.0, 0.0]})
+    rows = [[*_edge_row("b1:2:0", 2, "H")], [*_edge_row("b1:3:0", 3, "H")],
+            ["H", "UNCATEGORIZED", "met", "X", "ev", 0.9, "b2", 2, "b2:2:0"]]
+    return conn, lance, EntityKuzu({"e1": rows})
+
+
+async def test_a_decomposed_part_ranks_purely_by_relevance(tmp_path: Path) -> None:
+    conn, lance, kuzu = _two_book_setup(tmp_path)
+    models, _ = _scripted({QUERY_PREFIX + "q": Q}, ["q"], [CHOICE])
+    answer = await answer_question(conn, kuzu, lance, "q", models)
+    assert [p.chunk_id for p in answer.passages] == ["b1:2:0", "b1:3:0"]
+    conn.close()
+
+
+async def test_a_single_part_across_books_answer_keeps_both_books(tmp_path: Path) -> None:
+    conn, lance, kuzu = _two_book_setup(tmp_path)
+    models, _ = _scripted({QUERY_PREFIX + "q": Q}, ["q"],
+                          [TemplateChoice(template="across_books", entities=[1])])
+    answer = await answer_question(conn, kuzu, lance, "q", models)
+    assert [p.chunk_id for p in answer.passages] == ["b1:2:0", "b2:2:0"]
+    conn.close()
+
+
+async def test_a_failed_decomposition_keeps_both_books(tmp_path: Path) -> None:
+    from lore.inference.gemini import GeminiOutputError
+
+    conn, lance, kuzu = _two_book_setup(tmp_path)
+    models, _ = _scripted({QUERY_PREFIX + "q": Q}, ["q"], [CHOICE])
+
+    async def broken(prompt, schema):
+        raise GeminiOutputError("not a SubQuestions object", "{")
+
+    models = QueryModels(models.embed, models.select, models.synthesize, lambda: "w",
+                         models.aclose, lambda: "c", decompose=broken)
+    answer = await answer_question(conn, kuzu, lance, "q", models)
+    assert [p.chunk_id for p in answer.passages] == ["b1:2:0", "b2:2:0"]
+    none, _ = _scripted({QUERY_PREFIX + "q": Q}, ["q"], [CHOICE])
+    no_decomposer = QueryModels(none.embed, none.select, none.synthesize, lambda: "w",
+                                none.aclose, lambda: "c", decompose=None)
+    answer = await answer_question(conn, kuzu, lance, "q", no_decomposer)
+    assert [p.chunk_id for p in answer.passages] == ["b1:2:0", "b2:2:0"]
     conn.close()

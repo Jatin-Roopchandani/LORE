@@ -64,7 +64,7 @@ pieces with "..."; every piece must be copied word for word, in the
 passage's order, and be at least {min_segment} words long.
 
 Question: {question}
-{checklist}{relations}
+{context}{checklist}{relations}
 Passages:
 {passages}
 {truncation}"""
@@ -81,6 +81,13 @@ lead came from.
 # No fuzzy matching and no dropped punctuation -- a near-miss is a miss.
 _CHARS = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"',
                         "–": "-", "—": "-"})
+# Quotation marks are the one exception (Task 10e). In dialogue a copied
+# line often starts or stops inside a speech, and Q5's only claim -- a
+# correct one -- was dropped for leaving out one closing mark. They are
+# removed from both sides before matching: every `"`, and every `'` (already
+# folded from ‘ ’) that is not between two letters. An apostrophe inside a
+# word ("Hope's", "don't") is spelling, not quotation, and stays.
+_QUOTE_MARKS = re.compile(r"\"|(?<![^\W\d_])'|'(?![^\W\d_])")
 _SPACE = re.compile(r"\s+")
 _WORD = re.compile(r"\w")
 _ELLIPSIS = re.compile(r"\.\.\.|…")
@@ -98,7 +105,8 @@ class Synthesis(BaseModel):
 
 
 def _normalise(text: str) -> str:
-    return _SPACE.sub(" ", text.lower().translate(_CHARS)).strip()
+    unquoted = _QUOTE_MARKS.sub("", text.lower().translate(_CHARS))
+    return _SPACE.sub(" ", unquoted).strip()
 
 
 def _find(quote: str, text: str, start: int = 0) -> re.Match | None:
@@ -201,7 +209,7 @@ def _relation_line(edge: EdgeRow, n: int, book_titles: dict[str, str] | None) ->
 
 def _build_prompt(
     question: str, evidence: Evidence, book_titles: dict[str, str] | None = None,
-    checklist: Sequence[str] = (),
+    checklist: Sequence[str] = (), part_of: str | None = None,
 ) -> str:
     lines = _relation_lines(evidence, book_titles)
     relations = _RELATIONS.format(lines="\n".join(lines)) if lines else ""
@@ -217,8 +225,12 @@ def _build_prompt(
         "Make sure the answer covers:\n" + "\n".join(f"- {c}" for c in checklist) + "\n"
         if len(checklist) > 1 else ""
     )
+    context = (
+        f"This is one part of the larger question: {part_of}\n"
+        "Answer only this part.\n" if part_of else ""
+    )
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
-                          question=question, checklist=covers,
+                          question=question, context=context, checklist=covers,
                           relations=relations, passages=passages,
                           truncation=truncation)
 
@@ -256,3 +268,74 @@ async def synthesize(
     # can_answer=false with verified claims is a partial answer, not a
     # refusal: Task 10a measured H6 and H4 discarding verified gold claims.
     return answer(_compose(kept), None if result.can_answer else PARTIAL_NOTE)
+
+
+NOT_FOUND = "not found: "
+
+
+async def synthesize_parts(
+    question: str,
+    sub_questions: Sequence[str],
+    evidence: Evidence,
+    generate: Generate,
+    *,
+    mode: str,
+    template: str | None = None,
+    note: str | None = None,
+    book_titles: dict[str, str] | None = None,
+) -> Answer:
+    """One synthesis call per sub-question, over that part's share, merged.
+
+    Task 10d's single call over ~24 passages for a multi-part question was
+    too diffuse: Q2 had every fact in its evidence and cited one. So each
+    part gets its own call over `evidence.shares[i]` -- the passages the
+    assembly gave it, plus those it ranked but another part took -- with the
+    original question as context. Numbering stays global: a part is shown
+    its passages under the numbers the whole answer uses, and verifies
+    claims against only those, so every `[n]` resolves to the one passage
+    list the CLI prints.
+
+    Kept claims are composed in sub-question order, exact duplicates once.
+    A part with no kept claim (or no passages, which is not asked) is named
+    in the partial note; only when no part keeps a claim is it a refusal.
+    `can_answer` does not decide partiality here: whether a part kept a
+    verified claim does.
+
+    With one sub-question, or evidence that carries no shares, this is
+    `synthesize` exactly: one call over everything.
+    """
+    if len(sub_questions) < 2 or len(evidence.shares) != len(sub_questions):
+        return await synthesize(question, evidence, generate, mode=mode, template=template,
+                                note=note, book_titles=book_titles,
+                                checklist=sub_questions)
+
+    def answer(text: str, extra_note: str | None = None) -> Answer:
+        notes = "; ".join(n for n in (note, extra_note) if n) or None
+        return Answer(text=text, passages=evidence.passages, mode=mode,
+                      template=template, note=notes)
+
+    if not evidence.passages:
+        return answer(REFUSAL)
+
+    kept: list[Claim] = []
+    missing: list[str] = []
+    for part, share in zip(sub_questions, evidence.shares):
+        numbers = set(share)
+        passages = tuple(p for p in evidence.passages if p.n in numbers)
+        if not passages:
+            missing.append(part)
+            continue
+        own = Evidence(edges=evidence.edges, passages=passages,
+                       truncated=evidence.truncated)
+        result = await generate(
+            _build_prompt(part, own, book_titles, part_of=question), Synthesis)
+        verified, _ = verify_claims(result, passages)
+        if not verified:
+            missing.append(part)
+        kept.extend(c for c in verified if c not in kept)
+
+    if not kept:
+        return answer(REFUSAL)
+    partial = (PARTIAL_NOTE + "; " + "; ".join(NOT_FOUND + m for m in missing)
+               if missing else None)
+    return answer(_compose(kept), partial)

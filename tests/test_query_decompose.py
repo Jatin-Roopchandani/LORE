@@ -67,7 +67,39 @@ def test_the_prompt_states_the_rules_and_names_the_books() -> None:
                                   ["A Study in Scarlet", "The Sign of the Four"])
     assert "Who is it in each novel?" in prompt
     assert "unchanged" in prompt
-    assert "in each novel" in prompt and "in both books" in prompt
+    assert "each novel" in prompt and "both books" in prompt
     assert "who" in prompt and "why" in prompt
     assert "A Study in Scarlet" in prompt and "The Sign of the Four" in prompt
     assert "1 to 4" in prompt
+
+
+# --- Task 10e: split per book only when the question asks about each book ---
+
+def test_the_prompt_splits_per_book_only_when_asked_about_each_or_both() -> None:
+    prompt = decomposition_prompt("How is A connected to B?",
+                                  ["A Study in Scarlet", "The Sign of the Four"])
+    lowered = " ".join(prompt.lower().split())
+    assert "only when the question explicitly asks about each book" in lowered
+    for phrase in ("each book", "both books", "each novel", "both novels"):
+        assert phrase in lowered
+    assert "otherwise keep the question's own parts" in lowered
+    assert "do not split a question by book" in lowered
+    # The book list stays, but only as a reference for names.
+    assert "reference for names only" in lowered
+    assert "A Study in Scarlet" in prompt and "The Sign of the Four" in prompt
+
+
+def test_no_book_list_means_no_reference_line() -> None:
+    assert "reference for names" not in decomposition_prompt("q").lower()
+
+
+async def test_split_reports_whether_the_model_output_was_usable() -> None:
+    from lore.query.decompose import split
+
+    assert await split("q", _returning(SubQuestions(sub_questions=["a?", "b?"]))) == ["a?", "b?"]
+    assert await split("q", _returning(SubQuestions(sub_questions=["q"]))) == ["q"]
+    for bad in (SubQuestions(sub_questions=[" "]), GeminiOutputError("x", "{"),
+                ProviderOutputError("x", raw_output="{")):
+        assert await split("q", _returning(bad)) is None
+    with pytest.raises(RuntimeError):
+        await split("q", _returning(RuntimeError("quota")))

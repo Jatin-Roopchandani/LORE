@@ -29,8 +29,11 @@ Question: {question}
 Return "sub_questions": a list of 1 to 4 self-contained questions that
 together ask exactly what the question asks.
 - If the question has one part, return the question unchanged as the only item.
-- "in each novel", "in both books" or "in each book" means one
-  sub-question per book, naming that book.
+- Split per book only when the question explicitly asks about each book or
+  both books ("in each novel", "in both novels", "in each book", "in both
+  books"): then give one sub-question per book, naming that book.
+- Otherwise keep the question's own parts. Do not split a question by book
+  just because the library holds several books.
 - A question that asks "who ... and why ..." is two sub-questions: one
   for who, one for why. Likewise "what ... and how ...".
 - Each sub-question must make sense on its own: repeat the names it needs
@@ -44,29 +47,39 @@ class SubQuestions(BaseModel):
 
 
 def decomposition_prompt(question: str, book_titles: Sequence[str] = ()) -> str:
-    books = ("\nBooks in the library: " + "; ".join(book_titles) + "\n"
-             if book_titles else "")
+    # Task 10e: listed as bare context, the titles invited a split per book
+    # on single-book questions (Q3). They stay, for spelling book names.
+    books = ("\nBooks in the library (a reference for names only): "
+             + "; ".join(book_titles) + "\n" if book_titles else "")
     return _PROMPT.format(question=question, books=books)
 
 
-async def decompose(
+async def split(
     question: str, generate: Generate, *, book_titles: Sequence[str] = ()
-) -> list[str]:
-    """1-4 sub-questions, or `[question]` when the model's output is unusable.
+) -> list[str] | None:
+    """1-4 sub-questions, or None when the model's output is unusable.
 
-    Only malformed output falls back. A quota, transport or auth failure is
+    Only malformed output gives None. A quota, transport or auth failure is
     raised: it would fail the answer's other calls too, and hiding it here
     would only move the error.
     """
     try:
         result = await generate(decomposition_prompt(question, book_titles), SubQuestions)
     except (ProviderOutputError, GeminiOutputError, ValidationError):
-        return [question]
+        return None
     if not isinstance(result, SubQuestions):
-        return [question]
+        return None
     parts: list[str] = []
     for part in result.sub_questions:
         text = " ".join(str(part).split())
         if text and text not in parts:
             parts.append(text)
-    return parts[:MAX_SUB_QUESTIONS] or [question]
+    return parts[:MAX_SUB_QUESTIONS] or None
+
+
+async def decompose(
+    question: str, generate: Generate, *, book_titles: Sequence[str] = ()
+) -> list[str]:
+    """1-4 sub-questions, or `[question]` when the model's output is unusable
+    (see `split`, which tells the two apart)."""
+    return await split(question, generate, book_titles=book_titles) or [question]

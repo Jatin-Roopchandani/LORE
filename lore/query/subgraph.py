@@ -142,26 +142,63 @@ def assemble(conn: sqlite3.Connection, rows: list[EdgeRow], *,
     return Evidence(edges=edges, passages=passages, truncated=truncated)
 
 
-def _next_unseen(lists: list[list[_Item]]) -> list[_Item]:
+def _pure_relevance(items: list[_Item], scores: dict[str, float]) -> list[_Item]:
+    """Most relevant first across every book (reading order breaks ties)."""
+    return sorted(items, key=lambda i: (_relevance_key(scores, i[0]), i[1], i[2], i[0]))
+
+
+class _Turns:
+    """What each list took, and passed over as already taken, per turn."""
+
+    def __init__(self, parts: int) -> None:
+        self.merged: list[_Item] = []
+        self.took: list[list[tuple[int, int]]] = [[] for _ in range(parts)]  # (turn, index)
+        self.skipped: list[list[tuple[int, str]]] = [[] for _ in range(parts)]  # (turn, id)
+
+
+def _next_unseen(lists: list[list[_Item]]) -> _Turns:
     """One item from each list per turn, each list's next item not yet taken.
 
     So every sub-question gets its best passage before any gets a second.
     """
-    merged: list[_Item] = []
+    turns = _Turns(len(lists))
     seen: set[str] = set()
     positions = [0] * len(lists)
+    turn = 0
     while True:
         moved = False
         for index, items in enumerate(lists):
             while positions[index] < len(items) and items[positions[index]][0] in seen:
+                turns.skipped[index].append((turn, items[positions[index]][0]))
                 positions[index] += 1
             if positions[index] < len(items):
                 item = items[positions[index]]
                 seen.add(item[0])
-                merged.append(item)
+                turns.took[index].append((turn, len(turns.merged)))
+                turns.merged.append(item)
                 moved = True
         if not moved:
-            return merged
+            return turns
+        turn += 1
+
+
+def _shares(turns: _Turns, kept_count: int) -> list[set[str]]:
+    """Each part's chunk ids: what it took within the budget, plus what it
+    passed over as already taken on its way there.
+
+    "On its way there" is up to the last turn in which it took a kept
+    passage (its first turn if it took none): past that, every list runs
+    through the whole pool, and counting those skips would hand every part
+    every passage.
+    """
+    shares: list[set[str]] = []
+    for took, skipped in zip(turns.took, turns.skipped):
+        own = [(turn, index) for turn, index in took if index < kept_count]
+        last = own[-1][0] if own else 0
+        ids = {turns.merged[index][0] for _, index in own}
+        ids.update(chunk_id for turn, chunk_id in skipped if turn <= last)
+        shares.append(ids)
+    return shares
 
 
 def assemble_ranked(
@@ -171,6 +208,7 @@ def assemble_ranked(
     score_lists: Sequence[dict[str, float]],
     extra_chunks: Iterable[tuple[str, str, int]] = (),
     max_chars: int = MAX_EVIDENCE_CHARS,
+    book_fair: bool = False,
 ) -> Evidence:
     """Evidence from template rows plus vector passages, for one or more parts.
 
@@ -180,10 +218,17 @@ def assemble_ranked(
     sources appears once.
 
     `score_lists` holds one chunk_id -> relevance map per sub-question. Each
-    becomes its own ranked, book-fair list, as in `assemble`, and the budget
-    is filled round-robin across the lists. With one list this selects
-    exactly what `assemble(..., scores=)` does. Passages are numbered in
-    reading order, and only edges whose passage was kept are returned.
+    becomes its own ranked list, and the budget is filled round-robin across
+    the lists, so every part gets passages. Within a list the ranking is
+    purely by relevance (Task 10e): a question about each book is already
+    one part per book, and book round-robin inside a one-book part handed
+    half its budget to the other book. `book_fair=True` restores the
+    round-robin across books within each list, as in `assemble`, for the
+    no-decomposition fallback, where one part may still span books.
+
+    Passages are numbered in reading order, and only edges whose passage
+    was kept are returned. `shares` gives each part's passage numbers: the
+    ones it took, plus the ones it ranked above them that another part took.
     """
     edges = tuple(dict.fromkeys(rows))
     positions: dict[str, tuple[str, int]] = {}
@@ -197,8 +242,10 @@ def assemble_ranked(
     ordered = sorted(positions.items(), key=lambda kv: (kv[1][0], kv[1][1], kv[0]))
     texts = chunks_by_id(conn, [c for c, _ in ordered])
     items = [(c, b, s, texts[c]) for c, (b, s) in ordered if c in texts]
-    lists = [_by_relevance(items, scores) for scores in score_lists] or [_interleaved(items)]
-    kept, truncated = _capped(_next_unseen(lists), max_chars)
+    rank_list = _by_relevance if book_fair else _pure_relevance
+    lists = [rank_list(items, scores) for scores in score_lists] or [_interleaved(items)]
+    turns = _next_unseen(lists)
+    kept, truncated = _capped(turns.merged, max_chars)
 
     kept_ids = {item[0] for item in kept}
 
@@ -214,7 +261,10 @@ def assemble_ranked(
         Passage(n=index + 1, chunk_id=c, book_id=b, chapter_seq=s, text=t)
         for index, (c, b, s, t) in enumerate(kept)
     )
-    return Evidence(edges=edges, passages=passages, truncated=truncated)
+    number = {p.chunk_id: p.n for p in passages}
+    shares = tuple(tuple(sorted(number[c] for c in share if c in number))
+                   for share in _shares(turns, len(kept)))
+    return Evidence(edges=edges, passages=passages, truncated=truncated, shares=shares)
 
 
 def passages_from_chunks(chunk_rows: list[dict]) -> tuple[Passage, ...]:
