@@ -16,21 +16,30 @@ import hashlib
 import json
 from pathlib import Path
 
+from pydantic import TypeAdapter, ValidationError
+
 from lore.config import LoreConfig
 from lore.extract.embed import DOCUMENT_PREFIX
 from lore.inference.gemini import (
     GeminiClient,
+    GeminiOutputError,
+    _strip_fence,
     default_key_file,
     resolve_api_key,
 )
 from lore.inference.ollama import OllamaProvider
 from lore.resolve.disambiguation import _atomic_write
 from lore.resolve.narrator import (
-    DetectNarrator,
     NarratorAnswer,
     NarratorCache,
-    make_narrator_detector,
+    ResolveFirstPerson,
+    SpeakerAnswers,
+    SpeakerCache,
+    SpeakerItem,
+    make_first_person_resolver,
 )
+
+_SPEAKER_LIST = TypeAdapter(list[SpeakerItem])
 
 _TEMPLATE = """You are matching characters across two novels by the same author.
 
@@ -231,38 +240,64 @@ def make_gemini_pair(
     return embed, adjudicate, aclose
 
 
-NARRATOR_EXHAUSTED_HINT = (
-    "The graph load (narrator detection) was stopped before anything was"
-    " written; re-run `lore process <book_id> --skip-extract` when a daily"
-    " budget resets."
+FIRST_PERSON_EXHAUSTED_HINT = (
+    "The graph load (first-person speaker resolution) was stopped before"
+    " anything was written; every answer already received is cached, so"
+    " re-run `lore process <book_id> --skip-extract` when a daily budget"
+    " resets."
 )
 
 
-def make_gemini_narrator(
+def make_gemini_first_person(
     config: LoreConfig,
     api_key: str | None = None,
     *,
     client: GeminiClient | None = None,
-    cache: NarratorCache | None = None,
-) -> tuple[DetectNarrator, object]:
-    """Return (detect, aclose): Task 10c's per-book narrator question on Gemini.
+    narrator_cache: NarratorCache | None = None,
+    speaker_cache: SpeakerCache | None = None,
+) -> tuple[ResolveFirstPerson, object]:
+    """Return (resolve, aclose): Task 10c's first-person speakers on Gemini.
 
     Follows `[lore.adjudication]`: the same cascade and the same no-key
-    refusal as `make_gemini_pair`. One `generate_json` request per book and
-    opening text, cached in `config.narrators_dir`, so a reload spends zero.
-    A GeminiError propagates and fails the load before anything is written.
+    refusal as `make_gemini_pair`. One `generate_json` request for the
+    book's narrator hint and one per chunk with first-person triplets, each
+    cached (`config.narrators_dir`, `config.speakers_dir`), so a reload
+    spends zero. A GeminiError propagates and fails the load before anything
+    is written.
     """
     if client is None:
         client = _adjudication_client(config, api_key)
-    store = cache if cache is not None else NarratorCache(config.narrators_dir)
+    narrators = (narrator_cache if narrator_cache is not None
+                 else NarratorCache(config.narrators_dir))
+    speakers = (speaker_cache if speaker_cache is not None
+                else SpeakerCache(config.speakers_dir))
 
-    async def ask(prompt: str) -> tuple[NarratorAnswer, str | None]:
+    async def ask_narrator(prompt: str) -> tuple[NarratorAnswer, str | None]:
         answer = await client.generate_json(
-            prompt, NarratorAnswer, exhausted_hint=NARRATOR_EXHAUSTED_HINT
+            prompt, NarratorAnswer, exhausted_hint=FIRST_PERSON_EXHAUSTED_HINT
         )
+        return answer, client.last_model
+
+    async def ask_speakers(prompt: str) -> tuple[SpeakerAnswers, str | None]:
+        try:
+            answer = await client.generate_json(
+                prompt, SpeakerAnswers, exhausted_hint=FIRST_PERSON_EXHAUSTED_HINT
+            )
+        except GeminiOutputError as exc:
+            # Measured on the Holmes novels: Flash Lite sometimes returns the
+            # list itself instead of {"speakers": [...]}. Same content, so it
+            # is accepted; anything else is still the error it was.
+            try:
+                items = _SPEAKER_LIST.validate_json(_strip_fence(exc.raw_output))
+            except ValidationError:
+                raise exc from None
+            answer = SpeakerAnswers(speakers=items)
         return answer, client.last_model
 
     async def aclose() -> None:
         await client.aclose()
 
-    return make_narrator_detector(ask, store, "gemini"), aclose
+    return (
+        make_first_person_resolver(ask_narrator, ask_speakers, narrators, speakers),
+        aclose,
+    )

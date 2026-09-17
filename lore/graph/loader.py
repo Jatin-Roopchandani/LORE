@@ -79,12 +79,12 @@ from lore.db.lance_store import LanceStore
 from lore.graph.artifacts import completed_unit_dirs, read_embeddings, read_triplets
 from lore.ingest.registry import chunks_for_book
 from lore.resolve.disambiguation import DisambiguationStore
-from lore.resolve.narrator import DetectNarrator, rewrite_narrator
 from lore.resolve.entityhood import (
     is_generic_name,
     is_gutenberg_boilerplate,
     is_probable_entity,
 )
+from lore.resolve.narrator import ResolveFirstPerson, rewrite_first_person
 from lore.resolve.normalize import entity_id, normalize_name
 from lore.resolve.predicates import normalize_predicates
 from lore.resolve.resolver import (
@@ -117,12 +117,16 @@ class LoadReport:
     dropped_edges: int = 0
     dropped_mentions: int = 0
     boilerplate_chunks: int = 0
-    # Task 10c. `narrator_checked` is True when a narrator detector ran;
-    # `narrator` is its validated answer ("" when unknown or not first
-    # person) and `narrator_rewrites` the subject/object endpoints renamed.
-    narrator_checked: bool = False
+    # Task 10c. `first_person_checked` is True when speaker resolution ran;
+    # `narrator` is the book's validated narrator HINT ("" when unknown);
+    # rewrites/unresolved count subject/object endpoints; `speaker_requests`
+    # is questions actually sent (0 on a cached reload).
+    first_person_checked: bool = False
     narrator: str = ""
-    narrator_rewrites: int = 0
+    first_person_rewrites: int = 0
+    first_person_unresolved: int = 0
+    speaker_requests: int = 0
+    speaker_mismatches: int = 0
 
 
 class PartialLoadError(RuntimeError):
@@ -629,7 +633,7 @@ async def load_book(
     embed: Callable[[list[str]], Awaitable[list[list[float]]]],
     adjudicate: Adjudicate,
     disambiguation: DisambiguationStore | None = None,
-    narrator: DetectNarrator | None = None,
+    first_person: ResolveFirstPerson | None = None,
 ) -> LoadReport:
     """Load one book. `disambiguation` is Task 1j's optional residue store.
 
@@ -643,11 +647,12 @@ async def load_book(
     request on all of them at once) and READS answers a previous run
     already paid for.
 
-    `narrator` is Task 10c's optional per-book narrator detector. When it
-    names a first-person narrator, every triplet endpoint that is "I", "me",
-    "we", "the narrator" and so on is renamed to that narrator before any
-    entity filtering or resolution sees it (`rewrite_narrator`). When it is
-    None, or answers None, no row is touched.
+    `first_person` is Task 10c's optional speaker resolver. Every triplet
+    endpoint that is "I", "me", "we", "the narrator" and so on is renamed to
+    the person speaking in its evidence sentence, when the resolver names
+    one with certainty, before any entity filtering or resolution sees it
+    (`rewrite_first_person`). An unresolved endpoint, or every endpoint when
+    `first_person` is None, is left as extracted and drops as before.
     """
     # ---- Phase 1: read and compute. No store is mutated below this line.
     dirs = completed_unit_dirs(conn, config, book_id)
@@ -696,16 +701,20 @@ async def load_book(
         ]
 
     # Task 10c. Before `_mentions_from`, so the entity filter and the
-    # resolver see the narrator's name where the extraction wrote "I" or
+    # resolver see the speaker's name where the extraction wrote "I" or
     # "the narrator"; which entity that name then merges into is ordinary
-    # resolution's decision. Still phase 1: a detector request mutates no
-    # store, and a failed one fails the load before anything is written.
-    narrator_name = ""
-    narrator_rewrites = 0
-    if narrator is not None:
-        narrator_name = await narrator(book_id, chunks) or ""
-        if narrator_name:
-            triplets, narrator_rewrites = rewrite_narrator(triplets, narrator_name)
+    # resolution's decision. Still phase 1: a question mutates no store, and
+    # a failed one fails the load before anything is written.
+    speakers = None
+    first_person_rewrites = first_person_unresolved = 0
+    if first_person is not None:
+        speakers = await first_person(book_id, chunks, triplets)
+        triplets, first_person_rewrites, first_person_unresolved = rewrite_first_person(
+            triplets,
+            lambda row: speakers.speakers.get(
+                (str(row.get("chunk_id") or ""), str(row.get("evidence") or ""))
+            ),
+        )
 
     dropped_mentions = 0
 
@@ -835,9 +844,13 @@ async def load_book(
                         alias_links=len(resolution.aliases),
                         dropped_mentions=dropped_mentions,
                         boilerplate_chunks=len(boilerplate),
-                        narrator_checked=narrator is not None,
-                        narrator=narrator_name,
-                        narrator_rewrites=narrator_rewrites)
+                        first_person_checked=speakers is not None,
+                        narrator=speakers.narrator_hint if speakers else "",
+                        first_person_rewrites=first_person_rewrites,
+                        first_person_unresolved=first_person_unresolved,
+                        speaker_requests=speakers.requests if speakers else 0,
+                        speaker_mismatches=(
+                            speakers.mismatched_chunks if speakers else 0))
 
     # Which canonical entities each chunk mentions — the bridge LanceDB
     # rows carry, and the source of the MENTIONS edges.

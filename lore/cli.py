@@ -14,7 +14,7 @@ from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.db.sqlite import open_db, schema_version
 from lore.graph.adjudicate import (
-    make_gemini_narrator,
+    make_gemini_first_person,
     make_gemini_pair,
     make_ollama_pair,
 )
@@ -289,16 +289,16 @@ def _load_book_sync(config: LoreConfig, conn, book_id: str, api_key: str | None 
     # The pair is built first: a missing key refuses before a store opens.
     # Gemini answers are cached in data/adjudication/, so a reload asks only
     # questions it has never had answered.
-    # Task 10c: the per-book narrator question follows the same provider.
-    # On Ollama it is skipped (and `process` says so): a wrong answer would
-    # rehang hundreds of edges on the wrong character, and the local 3B's
-    # record on judgement questions here is the reason adjudication moved.
-    narrator = None
-    close_narrator = None
+    # Task 10c: first-person speaker resolution follows the same provider.
+    # On Ollama it is skipped (and `process` says so): a wrong speaker is a
+    # false fact in the graph, and the local 3B's record on judgement
+    # questions here is the reason adjudication moved to Gemini.
+    first_person = None
+    close_first_person = None
     if config.adjudication.provider == "gemini":
         embed, adjudicate, aclose = make_gemini_pair(config, api_key)
         try:
-            narrator, close_narrator = make_gemini_narrator(config, api_key)
+            first_person, close_first_person = make_gemini_first_person(config, api_key)
         except BaseException:
             asyncio.run(aclose())
             raise
@@ -322,12 +322,12 @@ def _load_book_sync(config: LoreConfig, conn, book_id: str, api_key: str | None 
         try:
             return await load_book(
                 config, conn, kuzu, lance, book_id, embed, adjudicate,
-                disambiguation=disambiguation, narrator=narrator,
+                disambiguation=disambiguation, first_person=first_person,
             )
         finally:
             try:
-                if close_narrator is not None:
-                    await close_narrator()
+                if close_first_person is not None:
+                    await close_first_person()
             finally:
                 await aclose()
 
@@ -412,18 +412,21 @@ def process(
             f"{report.dropped_edges} edge(s) dropped — an endpoint was named"
             " nowhere in the book"
         )
-    if report.narrator:
+    if report.first_person_checked:
         typer.echo(
-            f"{report.narrator_rewrites} endpoint(s) rewritten to the narrator,"
-            f" {report.narrator} — first-person \"I\"/\"we\"/\"the narrator\""
+            f"{report.first_person_rewrites} first-person endpoint(s) rewritten to"
+            f" their speaker, {report.first_person_unresolved} left unresolved and"
+            f" dropped ({report.speaker_requests} speaker request(s);"
+            f" narrator hint: {report.narrator or 'none'})"
         )
-    elif report.narrator_checked:
-        typer.echo(
-            "no named first-person narrator detected — no endpoint rewritten"
-        )
+        if report.speaker_mismatches:
+            typer.echo(
+                f"{report.speaker_mismatches} passage(s) got a misaligned speaker"
+                " answer; left unresolved and not cached"
+            )
     elif config.adjudication.provider == "ollama":
         typer.echo(
-            "narrator resolution skipped — it runs only with"
+            "first-person speaker resolution skipped — it runs only with"
             ' [lore.adjudication] provider = "gemini"'
         )
     if report.dropped_mentions:

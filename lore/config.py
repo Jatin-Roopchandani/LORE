@@ -196,8 +196,13 @@ class LoreConfig(BaseModel):
 
     @property
     def narrators_dir(self) -> Path:
-        """Task 10c's per-book narrator answers. Never created eagerly."""
+        """Task 10c's per-book narrator hints. Never created eagerly."""
         return self.data_dir / "narrators"
+
+    @property
+    def speakers_dir(self) -> Path:
+        """Task 10c's per-chunk first-person speakers. Never created eagerly."""
+        return self.data_dir / "speakers"
 
     def ensure_dirs(self) -> None:
         for d in (
