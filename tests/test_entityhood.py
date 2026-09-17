@@ -391,3 +391,16 @@ def test_the_names_the_brief_measured_are_still_ordinary_names() -> None:
                  "the IRS", "DISTRIBUTOR", "TRADEMARK_OWNER", "FOUNDATION",
                  "50 states of the United States"):
         assert is_gutenberg_boilerplate(name) is False
+
+
+@pytest.mark.parametrize("name", ["Narrator", "narrator", "NARRATOR", "Narrator.", "The Narrator"])
+def test_a_bare_narrator_role_is_rejected(name: str) -> None:
+    # Speaker resolution rewrites "I"/"the narrator" to a named speaker only
+    # when it is certain. An unresolved capitalised "Narrator" used to pass as
+    # a name and became its own node (64 edges on the Gemini-built graph).
+    # A role is not a person; dropping it matches what happens to "I".
+    assert is_probable_entity(name) is False
+
+
+def test_a_name_containing_narrator_is_kept() -> None:
+    assert is_probable_entity("The Narrator's Guild of Bath") is True

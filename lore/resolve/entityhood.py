@@ -116,6 +116,15 @@ def is_probable_entity(name: str) -> bool:
     if len(tokens) == 1 and _bare_word(tokens[0]) in _PRONOUNS:
         return False
 
+    # The narrator ROLE, with or without an article. Speaker resolution
+    # rewrites "I"/"the narrator" to a named speaker only when it is certain;
+    # an unresolved capitalised "Narrator" otherwise passed as a name and
+    # became its own 64-edge node. A role is not a person, so it drops
+    # exactly as an unresolved "I" does.
+    role = [t for t in tokens if t.casefold() not in _DETERMINERS]
+    if len(role) == 1 and _bare_word(role[0]) == "narrator":
+        return False
+
     # An all-caps multi-word chapter heading. `str.isupper()` is False when
     # the name has no cased characters at all, so an uncased string ("221 43")
     # falls through to the ordinary rule below rather than being caught here.
