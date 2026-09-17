@@ -5,7 +5,7 @@ A local-first literary knowledge graph: e-books in, entities/relationships out
 databases (Kuzu + LanceDB) with a hybrid graph-vector query agent, an MCP
 server, and a graph UI.
 
-See `SPEC.md` for the full design. Status: Phase 3 (the query agent) in progress.
+See `SPEC.md` for the full design. Status: Phase 3 (the query agent) complete — see `docs/superpowers/reports/2026-09-17-phase-3-close.md`. Next: Phase 4, the MCP server.
 
 ## Quickstart
 
