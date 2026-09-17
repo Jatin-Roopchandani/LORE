@@ -406,6 +406,54 @@ async def test_a_bare_speaker_list_is_accepted_as_the_answer_object(tmp_path) ->
         ("sis:17:1", "I took the ring from her finger"): "Jefferson Hope"}
 
 
+async def test_an_unexpected_confidence_word_is_treated_as_unsure(tmp_path) -> None:
+    # Measured in the real reload: Flash Lite answered "confidence": "uncertain"
+    # (not one of the offered words), and the schema rejected the whole answer,
+    # aborting the book's load. Any word other than "certain" is simply not
+    # certain: the sentence stays unresolved, the certain ones still resolve.
+    def handler(request: httpx.Request) -> httpx.Response:
+        prompt = json.loads(request.content)["contents"][0]["parts"][0]["text"]
+        if "Sentences:" in prompt:
+            reply = {"speakers": [
+                {"sentence": 1, "speaker_name": "Jefferson Hope", "confidence": "uncertain"}]}
+        else:
+            reply = {"first_person": True, "narrator_name": "Watson"}
+        return httpx.Response(200, json={
+            "candidates": [{"content": {"parts": [{"text": json.dumps(reply)}]}}]})
+
+    config = LoreConfig.load().model_copy(update={"data_dir": tmp_path / "data"})
+    resolve, aclose = make_gemini_first_person(config, client=_gemini(handler))
+    try:
+        resolution = await resolve("sis", BOOKCHUNKS, ROWS[1:2])
+    finally:
+        await aclose()
+    assert resolution.speakers == {}
+    assert resolution.mismatched_chunks == 0
+
+
+async def test_an_unusable_speaker_answer_skips_that_chunk_not_the_book(tmp_path) -> None:
+    # One passage's garbled answer must not abort a whole book's load: that
+    # chunk stays unresolved (its edges drop, as before) and is not cached,
+    # so a later reload asks again.
+    def handler(request: httpx.Request) -> httpx.Response:
+        prompt = json.loads(request.content)["contents"][0]["parts"][0]["text"]
+        reply = ('{"speakers": "not a list"}' if "Sentences:" in prompt
+                 else json.dumps({"first_person": True, "narrator_name": "Watson"}))
+        return httpx.Response(200, json={
+            "candidates": [{"content": {"parts": [{"text": reply}]}}]})
+
+    config = LoreConfig.load().model_copy(update={"data_dir": tmp_path / "data"})
+    resolve, aclose = make_gemini_first_person(config, client=_gemini(handler))
+    try:
+        resolution = await resolve("sis", BOOKCHUNKS, ROWS[1:2])
+    finally:
+        await aclose()
+    assert resolution.speakers == {}
+    assert resolution.mismatched_chunks == 1
+    speakers_file = config.speakers_dir / "answers.json"
+    assert not speakers_file.is_file() or json.loads(speakers_file.read_text()) == {}
+
+
 def test_the_gemini_factory_refuses_without_a_key(tmp_path, monkeypatch) -> None:
     for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(name, raising=False)

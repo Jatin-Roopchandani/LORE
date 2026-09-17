@@ -278,7 +278,7 @@ def make_gemini_first_person(
         )
         return answer, client.last_model
 
-    async def ask_speakers(prompt: str) -> tuple[SpeakerAnswers, str | None]:
+    async def ask_speakers(prompt: str) -> tuple[SpeakerAnswers | None, str | None]:
         try:
             answer = await client.generate_json(
                 prompt, SpeakerAnswers, exhausted_hint=FIRST_PERSON_EXHAUSTED_HINT
@@ -290,7 +290,9 @@ def make_gemini_first_person(
             try:
                 items = _SPEAKER_LIST.validate_json(_strip_fence(exc.raw_output))
             except ValidationError:
-                raise exc from None
+                # Unusable output for this passage. Quota, key and transport
+                # failures are other GeminiError types and still propagate.
+                return None, client.last_model
             answer = SpeakerAnswers(speakers=items)
         return answer, client.last_model
 

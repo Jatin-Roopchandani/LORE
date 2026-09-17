@@ -39,7 +39,6 @@ import json
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, ValidationError
 
@@ -176,7 +175,11 @@ def validated_narrator(answer: NarratorAnswer, supplied_text: str) -> str | None
 class SpeakerItem(BaseModel):
     sentence: int
     speaker_name: str
-    confidence: Literal["certain", "unsure"]
+    # Free text, not Literal["certain", "unsure"]: Flash Lite was measured
+    # answering "uncertain", and a strict enum rejected the whole answer and
+    # aborted the book's load. Only the exact word "certain" ever rewrites
+    # (see `validated_speakers`); any other word is simply not certain.
+    confidence: str
 
 
 class SpeakerAnswers(BaseModel):
@@ -516,6 +519,11 @@ def make_first_person_resolver(
             if fresh:
                 answers, model = await ask_speakers(prompt)
                 result.requests += 1
+                if answers is None:
+                    # An unusable answer for ONE passage leaves that chunk
+                    # unresolved and uncached; it must not abort the book.
+                    result.mismatched_chunks += 1
+                    continue
             names = validated_speakers(
                 answers, len(sentences),
                 "\n\n".join(chunk.text for _label, chunk in context), hint,
