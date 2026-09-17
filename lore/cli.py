@@ -13,7 +13,11 @@ from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.db.sqlite import open_db, schema_version
-from lore.graph.adjudicate import make_gemini_pair, make_ollama_pair
+from lore.graph.adjudicate import (
+    make_gemini_narrator,
+    make_gemini_pair,
+    make_ollama_pair,
+)
 from lore.graph.loader import PartialLoadError, load_book
 from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
@@ -285,8 +289,19 @@ def _load_book_sync(config: LoreConfig, conn, book_id: str, api_key: str | None 
     # The pair is built first: a missing key refuses before a store opens.
     # Gemini answers are cached in data/adjudication/, so a reload asks only
     # questions it has never had answered.
+    # Task 10c: the per-book narrator question follows the same provider.
+    # On Ollama it is skipped (and `process` says so): a wrong answer would
+    # rehang hundreds of edges on the wrong character, and the local 3B's
+    # record on judgement questions here is the reason adjudication moved.
+    narrator = None
+    close_narrator = None
     if config.adjudication.provider == "gemini":
         embed, adjudicate, aclose = make_gemini_pair(config, api_key)
+        try:
+            narrator, close_narrator = make_gemini_narrator(config, api_key)
+        except BaseException:
+            asyncio.run(aclose())
+            raise
     else:
         embed, adjudicate, aclose = make_ollama_pair(config)
     kuzu = KuzuStore(config.kuzu_dir / "graph")
@@ -307,10 +322,14 @@ def _load_book_sync(config: LoreConfig, conn, book_id: str, api_key: str | None 
         try:
             return await load_book(
                 config, conn, kuzu, lance, book_id, embed, adjudicate,
-                disambiguation=disambiguation,
+                disambiguation=disambiguation, narrator=narrator,
             )
         finally:
-            await aclose()
+            try:
+                if close_narrator is not None:
+                    await close_narrator()
+            finally:
+                await aclose()
 
     try:
         return asyncio.run(_run())
@@ -392,6 +411,20 @@ def process(
         typer.echo(
             f"{report.dropped_edges} edge(s) dropped — an endpoint was named"
             " nowhere in the book"
+        )
+    if report.narrator:
+        typer.echo(
+            f"{report.narrator_rewrites} endpoint(s) rewritten to the narrator,"
+            f" {report.narrator} — first-person \"I\"/\"we\"/\"the narrator\""
+        )
+    elif report.narrator_checked:
+        typer.echo(
+            "no named first-person narrator detected — no endpoint rewritten"
+        )
+    elif config.adjudication.provider == "ollama":
+        typer.echo(
+            "narrator resolution skipped — it runs only with"
+            ' [lore.adjudication] provider = "gemini"'
         )
     if report.dropped_mentions:
         typer.echo(
@@ -721,3 +754,6 @@ def ask(
         if answered:
             line += f" · answered by {answered}"
     typer.echo(f"\n{line}")
+    if len(answer.sub_questions) > 1:
+        # One line, so a multi-part answer shows which parts it searched for.
+        typer.echo("sub-questions: " + " | ".join(answer.sub_questions))

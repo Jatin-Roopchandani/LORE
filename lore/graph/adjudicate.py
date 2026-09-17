@@ -25,6 +25,12 @@ from lore.inference.gemini import (
 )
 from lore.inference.ollama import OllamaProvider
 from lore.resolve.disambiguation import _atomic_write
+from lore.resolve.narrator import (
+    DetectNarrator,
+    NarratorAnswer,
+    NarratorCache,
+    make_narrator_detector,
+)
 
 _TEMPLATE = """You are matching characters across two novels by the same author.
 
@@ -167,6 +173,19 @@ ADJUDICATION_EXHAUSTED_HINT = (
 )
 
 
+def _adjudication_client(config: LoreConfig, api_key: str | None) -> GeminiClient:
+    """A client on `[lore.adjudication]`'s cascade, or the clear no-key refusal."""
+    key = api_key or resolve_api_key(key_file=default_key_file())
+    if not key:
+        raise ValueError(
+            '[lore.adjudication] provider = "gemini" but no API key: set'
+            " GEMINI_API_KEY (or GOOGLE_API_KEY), or put one line"
+            " `GEMINI_API_KEY=...` in ~/.config/lore/gemini.env with mode"
+            ' 600. Or set provider = "ollama" to adjudicate locally.'
+        )
+    return GeminiClient(key, models=config.adjudication.models)
+
+
 def make_gemini_pair(
     config: LoreConfig,
     api_key: str | None = None,
@@ -187,15 +206,7 @@ def make_gemini_pair(
     under-merges the graph.
     """
     if client is None:
-        key = api_key or resolve_api_key(key_file=default_key_file())
-        if not key:
-            raise ValueError(
-                '[lore.adjudication] provider = "gemini" but no API key: set'
-                " GEMINI_API_KEY (or GOOGLE_API_KEY), or put one line"
-                " `GEMINI_API_KEY=...` in ~/.config/lore/gemini.env with mode"
-                ' 600. Or set provider = "ollama" to adjudicate locally.'
-            )
-        client = GeminiClient(key, models=config.adjudication.models)
+        client = _adjudication_client(config, api_key)
     local = embedder if embedder is not None else OllamaProvider(config.ollama)
     store = cache if cache is not None else AdjudicationCache(config.adjudication_dir)
     embed = _embedder(config, local)
@@ -218,3 +229,40 @@ def make_gemini_pair(
             await local.aclose()
 
     return embed, adjudicate, aclose
+
+
+NARRATOR_EXHAUSTED_HINT = (
+    "The graph load (narrator detection) was stopped before anything was"
+    " written; re-run `lore process <book_id> --skip-extract` when a daily"
+    " budget resets."
+)
+
+
+def make_gemini_narrator(
+    config: LoreConfig,
+    api_key: str | None = None,
+    *,
+    client: GeminiClient | None = None,
+    cache: NarratorCache | None = None,
+) -> tuple[DetectNarrator, object]:
+    """Return (detect, aclose): Task 10c's per-book narrator question on Gemini.
+
+    Follows `[lore.adjudication]`: the same cascade and the same no-key
+    refusal as `make_gemini_pair`. One `generate_json` request per book and
+    opening text, cached in `config.narrators_dir`, so a reload spends zero.
+    A GeminiError propagates and fails the load before anything is written.
+    """
+    if client is None:
+        client = _adjudication_client(config, api_key)
+    store = cache if cache is not None else NarratorCache(config.narrators_dir)
+
+    async def ask(prompt: str) -> tuple[NarratorAnswer, str | None]:
+        answer = await client.generate_json(
+            prompt, NarratorAnswer, exhausted_hint=NARRATOR_EXHAUSTED_HINT
+        )
+        return answer, client.last_model
+
+    async def aclose() -> None:
+        await client.aclose()
+
+    return make_narrator_detector(ask, store, "gemini"), aclose

@@ -194,6 +194,11 @@ class LoreConfig(BaseModel):
         """The Gemini adjudicator's answer cache. Never created eagerly."""
         return self.data_dir / "adjudication"
 
+    @property
+    def narrators_dir(self) -> Path:
+        """Task 10c's per-book narrator answers. Never created eagerly."""
+        return self.data_dir / "narrators"
+
     def ensure_dirs(self) -> None:
         for d in (
             self.data_dir,
