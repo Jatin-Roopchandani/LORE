@@ -574,3 +574,95 @@ async def test_parts_without_shares_fall_back_to_one_call_over_everything() -> N
         mode="graph")
     assert len(prompts) == 1 and "- Why kill Drebber?" in prompts[0]
     assert answer.text == "Holmes discussed the case. [1]"
+
+
+# --- Task 10f: ask for every supported fact, capped in code ----------------------
+
+from lore.query.synthesize import MAX_CLAIMS  # noqa: E402
+
+
+def test_the_claim_cap_is_eight() -> None:
+    assert MAX_CLAIMS == 8
+
+
+@pytest.mark.asyncio
+async def test_the_prompt_asks_for_every_distinct_fact_as_its_own_claim() -> None:
+    prompt = await _prompt(EV)
+    assert "every distinct fact" in prompt
+    assert "its own claim with its own quote" in prompt
+    assert "not one claim that summarises several" in prompt
+    assert f"at most {MAX_CLAIMS} claims" in prompt
+
+
+@pytest.mark.asyncio
+async def test_the_prompt_prefers_passages_that_state_the_answer_directly() -> None:
+    prompt = await _prompt(EV)
+    assert "state the answer directly" in prompt
+    assert "only mention" in prompt
+
+
+@pytest.mark.asyncio
+async def test_the_prompt_reserves_can_answer_false_for_no_bearing_passage() -> None:
+    prompt = await _prompt(EV)
+    assert "no passage bears on" in prompt
+
+
+@pytest.mark.asyncio
+async def test_a_part_prompt_asks_for_completeness_too() -> None:
+    prompts: list[str] = []
+    await synthesize_parts(
+        "Why did Hope kill Drebber and Stangerson?", SUBS, PARTS_EV,
+        _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                   Synthesis(claims=[WHY_S], can_answer=True)], prompts), mode="graph")
+    for prompt in prompts:
+        assert "every distinct fact" in prompt
+        assert f"at most {MAX_CLAIMS} claims" in prompt
+
+
+@pytest.mark.asyncio
+async def test_the_existing_rules_survive_the_completeness_instruction() -> None:
+    prompt = await _prompt(Evidence(edges=(_edge(),), passages=(P1, P2), truncated=False),
+                           book_titles={"b1": "A Study in Scarlet"})
+    assert "copied word for word" in prompt
+    assert "They can be\nwrong" in prompt or "can be wrong" in prompt.replace("\n", " ")
+    assert "A Study in Scarlet" in prompt
+
+
+def _numbered(count: int, passage: Passage = P1) -> list[Claim]:
+    # Every claim verifies against its passage; only the text tells them apart.
+    return [Claim(text=f"fact {i}.", passage=passage.n, quote="Holmes spoke of the case")
+            for i in range(count)]
+
+
+@pytest.mark.asyncio
+async def test_claims_beyond_the_cap_are_ignored_in_model_order() -> None:
+    text = await _text(*_numbered(MAX_CLAIMS + 3))
+    for i in range(MAX_CLAIMS):
+        assert f"fact {i}. [1]" in text
+    for i in range(MAX_CLAIMS, MAX_CLAIMS + 3):
+        assert f"fact {i}." not in text
+
+
+@pytest.mark.asyncio
+async def test_the_cap_counts_proposed_claims_so_output_stays_bounded() -> None:
+    # Deterministic and simple: the first MAX_CLAIMS the model wrote are the
+    # ones considered, whether or not they verify.
+    bad = [Claim(text=f"bad {i}.", passage=1, quote="not in the passage at all")
+           for i in range(MAX_CLAIMS)]
+    answer = await synthesize("q", EV, _generate(Synthesis(
+        claims=bad + [GOOD1], can_answer=True)), mode="graph")
+    assert answer.text == REFUSAL
+
+
+@pytest.mark.asyncio
+async def test_the_cap_applies_per_part() -> None:
+    prompts: list[str] = []
+    extra = [Claim(text=f"why {i}.", passage=2, quote="forced Lucy into a marriage")
+             for i in range(MAX_CLAIMS + 2)]
+    answer = await synthesize_parts(
+        "Why did Hope kill Drebber and Stangerson?", SUBS, PARTS_EV,
+        _per_part([Synthesis(claims=extra, can_answer=True),
+                   Synthesis(claims=[WHY_S], can_answer=True)], prompts), mode="graph")
+    assert f"why {MAX_CLAIMS - 1}. [2]" in answer.text
+    assert f"why {MAX_CLAIMS}." not in answer.text
+    assert "Stangerson shot her father. [3]" in answer.text

@@ -109,6 +109,15 @@ Model = TypeVar("Model", bound=BaseModel)
 # Statuses that mean "this model cannot serve this request" rather than
 # "the request is wrong". Every one of them is a reason to try the next
 # model in the cascade.
+# How long a model that answered 429/503/404 is skipped by this client.
+# Without it, once a model's DAILY quota is gone every call spends a wasted
+# request on it before cascading -- measured in Tasks 10d/10e, where each
+# answer cost 2 requests. A minute is long enough for a per-minute (RPM)
+# refusal or a passing 503 to clear, and short enough that a daily-quota
+# refusal costs at most one wasted request a minute (it simply re-cools each
+# time it is retried) rather than one per call.
+COOLDOWN_SECONDS = 60.0
+
 _CASCADE_STATUSES = {
     404: "the model id is not available to this key",
     429: "out of free-tier budget",
@@ -221,7 +230,10 @@ class GeminiClient:
     Each model is throttled at its own RPM. A model that says 429/503/404
     is skipped for this request and the next one is tried immediately —
     sleeping through a per-model daily quota would waste the aggregate
-    capacity the cascade exists to provide.
+    capacity the cascade exists to provide. The refusing model then cools
+    down for COOLDOWN_SECONDS: later calls start from the next model instead
+    of re-spending a request on it. If every model is cooling, the one whose
+    cooldown ends soonest is tried rather than failing without a request.
     """
 
     def __init__(
@@ -251,6 +263,8 @@ class GeminiClient:
         # against the model that finally answered.
         self.attempts: dict[str, int] = {}
         self.last_model: str | None = None
+        # Model -> the clock time its cooldown ends. Set by a 429/503/404.
+        self._cooling_until: dict[str, float] = {}
 
     @property
     def daily_limit(self) -> int:
@@ -327,18 +341,37 @@ class GeminiClient:
         self, prompt: str, generation_config: dict, exhausted_hint: str
     ) -> str:
         refusals: list[str] = []
-        for model in self.models:
+        willing = self._willing_models()
+        for model in willing:
             try:
                 text = await self._generate_one(model, prompt, generation_config)
             except GeminiQuotaError as exc:
                 refusals.append(str(exc))
+                self._cooling_until[model] = self._now() + COOLDOWN_SECONDS
                 continue
+            self._cooling_until.pop(model, None)
             self.last_model = model
             return text
+        skipped = [m for m in self.models if m not in willing]
+        cooling = (f" (cooling down after an earlier refusal: {', '.join(skipped)})"
+                   if skipped else "")
         raise GeminiQuotaError(
             "every configured model refused the request — "
-            + "; ".join(refusals) + ". " + exhausted_hint
+            + "; ".join(refusals) + cooling + ". " + exhausted_hint
         )
+
+    def _willing_models(self) -> list[str]:
+        """The configured models not cooling down, in cascade order.
+
+        When every one is cooling, the one whose cooldown ends soonest
+        (first in cascade order on a tie): one real request is better than
+        failing without asking, and a daily-quota refusal just re-cools it.
+        """
+        now = self._now()
+        ready = [m for m in self.models if self._cooling_until.get(m, now) <= now]
+        if ready:
+            return ready
+        return [min(self.models, key=lambda m: self._cooling_until[m])]
 
     async def generate(
         self, prompt: str, *, exhausted_hint: str | None = None

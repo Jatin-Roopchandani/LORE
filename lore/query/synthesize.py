@@ -32,6 +32,12 @@ Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
 REFUSAL = "The loaded books do not contain enough to answer that."
 
 MIN_QUOTE_WORDS = 4
+# Claims read per synthesis call (per part, under synthesize_parts). The
+# prompt asks for every supported fact (Task 10f: Flash Lite proposed too few
+# even with the answer in its evidence), so the output needs a bound. Eight
+# covers a multi-fact part with room to spare while keeping a JSON reply
+# short; claims past it are ignored in the order the model wrote them.
+MAX_CLAIMS = 8
 # A quote with an ellipsis is checked segment by segment; each segment must
 # carry this many words on its own, so "... the ring ..." proves nothing.
 MIN_SEGMENT_WORDS = 3
@@ -51,12 +57,19 @@ Answer as a list of claims. Each claim has:
 - passage: the number of the passage the claim comes from
 - quote: at least {min_words} words copied word for word from that passage
 
+List every distinct fact in the passages that helps answer the question,
+each as its own claim with its own quote,
+not one claim that summarises several.
+Give at most {max_claims} claims; any past that are ignored.
+Prefer passages that state the answer directly
+over passages that only mention its subject.
+
 Quotes are checked by code. Any claim whose quote is not found, exactly as
 written, in the passage it names is discarded. A claim must say only what
 its quote says; do not combine passages into something neither one states.
-Use only what the passages say. If they do not contain the answer, set
-can_answer to false rather than guessing. If they answer only part of it,
-set can_answer to false and still give the claims they do support. A claim
+Use only what the passages say; never guess. Set can_answer to false only
+when no passage bears on the question, or when they answer only part of it
+-- then still give the claims they do support. A claim
 states something the passages say; never make a claim about what the
 passages leave out.
 To quote words that are not next to each other in the passage, join the
@@ -172,6 +185,15 @@ def verify_claims(
     return kept, dropped
 
 
+def _capped(synthesis: Synthesis) -> Synthesis:
+    """The first MAX_CLAIMS claims the model wrote; the rest are ignored.
+
+    Applied before verification, so the bound is on what the model proposed
+    and the choice never depends on which quotes happen to verify.
+    """
+    return synthesis.model_copy(update={"claims": synthesis.claims[:MAX_CLAIMS]})
+
+
 def _compose(claims: list[Claim]) -> str:
     parts: list[str] = []
     for claim in claims:
@@ -230,6 +252,7 @@ def _build_prompt(
         "Answer only this part.\n" if part_of else ""
     )
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
+                          max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations, passages=passages,
                           truncation=truncation)
@@ -262,6 +285,7 @@ async def synthesize(
     # The answer is written by code, from claims whose quotes were found in
     # the passage they cite. Nothing the model wrote outside a kept claim
     # reaches the user, so there is no free text to carry a stray claim.
+    result = _capped(result)
     kept, _ = verify_claims(result, evidence.passages)
     if not kept:
         return answer(REFUSAL)
@@ -329,7 +353,7 @@ async def synthesize_parts(
                        truncated=evidence.truncated)
         result = await generate(
             _build_prompt(part, own, book_titles, part_of=question), Synthesis)
-        verified, _ = verify_claims(result, passages)
+        verified, _ = verify_claims(_capped(result), passages)
         if not verified:
             missing.append(part)
         kept.extend(c for c in verified if c not in kept)

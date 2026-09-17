@@ -476,3 +476,162 @@ async def test_the_exhausted_hint_is_the_callers_to_choose() -> None:
         await client.generate("p", exhausted_hint="adjudication hint")
     assert "adjudication hint" in str(exc.value)
     assert "disambiguate" not in str(exc.value)
+
+
+# --- Task 10f: a refusing model cools down instead of being re-spent ----------
+
+from lore.inference.gemini import COOLDOWN_SECONDS  # noqa: E402
+
+
+def _refusing_first(status: int, tried: list[str], refuse: set[str] | None = None):
+    refusers = refuse if refuse is not None else {LITE_MODELS[0]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        model = _model_of(request)
+        tried.append(model)
+        if model in refusers:
+            return httpx.Response(status, text="nope")
+        return httpx.Response(200, json=_ok("ok"))
+    return handler
+
+
+def _clocked(handler, clock: list[float], **kwargs) -> GeminiClient:
+    async def sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    return _client(handler, models=list(LITE_MODELS), sleep=sleep,
+                   now=lambda: clock[0], **kwargs)
+
+
+def test_the_cooldown_is_a_modest_fixed_minute() -> None:
+    # Long enough that a per-minute RPM refusal has cleared when it ends;
+    # short enough that a daily-quota refusal costs one wasted request a
+    # minute at most, instead of one per call.
+    assert COOLDOWN_SECONDS == 60.0
+
+
+@pytest.mark.parametrize("status", [429, 503, 404])
+@pytest.mark.asyncio
+async def test_a_refusing_model_is_skipped_within_its_cooldown(status: int) -> None:
+    clock = [0.0]
+    tried: list[str] = []
+    client = _clocked(_refusing_first(status, tried), clock)
+    await client.generate("one")
+    assert tried == [LITE_MODELS[0], LITE_MODELS[1]]
+    tried.clear()
+    clock[0] += COOLDOWN_SECONDS - 1
+    await client.generate("two")
+    assert tried == [LITE_MODELS[1]], "the refusing model is not re-spent"
+    assert client.last_model == LITE_MODELS[1]
+    assert client.attempts == {LITE_MODELS[0]: 1, LITE_MODELS[1]: 2}
+    assert client.requests_made == 3
+
+
+@pytest.mark.asyncio
+async def test_a_cooled_model_is_tried_again_once_its_cooldown_ends() -> None:
+    clock = [0.0]
+    tried: list[str] = []
+    refusers = {LITE_MODELS[0]}
+    client = _clocked(_refusing_first(429, tried, refusers), clock)
+    await client.generate("one")
+    refusers.clear()  # its budget came back
+    tried.clear()
+    clock[0] += COOLDOWN_SECONDS
+    assert await client.generate("two") == "ok"
+    assert tried == [LITE_MODELS[0]]
+    assert client.last_model == LITE_MODELS[0]
+
+
+@pytest.mark.asyncio
+async def test_a_model_that_refuses_again_after_its_cooldown_cools_again() -> None:
+    clock = [0.0]
+    tried: list[str] = []
+    client = _clocked(_refusing_first(429, tried), clock)
+    await client.generate("one")
+    clock[0] += COOLDOWN_SECONDS
+    await client.generate("two")
+    tried.clear()
+    clock[0] += 1
+    await client.generate("three")
+    assert tried == [LITE_MODELS[1]]
+
+
+@pytest.mark.asyncio
+async def test_when_every_model_is_cooling_the_soonest_to_end_is_tried() -> None:
+    clock = [0.0]
+    tried: list[str] = []
+    refusers = set(LITE_MODELS)
+    client = _clocked(_refusing_first(429, tried, refusers), clock)
+    with pytest.raises(GeminiQuotaError):
+        await client.generate("one")      # both cool at t=0 -> until 60
+    clock[0] = 10.0
+    tried.clear()
+    with pytest.raises(GeminiQuotaError):
+        await client.generate("two")      # all cooling: tie -> cascade order
+    assert tried == [LITE_MODELS[0]]      # 0 re-cools at t=10 -> until 70
+    tried.clear()
+    refusers.clear()
+    clock[0] = 20.0
+    assert await client.generate("three") == "ok"
+    assert tried == [LITE_MODELS[1]], "the model whose cooldown ends first"
+    assert client.last_model == LITE_MODELS[1]
+
+
+@pytest.mark.asyncio
+async def test_all_cooling_and_the_soonest_refuses_raises_the_quota_error() -> None:
+    clock = [0.0]
+    tried: list[str] = []
+    client = _clocked(_refusing_first(429, tried, set(LITE_MODELS)), clock)
+    with pytest.raises(GeminiQuotaError):
+        await client.generate("one")
+    tried.clear()
+    clock[0] += 5
+    with pytest.raises(GeminiQuotaError) as exc:
+        await client.generate("two", exhausted_hint="come back later")
+    assert tried == [LITE_MODELS[0]], "one real request, not a full cascade"
+    assert "come back later" in str(exc.value)
+    assert "cooling down" in str(exc.value) and LITE_MODELS[1] in str(exc.value)
+    assert SECRET not in str(exc.value)
+    assert client.attempts == {LITE_MODELS[0]: 2, LITE_MODELS[1]: 1}
+    assert client.requests_made == 3
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_key_still_fatal_and_does_not_cool_the_model() -> None:
+    clock = [0.0]
+    tried: list[str] = []
+    status = [401]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        tried.append(_model_of(request))
+        if status[0] != 200:
+            return httpx.Response(status[0], text="denied")
+        return httpx.Response(200, json=_ok("ok"))
+
+    client = _clocked(handler, clock)
+    with pytest.raises(GeminiAuthError):
+        await client.generate("one")
+    assert tried == [LITE_MODELS[0]]
+    status[0] = 200
+    tried.clear()
+    await client.generate("two")
+    assert tried == [LITE_MODELS[0]], "an auth failure is not a cooldown"
+
+
+@pytest.mark.asyncio
+async def test_the_json_cascade_shares_the_cooldown() -> None:
+    clock = [0.0]
+    tried: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        model = _model_of(request)
+        tried.append(model)
+        if model == LITE_MODELS[0]:
+            return httpx.Response(429, text="nope")
+        return httpx.Response(200, json=_ok('{"name": "W", "count": 1}'))
+
+    client = _clocked(handler, clock)
+    await client.generate("one")
+    tried.clear()
+    assert await client.generate_json("two", _Pick) == _Pick(name="W", count=1)
+    assert tried == [LITE_MODELS[1]]
