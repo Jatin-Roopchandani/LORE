@@ -11,6 +11,12 @@ passage. Code keeps a claim only if the quote is really there
 This proves the quote exists where it is cited. It does not prove the
 claim reads the quote correctly -- a model can still misread a real line.
 
+That second proof is the faithfulness check (`check_claims`, Task 12): one
+batched call judges every surviving claim against the passage it cites, and
+a claim the passage does not state is dropped. It only ever removes claims,
+and only when it ran and its answer lined up; anything else keeps them all
+and says so.
+
 Context size is the caller's job, not this module's. A local model with
 too small a context window drops the START of an over-long prompt without
 any error -- the instructions and the question vanish and the model
@@ -252,18 +258,29 @@ def _near_duplicate(a: Claim, b: Claim) -> bool:
             and _overlap(a.text, b.text) >= NEAR_DUPLICATE_OVERLAP)
 
 
-def _compose(claims: list[Claim]) -> str:
+def _sentence(claim: Claim) -> str:
+    return f"{claim.text.strip()} [{claim.passage}]"
+
+
+def _collapse(claims: list[Claim]) -> list[Claim]:
     """Kept claims in order; an exact or near duplicate of an earlier kept
-    claim is left out, so the first wording wins."""
-    parts: list[str] = []
+    claim is left out, so the first wording wins.
+
+    Split out from `_compose` in Task 12: the faithfulness check runs over
+    the claims that reach the answer, so it must see this list and not the
+    duplicates it removed.
+    """
     shown: list[Claim] = []
     for claim in claims:
-        part = f"{claim.text.strip()} [{claim.passage}]"
-        if part in parts or any(_near_duplicate(earlier, claim) for earlier in shown):
+        if any(_sentence(earlier) == _sentence(claim) or _near_duplicate(earlier, claim)
+               for earlier in shown):
             continue
-        parts.append(part)
         shown.append(claim)
-    return " ".join(parts)
+    return shown
+
+
+def _compose(claims: list[Claim]) -> str:
+    return " ".join(_sentence(claim) for claim in claims)
 
 
 def _title(book_id: str, book_titles: dict[str, str] | None) -> str:
@@ -321,6 +338,168 @@ def _build_prompt(
                           truncation=truncation)
 
 
+# --- Task 12: the faithfulness check ---------------------------------------
+#
+# The quote check proves a quote is in the passage it cites. It cannot see
+# that the claim says MORE than the quote does -- a cause, a motive, a
+# consequence -- or that the claim names a book the passage is not from.
+# Three such false claims appeared in the Task 11 regression (Q5's wrong
+# novel, C7's invented reason, C10's two scenes merged into one).
+#
+# So every claim that survives the quote check AND the near-duplicate
+# collapse is judged, once, against the one passage it cites, in a single
+# batched call per answer. `not_supported` drops the claim.
+#
+# The failure direction is deliberate and one-sided: dropping a TRUE claim
+# is worse than the disease, so anything that goes wrong here -- the call
+# raising, an answer that does not line up, a verdict that is neither word
+# -- keeps every claim and says so in the answer's note. The check never
+# silently removes anything.
+
+SUPPORTED = "supported"
+NOT_SUPPORTED = "not_supported"
+# Asked for, not enforced: the reason is shown to a human, never parsed.
+MAX_REASON_WORDS = 12
+CHECK_SKIPPED_NOTE = "the faithfulness check did not run"
+
+
+class Judgement(BaseModel):
+    claim: int
+    verdict: str
+    reason: str = ""
+
+
+class Faithfulness(BaseModel):
+    judgements: list[Judgement]
+
+
+_CHECK_PROMPT = """Check each numbered claim against the one passage it cites.
+
+Passages:
+{passages}
+
+Claims:
+{claims}
+
+For each claim, decide whether the passage it cites states that claim.
+- "{supported}": the cited passage says what the claim says.
+- "{not_supported}": it does not, or it says less than the claim says.
+
+A claim that names a book, a person or a place the cited passage does not
+name is "{not_supported}". A claim that adds a cause, a motive or a
+consequence the cited passage does not state is "{not_supported}". Judge
+each claim against its own cited passage alone: what another passage says,
+or what you already know about the story, cannot make a claim supported.
+
+Return one entry per claim, in the same order, each with its claim number:
+- verdict: "{supported}" or "{not_supported}"
+- reason: at most {max_words} words.
+
+Answer every claim: give exactly {count} entries, numbered 1 to {count}, in order.
+"""
+
+
+def faithfulness_prompt(
+    claims: Sequence[Claim],
+    passages: Iterable[Passage],
+    book_titles: dict[str, str] | None = None,
+) -> str:
+    """The one batched prompt: the cited passages, then the numbered claims.
+
+    PASSAGE BUDGET: every passage some claim cites, once, in full -- and no
+    other. Deduplicating matters (several claims usually cite one passage);
+    trimming does not. The cited set is a subset of the evidence, which the
+    caller already cut to its budget (`evidence_budget`: 36,000 characters
+    on Gemini, 12,000 on Ollama), so this prompt's passages can never exceed
+    that. Truncating a passage HERE would be actively harmful: it could cut
+    a verified quote out of the text it was verified against and turn a true
+    claim into `not_supported`, which is the one failure this task says is
+    worse than the disease.
+    """
+    by_number = {p.n: p for p in passages}
+    cited = [by_number[n] for n in sorted({c.passage for c in claims})
+             if n in by_number]
+    shown = "\n\n".join(
+        f"[{p.n}] ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})\n{p.text}"
+        for p in cited
+    )
+    items = []
+    for number, claim in enumerate(claims, start=1):
+        passage = by_number.get(claim.passage)
+        where = (f"[{claim.passage}] ({_title(passage.book_id, book_titles)}, chapter "
+                 f"{passage.chapter_seq})" if passage else f"[{claim.passage}]")
+        items.append(f"{number}. claim: {claim.text.strip()}\n"
+                     f"   cites passage {where}\n"
+                     f"   quote: {claim.quote.strip()}")
+    return _CHECK_PROMPT.format(
+        passages=shown, claims="\n\n".join(items), count=len(claims),
+        supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+
+
+def validated_verdicts(
+    result: Faithfulness, expected: int
+) -> list[tuple[bool, str]] | None:
+    """One (supported, reason) per claim asked, or None if it does not align.
+
+    The mapping must be verifiable, as in the disambiguator and in
+    `validated_speakers`: exactly `expected` entries numbered 1..expected in
+    order. A count check alone would accept a rotated answer set, which is
+    exactly how a numbered batch attaches the wrong verdict to the wrong
+    claim -- and here that would DELETE a true claim.
+
+    A verdict that is neither word rejects the whole answer rather than that
+    one entry: an answer the model wrote in some other shape is not evidence
+    about any of its entries, and keeping every claim is the safe direction.
+    """
+    items = getattr(result, "judgements", None)
+    if not isinstance(items, list):
+        return None
+    if [getattr(item, "claim", None) for item in items] != list(range(1, expected + 1)):
+        return None
+    verdicts: list[tuple[bool, str]] = []
+    for item in items:
+        word = _SPACE.sub("_", str(item.verdict).strip().lower().strip(".")).strip("_")
+        if word not in (SUPPORTED, NOT_SUPPORTED):
+            return None
+        verdicts.append((word == SUPPORTED, " ".join(str(item.reason).split())))
+    return verdicts
+
+
+async def check_claims(
+    claims: Sequence[Claim],
+    passages: Iterable[Passage],
+    check: Generate,
+    *,
+    book_titles: dict[str, str] | None = None,
+) -> tuple[list[Claim], list[tuple[Claim, str]], bool]:
+    """(kept, dropped with the model's reason, whether the check ran).
+
+    One call for every claim. `ran=False` means nothing was judged and every
+    claim was kept; the caller must say so rather than pass it off as a
+    checked answer.
+
+    Every exception is caught, deliberately. This pass runs after the answer
+    is already written and quote-checked; a quota, transport or schema
+    failure in an extra safety check must not destroy an answer that is
+    correct without it, and must never be read as `not_supported`.
+    """
+    if not claims:
+        return list(claims), [], True
+    try:
+        result = await check(
+            faithfulness_prompt(claims, passages, book_titles), Faithfulness)
+        verdicts = validated_verdicts(result, len(claims))
+    except Exception:  # noqa: BLE001 -- see the docstring
+        verdicts = None
+    if verdicts is None:
+        return list(claims), [], False
+    kept: list[Claim] = []
+    dropped: list[tuple[Claim, str]] = []
+    for claim, (supported, reason) in zip(claims, verdicts):
+        (kept.append(claim) if supported else dropped.append((claim, reason)))
+    return kept, dropped, True
+
+
 async def synthesize(
     question: str,
     evidence: Evidence,
@@ -331,11 +510,17 @@ async def synthesize(
     note: str | None = None,
     book_titles: dict[str, str] | None = None,
     checklist: Sequence[str] = (),
+    check: Generate | None = None,
 ) -> Answer:
     """`checklist`: the question's sub-questions; shown only when there are
-    several, so a partial answer is visible as partial."""
-    def answer(text: str, extra_note: str | None = None) -> Answer:
-        notes = "; ".join(n for n in (note, extra_note) if n) or None
+    several, so a partial answer is visible as partial.
+
+    `check`: the faithfulness judge (`check_claims`). None means the pass is
+    not part of this answer at all, which is what every caller that predates
+    Task 12 gets.
+    """
+    def answer(text: str, *extra_notes: str | None) -> Answer:
+        notes = "; ".join(n for n in (note, *extra_notes) if n) or None
         return Answer(text=text, passages=evidence.passages, mode=mode,
                       template=template, note=notes)
 
@@ -349,12 +534,18 @@ async def synthesize(
     # the passage they cite. Nothing the model wrote outside a kept claim
     # reaches the user, so there is no free text to carry a stray claim.
     result = _capped(result)
-    kept, _ = verify_claims(result, evidence.passages)
+    verified, _ = verify_claims(result, evidence.passages)
+    kept = _collapse(verified)
+    skipped = None
+    if check is not None and kept:
+        kept, _dropped, ran = await check_claims(
+            kept, evidence.passages, check, book_titles=book_titles)
+        skipped = None if ran else CHECK_SKIPPED_NOTE
     if not kept:
         return answer(REFUSAL)
     # can_answer=false with verified claims is a partial answer, not a
     # refusal: Task 10a measured H6 and H4 discarding verified gold claims.
-    return answer(_compose(kept), None if result.can_answer else PARTIAL_NOTE)
+    return answer(_compose(kept), None if result.can_answer else PARTIAL_NOTE, skipped)
 
 
 NOT_FOUND = "not found: "
@@ -370,6 +561,7 @@ async def synthesize_parts(
     template: str | None = None,
     note: str | None = None,
     book_titles: dict[str, str] | None = None,
+    check: Generate | None = None,
 ) -> Answer:
     """One synthesis call per sub-question, over that part's share, merged.
 
@@ -389,16 +581,22 @@ async def synthesize_parts(
     `can_answer` does not decide partiality here: whether a part kept a
     verified claim does.
 
+    ONE faithfulness call covers the whole answer, not one per part: the
+    claims of every part are judged together, after the near-duplicate
+    collapse. A part whose every verified claim the check DROPPED joins the
+    "not found" list; a part that lost a claim only to the collapse did not
+    lose it -- the same fact is in the answer under another part's wording.
+
     With one sub-question, or evidence that carries no shares, this is
     `synthesize` exactly: one call over everything.
     """
     if len(sub_questions) < 2 or len(evidence.shares) != len(sub_questions):
         return await synthesize(question, evidence, generate, mode=mode, template=template,
                                 note=note, book_titles=book_titles,
-                                checklist=sub_questions)
+                                checklist=sub_questions, check=check)
 
-    def answer(text: str, extra_note: str | None = None) -> Answer:
-        notes = "; ".join(n for n in (note, extra_note) if n) or None
+    def answer(text: str, *extra_notes: str | None) -> Answer:
+        notes = "; ".join(n for n in (note, *extra_notes) if n) or None
         return Answer(text=text, passages=evidence.passages, mode=mode,
                       template=template, note=notes)
 
@@ -406,24 +604,34 @@ async def synthesize_parts(
         return answer(REFUSAL)
 
     kept: list[Claim] = []
-    missing: list[str] = []
+    per_part: list[list[Claim]] = []
     for part, share in zip(sub_questions, evidence.shares):
         numbers = set(share)
         passages = tuple(p for p in evidence.passages if p.n in numbers)
         if not passages:
-            missing.append(part)
+            per_part.append([])
             continue
         own = Evidence(edges=evidence.edges, passages=passages,
                        truncated=evidence.truncated)
         result = await generate(
             _build_prompt(part, own, book_titles, part_of=question), Synthesis)
         verified, _ = verify_claims(_capped(result), passages)
-        if not verified:
-            missing.append(part)
+        per_part.append(verified)
         kept.extend(c for c in verified if c not in kept)
+
+    kept = _collapse(kept)
+    skipped = None
+    cut: list[Claim] = []
+    if check is not None and kept:
+        kept, dropped, ran = await check_claims(
+            kept, evidence.passages, check, book_titles=book_titles)
+        cut = [claim for claim, _reason in dropped]
+        skipped = None if ran else CHECK_SKIPPED_NOTE
+    missing = [part for part, claims in zip(sub_questions, per_part)
+               if not claims or all(c in cut for c in claims)]
 
     if not kept:
         return answer(REFUSAL)
     partial = (PARTIAL_NOTE + "; " + "; ".join(NOT_FOUND + m for m in missing)
                if missing else None)
-    return answer(_compose(kept), partial)
+    return answer(_compose(kept), partial, skipped)

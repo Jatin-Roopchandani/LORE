@@ -42,7 +42,10 @@ verified on a Kaggle T4; this `lore.toml` sets 10 for Gemini, see below).
 `ask` is read-only. It answers from books that have been loaded into the
 graph by `lore process`. The model picks one of a fixed set of graph searches,
 then writes the answer as claims. Each claim must quote its cited passage word
-for word, and code drops any claim whose quote isn't there. Sources print as
+for word, and code drops any claim whose quote isn't there. One further call
+then judges every surviving claim against the passage it cites and drops the
+ones that passage does not state; if that check cannot run, every claim is
+kept and the note says so. Sources print as
 `[n] <book title>, chapter <n>`. The last line gives the mode (`graph`,
 `vector-fallback`, `vector-baseline` or `empty`), the search used, and the
 models: `· selected by X · answered by Y`, or `· selected and answered by X`
@@ -232,6 +235,12 @@ next `lore process --skip-extract` applies them. See the Gemini section below.
       ▼
       │ 7. VERIFY      code checks each quote is really in its passage;
       │                failing claims are dropped; none left ─► refusal
+      ▼
+      │ 8. CHECK       one batched call judges each surviving claim against
+      │                the passage it cites (its book, chapter, quote and
+      │                text); `not_supported` ─► dropped; none left ─►
+      │                refusal. A failed or misaligned check keeps every
+      │                claim and says `the faithfulness check did not run`
       ▼
     answer + sources (book, chapter) + mode + the models that selected
     and answered

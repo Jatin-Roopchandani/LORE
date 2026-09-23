@@ -121,6 +121,12 @@ class QueryModels:
     provider at temperature 0. None means no decomposition: every question
     is one part. `evidence_chars` is the evidence budget, which follows the
     synthesis provider (`evidence_budget`).
+
+    `check` judges each kept claim against the passage it cites, in one
+    batched call per answer (Task 12). It runs on the synthesis provider
+    too, at temperature 0 and on the same client, so its requests land in
+    the same budget the rest of the answer spends. None means the answer is
+    composed straight from the quote-checked claims, as before.
     """
 
     embed: Embed
@@ -131,6 +137,7 @@ class QueryModels:
     selection_model: Callable[[], str | None]
     decompose: Generate | None = field(default=None)
     evidence_chars: int = MAX_EVIDENCE_CHARS
+    check: Generate | None = field(default=None)
 
 
 def make_query_models(
@@ -229,7 +236,11 @@ def make_query_models(
 
     return QueryModels(embed, select, synthesize_with, synthesis_model, aclose,
                        selection_model, decompose=decompose_with,
-                       evidence_chars=evidence_budget(config.synthesis.provider))
+                       evidence_chars=evidence_budget(config.synthesis.provider),
+                       # The same callable as synthesis: same provider, same
+                       # client, same cascade, same temperature 0, and so the
+                       # same request bookkeeping.
+                       check=synthesize_with)
 
 
 async def _select(question, seeds, models: QueryModels):
@@ -262,9 +273,11 @@ async def _synthesize(question, evidence, models: QueryModels, *,
         return await models.synthesize(prompt, schema)
 
     if sub_questions is None:
-        answer = await synthesize(question, evidence, generate, **kwargs)
+        answer = await synthesize(question, evidence, generate, check=models.check,
+                                  **kwargs)
     else:
-        answer = await synthesize_parts(question, sub_questions, evidence, generate, **kwargs)
+        answer = await synthesize_parts(question, sub_questions, evidence, generate,
+                                        check=models.check, **kwargs)
     return replace(answer, model=models.synthesis_model() if asked else None)
 
 

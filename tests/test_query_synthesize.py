@@ -751,3 +751,273 @@ async def test_claims_differing_only_in_a_number_both_survive() -> None:
     first = Claim(text="He watched it 2 times a day.", passage=1, quote=quote)
     second = Claim(text="He watched it 3 times a day.", passage=1, quote=quote)
     assert await _habit_text(first, second) == f"{first.text} [1] {second.text} [1]"
+
+
+# --- Task 12: the faithfulness check over kept claims ------------------------------
+
+from lore.query.synthesize import (  # noqa: E402
+    CHECK_SKIPPED_NOTE,
+    NOT_SUPPORTED,
+    SUPPORTED,
+    Faithfulness,
+    Judgement,
+    check_claims,
+    validated_verdicts,
+)
+
+TITLES = {"b1": "A Study in Scarlet"}
+
+
+def _judged(*verdicts: str, reason: str = "reason", start: int = 1) -> Faithfulness:
+    return Faithfulness(judgements=[
+        Judgement(claim=n, verdict=v, reason=reason)
+        for n, v in enumerate(verdicts, start=start)])
+
+
+def _checker(result: Faithfulness | None = None, prompts: list[str] | None = None,
+             error: BaseException | None = None):
+    async def check(prompt: str, schema):
+        if prompts is not None:
+            prompts.append(prompt)
+        if error is not None:
+            raise error
+        return result
+    return check
+
+
+async def _checked(*claims: Claim, verdicts: Faithfulness | None = None,
+                   evidence: Evidence = EV, prompts: list[str] | None = None,
+                   error: BaseException | None = None, can_answer: bool = True):
+    return await synthesize(
+        "q", evidence, _generate(Synthesis(claims=list(claims), can_answer=can_answer)),
+        mode="graph", book_titles=TITLES,
+        check=_checker(verdicts, prompts, error))
+
+
+@pytest.mark.asyncio
+async def test_a_claim_the_check_calls_unsupported_is_dropped() -> None:
+    answer = await _checked(GOOD1, GOOD2, verdicts=_judged(SUPPORTED, NOT_SUPPORTED))
+    assert answer.text == "Holmes discussed the case. [1]"
+    assert answer.note is None
+
+
+@pytest.mark.asyncio
+async def test_supported_claims_survive_in_the_order_they_were_kept() -> None:
+    answer = await _checked(GOOD1, GOOD2, verdicts=_judged(SUPPORTED, SUPPORTED))
+    assert answer.text == "Holmes discussed the case. [1] Watson took notes. [2]"
+    assert answer.note is None
+
+
+@pytest.mark.asyncio
+async def test_without_a_checker_the_answer_is_exactly_what_it_was() -> None:
+    plain = await _text(GOOD1, GOOD2)
+    answer = await synthesize("q", EV, _generate(
+        Synthesis(claims=[GOOD1, GOOD2], can_answer=True)), mode="graph")
+    assert answer.text == plain and answer.note is None
+
+
+@pytest.mark.asyncio
+async def test_a_misaligned_check_answer_keeps_every_claim_and_says_so() -> None:
+    rotated = Faithfulness(judgements=[
+        Judgement(claim=2, verdict=NOT_SUPPORTED, reason="r"),
+        Judgement(claim=1, verdict=SUPPORTED, reason="r")])
+    answer = await _checked(GOOD1, GOOD2, verdicts=rotated)
+    assert answer.text == "Holmes discussed the case. [1] Watson took notes. [2]"
+    assert answer.note == CHECK_SKIPPED_NOTE
+
+
+@pytest.mark.asyncio
+async def test_a_short_check_answer_keeps_every_claim_and_says_so() -> None:
+    answer = await _checked(GOOD1, GOOD2, verdicts=_judged(NOT_SUPPORTED))
+    assert answer.text == "Holmes discussed the case. [1] Watson took notes. [2]"
+    assert answer.note == CHECK_SKIPPED_NOTE
+
+
+@pytest.mark.asyncio
+async def test_an_extra_check_entry_keeps_every_claim_and_says_so() -> None:
+    answer = await _checked(GOOD1, verdicts=_judged(NOT_SUPPORTED, NOT_SUPPORTED))
+    assert answer.text == "Holmes discussed the case. [1]"
+    assert answer.note == CHECK_SKIPPED_NOTE
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_that_is_neither_word_keeps_every_claim_and_says_so() -> None:
+    answer = await _checked(GOOD1, GOOD2,
+                            verdicts=_judged("maybe", NOT_SUPPORTED))
+    assert answer.text == "Holmes discussed the case. [1] Watson took notes. [2]"
+    assert answer.note == CHECK_SKIPPED_NOTE
+
+
+@pytest.mark.asyncio
+async def test_a_checker_that_raises_leaves_the_answer_unchanged() -> None:
+    answer = await _checked(GOOD1, GOOD2, error=RuntimeError("no quota"))
+    assert answer.text == "Holmes discussed the case. [1] Watson took notes. [2]"
+    assert answer.note == CHECK_SKIPPED_NOTE
+
+
+@pytest.mark.asyncio
+async def test_the_skipped_note_joins_the_partial_note_rather_than_replacing_it() -> None:
+    answer = await _checked(GOOD1, verdicts=None, can_answer=False,
+                            error=RuntimeError("boom"))
+    assert PARTIAL_NOTE in answer.note and CHECK_SKIPPED_NOTE in answer.note
+
+
+@pytest.mark.asyncio
+async def test_the_check_sees_the_title_chapter_quote_and_passage_text() -> None:
+    prompts: list[str] = []
+    await _checked(GOOD1, GOOD2, verdicts=_judged(SUPPORTED, SUPPORTED), prompts=prompts)
+    prompt, = prompts
+    assert GOOD1.text in prompt and GOOD2.text in prompt
+    assert GOOD1.quote in prompt and GOOD2.quote in prompt
+    assert P1.text in prompt and P2.text in prompt
+    assert "A Study in Scarlet" in prompt
+    assert "chapter 1" in prompt and "chapter 2" in prompt
+    assert "[1]" in prompt and "[2]" in prompt
+
+
+@pytest.mark.asyncio
+async def test_the_check_prompt_names_both_verdicts_and_the_two_rules() -> None:
+    prompts: list[str] = []
+    await _checked(GOOD1, verdicts=_judged(SUPPORTED), prompts=prompts)
+    prompt, = prompts
+    assert SUPPORTED in prompt and NOT_SUPPORTED in prompt
+    assert "book" in prompt and "place" in prompt
+    assert "cause" in prompt and "motive" in prompt and "consequence" in prompt
+    assert "12 words" in prompt
+    assert "numbered 1 to 1" in prompt
+
+
+@pytest.mark.asyncio
+async def test_a_passage_cited_twice_is_shown_to_the_check_once() -> None:
+    twin = Claim(text="Holmes talked for a long time.", passage=1,
+                 quote="spoke of the case at length")
+    prompts: list[str] = []
+    await _checked(GOOD1, twin, verdicts=_judged(SUPPORTED, SUPPORTED), prompts=prompts)
+    assert prompts[0].count(P1.text) == 1
+    assert P2.text not in prompts[0]
+
+
+@pytest.mark.asyncio
+async def test_the_check_sees_only_the_claims_the_near_duplicate_collapse_kept() -> None:
+    prompts: list[str] = []
+    answer = await synthesize(
+        "q", HABIT_EV,
+        _generate(Synthesis(claims=[WATCHED, WATCHED_AGAIN], can_answer=True)),
+        mode="graph", check=_checker(_judged(SUPPORTED), prompts))
+    assert WATCHED_AGAIN.text not in prompts[0]
+    assert answer.text == f"{WATCHED.text} [1]"
+
+
+@pytest.mark.asyncio
+async def test_dropping_every_claim_yields_the_refusal() -> None:
+    answer = await _checked(GOOD1, GOOD2, verdicts=_judged(NOT_SUPPORTED, NOT_SUPPORTED))
+    assert answer.text == REFUSAL and answer.note is None
+
+
+@pytest.mark.asyncio
+async def test_no_kept_claim_never_asks_the_checker() -> None:
+    prompts: list[str] = []
+    bad = Claim(text="Nope.", passage=1, quote="not in the passage at all")
+    answer = await _checked(bad, verdicts=_judged(SUPPORTED), prompts=prompts)
+    assert answer.text == REFUSAL and prompts == []
+
+
+def _parts_checked(verdicts: Faithfulness | None, prompts: list[str],
+                   results: list[Synthesis], subs=SUBS, evidence=PARTS_EV,
+                   error: BaseException | None = None, note: str | None = None):
+    return synthesize_parts(
+        "q", subs, evidence, _per_part(results, []), mode="graph", note=note,
+        check=_checker(verdicts, prompts, error))
+
+
+@pytest.mark.asyncio
+async def test_several_sub_questions_share_one_batched_check_call() -> None:
+    prompts: list[str] = []
+    answer = await _parts_checked(
+        _judged(SUPPORTED, SUPPORTED), prompts,
+        [Synthesis(claims=[WHY_D], can_answer=True),
+         Synthesis(claims=[WHY_S], can_answer=True)])
+    assert len(prompts) == 1
+    assert WHY_D.text in prompts[0] and WHY_S.text in prompts[0]
+    assert answer.text == ("Drebber forced Lucy to marry him. [2] "
+                           "Stangerson shot her father. [3]")
+
+
+@pytest.mark.asyncio
+async def test_dropping_every_claim_of_one_sub_question_names_it_not_found() -> None:
+    prompts: list[str] = []
+    answer = await _parts_checked(
+        _judged(SUPPORTED, NOT_SUPPORTED), prompts,
+        [Synthesis(claims=[WHY_D], can_answer=True),
+         Synthesis(claims=[WHY_S], can_answer=True)])
+    assert answer.text == "Drebber forced Lucy to marry him. [2]"
+    assert PARTIAL_NOTE in answer.note
+    assert "not found: Why kill Stangerson?" in answer.note
+    assert "Why kill Drebber?" not in answer.note
+
+
+@pytest.mark.asyncio
+async def test_dropping_every_claim_of_every_part_is_a_refusal() -> None:
+    prompts: list[str] = []
+    answer = await _parts_checked(
+        _judged(NOT_SUPPORTED, NOT_SUPPORTED), prompts,
+        [Synthesis(claims=[WHY_D], can_answer=True),
+         Synthesis(claims=[WHY_S], can_answer=True)])
+    assert answer.text == REFUSAL and answer.note is None
+
+
+@pytest.mark.asyncio
+async def test_a_failed_check_over_parts_keeps_every_claim_and_says_so() -> None:
+    prompts: list[str] = []
+    answer = await _parts_checked(
+        None, prompts,
+        [Synthesis(claims=[WHY_D], can_answer=True),
+         Synthesis(claims=[WHY_S], can_answer=True)],
+        error=RuntimeError("no quota"))
+    assert answer.text == ("Drebber forced Lucy to marry him. [2] "
+                           "Stangerson shot her father. [3]")
+    assert answer.note == CHECK_SKIPPED_NOTE
+
+
+@pytest.mark.asyncio
+async def test_a_part_losing_only_a_near_duplicate_is_still_found() -> None:
+    prompts: list[str] = []
+    both = Evidence(edges=(), passages=(HABIT, HABIT2), truncated=False,
+                    shares=((1,), (1, 2)))
+    answer = await _parts_checked(
+        _judged(SUPPORTED), prompts,
+        [Synthesis(claims=[WATCHED], can_answer=True),
+         Synthesis(claims=[WATCHED_AGAIN], can_answer=True)], evidence=both)
+    assert answer.text == f"{WATCHED.text} [1]"
+    assert answer.note is None
+
+
+def test_validated_verdicts_refuses_an_answer_that_does_not_line_up() -> None:
+    assert validated_verdicts(_judged(SUPPORTED, SUPPORTED), 2) == [
+        (True, "reason"), (True, "reason")]
+    assert validated_verdicts(_judged(SUPPORTED), 2) is None
+    assert validated_verdicts(_judged(SUPPORTED, SUPPORTED, start=2), 2) is None
+    assert validated_verdicts(_judged(SUPPORTED, "unsupported"), 2) is None
+
+
+def test_validated_verdicts_reads_a_tidier_spelling_of_each_word() -> None:
+    assert validated_verdicts(_judged("Supported", "Not Supported"), 2) == [
+        (True, "reason"), (False, "reason")]
+
+
+@pytest.mark.asyncio
+async def test_check_claims_reports_what_it_dropped_and_why() -> None:
+    kept, dropped, ran = await check_claims(
+        [GOOD1, GOOD2], EV.passages,
+        _checker(_judged(SUPPORTED, NOT_SUPPORTED, reason="names another book")),
+        book_titles=TITLES)
+    assert kept == [GOOD1]
+    assert dropped == [(GOOD2, "names another book")]
+    assert ran is True
+
+
+@pytest.mark.asyncio
+async def test_check_claims_keeps_everything_when_it_could_not_run() -> None:
+    kept, dropped, ran = await check_claims(
+        [GOOD1, GOOD2], EV.passages, _checker(error=RuntimeError("boom")))
+    assert kept == [GOOD1, GOOD2] and dropped == [] and ran is False

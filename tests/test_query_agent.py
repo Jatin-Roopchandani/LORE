@@ -4,11 +4,13 @@ which model, with which options, did each job.
 No test here reaches Ollama or Gemini. Providers are fakes that record
 what they were asked.
 """
+import re
 from pathlib import Path
 
 import pytest
 
 from lore.config import LoreConfig
+from lore.inference.base import ProviderOutputError
 from lore.db.sqlite import open_db
 from lore.extract.embed import QUERY_PREFIX
 from lore.query.agent import (
@@ -22,7 +24,16 @@ from lore.query.agent import (
 from lore.query.decompose import SubQuestions
 from lore.query.models import Answer
 from lore.query.select import TemplateChoice
-from lore.query.synthesize import REFUSAL, Claim, Synthesis
+from lore.query.synthesize import (
+    CHECK_SKIPPED_NOTE,
+    NOT_SUPPORTED,
+    REFUSAL,
+    SUPPORTED,
+    Claim,
+    Faithfulness,
+    Judgement,
+    Synthesis,
+)
 
 TITLE = "A Study in Scarlet"
 TEXT = ("Holmes spoke to Watson about the case while they waited in the "
@@ -88,6 +99,16 @@ GOOD = Synthesis(claims=[Claim(text="Holmes talked the case over with Watson.",
                                passage=1, quote=QUOTE)], can_answer=True)
 
 
+def all_supported(prompt: str) -> Faithfulness:
+    """What an honest faithfulness check answers: one aligned `supported`
+    per claim. Both fakes reply with this, so a test that is about something
+    else is not silently answering a Task 12 check with the wrong schema."""
+    count = int(re.search(r"numbered 1 to (\d+)", prompt).group(1))
+    return Faithfulness(judgements=[
+        Judgement(claim=n, verdict=SUPPORTED, reason="the passage states it")
+        for n in range(1, count + 1)])
+
+
 class FakeOllama:
     """Stands in for OllamaProvider: records every call and its options."""
 
@@ -99,6 +120,8 @@ class FakeOllama:
 
     async def generate(self, prompt, schema, *, options=None):
         self.generated.append((prompt, schema, options))
+        if schema is Faithfulness:
+            return all_supported(prompt)
         return self.choice if schema is TemplateChoice else self.synthesis
 
     async def embed(self, texts, model):
@@ -115,8 +138,10 @@ class FakeGemini:
     synthesis land on different models of one shared client."""
 
     def __init__(self, synthesis: Synthesis = GOOD, model="gemini-3.1-flash-lite",
-                 choice: TemplateChoice | None = None, models: list[str] | None = None):
+                 choice: TemplateChoice | None = None, models: list[str] | None = None,
+                 faithfulness: Faithfulness | None = None):
         self.synthesis, self.choice = synthesis, choice
+        self.faithfulness = faithfulness
         self._models = list(models) if models else [model]
         self.prompts: list[tuple[str, type]] = []
         self.last_model = None
@@ -129,6 +154,8 @@ class FakeGemini:
     async def generate_json(self, prompt, schema):
         self.prompts.append((prompt, schema))
         self.last_model = self._models[min(len(self.prompts), len(self._models)) - 1]
+        if schema is Faithfulness:
+            return self.faithfulness or all_supported(prompt)
         return self.choice if schema is TemplateChoice else self.synthesis
 
     async def aclose(self):
@@ -300,8 +327,12 @@ async def test_gemini_answers_while_selection_stays_local(tmp_path: Path) -> Non
     assert _synthesis_calls(ollama) == []
     # Task 10d changed this. It was `(prompt, schema), = gemini.prompts` with
     # `schema is Synthesis`: decomposition now runs on the synthesis provider.
-    assert [schema for _, schema in gemini.prompts] == [SubQuestions, Synthesis]
-    prompt = gemini.prompts[-1][0]
+    # Task 12 changed this. It was `== [SubQuestions, Synthesis]` and failed
+    # with "Left contains one more item: Faithfulness": the faithfulness
+    # check is a third call on the same synthesis client.
+    assert [schema for _, schema in gemini.prompts] == [SubQuestions, Synthesis,
+                                                        Faithfulness]
+    prompt = gemini.prompts[1][0]
     assert f"({TITLE}, chapter 1)" in prompt
     conn.close()
 
@@ -316,6 +347,93 @@ async def test_the_quote_check_applies_to_gemini_too(tmp_path: Path) -> None:
     answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
     assert answer.text == REFUSAL
     conn.close()
+
+
+# --- Task 12: the faithfulness check is wired like selection and synthesis ----
+
+def _rejected(prompt: str) -> Faithfulness:
+    count = int(re.search(r"numbered 1 to (\d+)", prompt).group(1))
+    return Faithfulness(judgements=[
+        Judgement(claim=n, verdict=NOT_SUPPORTED, reason="the passage does not say it")
+        for n in range(1, count + 1)])
+
+
+async def test_a_claim_the_check_rejects_never_reaches_the_answer(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama = FakeOllama(TemplateChoice(template="neighbours", entities=[1]))
+    gemini = FakeGemini(faithfulness=None)
+    models = make_query_models(GEMINI_CONFIG, ollama=ollama, gemini=gemini)
+    kept = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert kept.text == "Holmes talked the case over with Watson. [1]"
+
+    rejecting = FakeGemini()
+    rejecting.generate_json = _rejecting(rejecting)
+    models = make_query_models(GEMINI_CONFIG, ollama=FakeOllama(
+        TemplateChoice(template="neighbours", entities=[1])), gemini=rejecting)
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert answer.text == REFUSAL
+    conn.close()
+
+
+def _rejecting(fake):
+    inner = fake.generate_json
+
+    async def generate_json(prompt, schema):
+        result = await inner(prompt, schema)
+        return _rejected(prompt) if schema is Faithfulness else result
+    return generate_json
+
+
+async def test_the_check_runs_on_the_synthesis_provider_with_its_options(
+        tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    # Synthesis local: the check is a local call, with the synthesis options
+    # (num_ctx included -- the check prompt carries the passages again).
+    ollama, models = _local()
+    await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    checks = [c for c in ollama.generated if c[1] is Faithfulness]
+    assert [c[2] for c in checks] == [SYNTHESIS_OPTIONS]
+
+    # Synthesis on Gemini: the check goes to Gemini, never also to Ollama.
+    local = FakeOllama(TemplateChoice(template="neighbours", entities=[1]))
+    gemini = FakeGemini()
+    remote = make_query_models(GEMINI_CONFIG, ollama=local, gemini=gemini)
+    await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", remote)
+    assert [s for _, s in gemini.prompts].count(Faithfulness) == 1
+    assert [c for c in local.generated if c[1] is Faithfulness] == []
+    conn.close()
+
+
+async def test_models_without_a_check_answer_exactly_as_before(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    from dataclasses import replace as _replace
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q",
+                                   _replace(models, check=None))
+    assert answer.text == "Holmes talked the case over with Watson. [1]"
+    assert answer.note is None
+    assert [c for c in ollama.generated if c[1] is Faithfulness] == []
+    conn.close()
+
+
+async def test_a_check_that_fails_keeps_the_claims_and_says_so(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+
+    async def broken(prompt, schema):
+        raise ProviderOutputError("not a Faithfulness object", "{")
+
+    from dataclasses import replace as _replace
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q",
+                                   _replace(models, check=broken))
+    assert answer.text == "Holmes talked the case over with Watson. [1]"
+    assert answer.note == CHECK_SKIPPED_NOTE
+    conn.close()
+
+
+def test_make_query_models_gives_the_check_the_synthesis_callable() -> None:
+    models = make_query_models(CONFIG, ollama=FakeOllama(CHOICE))
+    assert models.check is models.synthesize
 
 
 @pytest.mark.parametrize("config,section", [
@@ -381,8 +499,11 @@ async def test_both_steps_on_gemini_share_one_client_and_name_each_model(
                                 "gemini-3.5-flash-lite"])
     models = make_query_models(BOTH_GEMINI_CONFIG, ollama=ollama, gemini=gemini)
     answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    # Task 12 changed this. It was `== [SubQuestions, TemplateChoice,
+    # Synthesis]` and failed with "Left contains one more item:
+    # Faithfulness": the check is a fourth call on the shared client.
     assert [schema for _, schema in gemini.prompts] == [SubQuestions, TemplateChoice,
-                                                        Synthesis]
+                                                        Synthesis, Faithfulness]
     assert ollama.generated == []
     assert answer.selection_model == "gemini-3.1-flash-lite"
     assert answer.model == "gemini-3.5-flash-lite"
