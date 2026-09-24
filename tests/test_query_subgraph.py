@@ -139,14 +139,18 @@ def test_assemble_keeps_edges_that_differ_only_in_evidence(tmp_path: Path) -> No
     conn.close()
 
 
-def test_assemble_dedup_preserves_first_occurrence_order(tmp_path: Path) -> None:
+def test_assemble_dedup_keeps_one_of_each_edge_in_content_order(tmp_path: Path) -> None:
+    # Task 13 changed this: the pin was `evidence.edges == (late, early)`,
+    # "row order, not reading order". Row order is exactly what varied
+    # between runs, so the edges are now ordered on their own content and a
+    # repeated row still collapses to one.
     conn = open_db(tmp_path / "lore.db")
     _seed(conn, "b1:1:0", "one")
     _seed(conn, "b1:2:0", "two", chapter_seq=2)
     late = EdgeRow("Z", "P", "p", "Y", "e", 0.5, "b1", 2, "b1:2:0")
     early = EdgeRow("A", "P", "p", "B", "e", 0.5, "b1", 1, "b1:1:0")
     evidence = assemble(conn, [late, early, late, early])
-    assert evidence.edges == (late, early)   # row order, not reading order
+    assert evidence.edges == (early, late)
     conn.close()
 
 
@@ -472,3 +476,38 @@ def test_one_part_shares_every_kept_passage(tmp_path: Path) -> None:
 
 def test_evidence_gains_shares_without_breaking_old_constructions() -> None:
     assert Evidence(edges=(), passages=(), truncated=False).shares == ()
+
+
+# --- Task 13: the same rows in, the same evidence out --------------------------
+
+def _tied(evidence: str, chunk_id: str = "b1:1:0") -> EdgeRow:
+    """Edges that tie on relevance (same chunk) and differ only in evidence."""
+    return EdgeRow("A", "P", "p", "B", evidence, 0.5, "b1", 1, chunk_id)
+
+
+def test_equally_relevant_edges_are_ordered_by_content_not_input_order(
+        tmp_path: Path) -> None:
+    # Ranking sorts edges by their passage's relevance; every edge of one
+    # passage ties. A stable sort then preserves whatever order the rows
+    # arrived in, so the same question could list its leads differently on
+    # two runs (measured: three templates returned 20 different orders in
+    # 20 runs before the templates were given a total order).
+    conn = open_db(tmp_path / "lore.db")
+    _seed(conn, "b1:1:0", "one passage, several leads")
+    rows = [_tied("gamma"), _tied("alpha"), _tied("beta")]
+    scores = {"b1:1:0": 0.9}
+    first = assemble_ranked(conn, rows, score_lists=[scores], max_chars=400)
+    shuffled = assemble_ranked(conn, list(reversed(rows)), score_lists=[scores],
+                               max_chars=400)
+    assert [e.evidence for e in first.edges] == ["alpha", "beta", "gamma"]
+    assert first.edges == shuffled.edges
+    conn.close()
+
+
+def test_unranked_assembly_orders_tied_edges_by_content_too(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    _seed(conn, "b1:1:0", "one passage, several leads")
+    rows = [_tied("gamma"), _tied("alpha"), _tied("beta")]
+    evidence = assemble(conn, rows)
+    assert [e.evidence for e in evidence.edges] == ["alpha", "beta", "gamma"]
+    conn.close()

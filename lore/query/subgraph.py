@@ -62,6 +62,19 @@ def _interleaved(items: list[_Item]) -> list[_Item]:
     return _round_robin(books)
 
 
+def _edge_key(edge: EdgeRow) -> tuple:
+    """A total order on an edge's content.
+
+    Appended to every relevance sort: edges of one passage all tie on
+    relevance, and a stable sort would then keep whatever order the rows
+    arrived in — which, before the templates were given a total order, was a
+    different order on every run.
+    """
+    return (edge.book_id, edge.chapter_seq, edge.chunk_id, edge.predicate,
+            edge.predicate_raw, edge.subject, edge.object, edge.confidence,
+            edge.evidence)
+
+
 def _relevance_key(scores: dict[str, float], chunk_id: str) -> tuple[bool, float]:
     """Most relevant first, and a chunk with no score after every scored
     one, whatever the sign of their cosines."""
@@ -113,7 +126,9 @@ def assemble(conn: sqlite3.Connection, rows: list[EdgeRow], *,
     # Templates re-emit the same edge once per intermediate node, and the
     # graph holds parallel edges with identical content. Exact equality
     # drops only true repeats; two different evidence strings both stay.
-    edges = tuple(dict.fromkeys(rows))
+    # Sorted on content so the leads read the same way on every run,
+    # whatever order the rows arrived in.
+    edges = tuple(sorted(dict.fromkeys(rows), key=_edge_key))
 
     ordered: list[tuple[str, str, int]] = []
     seen: set[str] = set()
@@ -130,7 +145,9 @@ def assemble(conn: sqlite3.Connection, rows: list[EdgeRow], *,
     if scores is not None:
         # Relationship lines follow their passage's relevance (stable, so
         # equally relevant edges keep the template's order).
-        edges = tuple(sorted(edges, key=lambda r: _relevance_key(scores, r.chunk_id)))
+        edges = tuple(sorted(
+            edges,
+            key=lambda r: (_relevance_key(scores, r.chunk_id), _edge_key(r))))
 
     # Number in reading order so citations still read chronologically.
     rank = {item[0]: index for index, item in enumerate(items)}
@@ -254,7 +271,7 @@ def assemble_ranked(
             if score_lists else (False, 0.0)
 
     edges = tuple(sorted((e for e in edges if e.chunk_id in kept_ids),
-                         key=lambda e: best(e.chunk_id)))
+                         key=lambda e: (best(e.chunk_id), _edge_key(e))))
     rank = {item[0]: index for index, item in enumerate(items)}
     kept.sort(key=lambda item: rank[item[0]])
     passages = tuple(

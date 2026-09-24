@@ -271,3 +271,131 @@ def test_across_books_order_is_reliable_not_lucky(graph) -> None:
             keys = [(r.book_id, r.chapter_seq)
                     for r in _run(graph, "across_books", limit=limit)]
             assert keys == sorted(keys)
+
+
+# --- Task 13: the same question must return the same evidence -------------
+#
+# The fixture above is too small to see the problem: a handful of rows comes
+# back in a stable order. Widen it and Kuzu's order stops being stable --
+# measured on the live graph at 90e4825, all seven templates returned their
+# rows in 20 different orders across 20 runs, and `chapter_window` returned
+# 12 different row SETS, because an undefined order also decides which rows
+# survive `LIMIT`.
+
+_WIDE = 60          # mid nodes, and so edges per hub
+_WIDE_LIMIT = 20    # smaller than every template's result, so all truncate
+
+_WIDE_CALLS = {
+    "neighbours": {"entity_id": "h", "limit": _WIDE_LIMIT},
+    "two_hop": {"entity_id": "h", "limit": _WIDE_LIMIT},
+    "path_between": {"a_id": "h", "b_id": "g", "limit": _WIDE_LIMIT},
+    "by_predicate": {"entity_id": "h", "predicate": "KNOWS", "limit": _WIDE_LIMIT},
+    "shared_neighbours": {"a_id": "h", "b_id": "g", "limit": _WIDE_LIMIT},
+    "across_books": {"entity_id": "h", "limit": _WIDE_LIMIT},
+    "chapter_window": {"entity_id": "h", "lo": 1, "hi": 5, "limit": _WIDE_LIMIT},
+}
+
+# What a total order on row content means, per template, in Python. Every
+# field of the row appears, so no two distinct rows can tie.
+_TAIL = ("chunk_id", "predicate", "predicate_raw", "subject", "object",
+         "confidence", "evidence")
+_ORDERS = {
+    "chapter_window": ("chapter_seq", "book_id") + _TAIL,
+    **{name: ("book_id", "chapter_seq") + _TAIL
+       for name in ("neighbours", "two_hop", "path_between", "by_predicate",
+                    "shared_neighbours", "across_books")},
+}
+
+
+def _key(name: str):
+    return lambda row: tuple(getattr(row, field) for field in _ORDERS[name])
+
+
+@pytest.fixture
+def wide_graph(tmp_path: Path):
+    """Two hubs over the same 60 mid nodes, plus edges among the mid nodes.
+
+    Every template matches far more than `_WIDE_LIMIT` rows here. Each hub
+    edge is also written twice with two different `evidence` strings, so the
+    result holds pairs that tie on every field but one: insertion order can
+    no longer decide which of them survives the limit.
+    """
+    store = KuzuStore(tmp_path / "kuzu")
+    for entity_id, name in [("h", "H"), ("g", "G")]:
+        store.execute("CREATE (:Entity {id: $id, name: $name, kind: 'Character'})",
+                      {"id": entity_id, "name": name})
+    for i in range(_WIDE):
+        store.execute("CREATE (:Entity {id: $id, name: $name, kind: 'Character'})",
+                      {"id": f"m{i}", "name": f"M{i}"})
+
+    def edge(subject: str, obj: str, i: int, evidence: str) -> None:
+        store.execute(
+            "MATCH (a:Entity), (b:Entity) WHERE a.id = $s AND b.id = $o "
+            "CREATE (a)-[:REL {predicate: 'KNOWS', predicate_raw: 'knows', "
+            "evidence: $ev, confidence: 0.9, chunk_id: $c, book_id: $book, "
+            "chapter_seq: $ch, run_id: 'r1'}]->(b)",
+            {"s": subject, "o": obj, "ev": evidence, "c": f"c{i % 7}",
+             "book": f"b{i % 2}", "ch": (i % 5) + 1},
+        )
+
+    for i in range(_WIDE):
+        for hub in ("h", "g"):
+            edge(hub, f"m{i}", i, f"one {i:03d}")
+            edge(hub, f"m{i}", i, f"two {i:03d}")   # ties but for `evidence`
+        edge(f"m{i}", f"m{(i + 1) % _WIDE}", i, f"mid {i:03d}")
+    yield store
+    store.close()
+
+
+def _wide(store, name: str, **slots):
+    return run_template(store, TemplateCall(template=name,
+                                            slots={**_WIDE_CALLS[name], **slots}))
+
+
+@pytest.mark.parametrize("name", sorted(TEMPLATES))
+def test_every_template_truncates_in_the_wide_fixture(wide_graph, name: str) -> None:
+    # Otherwise "the same rows every time" would prove nothing about LIMIT.
+    everything = _wide(wide_graph, name, limit=10_000)
+    kept = _wide(wide_graph, name)
+    assert len(everything) > len(kept) > 0, f"{name} did not truncate"
+
+
+@pytest.mark.parametrize("name", sorted(TEMPLATES))
+def test_every_template_returns_the_identical_row_list_every_run(
+        wide_graph, name: str) -> None:
+    first = _wide(wide_graph, name)
+    for run in range(1, 20):
+        assert _wide(wide_graph, name) == first, f"{name} differed on run {run}"
+
+
+@pytest.mark.parametrize("name", sorted(TEMPLATES))
+def test_every_template_keeps_the_first_rows_of_a_total_content_order(
+        wide_graph, name: str) -> None:
+    """Which rows survive the limit is a function of the rows, not of Kuzu.
+
+    Computed independently in Python from the untruncated result, so it
+    pins the order itself and not merely that it repeats.
+    """
+    everything = sorted(_wide(wide_graph, name, limit=10_000), key=_key(name))
+    if name == "across_books":
+        # `limit` is per book here, and the books come back in book order.
+        expected = [row for book in sorted({r.book_id for r in everything})
+                    for row in [r for r in everything
+                                if r.book_id == book][:_WIDE_LIMIT]]
+    else:
+        expected = everything[:_WIDE_LIMIT]
+    assert _wide(wide_graph, name) == expected
+
+
+@pytest.mark.parametrize("name", sorted(TEMPLATES))
+def test_rows_differing_only_in_evidence_come_back_in_a_fixed_order(
+        wide_graph, name: str) -> None:
+    rows = _wide(wide_graph, name, limit=10_000)
+    pairs = {}
+    for row in rows:
+        pairs.setdefault(tuple(getattr(row, f) for f in _ORDERS[name][:-1]),
+                         []).append(row.evidence)
+    tied = [evidences for evidences in pairs.values() if len(evidences) > 1]
+    assert tied, f"{name} has no ties to break"
+    for evidences in tied:
+        assert evidences == sorted(evidences)

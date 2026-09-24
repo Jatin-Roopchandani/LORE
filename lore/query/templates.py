@@ -31,6 +31,24 @@ _RETURN = (
 )
 
 
+# A TOTAL order on row content, so which rows survive `LIMIT` — and in what
+# sequence — is a function of the rows, never of storage. Measured on the
+# live graph at 90e4825, 20 runs of each template: `neighbours`,
+# `by_predicate` and `across_books` came back in 20 different orders, and
+# `chapter_window` returned 10 different row SETS, silently dropping
+# different facts each run. Every field appears, so no two distinct rows tie.
+_ORDER = (
+    "ORDER BY book_id, chapter_seq, chunk_id, predicate, predicate_raw, "
+    "subject, object, confidence, evidence "
+)
+
+# The same order, chapter first: this template exists to walk a chapter range.
+_ORDER_BY_CHAPTER = (
+    "ORDER BY chapter_seq, book_id, chunk_id, predicate, predicate_raw, "
+    "subject, object, confidence, evidence "
+)
+
+
 def _sized(field: str) -> str:
     """`field` prefixed by its zero-padded length, so a concatenation of
     several is injective: no separator a value could contain is needed."""
@@ -90,7 +108,8 @@ _ACROSS_BOOKS = (
     "fact.evidence AS evidence, fact.confidence AS confidence, "
     "book_id AS book_id, fact.chapter_seq AS chapter_seq, "
     "fact.chunk_id AS chunk_id "
-    "ORDER BY book_id, chapter_seq"
+    "ORDER BY book_id, chapter_seq, chunk_id, predicate, predicate_raw, "
+    "subject, object, confidence, evidence"
 )
 
 TEMPLATES: dict[str, Template] = {
@@ -99,7 +118,7 @@ TEMPLATES: dict[str, Template] = {
         cypher=(
             "MATCH (a:Entity)-[r:REL]->(b:Entity) "
             "WHERE a.id = $entity_id OR b.id = $entity_id "
-            + _RETURN + "LIMIT $limit"
+            + _RETURN + _ORDER + "LIMIT $limit"
         ),
         slots=("entity_id", "limit"),
         description=(
@@ -118,7 +137,7 @@ TEMPLATES: dict[str, Template] = {
             "MATCH (a:Entity)-[r:REL]->(b:Entity) "
             "WHERE (a.id IN mids OR b.id IN mids) "
             "AND a.id <> e.id AND b.id <> e.id "
-            + _RETURN + "LIMIT $limit"
+            + _RETURN + _ORDER + "LIMIT $limit"
         ),
         slots=("entity_id", "limit"),
         description=(
@@ -142,7 +161,7 @@ TEMPLATES: dict[str, Template] = {
             "OR (a.id = q.id AND b.id = p.id) "
             "OR ((a.id = p.id OR a.id = q.id) AND b.id IN mids) "
             "OR ((b.id = p.id OR b.id = q.id) AND a.id IN mids) "
-            + _RETURN + "LIMIT $limit"
+            + _RETURN + _ORDER + "LIMIT $limit"
         ),
         slots=("a_id", "b_id", "limit"),
         description=(
@@ -156,7 +175,7 @@ TEMPLATES: dict[str, Template] = {
             "MATCH (a:Entity)-[r:REL]->(b:Entity) "
             "WHERE (a.id = $entity_id OR b.id = $entity_id) "
             "AND r.predicate = $predicate "
-            + _RETURN + "LIMIT $limit"
+            + _RETURN + _ORDER + "LIMIT $limit"
         ),
         slots=("entity_id", "predicate", "limit"),
         description=(
@@ -170,7 +189,7 @@ TEMPLATES: dict[str, Template] = {
         cypher=(
             "MATCH (a:Entity)-[r:REL]->(b:Entity) "
             "WHERE a.id IN [$a_id, $b_id] OR b.id IN [$a_id, $b_id] "
-            + _RETURN + "LIMIT $limit"
+            + _RETURN + _ORDER + "LIMIT $limit"
         ),
         slots=("a_id", "b_id", "limit"),
         description=(
@@ -196,7 +215,7 @@ TEMPLATES: dict[str, Template] = {
             "MATCH (a:Entity)-[r:REL]->(b:Entity) "
             "WHERE (a.id = $entity_id OR b.id = $entity_id) "
             "AND r.chapter_seq >= $lo AND r.chapter_seq <= $hi "
-            + _RETURN + "ORDER BY chapter_seq LIMIT $limit"
+            + _RETURN + _ORDER_BY_CHAPTER + "LIMIT $limit"
         ),
         slots=("entity_id", "lo", "hi", "limit"),
         description=(
