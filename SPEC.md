@@ -101,7 +101,7 @@ Expected data size for a personal library (dozens of books): low single-digit GB
 | Vector DB | **LanceDB** | Embedded, file-based |
 | Structured output | **pydantic** schemas + validation-with-retry | Extraction correctness gate |
 | E-book parsing | **ebooklib** (EPUB), **PyMuPDF** (PDF) | Reliable structure extraction |
-| MCP server | **Python MCP SDK** (stdio + SSE) | The custom protocol surface |
+| MCP server | **Python MCP SDK** (stdio + Streamable HTTP) | The custom protocol surface |
 | UI | **React + TypeScript + Vite**, **Sigma.js** | Sigma renders thousands of nodes; search + panels |
 | Observability | **SQLite metrics + UI dashboard page** | Quota ledger, run history, throughput — no Prometheus stack needed at this footprint |
 
@@ -117,7 +117,7 @@ Expected data size for a personal library (dozens of books): low single-digit GB
                 │ REST/SSE
 ┌──────────────┐│                                 ┌──────────────────────────┐
 │  MCP Server  ││                                 │  extract.ipynb           │
-│ (stdio/SSE)  ▼▼                                 │  (parameterized kernel)  │
+│ (stdio/http) ▼▼                                 │  (parameterized kernel)  │
 │      ┌────────────────────────┐   push dataset  │                          │
 │      │   LORE API (FastAPI)   │  (chunks+state) │  vLLM + Llama-3.1-8B     │
 │      └──┬──────────────┬──────┘ ────────────▶   │  · embed chunks          │
@@ -172,7 +172,7 @@ Expected data size for a personal library (dozens of books): low single-digit GB
    4. *Merge & synthesize:* subgraph (as structured text) + top chunks go into the final LLM call, which must cite node/edge provenance.
    5. *Iterate:* if evidence is judged insufficient, loop with refined seeds (max N=3).
 
-7. **MCP Server** — stdio + SSE tools:
+7. **MCP Server** — stdio + Streamable HTTP tools:
    - `lore_search(query)` — full hybrid agentic answer with citations
    - `vector_search(query, filters)` — raw chunk retrieval
    - `cypher_query(query)` — read-only, validated Cypher against Kuzu
@@ -270,7 +270,7 @@ Router, vector-seed → Cypher-hop loop, Cypher validation/guards, subgraph asse
 **Done when:** a genuine multi-hop question over 2+ ingested books gets a correct, cited answer that a pure vector-search baseline demonstrably fails.
 
 ### Phase 4 — MCP Server
-All MCP tools from §5.7, stdio + SSE transports, registered in Claude Code and exercised end-to-end.
+All MCP tools from §5.7, stdio + Streamable HTTP transports, registered in Claude Code and exercised end-to-end.
 **Done when:** an external MCP client answers a lore question through the running stack.
 
 ### Phase 5 — Web UI
