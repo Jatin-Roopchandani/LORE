@@ -38,12 +38,20 @@ _BANNED = (
     # Defence in depth. Kuzu's built-in file-reading table functions --
     # verified callable via a mid-query CALL past the allowlist check below
     # before this list was added -- are the CALL-based equivalent of
-    # LOAD FROM: an arbitrary file read. The CALL scan already blocks them
-    # by name, but the module's whole premise is that the token guard does
-    # not depend on one syntactic route reaching a file reader, so they are
-    # banned outright too. This means a query about an entity literally
-    # named "Json Scan" is rejected -- the same over-rejection trade-off
-    # already made for "Set", accepted for the same reason.
+    # LOAD FROM: an arbitrary file read. The CALL scan below already blocks
+    # them by name, but the module's whole premise is that the token guard
+    # does not depend on one syntactic route reaching a file reader, so
+    # they are banned outright too.
+    #
+    # The over-rejection cost of these five entries specifically is small:
+    # _WORD tokenizes on underscore boundaries the same as letter boundaries,
+    # so "Json Scan" (a space, two separate words: JSON and SCAN) does NOT
+    # match the single banned token JSON_SCAN and is allowed through -- only
+    # the literal underscored spelling ('json_scan') is caught, which is
+    # unlikely to appear in ordinary prose about a book. The real usability
+    # cost of this fix is the CALL whole-word check below, which does
+    # reject a book titled "The Call of the Wild" -- see that rejection's
+    # message for why that trade-off is accepted.
     "READ_CSV_SERIAL", "READ_CSV_PARALLEL", "READ_PARQUET", "READ_NPY",
     "JSON_SCAN",
 )
@@ -107,13 +115,40 @@ def validate_cypher(query: str) -> None:
 
     # Every CALL in the query is checked, not just a leading one -- see
     # _CALL_TOKEN's comment for why a position-only check is not enough.
-    for call_match in _CALL_TOKEN.finditer(text):
+    # 'CALL' is matched as a whole word EVERYWHERE, the same as the banned
+    # words above: inside a string literal ('Call of the Wild'), a
+    # property alias (`AS call`), or a comment (`// CALL ...`). That means
+    # a perfectly ordinary query about a book with "Call" in the title is
+    # rejected too -- this graph holds books, so that will happen -- and
+    # the message below says so explicitly, for the same reason the
+    # banned-word message does: so a user can tell a guard from a bug.
+    call_matches = list(_CALL_TOKEN.finditer(text))
+    for call_match in call_matches:
         name = call_match.group(1)
         if name is None or name not in _ALLOWED_CALLS:
             raise CypherRejected(
                 f"CALL {name or '?'} is not allowed; the permitted procedures"
-                f" are {', '.join(sorted(_ALLOWED_CALLS))}"
+                f" are {', '.join(sorted(_ALLOWED_CALLS))}. 'CALL' is matched"
+                " as a whole word even inside a string literal, property"
+                " name, alias, or comment, so a legitimate query merely"
+                " mentioning 'call' (e.g. a book titled 'The Call of the"
+                " Wild') is rejected too -- use the `entity` or `subgraph`"
+                " tool for that instead."
             )
+
+    # Fail-closed belt: the property above depends on \bCALL\b's word
+    # boundary agreeing with Kuzu's lexer. If it ever doesn't -- e.g. a
+    # future Kuzu version tolerates `CALLread_csv_serial(...)` with no
+    # separator, so \b never fires and call_matches is empty -- do not let
+    # a query containing the literal substring 'CALL' through unexamined.
+    # This makes fail-closed a property of the guard, not a coincidence of
+    # two tokenizers agreeing.
+    if not call_matches and "CALL" in upper:
+        raise CypherRejected(
+            "'CALL' appears in the query but this guard could not parse it"
+            " as a procedure call; rejected to fail closed rather than let"
+            " an unrecognized shape through unchecked"
+        )
 
 
 def run_guarded(kuzu, query: str, row_cap: int = ROW_CAP):
