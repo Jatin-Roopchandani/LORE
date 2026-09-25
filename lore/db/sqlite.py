@@ -60,6 +60,21 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
         ],
     ),
     (3, ["ALTER TABLE jobs ADD COLUMN error TEXT"]),
+    (
+        4,
+        [
+            """
+            CREATE TABLE gemini_ledger (
+                id    INTEGER PRIMARY KEY,
+                day   TEXT NOT NULL,        -- local date, e.g. 2026-09-24
+                model TEXT NOT NULL,        -- gemini-3.5-flash-lite
+                count INTEGER NOT NULL DEFAULT 0
+            )
+            """,
+            "CREATE UNIQUE INDEX idx_gemini_ledger_day_model"
+            " ON gemini_ledger(day, model)",
+        ],
+    ),
 ]
 
 
