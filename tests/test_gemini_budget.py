@@ -1,4 +1,6 @@
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import pytest
@@ -58,6 +60,19 @@ def test_check_budget_raises_at_the_limit(conn):
     assert str(limit) in str(excinfo.value)
 
 
+def test_check_budget_passes_at_limit_minus_one(conn):
+    from lore.inference.gemini import limits_for
+
+    limit = limits_for("gemini-3.5-flash-lite").rpd
+    conn.execute(
+        "INSERT INTO gemini_ledger (day, model, count) VALUES (?, ?, ?)",
+        ("2026-09-24", "gemini-3.5-flash-lite", limit - 1),
+    )
+    conn.commit()
+    # Should not raise: we're at limit-1 and headroom=1 means we have exactly 1 slot left
+    check_budget(conn, "gemini-3.5-flash-lite", "2026-09-24")
+
+
 def test_day_report_lists_each_model_with_remaining(conn):
     record_call(conn, "gemini-3.5-flash-lite", "2026-09-24")
     rows = day_report(conn, "2026-09-24")
@@ -70,19 +85,38 @@ def test_day_report_lists_each_model_with_remaining(conn):
 
 # Review Focus 5: concurrent increments must not lose a count.
 def test_concurrent_increments_do_not_lose_counts(tmp_path):
+    """Verify atomicity of record_call under true concurrent load.
+
+    Uses a Barrier to release multiple threads into record_call at the same
+    moment, each holding its own connection to the same database file. This
+    closes the window where a naive SELECT-then-UPDATE would race and lose
+    increments. Atomic upsert (INSERT...ON CONFLICT) must ensure final count
+    equals total calls made.
+    """
     path = tmp_path / "lore.db"
     open_db(path).close()  # migrate once, then open plain connections
 
-    conns = [sqlite3.connect(path) for _ in range(4)]
-    try:
-        for _ in range(10):
-            for c in conns:
-                record_call(c, "gemini-3.5-flash-lite", "2026-09-24")
-        checker = sqlite3.connect(path)
+    num_threads = 8
+    calls_per_thread = 25
+    total_calls = num_threads * calls_per_thread
+    barrier = threading.Barrier(num_threads)
+
+    def worker():
+        # Each thread gets its own connection with timeout to handle contention
+        conn = sqlite3.connect(path, timeout=30)
         try:
-            assert calls_today(checker, "gemini-3.5-flash-lite", "2026-09-24") == 40
+            barrier.wait()  # Release all threads at the same moment
+            for _ in range(calls_per_thread):
+                record_call(conn, "gemini-3.5-flash-lite", "2026-09-24")
         finally:
-            checker.close()
+            conn.close()
+
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        list(executor.map(lambda _: worker(), range(num_threads)))
+
+    # Verify no increments were lost
+    checker = sqlite3.connect(path)
+    try:
+        assert calls_today(checker, "gemini-3.5-flash-lite", "2026-09-24") == total_calls
     finally:
-        for c in conns:
-            c.close()
+        checker.close()
