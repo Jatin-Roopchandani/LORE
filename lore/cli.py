@@ -522,12 +522,6 @@ def disambiguate(
     """
     config = LoreConfig.load()
     config.ensure_dirs()
-    # Unlike `ask` or `process`, this command otherwise never opens lore.db —
-    # it works entirely from the disambiguation store's own cache. Without
-    # this, a fresh data dir (or one where `ingest`/`process` never ran)
-    # would hit "no such table: gemini_ledger" the first time the recorder
-    # tries to count a request.
-    open_db(config.sqlite_path).close()
     store = DisambiguationStore(config.disambiguation_dir)
 
     if not config.disambiguation.enabled:
@@ -707,8 +701,18 @@ def ask(
             )
             raise typer.Exit(2)
 
-    # Opened read-only, and never via open_db/ensure_dirs: asking a question
-    # must not create, migrate or touch the library.
+    # The library itself is opened read-only below, never via open_db, so a
+    # question can never create one or touch its content. The recorder is
+    # the one narrow exception: `recorder_for` (gemini_budget.py) writes
+    # through `open_db`, so when [lore.selection]/[lore.synthesis] send this
+    # question to Gemini, that one bookkeeping write may apply a pending
+    # schema migration to lore.db and add a row to gemini_ledger — it is the
+    # same shared daily ledger `lore_search` over MCP spends. That is only
+    # possible at all because the guard just below already requires
+    # `config.sqlite_path.is_file()`: `open_db` here migrates a library that
+    # already exists, it can never bring one into being. The shared-ledger
+    # design (one budget for the CLI and MCP) makes this concession
+    # necessary; nothing else about `ask` writes anything.
     graph_path = config.kuzu_dir / "graph"
     if not (graph_path.exists() and config.sqlite_path.is_file()
             and config.lancedb_dir.is_dir()):

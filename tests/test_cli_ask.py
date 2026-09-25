@@ -2,7 +2,9 @@
 
 Every test isolates HOME so the real ~/.config/lore/gemini.env is never read.
 """
+import functools
 import os
+import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,8 +15,11 @@ from typer.testing import CliRunner
 from lore.cli import app
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
-from lore.db.sqlite import open_db
+from lore.db.sqlite import MIGRATIONS, open_db
+from lore.inference.gemini import GeminiClient
+from lore.orchestrator.gemini_budget import calls_today, today
 from lore.query.models import Answer, Passage
+from lore.query.synthesize import Synthesis
 
 runner = CliRunner()
 SECRET = "AIza-not-a-real-key-0000"
@@ -46,6 +51,36 @@ def _library(root: Path, *, graphed: bool, status: str = "chunked") -> None:
 
 def _gemini_toml(root: Path) -> None:
     (root / "lore.toml").write_text('[lore.synthesis]\nprovider = "gemini"\n')
+
+
+def _stamp_migrations_through(sqlite_path: Path, version: int) -> None:
+    """A lore.db genuinely migrated only through `version`: applies
+    MIGRATIONS up to it directly and stamps schema_migrations itself,
+    rather than calling `open_db` and then dropping a table. That matters —
+    a fixture built by deleting `gemini_ledger` from a fully-migrated
+    database is not the bug: the real failure mode is a library that was
+    never migrated past version 3 at all, exactly like the checked-in
+    repo's own data/lore.db before this task.
+    """
+    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(sqlite_path)
+    try:
+        conn.execute(
+            "CREATE TABLE schema_migrations ("
+            " version INTEGER PRIMARY KEY,"
+            " applied_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        )
+        for applied_version, statements in MIGRATIONS:
+            if applied_version > version:
+                continue
+            for statement in statements:
+                conn.execute(statement)
+            conn.execute(
+                "INSERT INTO schema_migrations (version) VALUES (?)", (applied_version,)
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 ANSWER = Answer(
@@ -238,6 +273,60 @@ def test_the_default_config_never_resolves_a_key(env: Path) -> None:
         result = runner.invoke(app, ["ask", "q"])
     assert result.exit_code == 0, result.output
     assert not resolve.called
+
+
+def test_ask_records_to_a_ledger_the_library_predates(env: Path) -> None:
+    """Reproduces the checked-in repo's real failure mode (found in review):
+    a lore.db genuinely migrated only to version 3 -- no gemini_ledger table,
+    which migration 4 adds -- with [lore.synthesis] on Gemini. `ask` never
+    calls open_db on its own read-only path, so before recorder_for opened
+    through open_db (Ruling A), the very first Gemini attempt raised
+    `sqlite3.OperationalError: no such table: gemini_ledger` from inside
+    `_generate_one` and lost the answer. This asserts both halves of the
+    fix: the answer still comes back, and the pending migration was applied
+    far enough to record the attempt.
+    """
+    data = env / "data"
+    _stamp_migrations_through(data / "lore.db", 3)
+    conn = sqlite3.connect(data / "lore.db")
+    conn.execute("INSERT INTO books (id, title, author, source, file_path, status)"
+                 " VALUES ('b1', 'A Study in Scarlet', NULL, 'upload', '/x', 'chunked')")
+    conn.commit()
+    conn.close()
+    LanceStore(data / "lancedb")  # a load always leaves both vector tables
+    kuzu = KuzuStore(data / "kuzu" / "graph")
+    kuzu.execute("CREATE (:Book {id: 'b1', title: 'A Study in Scarlet', author: ''})")
+    kuzu.close()
+    _gemini_toml(env)
+    key_file = env / "home" / ".config" / "lore" / "gemini.env"
+    key_file.parent.mkdir(parents=True)
+    key_file.write_text(f"GEMINI_API_KEY={SECRET}\n")
+    key_file.chmod(0o600)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [
+            {"text": '{"claims": [], "can_answer": false}'}
+        ]}}]})
+
+    async def fake_answer_question(conn, kuzu, lance, question, models, *, baseline=False):
+        # A real call through the client Task 2 wired -- not a bypass of it —
+        # is what makes this test able to catch the bug the existing
+        # answer_question fakes could not.
+        await models.synthesize("prompt", Synthesis)
+        return ANSWER
+
+    factory = functools.partial(GeminiClient, transport=httpx.MockTransport(handler))
+    with patch("lore.cli.answer_question", fake_answer_question), \
+            patch("lore.query.agent.GeminiClient", factory):
+        result = runner.invoke(app, ["ask", "q"])
+
+    assert result.exit_code == 0, result.output
+    assert "Holmes opposes Moriarty" in result.output
+    check = sqlite3.connect(data / "lore.db")
+    try:
+        assert calls_today(check, "gemini-3.1-flash-lite", today()) == 1
+    finally:
+        check.close()
 
 
 # --- Task 8b: selection on Gemini, and naming both models -------------------

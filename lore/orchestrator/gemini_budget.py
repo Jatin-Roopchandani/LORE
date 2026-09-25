@@ -16,6 +16,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
+from lore.db.sqlite import open_db
 from lore.inference.gemini import limits_for
 
 
@@ -66,13 +67,20 @@ def check_budget(
 def recorder_for(sqlite_path: Path) -> Callable[[str], None]:
     """A recorder that writes each attempt to the ledger at `sqlite_path`.
 
-    Opens a connection per call. That is a fraction of a millisecond
-    against an HTTP round-trip to Google, and it keeps the recorder safe
-    to hand to a client that outlives any one caller's connection --
-    a cached handle here would be a use-after-close waiting to happen.
+    Opens a connection per call, through `open_db` rather than a raw
+    `sqlite3.connect`: this is the one place every recorder write passes
+    through, so it is where the schema being current has to be guaranteed
+    structurally, not by every call site remembering to run `open_db`
+    itself first. `open_db` is idempotent (`IF NOT EXISTS`, and each
+    migration only runs once, tracked in `schema_migrations`), so a
+    database already at the current version pays only the cost of reading
+    that it is -- a fraction of a millisecond against an HTTP round-trip to
+    Google. Opening per call also keeps the recorder safe to hand to a
+    client that outlives any one caller's connection -- a cached handle
+    here would be a use-after-close waiting to happen.
     """
     def record(model: str) -> None:
-        conn = sqlite3.connect(sqlite_path)
+        conn = open_db(sqlite_path)
         try:
             record_call(conn, model, today())
         finally:

@@ -293,6 +293,13 @@ class GeminiClient:
         self.requests_made += 1
         self.attempts[model] = self.attempts.get(model, 0) + 1
         if self._recorder is not None:
+            # Deliberately not wrapped in a try/except. A budget guard that
+            # silently stops counting on a write failure would approve
+            # requests the quota can no longer see -- worse than a loud
+            # failure the user can act on. The recorder writes through
+            # `open_db` (recorder_for), so "table missing" is structurally
+            # gone; what could still raise here (permissions, a full disk)
+            # is an environment broken enough that the caller should know.
             self._recorder(model)
         url = self._endpoint.format(model=model)
         try:
