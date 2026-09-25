@@ -146,6 +146,7 @@ def make_query_models(
     *,
     ollama: OllamaProvider | None = None,
     gemini: GeminiClient | None = None,
+    recorder: Callable[[str], None] | None = None,
 ) -> QueryModels:
     """Build the query side's models. `ollama`/`gemini` are for tests.
 
@@ -182,7 +183,7 @@ def make_query_models(
             return gemini
         key = tuple(models)
         if key not in remotes:
-            remotes[key] = GeminiClient(api_key, models=models)
+            remotes[key] = GeminiClient(api_key, models=models, recorder=recorder)
         return remotes[key]
 
     async def embed(texts: list[str]) -> list[list[float]]:

@@ -36,6 +36,7 @@ from lore.inference.gemini import (
 from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
+from lore.orchestrator.gemini_budget import day_report, recorder_for, today
 from lore.orchestrator.local import missing_gemini_key_message
 from lore.orchestrator.quota import iso_week, week_report
 from lore.orchestrator.run import run_extraction
@@ -270,18 +271,29 @@ def extract(
 
 @app.command()
 def quota() -> None:
-    """Show this week's Kaggle GPU-hour budget."""
+    """Show this week's Kaggle GPU-hour budget and today's Gemini requests."""
     config = LoreConfig.load()
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     try:
         report = week_report(conn, iso_week())
+        day = today()
+        gemini = day_report(conn, day)
     finally:
         conn.close()
     typer.echo(
         f"{report['week']}: {report['used_hours']:.2f}h used, "
         f"{report['remaining_hours']:.2f}h remaining across {report['runs']} run(s)"
     )
+    if not gemini:
+        typer.echo(f"{day}: no Gemini requests recorded")
+        return
+    typer.echo(f"{day}: Gemini requests")
+    for row in gemini:
+        typer.echo(
+            f"  {row['model']}: {row['count']} of {row['limit']} used,"
+            f" {row['remaining']} remaining"
+        )
 
 
 def _load_book_sync(config: LoreConfig, conn, book_id: str, api_key: str | None = None):
@@ -510,6 +522,12 @@ def disambiguate(
     """
     config = LoreConfig.load()
     config.ensure_dirs()
+    # Unlike `ask` or `process`, this command otherwise never opens lore.db —
+    # it works entirely from the disambiguation store's own cache. Without
+    # this, a fresh data dir (or one where `ingest`/`process` never ran)
+    # would hit "no such table: gemini_ledger" the first time the recorder
+    # tries to count a request.
+    open_db(config.sqlite_path).close()
     store = DisambiguationStore(config.disambiguation_dir)
 
     if not config.disambiguation.enabled:
@@ -564,7 +582,8 @@ def disambiguate(
     # A cascade, not one model: a 429/503/404 moves to the next entry
     # instead of sleeping, which is what turns five per-model daily quotas
     # into aggregate capacity.
-    client = GeminiClient(api_key, models=config.disambiguation.models)
+    client = GeminiClient(api_key, models=config.disambiguation.models,
+                          recorder=recorder_for(config.sqlite_path))
 
     async def _run():
         # Same loop for the request and the close: httpx binds its sockets
@@ -714,7 +733,8 @@ def ask(
         conn = sqlite3.connect(f"file:{config.sqlite_path}?mode=ro", uri=True)
         titles = {**graphed, **{b["id"]: b["title"] for b in list_books(conn)}}
         lance = LanceStore(config.lancedb_dir)
-        models = make_query_models(config, api_key)
+        models = make_query_models(config, api_key,
+                                   recorder=recorder_for(config.sqlite_path))
 
         async def _run():
             # The close MUST share the loop the requests ran on (see

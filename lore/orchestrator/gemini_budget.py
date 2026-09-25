@@ -12,7 +12,9 @@ approximation and the report says which day it counted.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 
 from lore.inference.gemini import limits_for
 
@@ -59,6 +61,23 @@ def check_budget(
             f"{model}: {used} of {limit} free-tier requests used on {day}."
             " The allowance resets at midnight Pacific."
         )
+
+
+def recorder_for(sqlite_path: Path) -> Callable[[str], None]:
+    """A recorder that writes each attempt to the ledger at `sqlite_path`.
+
+    Opens a connection per call. That is a fraction of a millisecond
+    against an HTTP round-trip to Google, and it keeps the recorder safe
+    to hand to a client that outlives any one caller's connection --
+    a cached handle here would be a use-after-close waiting to happen.
+    """
+    def record(model: str) -> None:
+        conn = sqlite3.connect(sqlite_path)
+        try:
+            record_call(conn, model, today())
+        finally:
+            conn.close()
+    return record
 
 
 def day_report(conn: sqlite3.Connection, day: str) -> list[dict]:

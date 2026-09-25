@@ -246,6 +246,7 @@ class GeminiClient:
         timeout: float = 120.0,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         now: Callable[[], float] = time.monotonic,
+        recorder: Callable[[str], None] | None = None,
     ) -> None:
         if not models:
             raise ValueError("at least one model id is required")
@@ -255,6 +256,11 @@ class GeminiClient:
         self._client = httpx.AsyncClient(transport=transport, timeout=timeout)
         self._sleep = sleep
         self._now = now
+        # Called once per HTTP attempt with the model id, so a caller can
+        # keep a durable daily count. Deliberately fired BEFORE the response
+        # arrives: a 429 spent a request too, and from here a transport
+        # failure is indistinguishable from one Google counted.
+        self._recorder = recorder
         self._last_request_at: dict[str, float] = {}
         self.requests_made = 0
         # Per-model attempt counts, so a caller can report honestly which
@@ -286,6 +292,8 @@ class GeminiClient:
         self._last_request_at[model] = self._now()
         self.requests_made += 1
         self.attempts[model] = self.attempts.get(model, 0) + 1
+        if self._recorder is not None:
+            self._recorder(model)
         url = self._endpoint.format(model=model)
         try:
             response = await self._client.post(

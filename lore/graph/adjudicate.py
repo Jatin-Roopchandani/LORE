@@ -28,6 +28,7 @@ from lore.inference.gemini import (
     resolve_api_key,
 )
 from lore.inference.ollama import OllamaProvider
+from lore.orchestrator.gemini_budget import recorder_for
 from lore.resolve.disambiguation import _atomic_write
 from lore.resolve.narrator import (
     NarratorAnswer,
@@ -192,7 +193,8 @@ def _adjudication_client(config: LoreConfig, api_key: str | None) -> GeminiClien
             " `GEMINI_API_KEY=...` in ~/.config/lore/gemini.env with mode"
             ' 600. Or set provider = "ollama" to adjudicate locally.'
         )
-    return GeminiClient(key, models=config.adjudication.models)
+    return GeminiClient(key, models=config.adjudication.models,
+                        recorder=recorder_for(config.sqlite_path))
 
 
 def make_gemini_pair(

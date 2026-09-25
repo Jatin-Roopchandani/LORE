@@ -34,6 +34,7 @@ from lore.inference.gemini import (
     resolve_api_key,
 )
 from lore.inference.ollama import OllamaProvider
+from lore.orchestrator.gemini_budget import recorder_for
 from lore.orchestrator.workunit import OutputSummary, WorkUnit, validate_output
 
 GEMINI_EXHAUSTED_HINT = (
@@ -223,6 +224,7 @@ def make_gemini_tier(config: LoreConfig, api_key: str | None = None) -> GeminiTi
         ))
     return GeminiTier(
         config=config,
-        client=GeminiClient(key, models=config.extraction.gemini_models),
+        client=GeminiClient(key, models=config.extraction.gemini_models,
+                            recorder=recorder_for(config.sqlite_path)),
         embedder=OllamaProvider(config.ollama),
     )

@@ -635,3 +635,42 @@ async def test_the_json_cascade_shares_the_cooldown() -> None:
     tried.clear()
     assert await client.generate_json("two", _Pick) == _Pick(name="W", count=1)
     assert tried == [LITE_MODELS[1]]
+
+
+# --- Task 2: the recorder hook -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_recorder_is_called_once_per_attempt() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_ok("{}"))
+
+    client = _client(handler, recorder=seen.append)
+    assert await client.generate("hi") == "{}"
+    assert await client.generate("hi again") == "{}"
+    assert seen == [client.models[0], client.models[0]]
+
+
+@pytest.mark.asyncio
+async def test_recorder_counts_each_model_the_cascade_tries() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if _model_of(request) == DEFAULT_MODELS[0]:
+            return httpx.Response(429, text="nope")
+        return httpx.Response(200, json=_ok("{}"))
+
+    client = _client(handler, recorder=seen.append)
+    await client.generate("hi")
+    assert seen == [client.models[0], client.models[1]]
+
+
+@pytest.mark.asyncio
+async def test_no_recorder_still_works() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_ok("{}"))
+
+    client = _client(handler)
+    assert await client.generate("hi") == "{}"

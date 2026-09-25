@@ -519,12 +519,31 @@ def test_both_steps_on_gemini_build_exactly_one_client(monkeypatch) -> None:
     built = []
 
     class Recording:
-        def __init__(self, api_key, *, models):
+        def __init__(self, api_key, *, models, recorder=None):
             built.append(tuple(models))
 
     monkeypatch.setattr(agent, "GeminiClient", Recording)
     make_query_models(BOTH_GEMINI_CONFIG, "k", ollama=FakeOllama(CHOICE))
     assert built == [tuple(CONFIG.synthesis.models)]
+
+
+def test_make_query_models_threads_the_recorder_to_the_client(monkeypatch) -> None:
+    """The CLI's own path must count too, or the shared ledger is a fiction."""
+    import lore.query.agent as agent
+
+    seen: list[str] = []
+    built = []
+
+    class Recording:
+        def __init__(self, api_key, *, models, recorder=None):
+            built.append(recorder)
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(agent, "GeminiClient", Recording)
+    make_query_models(GEMINI_CONFIG, "k", ollama=FakeOllama(CHOICE), recorder=seen.append)
+    assert built == [seen.append]
 
 
 async def test_selection_model_names_the_local_model_and_is_none_when_not_asked(
