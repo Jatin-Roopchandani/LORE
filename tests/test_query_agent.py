@@ -1140,3 +1140,42 @@ def test_answer_defaults_keep_old_constructions_working() -> None:
     assert answer.claims == ()
     assert answer.edges == ()
     assert answer.seeds == ()
+
+
+async def test_seeds_are_deduplicated_by_id_not_by_full_value(tmp_path: Path) -> None:
+    """named_seeds always scores an id 0.0 (seed.py:280), while a
+    vector-picked seed carries that part's own distance (seed.py:139-142,
+    a per-part `best` dict). So one entity, named-seeded in one
+    sub-question and only vector-found in another, produces two
+    SeedEntity values that differ in `score` alone -- a dedup keyed on the
+    whole value (id, name, kind, books, score) misses exactly that pair,
+    and a UI drawing starting nodes would render the same entity twice
+    with two different relevance numbers.
+    """
+    conn = _conn(tmp_path)
+    question = "Who is at Baker Street, and why?"  # names nobody
+    subs = ["Who is Holmes?", "why?"]
+    lance = VectorLance(
+        {tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)],
+         tuple(A): [_row("b1:1:0", ["e1"], 0.2, 1)],
+         # e1 is only found here by vector search, at a real distance --
+         # not named in this part, so it is not in `taken` and is scored.
+         tuple(B): [_row("b1:1:0", ["e1"], 0.4, 1)]},
+        {"b1:1:0": Q})
+    # "Holmes" names e1; the whole question never says it, so only the
+    # part that asks about Holmes seeds it by name.
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]},
+                      names=[("e1", "Holmes", [])])
+    models, _ = _scripted(
+        {QUERY_PREFIX + question: Q, QUERY_PREFIX + subs[0]: A, QUERY_PREFIX + subs[1]: B},
+        subs,
+        [TemplateChoice(template="neighbours", entities=[1]),
+         TemplateChoice(template="neighbours", entities=[1])])
+    answer = await answer_question(conn, kuzu, lance, question, models)
+    ids = [seed.id for seed in answer.seeds]
+    assert len(ids) == len(set(ids)), f"e1 must appear once, not once per part: {ids}"
+    assert ids == ["e1"]
+    # First-found wins: e1 was named (score 0.0) in the first part, before
+    # it was ever vector-found (score 0.4) in the second.
+    assert answer.seeds[0].score == 0.0
+    conn.close()

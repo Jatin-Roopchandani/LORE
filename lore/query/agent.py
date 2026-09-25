@@ -364,9 +364,17 @@ async def answer_question(
     rows: list[EdgeRow] = []
     templates: list[str] = []
     chosen_by: list[str] = []
-    # Every seed any part found, in first-found order, deduplicated: the
-    # entities a subgraph view would draw as the question's starting nodes.
+    # Every seed any part found, in first-found order, deduplicated by id:
+    # the entities a subgraph view would draw as the question's starting
+    # nodes. Deduplicating on the whole SeedEntity value is wrong -- a
+    # named seed always scores 0.0 (named_seeds), while a vector-picked
+    # seed carries that part's own distance, so the same entity named in
+    # one part and only vector-found in another would compare unequal and
+    # be kept twice, at two different scores. Keeping the first-seen score
+    # is the right call: the first part to find a seed is the earliest,
+    # highest-ranked context it appeared in.
     all_seeds: list[SeedEntity] = []
+    seen_seed_ids: set[str] = set()
     seeded = False
     for part, part_vector in parts:
         # A part's own names first, then the whole question's: a rewritten
@@ -378,7 +386,10 @@ async def answer_question(
         if not seeds:
             continue
         seeded = True
-        all_seeds.extend(s for s in seeds if s not in all_seeds)
+        for s in seeds:
+            if s.id not in seen_seed_ids:
+                seen_seed_ids.add(s.id)
+                all_seeds.append(s)
         call, model = await _select(part, seeds, models)
         if model and model not in chosen_by:
             chosen_by.append(model)
