@@ -16,7 +16,7 @@ from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import list_books
 from lore.query.decompose import split
-from lore.query.models import Answer, EdgeRow, Evidence
+from lore.query.models import Answer, EdgeRow, Evidence, SeedEntity
 from lore.query.seed import (
     embed_question,
     load_name_index,
@@ -364,6 +364,9 @@ async def answer_question(
     rows: list[EdgeRow] = []
     templates: list[str] = []
     chosen_by: list[str] = []
+    # Every seed any part found, in first-found order, deduplicated: the
+    # entities a subgraph view would draw as the question's starting nodes.
+    all_seeds: list[SeedEntity] = []
     seeded = False
     for part, part_vector in parts:
         # A part's own names first, then the whole question's: a rewritten
@@ -375,6 +378,7 @@ async def answer_question(
         if not seeds:
             continue
         seeded = True
+        all_seeds.extend(s for s in seeds if s not in all_seeds)
         call, model = await _select(part, seeds, models)
         if model and model not in chosen_by:
             chosen_by.append(model)
@@ -415,5 +419,10 @@ async def answer_question(
         answer = await _synthesize(question, evidence, models, mode="vector-fallback",
                                    note=GRAPH_EMPTY_NOTE, book_titles=titles,
                                    sub_questions=sub_questions)
+    # The subgraph the UI draws: the evidence edges rows came from, and the
+    # entities every part seeded from. Not populated on the empty/no-seed
+    # early returns above -- there is no graph evidence or seed there, and
+    # the Answer defaults (`()`) are already the honest value.
     return replace(answer, selection_model="+".join(chosen_by) or None,
-                   sub_questions=sub_questions)
+                   sub_questions=sub_questions, edges=evidence.edges,
+                   seeds=tuple(all_seeds))

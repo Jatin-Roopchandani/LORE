@@ -1102,3 +1102,41 @@ async def test_a_failed_decomposition_keeps_both_books(tmp_path: Path) -> None:
     answer = await answer_question(conn, kuzu, lance, "q", no_decomposer)
     assert [p.chunk_id for p in answer.passages] == ["b1:2:0", "b2:2:0"]
     conn.close()
+
+
+# --- Task 3 (Phase 4): the structure the UI draws ---------------------------
+
+async def test_answer_carries_the_claims_it_composed(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert answer.claims, "the composed claims must survive onto Answer"
+    for claim in answer.claims:
+        assert claim.quote
+        assert claim.passage in {p.n for p in answer.passages}
+    conn.close()
+
+
+async def test_answer_carries_the_evidence_edges(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert answer.edges, "the subgraph the UI draws must survive onto Answer"
+    assert all(edge.subject and edge.object for edge in answer.edges)
+    conn.close()
+
+
+async def test_answer_carries_the_seeds(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
+    assert answer.seeds
+    assert all(seed.id and seed.name for seed in answer.seeds)
+    conn.close()
+
+
+def test_answer_defaults_keep_old_constructions_working() -> None:
+    answer = Answer(text="x", passages=(), mode="empty", template=None, note=None)
+    assert answer.claims == ()
+    assert answer.edges == ()
+    assert answer.seeds == ()

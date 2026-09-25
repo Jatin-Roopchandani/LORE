@@ -1021,3 +1021,10 @@ async def test_check_claims_keeps_everything_when_it_could_not_run() -> None:
     kept, dropped, ran = await check_claims(
         [GOOD1, GOOD2], EV.passages, _checker(error=RuntimeError("boom")))
     assert kept == [GOOD1, GOOD2] and dropped == [] and ran is False
+
+
+def test_claim_is_importable_from_both_modules():
+    from lore.query.models import Claim as FromModels
+    from lore.query.synthesize import Claim as FromSynthesize
+
+    assert FromModels is FromSynthesize

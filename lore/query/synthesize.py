@@ -31,7 +31,7 @@ from typing import Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
 
-from lore.query.models import Answer, EdgeRow, Evidence, Passage
+from lore.query.models import Answer, Claim, EdgeRow, Evidence, Passage
 
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
 
@@ -110,12 +110,6 @@ _QUOTE_MARKS = re.compile(r"\"|(?<![^\W\d_])'|'(?![^\W\d_])")
 _SPACE = re.compile(r"\s+")
 _WORD = re.compile(r"\w")
 _ELLIPSIS = re.compile(r"\.\.\.|…")
-
-
-class Claim(BaseModel):
-    text: str
-    passage: int
-    quote: str
 
 
 class Synthesis(BaseModel):
@@ -519,10 +513,11 @@ async def synthesize(
     not part of this answer at all, which is what every caller that predates
     Task 12 gets.
     """
-    def answer(text: str, *extra_notes: str | None) -> Answer:
+    def answer(text: str, *extra_notes: str | None,
+              claims: tuple[Claim, ...] = ()) -> Answer:
         notes = "; ".join(n for n in (note, *extra_notes) if n) or None
         return Answer(text=text, passages=evidence.passages, mode=mode,
-                      template=template, note=notes)
+                      template=template, note=notes, claims=claims)
 
     if not evidence.passages:
         return answer(REFUSAL)
@@ -545,7 +540,10 @@ async def synthesize(
         return answer(REFUSAL)
     # can_answer=false with verified claims is a partial answer, not a
     # refusal: Task 10a measured H6 and H4 discarding verified gold claims.
-    return answer(_compose(kept), None if result.can_answer else PARTIAL_NOTE, skipped)
+    # `claims` carries the SAME post-check list `_compose` just flattened --
+    # survivors only, so a claim's presence in Answer is its verdict.
+    return answer(_compose(kept), None if result.can_answer else PARTIAL_NOTE, skipped,
+                 claims=tuple(kept))
 
 
 NOT_FOUND = "not found: "
@@ -595,10 +593,11 @@ async def synthesize_parts(
                                 note=note, book_titles=book_titles,
                                 checklist=sub_questions, check=check)
 
-    def answer(text: str, *extra_notes: str | None) -> Answer:
+    def answer(text: str, *extra_notes: str | None,
+              claims: tuple[Claim, ...] = ()) -> Answer:
         notes = "; ".join(n for n in (note, *extra_notes) if n) or None
         return Answer(text=text, passages=evidence.passages, mode=mode,
-                      template=template, note=notes)
+                      template=template, note=notes, claims=claims)
 
     if not evidence.passages:
         return answer(REFUSAL)
@@ -634,4 +633,6 @@ async def synthesize_parts(
         return answer(REFUSAL)
     partial = (PARTIAL_NOTE + "; " + "; ".join(NOT_FOUND + m for m in missing)
                if missing else None)
-    return answer(_compose(kept), partial, skipped)
+    # `claims` carries the SAME post-check list `_compose` just flattened --
+    # survivors only, so a claim's presence in Answer is its verdict.
+    return answer(_compose(kept), partial, skipped, claims=tuple(kept))

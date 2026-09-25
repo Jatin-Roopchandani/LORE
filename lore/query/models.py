@@ -3,6 +3,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pydantic import BaseModel
+
+
+class Claim(BaseModel):
+    """One sentence of an answer, with the passage it came from and a
+    word-for-word quote from that passage. The quote is verified in code,
+    then judged against its passage by the faithfulness pass."""
+
+    text: str
+    passage: int
+    quote: str
+
 
 @dataclass(frozen=True)
 class SeedEntity:
@@ -90,3 +102,13 @@ class Answer:
     # one-part question holds itself; empty when no decomposition ran
     # (--baseline), so constructions that predate it still work.
     sub_questions: tuple[str, ...] = ()
+    # Task 3 (Phase 4): the structure the UI draws. Built during synthesis
+    # and, before this, discarded -- _compose flattened the claims to prose
+    # and the evidence edges never reached here at all.
+    #
+    # `claims` holds SURVIVORS only: unsupported claims are dropped before
+    # composition, so a claim's presence is the verdict. When the check
+    # could not run, `note` says so (CHECK_SKIPPED_NOTE).
+    claims: tuple[Claim, ...] = ()
+    edges: tuple[EdgeRow, ...] = ()
+    seeds: tuple[SeedEntity, ...] = ()
