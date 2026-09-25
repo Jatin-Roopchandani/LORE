@@ -79,6 +79,77 @@ def test_an_unlisted_call_is_rejected():
     assert "some_other_procedure" in str(excinfo.value)
 
 
+# Fix round 1: the allowlist was checked only when the query's FIRST token
+# was CALL. Kuzu fully supports mid-query CALL, so anything opening with
+# MATCH/WITH/UNWIND/RETURN/OPTIONAL MATCH reached an arbitrary, unlisted
+# procedure without ever touching _ALLOWED_CALLS. Verified against a real
+# read-only Kuzu 0.11.3 store before this fix existed: this exact query
+# executed cleanly and returned [1, '16'] -- validate_cypher returned None
+# (allowed it), it did not raise or error.
+def test_a_mid_query_call_to_an_unlisted_builtin_is_rejected():
+    with pytest.raises(CypherRejected) as excinfo:
+        validate_cypher("MATCH (e:Entity) CALL current_setting('threads') RETURN *")
+    assert "current_setting" in str(excinfo.value)
+
+
+# The headline case: READ_CSV_SERIAL is Kuzu's table function for reading
+# a CSV file from disk. Reaching it through a mid-query CALL is the
+# CALL-shaped equivalent of the LOAD FROM primitive this whole module
+# exists to stop -- not a style violation. Before this fix,
+# validate_cypher returned None (allowed) for this query too.
+def test_a_mid_query_call_to_a_file_reader_is_rejected():
+    with pytest.raises(CypherRejected):
+        validate_cypher(
+            "MATCH (e:Entity) CALL READ_CSV_SERIAL('/etc/hostname') RETURN *"
+        )
+
+
+@pytest.mark.parametrize("query", [
+    "WITH 1 AS x CALL some_other_procedure() RETURN x",
+    "UNWIND [1, 2, 3] AS n CALL some_other_procedure() RETURN n",
+    "RETURN 1 CALL some_other_procedure()",
+    "OPTIONAL MATCH (a:Entity)-[:REL]->(b:Entity) CALL some_other_procedure() RETURN a.name",
+])
+def test_the_call_bypass_is_closed_from_every_allowed_opening(query):
+    # The pre-fix bypass worked no matter which allowed keyword opened the
+    # query -- each opening reached the same unguarded code path
+    # independently, so one passing example would not have proven the fix.
+    with pytest.raises(CypherRejected) as excinfo:
+        validate_cypher(query)
+    assert "some_other_procedure" in str(excinfo.value)
+
+
+def test_a_mid_query_allowlisted_call_still_works():
+    # Closing the bypass must not ban mid-query CALL outright -- that would
+    # be the easy fix, and it would break this legitimate, Kuzu-supported
+    # query shape for a procedure that IS on the allowlist.
+    validate_cypher("MATCH (e:Entity) CALL table_info('Entity') RETURN *")
+
+
+@pytest.mark.parametrize("query", [
+    "RETURN read_csv_serial('/etc/hostname')",
+    "RETURN read_csv_parallel('/etc/hostname')",
+    "RETURN read_parquet('/etc/hostname')",
+    "RETURN read_npy('/etc/hostname')",
+    "RETURN json_scan('/etc/hostname')",
+])
+def test_file_reader_table_functions_are_banned_as_whole_words(query):
+    # Defence in depth (remedy B): banned outright, not only reachable
+    # through the CALL allowlist, so the control does not depend on CALL
+    # being the only syntactic route to a file reader.
+    with pytest.raises(CypherRejected):
+        validate_cypher(query)
+
+
+def test_a_call_with_no_extractable_procedure_name_is_rejected():
+    # Fail closed: if the name after CALL can't be parsed out, the query
+    # is rejected rather than the allowlist check silently finding nothing
+    # to compare and letting the query through.
+    with pytest.raises(CypherRejected) as excinfo:
+        validate_cypher("MATCH (e:Entity) CALL () RETURN *")
+    assert "CALL" in str(excinfo.value)
+
+
 def test_two_statements_are_rejected():
     with pytest.raises(CypherRejected) as excinfo:
         validate_cypher("MATCH (e:Entity) RETURN e.name; DROP TABLE Entity")

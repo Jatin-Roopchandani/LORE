@@ -35,9 +35,30 @@ _ALLOWED_CALLS = frozenset({"show_tables", "table_info", "db_version"})
 _BANNED = (
     "COPY", "LOAD", "EXPORT", "IMPORT", "ATTACH", "INSTALL",
     "CREATE", "MERGE", "SET", "DELETE", "DROP", "ALTER",
+    # Defence in depth. Kuzu's built-in file-reading table functions --
+    # verified callable via a mid-query CALL past the allowlist check below
+    # before this list was added -- are the CALL-based equivalent of
+    # LOAD FROM: an arbitrary file read. The CALL scan already blocks them
+    # by name, but the module's whole premise is that the token guard does
+    # not depend on one syntactic route reaching a file reader, so they are
+    # banned outright too. This means a query about an entity literally
+    # named "Json Scan" is rejected -- the same over-rejection trade-off
+    # already made for "Set", accepted for the same reason.
+    "READ_CSV_SERIAL", "READ_CSV_PARALLEL", "READ_PARQUET", "READ_NPY",
+    "JSON_SCAN",
 )
 _WORD = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
-_CALL_NAME = re.compile(r"^CALL\s+([A-Za-z_][A-Za-z_0-9]*)", re.IGNORECASE)
+# Matches every CALL in the query, not only a leading one. Kuzu fully
+# supports mid-query CALL (`MATCH (e) CALL read_csv_serial(...) RETURN *`
+# executes cleanly against a read-only 0.11.3 store), so checking the
+# allowlist only when the *whole query* opens with CALL let any query that
+# opened with MATCH/WITH/UNWIND/RETURN/OPTIONAL MATCH reach an arbitrary,
+# unlisted procedure -- including the file readers above -- without ever
+# consulting _ALLOWED_CALLS. The group is optional so a CALL with no
+# extractable name (e.g. `CALL (weird)`, `CALL /*x*/ f()`) still matches
+# and falls through to the "name is None" branch below, rather than the
+# regex silently finding nothing and the CALL going unchecked.
+_CALL_TOKEN = re.compile(r"\bCALL\b\s*([A-Za-z_][A-Za-z_0-9]*)?", re.IGNORECASE)
 
 
 class CypherRejected(ValueError):
@@ -84,10 +105,11 @@ def validate_cypher(query: str) -> None:
             f" {', '.join(_ALLOWED_OPENINGS)} -- got '{first}'"
         )
 
-    if opening == "CALL":
-        match = _CALL_NAME.match(text)
-        name = match.group(1) if match else ""
-        if name not in _ALLOWED_CALLS:
+    # Every CALL in the query is checked, not just a leading one -- see
+    # _CALL_TOKEN's comment for why a position-only check is not enough.
+    for call_match in _CALL_TOKEN.finditer(text):
+        name = call_match.group(1)
+        if name is None or name not in _ALLOWED_CALLS:
             raise CypherRejected(
                 f"CALL {name or '?'} is not allowed; the permitted procedures"
                 f" are {', '.join(sorted(_ALLOWED_CALLS))}"
@@ -106,10 +128,17 @@ def run_guarded(kuzu, query: str, row_cap: int = ROW_CAP):
     """
     validate_cypher(query)
     result = kuzu.execute(query)
-    columns = list(result.get_column_names())
-    rows: list[list] = []
-    while result.has_next():
-        if len(rows) >= row_cap:
-            return columns, rows, True
-        rows.append(list(result.get_next()))
-    return columns, rows, False
+    # This runs inside a long-lived HTTP server process, so an open
+    # QueryResult on the truncation path (or on an exception mid-read)
+    # would leak a handle per request rather than per query. Close on
+    # every path.
+    try:
+        columns = list(result.get_column_names())
+        rows: list[list] = []
+        while result.has_next():
+            if len(rows) >= row_cap:
+                return columns, rows, True
+            rows.append(list(result.get_next()))
+        return columns, rows, False
+    finally:
+        result.close()
