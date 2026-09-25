@@ -136,18 +136,31 @@ def validate_cypher(query: str) -> None:
                 " tool for that instead."
             )
 
-    # Fail-closed belt: the property above depends on \bCALL\b's word
-    # boundary agreeing with Kuzu's lexer. If it ever doesn't -- e.g. a
-    # future Kuzu version tolerates `CALLread_csv_serial(...)` with no
-    # separator, so \b never fires and call_matches is empty -- do not let
-    # a query containing the literal substring 'CALL' through unexamined.
-    # This makes fail-closed a property of the guard, not a coincidence of
-    # two tokenizers agreeing.
-    if not call_matches and "CALL" in upper:
+    # Fail-closed belt, for if `_CALL_TOKEN`'s notion of a CALL "word" ever
+    # diverges from `_WORD`'s. Fix round 3: this used to test the
+    # SUBSTRING 'CALL' in the uppercased text, which also fires on
+    # RECALLED, CALLED, RECALL, and SCALLOP -- rejecting ordinary literary
+    # names ("Recalled to Life" is Book 1 of A Tale of Two Cities) with the
+    # same dishonest-looking message round 2 exists to fix. Test the WORD
+    # 'CALL' instead, via the same `words` set the banned-token scan above
+    # already builds from `_WORD` -- so this only fires when 'CALL' is its
+    # own token, not a substring of a longer one.
+    #
+    # This does NOT cover a CALL fused directly to its procedure name with
+    # no separator at all, e.g. `CALLread_csv_serial(...)` -- `_WORD`
+    # reads that as one token, CALLREAD_CSV_SERIAL, not as the word CALL,
+    # so neither `\bCALL\b` above nor this word check fires on it. That
+    # gap is safe only because Kuzu's own parser refuses every
+    # no-separator form tried against 0.11.3; this module does not
+    # independently guarantee it. A future Kuzu that tokenizes more
+    # leniently would need this revisited -- coverage of that one shape
+    # depends on the engine, not on this module.
+    if "CALL" in words and not call_matches:
         raise CypherRejected(
-            "'CALL' appears in the query but this guard could not parse it"
-            " as a procedure call; rejected to fail closed rather than let"
-            " an unrecognized shape through unchecked"
+            "'CALL' appears in the query as a bare keyword that this guard"
+            " could not resolve into a procedure name; rejected to fail"
+            " closed rather than let an unrecognized shape through"
+            " unchecked"
         )
 
 

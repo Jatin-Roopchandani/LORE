@@ -141,17 +141,38 @@ def test_a_comment_as_the_call_separator_is_rejected():
         validate_cypher("MATCH (e:Entity) CALL/*x*/current_setting('threads') RETURN *")
 
 
-def test_the_structural_fail_closed_belt_fires_when_call_token_scan_finds_nothing():
-    # Fix round 2, Minor 3: NOT Kuzu-parseable -- `CALLread_csv_serial(...)`
-    # is rejected by Kuzu's real parser today, so this exercises a defensive
-    # belt rather than a live bypass. `\bCALL\b` never matches here (no word
-    # boundary between "CALL" and "read_csv_serial"), so before this belt
-    # was added, call_matches was empty and the query passed unexamined.
-    # This locks in that the guard no longer depends on \b agreeing with
-    # Kuzu's own lexer to fail closed.
+# Fix round 3: the round-2 version of this test used a SUBSTRING match
+# ("CALLread_csv_serial", no separator at all) to exercise the belt. Round
+# 3 deliberately narrowed the belt from a substring test to a whole-word
+# test (see the belt's own comment for why: the substring form rejected
+# "Recalled to Life"), and that same no-separator input is no longer
+# caught by anything -- see test_a_call_fused_to_its_name_is_not_caught_
+# but_is_unparseable_by_kuzu below. This test is adjusted to an input the
+# WORD-based belt genuinely still catches: `_WORD` is ASCII-only
+# ([A-Za-z_][A-Za-z_0-9]*), so it tokenizes 'CALL' as a standalone word
+# when it's immediately followed by a non-ASCII letter -- but Python's
+# `\b` uses Unicode `\w` semantics by default, under which that same
+# non-ASCII letter IS a word character, so \bCALL\b does not consider this
+# a word boundary and _CALL_TOKEN finds no match at all. That is a real,
+# reproducible divergence between an ASCII-only tokenizer and a
+# Unicode-aware \b in the CURRENT code -- not a hypothetical -- and it is
+# exactly the kind of drift the belt exists to catch.
+def test_the_structural_fail_closed_belt_catches_a_standalone_call_the_token_scan_misses():
     with pytest.raises(CypherRejected) as excinfo:
-        validate_cypher("CALLread_csv_serial('/etc/hostname')")
+        validate_cypher("MATCH (e:Entity) WHERE e.name = 'CALLé' RETURN e.id")
     assert "CALL" in str(excinfo.value)
+
+
+def test_a_call_fused_to_its_name_is_not_caught_but_is_unparseable_by_kuzu():
+    # Documents the belt's known gap (see its comment): CALLread_csv_serial
+    # with no separator at all tokenizes as ONE word, CALLREAD_CSV_SERIAL,
+    # under `_WORD`'s rules -- not as the word CALL plus a name -- so
+    # neither `\bCALL\b` nor the word-based belt fires, and this call is
+    # ALLOWED by validate_cypher. That is only safe because Kuzu's own
+    # parser refuses this exact no-separator shape (verified against
+    # 0.11.3); this module does not independently guarantee it, hence this
+    # test exists to make that dependency explicit rather than silent.
+    validate_cypher("CALLread_csv_serial('/etc/hostname')")
 
 
 @pytest.mark.parametrize("query", [
@@ -224,6 +245,23 @@ def test_the_word_call_in_ordinary_text_is_rejected_with_an_honest_message(query
     assert "call" in message
     assert "whole word" in message
     assert "string literal" in message or "comment" in message
+
+
+# Fix round 3: round 2's structural fail-closed belt (Minor 3) tested for
+# the SUBSTRING 'CALL' rather than the whole word, so it rejected any word
+# merely CONTAINING those four letters -- recalled, called, recall,
+# scallop -- with the belt's message, not the honest CALL message above.
+# "Recalled to Life" is the real title of Book 1 of Charles Dickens's A
+# Tale of Two Cities: this graph holds books, so ordinary literary names
+# hit this. These three are the coordinator's own verified false positives
+# against the round-2 code (commit 4f5c769); they must be ALLOWED.
+@pytest.mark.parametrize("query", [
+    "MATCH (e:Entity) WHERE e.name = 'Recalled to Life' RETURN e.id",
+    "MATCH (e:Entity) WHERE e.name CONTAINS 'called' RETURN e.id",
+    "MATCH (e:Entity) WHERE e.name = 'Recall' RETURN e.id",
+])
+def test_ordinary_words_that_merely_contain_call_are_allowed(query):
+    validate_cypher(query)
 
 
 def test_two_statements_are_rejected():
