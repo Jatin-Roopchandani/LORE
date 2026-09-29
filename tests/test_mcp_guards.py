@@ -141,33 +141,26 @@ def test_a_comment_as_the_call_separator_is_rejected():
         validate_cypher("MATCH (e:Entity) CALL/*x*/current_setting('threads') RETURN *")
 
 
-# Fix round 3: the round-2 version of this test used a SUBSTRING match
-# ("CALLread_csv_serial", no separator at all) to exercise the belt. Round
-# 3 deliberately narrowed the belt from a substring test to a whole-word
-# test (see the belt's own comment for why: the substring form rejected
-# "Recalled to Life"), and that same no-separator input is no longer
-# caught by anything -- see test_a_call_fused_to_its_name_is_not_caught_
-# but_is_unparseable_by_kuzu below. This test is adjusted to an input the
-# WORD-based belt genuinely still catches: `_WORD` is ASCII-only
-# ([A-Za-z_][A-Za-z_0-9]*), so it tokenizes 'CALL' as a standalone word
-# when it's immediately followed by a non-ASCII letter -- but Python's
-# `\b` uses Unicode `\w` semantics by default, under which that same
-# non-ASCII letter IS a word character, so \bCALL\b does not consider this
-# a word boundary and _CALL_TOKEN finds no match at all. That is a real,
-# reproducible divergence between an ASCII-only tokenizer and a
-# Unicode-aware \b in the CURRENT code -- not a hypothetical -- and it is
-# exactly the kind of drift the belt exists to catch.
-def test_the_structural_fail_closed_belt_catches_a_standalone_call_the_token_scan_misses():
+# Fix round 4: rounds 2 and 3 carried a "structural fail-closed belt" whose
+# only live purpose was this input -- CALL glued to a non-ASCII letter, which
+# `_WORD` tokenizes as the standalone word CALL but Python's Unicode-aware
+# `\b` does not. Round 4 removed the belt by removing the second matcher: the
+# CALL scan now uses `_WORD` itself, so this input is caught by the real
+# allowlist check (with its honest message naming the shape) instead of by a
+# structural backstop. The behaviour this test pins -- a CALL whose procedure
+# name cannot be read is rejected, never allowed -- is unchanged, which is why
+# the test is kept rather than deleted.
+def test_a_call_glued_to_a_non_ascii_letter_is_rejected():
     with pytest.raises(CypherRejected) as excinfo:
-        validate_cypher("MATCH (e:Entity) WHERE e.name = 'CALLé' RETURN e.id")
+        validate_cypher("MATCH (e:Entity) WHERE e.name = 'CALL\u00e9' RETURN e.id")
     assert "CALL" in str(excinfo.value)
 
 
 def test_a_call_fused_to_its_name_is_not_caught_but_is_unparseable_by_kuzu():
-    # Documents the belt's known gap (see its comment): CALLread_csv_serial
-    # with no separator at all tokenizes as ONE word, CALLREAD_CSV_SERIAL,
-    # under `_WORD`'s rules -- not as the word CALL plus a name -- so
-    # neither `\bCALL\b` nor the word-based belt fires, and this call is
+    # Documents the one shape the CALL scan does not cover (see the scan's
+    # comment): CALLread_csv_serial with no separator at all tokenizes as ONE
+    # word, CALLREAD_CSV_SERIAL, under `_WORD`'s rules -- not as the word
+    # CALL plus a name -- so nothing fires, and this call is
     # ALLOWED by validate_cypher. That is only safe because Kuzu's own
     # parser refuses this exact no-separator shape (verified against
     # 0.11.3); this module does not independently guarantee it, hence this
@@ -262,6 +255,54 @@ def test_the_word_call_in_ordinary_text_is_rejected_with_an_honest_message(query
 ])
 def test_ordinary_words_that_merely_contain_call_are_allowed(query):
     validate_cypher(query)
+
+
+# Fix round 4: '1CALL' and '99CALL' are the inputs round 3's belt rejected,
+# and they look like the same class of false positive as 'Recalled to Life'
+# above -- ordinary-looking names differing from the keyword only at a word
+# edge. They are NOT. Measured against read-only Kuzu 0.11.3:
+#
+#     MATCH (e:Entity) WHERE e.n = 1CALL current_setting('threads') RETURN *
+#
+# EXECUTES. Kuzu's lexer cannot start an identifier with a digit, so a digit
+# run ends the previous token and the '1' acts as pure whitespace: the
+# unlisted procedure `current_setting` runs. The `/*comment*/` and backtick
+# variants of the same shape execute too. So a digit IS a word edge for this
+# keyword, and a guard that does not treat it as one reopens the mid-query
+# CALL bypass. The string-literal forms below are therefore rejected on
+# purpose, the same accepted trade-off as 'Set' and 'The Call of the Wild':
+# this guard deliberately does not parse string literals. What round 4
+# changed is the MESSAGE -- these now get the honest CALL message, which
+# names the rejected word and points at the `entity`/`subgraph` tools,
+# instead of the belt's "could not resolve ... unrecognized shape".
+@pytest.mark.parametrize("query", [
+    "MATCH (e:Entity) WHERE e.name = '1CALL' RETURN e.id",
+    "MATCH (e:Entity) WHERE e.name = '99CALL' RETURN e.id",
+    "MATCH (e:Entity) WHERE e.n = 1CALL current_setting('threads') RETURN *",
+    "MATCH (e:Entity) WHERE e.n = 1CALL/*x*/current_setting('threads') RETURN *",
+    "MATCH (e:Entity) WHERE e.n = 1CALL `current_setting`('threads') RETURN *",
+])
+def test_a_digit_next_to_call_is_a_word_edge_because_kuzus_lexer_says_so(query):
+    with pytest.raises(CypherRejected) as excinfo:
+        validate_cypher(query)
+    message = str(excinfo.value).lower()
+    assert "call" in message
+    assert "whole word" in message  # the honest message, not the old belt's
+
+
+# Fix round 4: rounds 1-3 checked CALLs with `\bCALL\b` and fell back to a
+# belt that fired only when that scan found NOTHING. An allowlisted CALL
+# therefore suppressed the belt for the whole statement, and this query --
+# verified to EXECUTE on read-only Kuzu 0.11.3, reaching the unlisted
+# `current_setting` -- passed the guard at HEAD. Every CALL must be checked
+# on its own; one permitted CALL excuses nothing.
+def test_an_allowlisted_call_does_not_excuse_a_second_unlisted_one():
+    with pytest.raises(CypherRejected) as excinfo:
+        validate_cypher(
+            "MATCH (e:Entity) CALL table_info('Entity')"
+            " WHERE e.n = 1CALL current_setting('threads') RETURN *"
+        )
+    assert "current_setting" in str(excinfo.value)
 
 
 def test_two_statements_are_rejected():

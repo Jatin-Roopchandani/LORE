@@ -55,18 +55,72 @@ _BANNED = (
     "READ_CSV_SERIAL", "READ_CSV_PARALLEL", "READ_PARQUET", "READ_NPY",
     "JSON_SCAN",
 )
+# THE definition of a word in this module. The banned-token scan and the
+# CALL scan below both use this one tokenizer, so they cannot disagree about
+# where a word starts or ends -- the disagreement that produced three
+# successive over-rejections (round 2: a substring test rejected 'Recalled
+# to Life'; round 3: `_WORD` vs `\b` rejected '1CALL'; round 4 found that
+# the assigned replacement for round 3 would have reopened a real bypass,
+# see `_call_keyword_names`).
+#
+# It is also the tokenizer that matches Kuzu's own lexer, which is what
+# makes it the right one: an identifier may not START with a digit, so a
+# digit run ends the token before it, exactly as `_WORD`'s first-character
+# class ([A-Za-z_], no digits) does. Measured on read-only Kuzu 0.11.3:
+#
+#     MATCH (e:Entity) WHERE e.n = 1CALL current_setting('threads') RETURN *
+#
+# EXECUTES -- the '1' acts as pure whitespace and `current_setting` runs.
+# `CALLread_csv_serial(...)` (letter-to-letter, one identifier to `_WORD`)
+# does NOT parse. So `_WORD`'s notion of a word edge is Kuzu's notion.
 _WORD = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
-# Matches every CALL in the query, not only a leading one. Kuzu fully
-# supports mid-query CALL (`MATCH (e) CALL read_csv_serial(...) RETURN *`
-# executes cleanly against a read-only 0.11.3 store), so checking the
-# allowlist only when the *whole query* opens with CALL let any query that
-# opened with MATCH/WITH/UNWIND/RETURN/OPTIONAL MATCH reach an arbitrary,
-# unlisted procedure -- including the file readers above -- without ever
-# consulting _ALLOWED_CALLS. The group is optional so a CALL with no
-# extractable name (e.g. `CALL (weird)`, `CALL /*x*/ f()`) still matches
-# and falls through to the "name is None" branch below, rather than the
-# regex silently finding nothing and the CALL going unchecked.
-_CALL_TOKEN = re.compile(r"\bCALL\b\s*([A-Za-z_][A-Za-z_0-9]*)?", re.IGNORECASE)
+# The procedure name after a CALL keyword: optional whitespace, then an
+# identifier, both optional so that a CALL whose name cannot be extracted
+# (`CALL `x``, `CALL/*c*/f()`, `CALL` + a non-ASCII letter) yields None and
+# fails closed rather than going unchecked. Deliberately NOT IGNORECASE:
+# [A-Za-z_] already covers both cases, and under IGNORECASE Python folds
+# U+0130 'I-with-dot', U+0131 dotless 'i' and U+017F long 's' onto ASCII
+# letters, which would widen this class for no benefit.
+_NAME_AFTER_CALL = re.compile(r"\s*([A-Za-z_][A-Za-z_0-9]*)?")
+
+
+def _call_keyword_names(text: str) -> list[str | None]:
+    r"""The procedure name following every CALL keyword in `text`, in order.
+
+    A CALL is found wherever `_WORD` tokenizes the standalone word CALL --
+    every occurrence, not only a leading one. Kuzu fully supports mid-query
+    CALL (`MATCH (e) CALL read_csv_serial(...) RETURN *` executes cleanly
+    against a read-only 0.11.3 store), so checking the allowlist only when
+    the *whole query* opens with CALL let any query that opened with
+    MATCH/WITH/UNWIND/RETURN/OPTIONAL MATCH reach an arbitrary, unlisted
+    procedure -- including the file readers banned above -- without ever
+    consulting `_ALLOWED_CALLS`.
+
+    Fix round 4 replaced a `\bCALL\b` scan plus a `_WORD`-based
+    "structural belt" with this single tokenizer, because those two
+    matchers disagreed and the disagreement was exploitable, not merely
+    cosmetic. `\b` treats a digit as a word character, so `\bCALL\b`
+    never matched `1CALL` and the belt was the only thing catching it --
+    and the belt fired only when the `\b` scan found NOTHING at all, so
+
+        MATCH (e:Entity) CALL table_info('Entity')
+        WHERE e.n = 1CALL current_setting('threads') RETURN *
+
+    passed the guard entirely (the allowlisted `table_info` suppressed the
+    belt) and EXECUTES on read-only 0.11.3, reaching the unlisted
+    `current_setting`. Verified against Kuzu, not reasoned about. One
+    tokenizer has no second opinion to be played off against, and every
+    CALL it finds is checked on its own.
+
+    None means "a CALL whose procedure name this guard could not read",
+    which the caller must reject.
+    """
+    names: list[str | None] = []
+    for token in _WORD.finditer(text):
+        if token.group(0).upper() != "CALL":
+            continue
+        names.append(_NAME_AFTER_CALL.match(text, token.end()).group(1))
+    return names
 
 
 class CypherRejected(ValueError):
@@ -113,18 +167,33 @@ def validate_cypher(query: str) -> None:
             f" {', '.join(_ALLOWED_OPENINGS)} -- got '{first}'"
         )
 
-    # Every CALL in the query is checked, not just a leading one -- see
-    # _CALL_TOKEN's comment for why a position-only check is not enough.
-    # 'CALL' is matched as a whole word EVERYWHERE, the same as the banned
-    # words above: inside a string literal ('Call of the Wild'), a
-    # property alias (`AS call`), or a comment (`// CALL ...`). That means
-    # a perfectly ordinary query about a book with "Call" in the title is
-    # rejected too -- this graph holds books, so that will happen -- and
-    # the message below says so explicitly, for the same reason the
-    # banned-word message does: so a user can tell a guard from a bug.
-    call_matches = list(_CALL_TOKEN.finditer(text))
-    for call_match in call_matches:
-        name = call_match.group(1)
+    # Every CALL in the query is checked, not just a leading one, and each
+    # on its own -- see `_call_keyword_names` for the verified bypass that a
+    # position-only check, and a two-matcher check, each let through.
+    # 'CALL' is found as a whole word EVERYWHERE, the same as the banned
+    # words above: inside a string literal ('Call of the Wild'), a property
+    # alias (`AS call`), or a comment (`// CALL ...`). That means a
+    # perfectly ordinary query about a book with "Call" in the title is
+    # rejected too -- this graph holds books, so that will happen -- and the
+    # message below says so explicitly, for the same reason the banned-word
+    # message does: so a user can tell a guard from a bug.
+    #
+    # A word edge here is `_WORD`'s, which is Kuzu's: a digit or a
+    # non-ASCII letter next to CALL ends the token, so '1CALL' and 'call'
+    # + an accented letter ARE the keyword and are checked. That is not
+    # over-caution -- `WHERE e.n = 1CALL current_setting('threads')`
+    # executes on a read-only connection. Ordinary words that merely
+    # CONTAIN the letters ('Recalled to Life', 'called', 'Recall') are a
+    # single different token and are not touched.
+    #
+    # What is NOT covered: a CALL fused to an ASCII procedure name with no
+    # separator at all, `CALLread_csv_serial(...)`, which is one `_WORD`
+    # token (CALLREAD_CSV_SERIAL) and so not the keyword. That gap is safe
+    # only because Kuzu's own parser refuses every no-separator form tried
+    # against 0.11.3; this module does not independently guarantee it. A
+    # future Kuzu that tokenizes more leniently would need this revisited --
+    # coverage of that one shape depends on the engine, not on this module.
+    for name in _call_keyword_names(text):
         if name is None or name not in _ALLOWED_CALLS:
             raise CypherRejected(
                 f"CALL {name or '?'} is not allowed; the permitted procedures"
@@ -132,36 +201,12 @@ def validate_cypher(query: str) -> None:
                 " as a whole word even inside a string literal, property"
                 " name, alias, or comment, so a legitimate query merely"
                 " mentioning 'call' (e.g. a book titled 'The Call of the"
-                " Wild') is rejected too -- use the `entity` or `subgraph`"
-                " tool for that instead."
+                " Wild') is rejected too. A digit or an accented letter"
+                " touching the word counts as a word edge, because Kuzu's"
+                " lexer treats it as one, so '1CALL' and 'call\u00e9' are"
+                " rejected as well -- use the `entity` or `subgraph` tool"
+                " for that instead."
             )
-
-    # Fail-closed belt, for if `_CALL_TOKEN`'s notion of a CALL "word" ever
-    # diverges from `_WORD`'s. Fix round 3: this used to test the
-    # SUBSTRING 'CALL' in the uppercased text, which also fires on
-    # RECALLED, CALLED, RECALL, and SCALLOP -- rejecting ordinary literary
-    # names ("Recalled to Life" is Book 1 of A Tale of Two Cities) with the
-    # same dishonest-looking message round 2 exists to fix. Test the WORD
-    # 'CALL' instead, via the same `words` set the banned-token scan above
-    # already builds from `_WORD` -- so this only fires when 'CALL' is its
-    # own token, not a substring of a longer one.
-    #
-    # This does NOT cover a CALL fused directly to its procedure name with
-    # no separator at all, e.g. `CALLread_csv_serial(...)` -- `_WORD`
-    # reads that as one token, CALLREAD_CSV_SERIAL, not as the word CALL,
-    # so neither `\bCALL\b` above nor this word check fires on it. That
-    # gap is safe only because Kuzu's own parser refuses every
-    # no-separator form tried against 0.11.3; this module does not
-    # independently guarantee it. A future Kuzu that tokenizes more
-    # leniently would need this revisited -- coverage of that one shape
-    # depends on the engine, not on this module.
-    if "CALL" in words and not call_matches:
-        raise CypherRejected(
-            "'CALL' appears in the query as a bare keyword that this guard"
-            " could not resolve into a procedure name; rejected to fail"
-            " closed rather than let an unrecognized shape through"
-            " unchecked"
-        )
 
 
 def run_guarded(kuzu, query: str, row_cap: int = ROW_CAP):
