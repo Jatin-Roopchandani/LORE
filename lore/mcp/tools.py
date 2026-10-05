@@ -12,13 +12,22 @@ import inspect
 import math
 
 from lore.config import LoreConfig
+from lore.db.sqlite import open_db
 from lore.ingest.registry import list_books
+from lore.inference.gemini import (
+    GeminiAuthError, GeminiError, GeminiKeyFileError, GeminiQuotaError,
+    default_key_file, resolve_api_key,
+)
 from lore.mcp.guards import TIMEOUT_MS, CypherRejected, run_guarded
 from lore.mcp.shapes import (
     BookOut, ChunkHit, CypherResult, EdgeOut, EntityCard, IngestStatus,
-    JobOut, NodeOut, SubgraphOut, error,
+    JobOut, NodeOut, SubgraphOut, error, to_search_result,
 )
 from lore.mcp.stores import StoresMissing, open_stores
+from lore.orchestrator.gemini_budget import (
+    BudgetExceeded, check_budget, recorder_for, today,
+)
+from lore.query.agent import QueryModels, answer_question, make_query_models
 from lore.query.seed import (
     canonical_ids, embed_question, live_entity_ids, load_name_index,
     named_entity_ids,
@@ -436,3 +445,102 @@ def cypher_query(config: LoreConfig, query: str) -> dict:
             columns=columns, rows=[[_plain(v) for v in row] for row in rows],
             truncated=truncated,
         ).model_dump()
+
+
+# --- lore_search ------------------------------------------------------------------
+
+_KEY_HELP = ("set GEMINI_API_KEY (or GOOGLE_API_KEY), or put one line"
+             " `GEMINI_API_KEY=...` in ~/.config/lore/gemini.env with mode 600")
+
+
+def _check_synthesis_budget(config: LoreConfig) -> str | None:
+    """None if a synthesis request can proceed, else the refusal message.
+
+    Refuses only when EVERY configured synthesis model is at its daily cap:
+    the Gemini client is a cascade, so a capped first model just falls
+    through to the next. Runs on an `open_db` connection, not
+    `stores.conn`: a library migrated only to v3 has no `gemini_ledger`
+    table, and the recorder applies the migration on this path anyway. The
+    six cheap tools keep their unmigrated read-only connection.
+
+    Only synthesis is checked: it is the step that is always spent, and the
+    messages name the models it would use. Selection requests are still
+    counted by the recorder.
+    """
+    if config.synthesis.provider != "gemini":
+        return None  # the local model spends no Gemini budget
+    conn = open_db(config.sqlite_path)
+    try:
+        refusals = []
+        for model in config.synthesis.models:
+            try:
+                check_budget(conn, model, today())
+            except BudgetExceeded as exc:
+                refusals.append(str(exc))
+            else:
+                return None
+        return " ".join(refusals) or None
+    finally:
+        conn.close()
+
+
+def _upstream(exc: GeminiError) -> dict:
+    """A Gemini failure that is not our ledger, told truthfully.
+
+    GeminiAuthError gets fixed text rather than its own: the key is never
+    in an exception message, but nothing here should depend on that.
+    Never `budget_exhausted`: that sends the user to wait for midnight.
+    """
+    if isinstance(exc, GeminiAuthError):
+        return error("upstream_unavailable",
+                     "Gemini rejected the API key, so the key is missing or"
+                     f" invalid. To fix it, {_KEY_HELP}.")
+    if isinstance(exc, GeminiKeyFileError):
+        return error("upstream_unavailable", str(exc))
+    if isinstance(exc, GeminiQuotaError):
+        return error("upstream_unavailable",
+                     f"{exc} This is Gemini declining or cooling down, not"
+                     " the daily budget LORE tracks; try again shortly.")
+    return error("upstream_unavailable",
+                 f"Gemini failed: {exc}. This is not the daily budget;"
+                 " try again shortly.")
+
+
+@_guarded
+async def lore_search(config: LoreConfig, query: str,
+                      models: QueryModels | None = None) -> dict:
+    """The full query agent: spends Gemini requests, so it is guarded.
+
+    `budget_exhausted` means the shared ledger says every synthesis model is
+    spent. Every other Gemini failure is `upstream_unavailable`. `models` is
+    for tests; None builds the real ones, counted in the shared ledger.
+    """
+    with open_stores(config) as stores:
+        refusal = _check_synthesis_budget(config)
+        if refusal is not None:
+            if models is not None:
+                await models.aclose()
+            return error("budget_exhausted",
+                         f"{refusal} The other LORE tools still work.")
+        try:
+            if models is None:
+                try:
+                    api_key = resolve_api_key(key_file=default_key_file())
+                    models = make_query_models(
+                        config, api_key=api_key,
+                        recorder=recorder_for(config.sqlite_path))
+                except GeminiError as exc:
+                    return _upstream(exc)
+                except ValueError:
+                    return error("upstream_unavailable",
+                                 "the Gemini API key is missing or invalid:"
+                                 f" {_KEY_HELP}.")
+            titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
+            answer = await answer_question(stores.conn, stores.kuzu,
+                                           stores.lance, query, models)
+            return to_search_result(answer, titles).model_dump()
+        except GeminiError as exc:
+            return _upstream(exc)
+        finally:
+            if models is not None:
+                await models.aclose()

@@ -250,6 +250,12 @@ a client branches on the code and a human reads the message.
 | `cypher_rejected` | which guard rule tripped, and the token that tripped it |
 | `not_found` | unknown entity name or book id |
 | `timeout` | the query timeout fired |
+| `upstream_unavailable` | Gemini failed for a reason that is not the daily budget: every model refusing or cooling down, a transport error, malformed output, or a missing or invalid key. `lore_search` only |
+
+`upstream_unavailable` was added during implementation: none of the five codes
+above tells the truth about a Gemini failure that is not our ledger, and
+reporting one as `budget_exhausted` would send the user to wait for midnight
+over a network blip.
 
 ---
 

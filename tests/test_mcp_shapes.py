@@ -16,7 +16,8 @@ def test_error_envelope_shape():
 
 def test_every_code_is_declared():
     assert ERROR_CODES == frozenset(
-        {"no_graph", "budget_exhausted", "cypher_rejected", "not_found", "timeout"}
+        {"no_graph", "budget_exhausted", "cypher_rejected", "not_found", "timeout",
+         "upstream_unavailable"}
     )
 
 

@@ -18,7 +18,8 @@ from pydantic import BaseModel
 from lore.query.models import Answer
 
 ERROR_CODES = frozenset(
-    {"no_graph", "budget_exhausted", "cypher_rejected", "not_found", "timeout"}
+    {"no_graph", "budget_exhausted", "cypher_rejected", "not_found", "timeout",
+     "upstream_unavailable"}
 )
 
 
