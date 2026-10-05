@@ -65,6 +65,11 @@ class EdgeOut(BaseModel):
     book_id: str
     chapter_seq: int
     chunk_id: str
+    # subject/object are NAMES everywhere (as in the query agent's EdgeRow).
+    # Names are not unique, so graph tools also fill the ids, which a UI
+    # joins to `nodes`; "" for producers that do not know them (search).
+    subject_id: str = ""
+    object_id: str = ""
 
 
 class NodeOut(BaseModel):

@@ -90,6 +90,9 @@ def ingest_status(config: LoreConfig, book_id: str) -> dict:
 
 MAX_DEPTH = 3
 SUBGRAPH_NODE_CAP = 300
+# Nodes alone do not bound edges: Holmes at depth 3 was 286 nodes, 995 edges,
+# ~344 KB. Evidence text is never shortened to fit; edges are dropped instead.
+SUBGRAPH_EDGE_CAP = 500
 
 # Every Kuzu query below that is capped or whose rows are presented ends in a
 # TOTAL ORDER BY (down to unique fields), and none uses RETURN DISTINCT with
@@ -161,12 +164,14 @@ def _ambiguous_error(name: str, exc: _Ambiguous) -> dict:
     )
 
 
-def _edge(subject: str, obj: str, row) -> EdgeOut:
+def _edge(subject: str, subject_id: str, obj: str, object_id: str,
+          row) -> EdgeOut:
     # `or ""`: predicate_raw is NULL on edges written before that column was
     # added (kuzu_store migrates it in as NULL), and EdgeOut wants a str.
     return EdgeOut(
         subject=subject, predicate=row[0] or "", predicate_raw=row[1] or "",
-        object=obj, evidence=row[2] or "", confidence=float(row[3] or 0.0),
+        object=obj, subject_id=subject_id, object_id=object_id,
+        evidence=row[2] or "", confidence=float(row[3] or 0.0),
         book_id=row[4] or "", chapter_seq=int(row[5] or 0),
         chunk_id=row[6] or "",
     )
@@ -175,9 +180,8 @@ def _edge(subject: str, obj: str, row) -> EdgeOut:
 def _entity_card(kuzu, entity_id: str) -> EntityCard:
     """The entity row plus every REL edge in and out, in a stable order.
 
-    Edge subject/object are NAMES here, as in search results, because a card
-    is read by people and models; the subgraph uses ids because a drawing
-    links nodes by id.
+    Edge subject/object are names and subject_id/object_id the ids, as in
+    the subgraph: one meaning for EdgeOut in every tool.
     """
     rows = list(kuzu.execute(
         "MATCH (e:Entity) WHERE e.id = $id"
@@ -190,7 +194,7 @@ def _entity_card(kuzu, entity_id: str) -> EntityCard:
     # b.id after the edge columns: two edges to different entities with the
     # same name and text must not tie.
     edges_out = [
-        _edge(row[1], r[7], r) for r in kuzu.execute(
+        _edge(row[1], row[0], r[7], r[8], r) for r in kuzu.execute(
             f"MATCH (e:Entity)-[r:REL]->(b:Entity) WHERE e.id = $id"
             f" RETURN {_EDGE_COLUMNS}, b.name, b.id"
             f" ORDER BY {_EDGE_ORDER}, b.id",
@@ -198,7 +202,7 @@ def _entity_card(kuzu, entity_id: str) -> EntityCard:
         )
     ]
     edges_in = [
-        _edge(r[7], row[1], r) for r in kuzu.execute(
+        _edge(r[7], r[8], row[1], row[0], r) for r in kuzu.execute(
             f"MATCH (b:Entity)-[r:REL]->(e:Entity) WHERE e.id = $id"
             f" RETURN {_EDGE_COLUMNS}, b.name, b.id"
             f" ORDER BY {_EDGE_ORDER}, b.id",
@@ -222,8 +226,8 @@ def entity(config: LoreConfig, name: str) -> dict:
             return _ambiguous_error(name, exc)
 
 
-def _expand(kuzu, root: str, depth: int, node_cap: int
-            ) -> tuple[list[NodeOut], list[EdgeOut], bool]:
+def _expand(kuzu, root: str, depth: int, node_cap: int,
+            edge_cap: int = SUBGRAPH_EDGE_CAP) -> tuple[list[NodeOut], list[EdgeOut], bool]:
     """Breadth-first from `root`: up to `depth` hops, `node_cap` nodes.
 
     Returns (nodes, edges, truncated). Nodes are in discovery order (root
@@ -273,15 +277,23 @@ def _expand(kuzu, root: str, depth: int, node_cap: int
                 books=list(info[i][3] or []))
         for i in order if i in info
     ]
-    edges = [
-        _edge(r[7], r[8], r) for r in kuzu.execute(
-            f"MATCH (s:Entity)-[r:REL]->(o:Entity)"
-            f" WHERE s.id IN $ids AND o.id IN $ids"
-            f" RETURN {_EDGE_COLUMNS}, s.id, o.id"
-            f" ORDER BY s.id, o.id, {_EDGE_ORDER}",
-            {"ids": order},
-        )
-    ]
+    # LIMIT cap+1 over a TOTAL order: the extra row only detects overflow, and
+    # which edges survive is the same on every run. Both ends are collected
+    # nodes, so a kept edge never dangles.
+    names = {i: info[i][1] for i in info}
+    rows = list(kuzu.execute(
+        f"MATCH (s:Entity)-[r:REL]->(o:Entity)"
+        f" WHERE s.id IN $ids AND o.id IN $ids"
+        f" RETURN {_EDGE_COLUMNS}, s.id, o.id"
+        f" ORDER BY s.id, o.id, {_EDGE_ORDER}"
+        f" LIMIT {int(edge_cap) + 1}",
+        {"ids": order},
+    ))
+    if len(rows) > edge_cap:
+        truncated = True
+        rows = rows[:edge_cap]
+    edges = [_edge(names[r[7]], r[7], names[r[8]], r[8], r)
+             for r in rows if r[7] in names and r[8] in names]
     return nodes, edges, truncated
 
 
@@ -305,6 +317,7 @@ def subgraph(config: LoreConfig, entity_name: str, depth: int = 1) -> dict:
                     f" most of the graph")
 
         nodes, edges, truncated = _expand(stores.kuzu, root, clamped,
-                                          SUBGRAPH_NODE_CAP)
+                                          SUBGRAPH_NODE_CAP,
+                                          SUBGRAPH_EDGE_CAP)
         return SubgraphOut(nodes=nodes, edges=edges, truncated=truncated,
                            depth=clamped, note=note).model_dump()

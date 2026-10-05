@@ -121,6 +121,7 @@ def test_both_tools_emit_strict_json(library_config, a_book_id):
 #   j                   --lives_at-> far Far Away Place       (3 hops from h)
 #   m2 Miss Morstan     --knows-->   w                        (2 hops; a twin of m1)
 #   ah "Mr. Sherlock Holmes" is an alias stub: ALIAS_OF -> h, no REL edges
+#   far                 --self-->    far                       (a self-loop)
 #   lonely Lonely Hall  has no edges at all
 HOLMES = "Sherlock Holmes"
 ALIAS_NAME = "Mr. Sherlock Holmes"
@@ -158,6 +159,7 @@ def graph_config(tmp_path: Path) -> LoreConfig:
             edge("m1", "j", "employs", "c4", 2),
             edge("j", "far", "lives_at", "c5", 3),
             edge("m2", "w", "knows", "c6", 3),
+            edge("far", "far", "self", "c7", 3),
         ],
     )
 
@@ -168,6 +170,8 @@ def test_entity_returns_a_card(graph_config):
     assert result["kind"] == "Character" and result["books"] == [BOOK_ID]
     assert {"aliases", "edges_out", "edges_in"} <= set(result)
     assert [e["object"] for e in result["edges_out"]] == ["Dr. Watson"]
+    assert [(e["subject_id"], e["object_id"]) for e in result["edges_out"]] == [
+        ("h", "w")]
     assert [e["subject"] for e in result["edges_in"]] == ["Miss Mary Morstan"]
 
 
@@ -223,9 +227,10 @@ def test_subgraph_depth_one(graph_config):
     ids = {n["id"] for n in result["nodes"]}
     # Edges join node ids, including the h<->m1 cycle edge and the w->m1 edge
     # between two non-root nodes.
-    assert {(e["subject"], e["object"]) for e in result["edges"]} == {
+    assert {(e["subject_id"], e["object_id"]) for e in result["edges"]} == {
         ("h", "w"), ("m1", "h"), ("w", "m1")}
-    assert all(e["subject"] in ids and e["object"] in ids for e in result["edges"])
+    assert all(e["subject_id"] in ids and e["object_id"] in ids
+               for e in result["edges"])
     assert result["depth"] == 1 and result["note"] is None
     assert result["truncated"] is False
 
@@ -269,7 +274,47 @@ def test_subgraph_node_cap_truncates_deterministically(graph_config, monkeypatch
     # The root, then the lowest-id neighbours first -- not an arbitrary subset.
     assert [n["id"] for n in result["nodes"]] == ["h", "m1", "w"]
     ids = {n["id"] for n in result["nodes"]}
-    assert all(e["subject"] in ids and e["object"] in ids for e in result["edges"])
+    assert all(e["subject_id"] in ids and e["object_id"] in ids
+               for e in result["edges"])
+
+
+def test_edges_name_their_ends_and_ids_join_to_nodes(graph_config):
+    result = subgraph(graph_config, HOLMES, depth=3)
+    names = {n["id"]: n["name"] for n in result["nodes"]}
+    assert result["edges"]
+    for e in result["edges"]:
+        assert e["subject_id"] in names and e["object_id"] in names
+        assert e["subject"] == names[e["subject_id"]]
+        assert e["object"] == names[e["object_id"]]
+
+
+def test_a_self_loop_terminates_and_appears_once(graph_config):
+    result = subgraph(graph_config, HOLMES, depth=3)
+    ids = [n["id"] for n in result["nodes"]]
+    assert ids.count("far") == 1
+    loops = [e for e in result["edges"] if e["subject_id"] == e["object_id"]]
+    assert [(e["subject_id"], e["predicate"]) for e in loops] == [("far", "self")]
+    # And a walk rooted ON the loop node terminates too.
+    rooted = subgraph(graph_config, "Far Away Place", depth=3)
+    assert [n["id"] for n in rooted["nodes"]].count("far") == 1
+
+
+def test_the_edge_cap_truncates_and_keeps_the_first_edges(graph_config, monkeypatch):
+    monkeypatch.setattr(tools_module, "SUBGRAPH_EDGE_CAP", 2)
+    result = subgraph(graph_config, HOLMES, depth=1)
+    assert result["truncated"] is True
+    # Total order (s.id, o.id, ...): the survivors are the first two.
+    assert [(e["subject_id"], e["object_id"]) for e in result["edges"]] == [
+        ("h", "w"), ("m1", "h")]
+    ids = {n["id"] for n in result["nodes"]}
+    assert all(e["subject_id"] in ids and e["object_id"] in ids
+               for e in result["edges"])
+
+
+def test_exactly_cap_edges_is_not_truncated(graph_config, monkeypatch):
+    monkeypatch.setattr(tools_module, "SUBGRAPH_EDGE_CAP", 3)
+    result = subgraph(graph_config, HOLMES, depth=1)
+    assert len(result["edges"]) == 3 and result["truncated"] is False
 
 
 def test_a_cap_that_fits_exactly_is_not_truncated(graph_config, monkeypatch):
@@ -300,20 +345,29 @@ def test_output_does_not_depend_on_the_hash_seed(graph_config):
         "import json, sys;"
         "from pathlib import Path;"
         "from lore.config import LoreConfig;"
+        "from lore.mcp import tools;"
         "from lore.mcp.tools import entity, subgraph;"
+        "tools.SUBGRAPH_NODE_CAP = int(sys.argv[2]);"
+        "tools.SUBGRAPH_EDGE_CAP = int(sys.argv[3]);"
         "c = LoreConfig(data_dir=Path(sys.argv[1]));"
         "print(json.dumps([subgraph(c, 'Sherlock Holmes', depth=3),"
         " entity(c, 'Dr. Watson'), entity(c, 'Mary Morstan')]))"
     )
-    outputs = set()
-    for seed in ("0", "1", "2", "12345"):
-        done = subprocess.run(
-            [sys.executable, "-c", code, str(graph_config.data_dir)],
-            capture_output=True, text=True, timeout=120, check=True,
-            env={**os.environ, "PYTHONHASHSEED": seed},
-        )
-        outputs.add(done.stdout)
-    assert len(outputs) == 1
+    # Uncapped, and with caps small enough to fire: truncation is where a
+    # set-order bug would change which nodes and edges survive.
+    for node_cap, edge_cap in ((300, 500), (4, 500), (300, 3), (4, 3)):
+        outputs = set()
+        for seed in ("0", "1", "2", "12345"):
+            done = subprocess.run(
+                [sys.executable, "-c", code, str(graph_config.data_dir),
+                 str(node_cap), str(edge_cap)],
+                capture_output=True, text=True, timeout=120, check=True,
+                env={**os.environ, "PYTHONHASHSEED": seed},
+            )
+            outputs.add(done.stdout)
+        assert len(outputs) == 1, (node_cap, edge_cap)
+        if (node_cap, edge_cap) != (300, 500):
+            assert '"truncated": true' in done.stdout
 
 
 def test_graph_tools_emit_strict_json(graph_config):
