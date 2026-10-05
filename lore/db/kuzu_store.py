@@ -69,6 +69,10 @@ class KuzuStore:
         result = self._conn.execute("CALL show_tables() RETURN name")
         return {row[0] for row in result}
 
+    def set_query_timeout(self, timeout_ms: int) -> None:
+        """Cap every query on this connection (Kuzu aborts past the limit)."""
+        self._conn.set_query_timeout(timeout_ms)
+
     def close(self) -> None:
         self._conn.close()
         self._db.close()
