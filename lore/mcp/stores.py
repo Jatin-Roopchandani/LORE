@@ -27,6 +27,16 @@ class StoresMissing(RuntimeError):
     """The library has not been built yet."""
 
 
+class StoresUnavailable(StoresMissing):
+    """The graph exists but could not be opened.
+
+    Subclasses StoresMissing so the tool decorator's isinstance check maps it
+    to the `no_graph` envelope with no change. That code is imprecise: the
+    honest state is "graph busy or broken", but the spec fixes the code set
+    and has no busy code, so the message carries the truth.
+    """
+
+
 @dataclass(frozen=True)
 class Stores:
     conn: sqlite3.Connection
@@ -61,7 +71,17 @@ def open_stores(config: LoreConfig) -> Iterator[Stores]:
     # the next.
     conn = sqlite3.connect(config.sqlite_path)
     try:
-        kuzu = KuzuStore(graph_path, read_only=True)
+        try:
+            kuzu = KuzuStore(graph_path, read_only=True)
+        except RuntimeError as exc:
+            # Narrow on purpose: only the open. While `lore graph load`
+            # holds the write lock this is what Kuzu raises, which is the
+            # very scenario this module exists for.
+            raise StoresUnavailable(
+                "the graph exists but could not be opened \u2014 a rebuild"
+                " (`lore graph load`) may be running, or the graph may be"
+                f" corrupt: {exc}"
+            ) from exc
         try:
             kuzu.set_query_timeout(TIMEOUT_MS)
             lance = LanceStore(config.lancedb_dir)

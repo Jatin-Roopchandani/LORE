@@ -11,7 +11,7 @@ from lore.db.lance_store import LanceStore
 from lore.db.sqlite import open_db, schema_version
 from lore.mcp import stores as stores_module
 from lore.mcp.guards import TIMEOUT_MS
-from lore.mcp.stores import StoresMissing, open_stores
+from lore.mcp.stores import StoresMissing, StoresUnavailable, open_stores
 
 
 @pytest.fixture
@@ -150,3 +150,55 @@ def test_kuzu_store_close_is_idempotent_enough_to_release_the_lock(tmp_path):
     store = KuzuStore(tmp_path / "g")
     store.close()
     KuzuStore(tmp_path / "g").close()
+
+
+def test_a_rebuild_holding_the_lock_raises_stores_unavailable(live_config):
+    path = live_config.kuzu_dir / "graph"
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import sys; from pathlib import Path;"
+         "from lore.db.kuzu_store import KuzuStore;"
+         "s = KuzuStore(Path(sys.argv[1])); print('ready', flush=True);"
+         "sys.stdin.readline(); s.close()", str(path)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        # Block until the writer really holds the lock: no race with exit.
+        assert holder.stdout.readline().strip() == "ready"
+        with pytest.raises(StoresUnavailable) as info:
+            with open_stores(live_config):
+                pass
+    finally:
+        holder.stdin.write("\n")
+        holder.stdin.flush()
+        holder.wait(timeout=60)
+    assert "rebuild" in str(info.value)
+    assert isinstance(info.value, StoresMissing)
+    assert isinstance(info.value.__cause__, RuntimeError)
+    assert str(info.value.__cause__) in str(info.value)
+
+
+def test_a_corrupt_graph_raises_stores_unavailable(live_config):
+    path = live_config.kuzu_dir / "graph"
+    path.unlink() if path.is_file() else __import__("shutil").rmtree(path)
+    path.write_bytes(b"not a kuzu database" * 100)
+    with pytest.raises(StoresUnavailable):
+        with open_stores(live_config):
+            pass
+
+
+def test_the_lock_is_released_when_set_query_timeout_raises(live_config, monkeypatch):
+    def boom(self, ms):
+        raise ValueError("timeout refused")
+    monkeypatch.setattr(KuzuStore, "set_query_timeout", boom)
+    with pytest.raises(ValueError, match="timeout refused"):
+        with open_stores(live_config):
+            pass
+    assert _writer_opens(live_config.kuzu_dir / "graph").returncode == 0
+
+
+def test_a_body_error_is_not_rewrapped(live_config):
+    with pytest.raises(RuntimeError, match="from the tool") as info:
+        with open_stores(live_config):
+            raise RuntimeError("from the tool")
+    assert not isinstance(info.value, StoresMissing)
