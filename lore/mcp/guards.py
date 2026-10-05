@@ -63,20 +63,34 @@ _BANNED = (
 # the assigned replacement for round 3 would have reopened a real bypass,
 # see `_call_keyword_names`).
 #
-# It is also the tokenizer that matches Kuzu's own lexer, which is what
-# makes it the right one: an identifier may not START with a digit, so a
-# digit run ends the token before it, exactly as `_WORD`'s first-character
-# class ([A-Za-z_], no digits) does. Measured on read-only Kuzu 0.11.3:
+# How `_WORD` compares with Kuzu's own lexer -- each line measured on
+# read-only Kuzu 0.11.3, not inferred:
 #
-#     MATCH (e:Entity) WHERE e.n = 1CALL current_setting('threads') RETURN *
+#   * A DIGIT is a word edge for both. A Kuzu identifier may not start with
+#     a digit, so a digit run ends the token before it, exactly as
+#     `_WORD`'s first-character class ([A-Za-z_], no digits) does:
 #
-# EXECUTES -- the '1' acts as pure whitespace and `current_setting` runs.
-# `CALLread_csv_serial(...)` (letter-to-letter, one identifier to `_WORD`)
-# does NOT parse. So `_WORD`'s notion of a word edge is Kuzu's notion.
+#       MATCH (e:Entity) WHERE e.n = 1CALL current_setting('threads') RETURN *
+#
+#     EXECUTES -- the '1' acts as whitespace and `current_setting` runs. This
+#     agreement is load-bearing: a tokenizer that did not split here would
+#     miss a real CALL.
+#   * An ASCII letter, digit or underscore AFTER a letter continues the
+#     token for both: `CALLread_csv_serial(...)` is one identifier to
+#     `_WORD` and does NOT parse in Kuzu.
+#   * A NON-ASCII letter is where they differ, and `_WORD` is the stricter.
+#     Kuzu accepts non-ASCII letters inside unquoted identifiers
+#     (`RETURN e.name AS café`, `AS CALLé`, `AS éCALL` all
+#     execute), so to Kuzu `CALLé` is one identifier, not the keyword.
+#     `_WORD` is ASCII-only, so it splits there and reports the word CALL.
+#     The guard therefore rejects some inputs Kuzu would never read as a
+#     call. That is a deliberate fail-closed over-rejection -- the safe
+#     direction -- not agreement with Kuzu.
 _WORD = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
 # The procedure name after a CALL keyword: optional whitespace, then an
 # identifier, both optional so that a CALL whose name cannot be extracted
-# (`CALL `x``, `CALL/*c*/f()`, `CALL` + a non-ASCII letter) yields None and
+# (`CALL `x``, `CALL/*c*/f()`, and -- an over-rejection, see `_WORD` --
+# `CALL` + a non-ASCII letter) yields None and
 # fails closed rather than going unchecked. Deliberately NOT IGNORECASE:
 # [A-Za-z_] already covers both cases, and under IGNORECASE Python folds
 # U+0130 'I-with-dot', U+0131 dotless 'i' and U+017F long 's' onto ASCII
@@ -178,13 +192,16 @@ def validate_cypher(query: str) -> None:
     # message below says so explicitly, for the same reason the banned-word
     # message does: so a user can tell a guard from a bug.
     #
-    # A word edge here is `_WORD`'s, which is Kuzu's: a digit or a
-    # non-ASCII letter next to CALL ends the token, so '1CALL' and 'call'
-    # + an accented letter ARE the keyword and are checked. That is not
-    # over-caution -- `WHERE e.n = 1CALL current_setting('threads')`
-    # executes on a read-only connection. Ordinary words that merely
-    # CONTAIN the letters ('Recalled to Life', 'called', 'Recall') are a
-    # single different token and are not touched.
+    # A word edge here is `_WORD`'s (see its comment for how that compares
+    # with Kuzu). A digit next to CALL ends the token for Kuzu too, so
+    # '1CALL' IS the keyword and must be checked -- not over-caution:
+    # `WHERE e.n = 1CALL current_setting('threads')` executes on a
+    # read-only connection. A non-ASCII letter next to CALL also ends the
+    # token for `_WORD`, but NOT for Kuzu, which reads 'CALL' + an accented
+    # letter as one identifier; rejecting that is a deliberate fail-closed
+    # over-rejection, not a keyword Kuzu would run. Ordinary words that
+    # merely CONTAIN the letters ('Recalled to Life', 'called', 'Recall')
+    # are a single different token and are not touched.
     #
     # What is NOT covered: a CALL fused to an ASCII procedure name with no
     # separator at all, `CALLread_csv_serial(...)`, which is one `_WORD`
@@ -201,11 +218,13 @@ def validate_cypher(query: str) -> None:
                 " as a whole word even inside a string literal, property"
                 " name, alias, or comment, so a legitimate query merely"
                 " mentioning 'call' (e.g. a book titled 'The Call of the"
-                " Wild') is rejected too. A digit or an accented letter"
-                " touching the word counts as a word edge, because Kuzu's"
-                " lexer treats it as one, so '1CALL' and 'call\u00e9' are"
-                " rejected as well -- use the `entity` or `subgraph` tool"
-                " for that instead."
+                " Wild') is rejected too. A digit touching the word counts"
+                " as a word edge, because Kuzu reads '1CALL' as the number 1"
+                " followed by CALL, so '1CALL' is rejected as well. This"
+                " guard also rejects 'call' joined to an accented letter, to"
+                " stay on the safe side, even though Kuzu would not read it"
+                " as a call -- use the `entity` or `subgraph` tool for that"
+                " instead."
             )
 
 

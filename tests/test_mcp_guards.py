@@ -150,6 +150,13 @@ def test_a_comment_as_the_call_separator_is_rejected():
 # structural backstop. The behaviour this test pins -- a CALL whose procedure
 # name cannot be read is rejected, never allowed -- is unchanged, which is why
 # the test is kept rather than deleted.
+#
+# Fix round 5: this rejection is an OVER-rejection relative to Kuzu, kept on
+# purpose. Kuzu allows non-ASCII letters inside unquoted identifiers
+# (`RETURN e.name AS CALLé` executes on 0.11.3), so it reads 'CALL' +
+# an accented letter as one identifier, never the keyword. `_WORD` is
+# ASCII-only and splits there. Rejecting is the safe direction; it is not a
+# claim that Kuzu would run this as a CALL.
 def test_a_call_glued_to_a_non_ascii_letter_is_rejected():
     with pytest.raises(CypherRejected) as excinfo:
         validate_cypher("MATCH (e:Entity) WHERE e.name = 'CALL\u00e9' RETURN e.id")
