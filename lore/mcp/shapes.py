@@ -147,6 +147,10 @@ class JobOut(BaseModel):
     kind: str
     state: str
     detail: str | None  # nullable column in the jobs table
+    # The failure text set_unit_state stores (migration 3); NULL unless the
+    # job failed. It is the whole point of a dead letter. Defaulted so a
+    # construction without it still works.
+    error: str | None = None
     updated_at: str
 
 
