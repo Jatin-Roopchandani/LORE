@@ -3,7 +3,7 @@ import json
 import pytest
 
 from lore.mcp.shapes import (
-    ERROR_CODES, SearchResult, SubgraphOut, error, to_search_result,
+    ERROR_CODES, IngestStatus, SearchResult, SubgraphOut, error, to_search_result,
 )
 from lore.query.models import Answer, Claim, EdgeRow, Passage, SeedEntity
 
@@ -87,3 +87,38 @@ def test_subgraph_carries_the_depth_walked_and_a_clamp_note():
     sub = SubgraphOut(nodes=[], edges=[], truncated=False, depth=2)
     assert sub.note is None
     json.dumps(sub.model_dump())
+
+
+def test_a_finite_seed_score_passes_through():
+    result = to_search_result(_answer(), {})
+    assert result.seeds[0].score == 0.5
+
+
+@pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
+def test_a_non_finite_seed_score_becomes_null(bad):
+    answer = _answer()
+    seed = SeedEntity(id="e1", name="n", kind="Character", books=("b1",), score=bad)
+    answer = Answer(**{**answer.__dict__, "seeds": (seed,)})
+    result = to_search_result(answer, {})
+    assert result.seeds[0].score is None
+    json.dumps(result.model_dump(), allow_nan=False)
+
+
+def test_every_float_in_a_full_result_is_strict_json():
+    json.dumps(to_search_result(_answer(), {"b1": "T"}).model_dump(),
+               allow_nan=False)
+
+
+def test_ingest_status_accepts_the_shape_task_7_builds():
+    jobs = [
+        {"kind": "extract", "state": "done", "detail": None,
+         "updated_at": "2026-09-24 10:00:00"},
+        {"kind": "embed", "state": "dead", "detail": "boom",
+         "updated_at": "2026-09-24 10:05:00"},
+    ]
+    dead = [j for j in jobs if j["state"] == "dead"]
+    out = IngestStatus(book_id="b1", title="T", status="failed",
+                       jobs=jobs, dead_letters=dead).model_dump()
+    assert out["jobs"][0]["detail"] is None
+    assert [j["kind"] for j in out["dead_letters"]] == ["embed"]
+    json.dumps(out, allow_nan=False)

@@ -10,6 +10,7 @@ message.
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from pydantic import BaseModel
@@ -73,6 +74,17 @@ class NodeOut(BaseModel):
     books: list[str]
 
 
+class SeedOut(BaseModel):
+    id: str
+    name: str
+    kind: str
+    books: list[str]
+    # A squared-L2 distance (lower is nearer). None when it is not finite:
+    # seed.py scores a chunk with no `_distance` as inf, and json.dumps
+    # writes that as `Infinity`, which strict JSON-RPC clients reject.
+    score: float | None
+
+
 class SearchResult(BaseModel):
     answer: str
     mode: str
@@ -84,7 +96,7 @@ class SearchResult(BaseModel):
     claims: list[ClaimOut]
     passages: list[PassageOut]
     edges: list[EdgeOut]
-    seeds: list[NodeOut]
+    seeds: list[SeedOut]
 
 
 class ChunkHit(BaseModel):
@@ -131,12 +143,19 @@ class BookOut(BaseModel):
     entity_count: int
 
 
+class JobOut(BaseModel):
+    kind: str
+    state: str
+    detail: str | None  # nullable column in the jobs table
+    updated_at: str
+
+
 class IngestStatus(BaseModel):
     book_id: str
     title: str
     status: str
-    jobs: dict[str, int]
-    dead_letters: int
+    jobs: list[JobOut]
+    dead_letters: list[JobOut]
 
 
 def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
@@ -165,6 +184,7 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
                        book_id=e.book_id, chapter_seq=e.chapter_seq,
                        chunk_id=e.chunk_id)
                for e in answer.edges],
-        seeds=[NodeOut(id=s.id, name=s.name, kind=s.kind, books=list(s.books))
+        seeds=[SeedOut(id=s.id, name=s.name, kind=s.kind, books=list(s.books),
+                       score=s.score if math.isfinite(s.score) else None)
                for s in answer.seeds],
     )
