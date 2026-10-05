@@ -281,3 +281,45 @@ async def test_lore_search_works_on_a_v3_library_and_the_ledger_row_lands(tmp_pa
     check = sqlite3.connect(config.sqlite_path)
     assert calls_today(check, SECOND, today()) == 1
     check.close()
+
+
+# --- review fixes ------------------------------------------------------------------
+
+def _local_config(config: LoreConfig) -> LoreConfig:
+    return config.model_copy(update={
+        "synthesis": config.synthesis.model_copy(update={"provider": "ollama"}),
+        "selection": config.selection.model_copy(update={"provider": "ollama"}),
+    })
+
+
+async def test_ollama_synthesis_ignores_a_spent_gemini_ledger(live_config):
+    from lore.inference.gemini import DEFAULT_MODELS
+    config = _local_config(live_config)
+    _fill(config, *DEFAULT_MODELS)
+    result = await lore_search(config, "Who?", models=_models(config))
+    assert "error" not in result, result
+
+
+async def test_an_all_local_search_never_resolves_the_key(live_config):
+    config = _local_config(live_config)
+    seen = {}
+
+    def fake_make(cfg, api_key=None, **kwargs):
+        seen["key"] = api_key
+        return _models(cfg)
+
+    boom = GeminiKeyFileError("mode 644")
+    with patch("lore.mcp.tools.resolve_api_key", side_effect=boom), \
+            patch("lore.mcp.tools.make_query_models", fake_make):
+        result = await lore_search(config, "Who?")
+    assert "error" not in result, result
+    assert seen["key"] is None
+
+
+async def test_an_empty_model_list_is_not_reported_as_a_key_problem(live_config):
+    config = live_config.model_copy(update={
+        "synthesis": live_config.synthesis.model_copy(update={"models": []}),
+    })
+    with patch("lore.mcp.tools.resolve_api_key", return_value=SECRET), \
+            pytest.raises(ValueError, match="model id"):
+        await lore_search(config, "Who?")

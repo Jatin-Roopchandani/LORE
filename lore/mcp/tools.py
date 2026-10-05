@@ -484,6 +484,25 @@ def _check_synthesis_budget(config: LoreConfig) -> str | None:
         conn.close()
 
 
+class _KeyMissing(Exception):
+    pass
+
+
+def _build_models(config: LoreConfig) -> QueryModels:
+    """The real models. The key is resolved only if a step runs on Gemini,
+    so a bad key file cannot fail an all-local search. A missing key is
+    checked explicitly (not by catching make_query_models' ValueError, which
+    an empty model list also raises: that is a config error and propagates).
+    """
+    api_key = None
+    if "gemini" in (config.selection.provider, config.synthesis.provider):
+        api_key = resolve_api_key(key_file=default_key_file())
+        if not api_key:
+            raise _KeyMissing()
+    return make_query_models(config, api_key=api_key,
+                             recorder=recorder_for(config.sqlite_path))
+
+
 def _upstream(exc: GeminiError) -> dict:
     """A Gemini failure that is not our ledger, told truthfully.
 
@@ -525,13 +544,10 @@ async def lore_search(config: LoreConfig, query: str,
         try:
             if models is None:
                 try:
-                    api_key = resolve_api_key(key_file=default_key_file())
-                    models = make_query_models(
-                        config, api_key=api_key,
-                        recorder=recorder_for(config.sqlite_path))
+                    models = _build_models(config)
                 except GeminiError as exc:
                     return _upstream(exc)
-                except ValueError:
+                except _KeyMissing:
                     return error("upstream_unavailable",
                                  "the Gemini API key is missing or invalid:"
                                  f" {_KEY_HELP}.")
