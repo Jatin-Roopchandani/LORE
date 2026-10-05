@@ -110,7 +110,9 @@ class ChunkHit(BaseModel):
     book_title: str
     chapter_seq: int
     text: str
-    distance: float
+    # Squared-L2, lower is nearer. None when missing or not finite: `inf` and
+    # `nan` are not valid JSON.
+    distance: float | None
 
 
 class CypherResult(BaseModel):

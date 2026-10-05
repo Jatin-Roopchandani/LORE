@@ -10,7 +10,10 @@ import pytest
 from lore.config import LoreConfig
 from lore.mcp import tools as tools_module
 from lore.mcp.stores import StoresUnavailable
-from lore.mcp.tools import entity, ingest_status, library, subgraph
+from lore.db.lance_store import EMBED_DIM, LanceStore
+from lore.mcp.tools import (
+    cypher_query, entity, ingest_status, library, subgraph, vector_search,
+)
 from tests.mcp_fixtures import build_store_triple
 from tests.mcp_fixtures import empty_config as _empty_config
 
@@ -380,3 +383,253 @@ def test_graph_tools_emit_strict_json(graph_config):
 def test_graph_tools_without_a_graph_return_no_graph(empty_config):
     assert entity(empty_config, HOLMES)["error"]["code"] == "no_graph"
     assert subgraph(empty_config, HOLMES)["error"]["code"] == "no_graph"
+
+
+# --- vector_search and cypher_query --------------------------------------------
+
+BOOK_A, BOOK_B = "book-a", "book-b"
+
+
+def _vec(x: float) -> list[float]:
+    v = [0.0] * EMBED_DIM
+    v[0] = x
+    return v
+
+
+async def _fake_embed(texts):
+    return [_vec(0.0) for _ in texts]
+
+
+@pytest.fixture
+def search_config(tmp_path: Path) -> LoreConfig:
+    """Five chunks of book A sit nearest the query; book B's are farther.
+    A post-filter of the global top 3 would give book B nothing."""
+    config = build_store_triple(
+        tmp_path,
+        books=[(BOOK_A, "Alpha"), (BOOK_B, "Beta")],
+        entities=[("e1", "Holmes", "Character", [BOOK_A], []),
+                  ("e2", "Watson", "Character", [BOOK_A], [])],
+    )
+    rows = [
+        {"vector": _vec(0.1 * i), "chunk_id": f"a{i}", "book_id": BOOK_A,
+         "chapter_seq": i, "text": f"alpha {i}", "entity_ids": []}
+        for i in range(5)
+    ] + [
+        {"vector": _vec(10.0 + i), "chunk_id": f"b{i}", "book_id": BOOK_B,
+         "chapter_seq": i, "text": f"beta {i}", "entity_ids": []}
+        for i in range(3)
+    ]
+    LanceStore(config.lancedb_dir).add_chunks(rows)
+    return config
+
+
+async def test_vector_search_returns_chunks(search_config):
+    result = await vector_search(search_config, "a murder", limit=3,
+                                 embed=_fake_embed)
+    assert [h["chunk_id"] for h in result["chunks"]] == ["a0", "a1", "a2"]
+    hit = result["chunks"][0]
+    assert set(hit) == {"chunk_id", "book_id", "book_title", "chapter_seq",
+                        "text", "distance"}
+    assert hit["book_title"] == "Alpha"
+    assert hit["text"] == "alpha 0"
+
+
+async def test_vector_search_filters_inside_the_search(search_config):
+    # Book B is not in the global top 3, so only a prefilter finds it.
+    result = await vector_search(search_config, "murder", book_id=BOOK_B,
+                                 limit=3, embed=_fake_embed)
+    assert [h["chunk_id"] for h in result["chunks"]] == ["b0", "b1", "b2"]
+    assert all(h["book_id"] == BOOK_B for h in result["chunks"])
+
+
+async def test_vector_search_with_an_unknown_book_id(search_config):
+    result = await vector_search(search_config, "murder", book_id="nope",
+                                 embed=_fake_embed)
+    assert result["error"]["code"] == "not_found"
+
+
+async def test_vector_search_applies_the_query_prefix_once(search_config):
+    seen = []
+
+    async def spy(texts):
+        seen.extend(texts)
+        return [_vec(0.0) for _ in texts]
+
+    await vector_search(search_config, "hello", embed=spy)
+    from lore.query.seed import QUERY_PREFIX
+    assert seen == [QUERY_PREFIX + "hello"]
+
+
+@pytest.mark.parametrize("limit,expected", [(0, 1), (-5, 1), (1000, 8), (2, 2)])
+async def test_vector_search_clamps_limit(search_config, limit, expected):
+    result = await vector_search(search_config, "q", limit=limit,
+                                 embed=_fake_embed)
+    assert len(result["chunks"]) == expected
+
+
+async def test_vector_search_limit_ceiling_is_documented_and_applied(
+    search_config, monkeypatch
+):
+    from lore.mcp import tools
+    asked = []
+    real = LanceStore.search_chunks
+
+    def spy(self, vector, limit=5):
+        asked.append(limit)
+        return real(self, vector, limit)
+
+    monkeypatch.setattr(LanceStore, "search_chunks", spy)
+    await vector_search(search_config, "q", limit=10**6, embed=_fake_embed)
+    assert asked == [tools.VECTOR_LIMIT_MAX]
+
+
+async def test_vector_search_distance_is_strict_json(search_config, monkeypatch):
+    for bad in (float("inf"), float("nan"), None):
+        def fake(self, vector, limit=5, bad=bad):
+            row = {"chunk_id": "a0", "book_id": BOOK_A, "chapter_seq": 1,
+                   "text": "t", "vector": vector, "entity_ids": []}
+            if bad is not None:
+                row["_distance"] = bad
+            return [row]
+
+        monkeypatch.setattr(LanceStore, "search_chunks", fake)
+        result = await vector_search(search_config, "q", embed=_fake_embed)
+        assert result["chunks"][0]["distance"] is None
+        json.dumps(result, allow_nan=False)
+    real = await _real_distance(search_config, monkeypatch)
+    assert isinstance(real, float)
+
+
+async def _real_distance(config, monkeypatch):
+    monkeypatch.undo()
+    result = await vector_search(config, "q", embed=_fake_embed)
+    json.dumps(result, allow_nan=False)
+    return result["chunks"][0]["distance"]
+
+
+async def test_vector_search_without_a_graph(empty_config):
+    result = await vector_search(empty_config, "q", embed=_fake_embed)
+    assert result["error"]["code"] == "no_graph"
+
+
+def test_cypher_query_returns_rows(library_config):
+    result = cypher_query(library_config,
+                          "MATCH (e:Entity) RETURN e.name ORDER BY e.name LIMIT 3")
+    assert result["columns"] == ["e.name"]
+    assert result["rows"] == [["Holmes"], ["Watson"]]
+    assert result["truncated"] is False
+
+
+def test_cypher_query_rejects_a_write(library_config):
+    result = cypher_query(library_config, "CREATE (n:Entity {id: 'x'})")
+    assert result["error"]["code"] == "cypher_rejected"
+    assert "CREATE" in result["error"]["message"]
+
+
+def test_cypher_query_rejects_copy_to_a_file(library_config, tmp_path):
+    target = tmp_path / "leak.csv"
+    result = cypher_query(
+        library_config, f"COPY (MATCH (e:Entity) RETURN e.id) TO '{target}'"
+    )
+    assert result["error"]["code"] == "cypher_rejected"
+    assert not target.exists(), "the guard must run BEFORE Kuzu sees the query"
+
+
+def test_cypher_query_rejects_load_from_a_file(library_config):
+    result = cypher_query(
+        library_config, "LOAD FROM '/etc/hostname' (file_format='csv') RETURN *"
+    )
+    assert result["error"]["code"] == "cypher_rejected"
+
+
+def test_cypher_query_caps_rows(tmp_path):
+    config = build_store_triple(
+        tmp_path,
+        books=[(BOOK_A, "Alpha")],
+        entities=[(f"e{i}", f"n{i}", "Character", [BOOK_A], [])
+                  for i in range(20)],
+    )
+    result = cypher_query(config, "MATCH (a:Entity), (b:Entity) RETURN a.id, b.id")
+    assert len(result["rows"]) == 200
+    assert result["truncated"] is True
+
+
+def test_cypher_query_returns_plain_json_for_node_values(library_config):
+    result = cypher_query(library_config,
+                          "MATCH (e:Entity) RETURN e ORDER BY e.id LIMIT 1")
+    json.dumps(result, allow_nan=False)
+    node = result["rows"][0][0]
+    assert isinstance(node, dict)
+    assert node["id"] == "e1" and node["name"] == "Holmes"
+
+
+def test_cypher_query_returns_plain_json_for_relationships(graph_config):
+    result = cypher_query(graph_config,
+                          "MATCH (:Entity)-[r:REL]->(:Entity) RETURN r LIMIT 1")
+    json.dumps(result, allow_nan=False)
+    assert isinstance(result["rows"][0][0], dict)
+
+
+def test_cypher_query_returns_dates_as_iso_strings(library_config):
+    result = cypher_query(
+        library_config,
+        "RETURN date('2026-01-01'), timestamp('2026-01-02 03:04:05'),"
+        " interval('1 day'), 1.5, [1, 2]",
+    )
+    json.dumps(result, allow_nan=False)
+    d, ts, interval, f, lst = result["rows"][0]
+    assert d == "2026-01-01"
+    assert ts == "2026-01-02T03:04:05"
+    assert isinstance(interval, str)
+    assert f == 1.5 and lst == [1, 2]
+
+
+def test_cypher_query_nonfinite_floats_become_null(library_config):
+    result = cypher_query(library_config, "RETURN 1.0 / 0.0, 0.0 / 0.0, 2.5")
+    json.dumps(result, allow_nan=False)
+    assert result["rows"][0][2] == 2.5
+
+
+def test_sanitize_recurses_and_stringifies():
+    import datetime
+    from lore.mcp.tools import _plain
+    out = _plain({"a": [float("inf"), {"b": float("nan")}, b"x"],
+                  "d": datetime.date(2026, 1, 1),
+                  "t": datetime.datetime(2026, 1, 1, 2, 3, 4),
+                  "n": None, "ok": True, "i": 3})
+    assert out == {"a": [None, {"b": None}, "b'x'"], "d": "2026-01-01",
+                   "t": "2026-01-01T02:03:04", "n": None, "ok": True, "i": 3}
+    json.dumps(out, allow_nan=False)
+
+
+def test_cypher_query_timeout_is_mapped_from_a_real_kuzu_timeout(
+    tmp_path, monkeypatch
+):
+    """A real Kuzu timeout, not a mock: an ORDER BY over a cross product must
+    materialise and sort before its first row, so a 1 ms limit always fires.
+    Kuzu raises RuntimeError('Interrupted.')."""
+    from lore.mcp import stores
+    config = build_store_triple(
+        tmp_path,
+        books=[(BOOK_A, "Alpha")],
+        entities=[(f"e{i:03d}", f"n{i}", "Character", [BOOK_A], [])
+                  for i in range(60)],
+    )
+    monkeypatch.setattr(stores, "TIMEOUT_MS", 1)
+    result = cypher_query(
+        config,
+        "MATCH (a:Entity),(b:Entity),(c:Entity) RETURN a.id, b.id, c.id"
+        " ORDER BY a.id, b.id, c.id",
+    )
+    assert result["error"]["code"] == "timeout"
+
+
+def test_cypher_query_other_runtime_errors_are_not_called_timeouts(library_config):
+    # A syntax error is Kuzu's RuntimeError too; it must propagate to the
+    # SDK, not be mislabelled a timeout.
+    with pytest.raises(RuntimeError):
+        cypher_query(library_config, "MATCH (e:Entity RETURN e")
+
+
+def test_cypher_tools_without_a_graph(empty_config):
+    assert cypher_query(empty_config, "RETURN 1")["error"]["code"] == "no_graph"

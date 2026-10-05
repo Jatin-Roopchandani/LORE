@@ -105,3 +105,22 @@ def test_chunk_vectors_is_not_truncated_to_a_default_page(tmp_path: Path) -> Non
         for i, c in enumerate(ids)
     ])
     assert set(store.chunk_vectors(ids)) == set(ids)
+
+
+def test_search_chunks_in_book_filters_inside_the_search(tmp_path: Path) -> None:
+    """Nearest chunks are all book a; asking for book b's top 2 must still
+    return 2 (a post-filter of the global top 2 would return none)."""
+    store = LanceStore(tmp_path / "lance")
+
+    def row(cid, book, x):
+        vec = [0.0] * EMBED_DIM
+        vec[0] = x
+        return {"vector": vec, "chunk_id": cid, "book_id": book,
+                "chapter_seq": 1, "text": cid, "entity_ids": []}
+
+    store.add_chunks([row("a1", "a", 0.0), row("a2", "a", 0.1),
+                      row("b1", "b", 5.0), row("b2", "b", 6.0)])
+    query = [0.0] * EMBED_DIM
+    hits = store.search_chunks_in_book(query, "b", limit=2)
+    assert [h["chunk_id"] for h in hits] == ["b1", "b2"]
+    assert store.search_chunks_in_book(query, "it's", limit=2) == []

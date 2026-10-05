@@ -6,17 +6,22 @@ read, either the tool's shape or an `error(...)` envelope.
 """
 from __future__ import annotations
 
+import datetime
 import functools
+import inspect
+import math
 
 from lore.config import LoreConfig
 from lore.ingest.registry import list_books
+from lore.mcp.guards import TIMEOUT_MS, CypherRejected, run_guarded
 from lore.mcp.shapes import (
-    BookOut, EdgeOut, EntityCard, IngestStatus, JobOut, NodeOut, SubgraphOut,
-    error,
+    BookOut, ChunkHit, CypherResult, EdgeOut, EntityCard, IngestStatus,
+    JobOut, NodeOut, SubgraphOut, error,
 )
 from lore.mcp.stores import StoresMissing, open_stores
 from lore.query.seed import (
-    canonical_ids, live_entity_ids, load_name_index, named_entity_ids,
+    canonical_ids, embed_question, live_entity_ids, load_name_index,
+    named_entity_ids,
 )
 
 
@@ -32,6 +37,15 @@ def _guarded(fn):
     isError with a generic message and logs the traceback -- do not add a
     catch-all here.
     """
+    if inspect.iscoroutinefunction(fn):
+        @functools.wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except StoresMissing as exc:
+                return error("no_graph", str(exc))
+        return async_wrapper
+
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         try:
@@ -321,3 +335,104 @@ def subgraph(config: LoreConfig, entity_name: str, depth: int = 1) -> dict:
                                           SUBGRAPH_EDGE_CAP)
         return SubgraphOut(nodes=nodes, edges=edges, truncated=truncated,
                            depth=clamped, note=note).model_dump()
+
+
+# --- vector_search and cypher_query ---------------------------------------------
+
+# A client may ask for any `limit`; it is clamped to this range so nobody can
+# request a million passages. The result does not say it was clamped, because
+# the count returned is visible and every chunk is full text.
+VECTOR_LIMIT_MIN = 1
+VECTOR_LIMIT_MAX = 50
+
+
+def _finite_or_none(value) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+@_guarded
+async def vector_search(config: LoreConfig, query: str,
+                        book_id: str | None = None, limit: int = 10,
+                        embed=None) -> dict:
+    """Raw passages nearest `query` by meaning; `limit` is clamped to 1-50.
+
+    Embeds locally, so it spends no Gemini budget and keeps working after
+    the daily cap. `embed` is for tests; None builds the local embedder.
+    """
+    limit = max(VECTOR_LIMIT_MIN, min(int(limit), VECTOR_LIMIT_MAX))
+    with open_stores(config) as stores:
+        titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
+        # Checked before searching: a filter that matches nothing returns an
+        # empty list, which looks the same as "no passages matched".
+        if book_id is not None and book_id not in titles:
+            return error("not_found", f"no book with id {book_id!r}")
+        if embed is None:
+            from lore.query.agent import make_query_models
+            embed = make_query_models(config).embed
+        # QUERY_PREFIX is applied exactly once, inside embed_question.
+        vector = await embed_question(query, embed)
+        if book_id is None:
+            rows = stores.lance.search_chunks(vector, limit=limit)
+        else:
+            rows = stores.lance.search_chunks_in_book(vector, book_id,
+                                                      limit=limit)
+        # `_distance` missing or non-finite is None, never seed.py's inf.
+        return {"chunks": [
+            ChunkHit(chunk_id=r["chunk_id"], book_id=r["book_id"],
+                     book_title=titles.get(r["book_id"], r["book_id"]),
+                     chapter_seq=int(r["chapter_seq"]), text=r["text"],
+                     distance=_finite_or_none(r.get("_distance"))
+                     ).model_dump()
+            for r in rows
+        ]}
+
+
+def _plain(value):
+    """Kuzu's value as plain JSON: dicts and lists recurse, dates are ISO
+    strings, non-finite floats are None, anything else not JSON-native is
+    str(...). Kuzu returns nodes and rels as dicts (with internal `_id`
+    sub-dicts), so this is not optional."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        return value.isoformat()
+    return str(value)
+
+
+# Kuzu's real timeout error, measured on 0.11.3 with a 200 ms limit on an
+# ORDER BY over a three-way cross product: RuntimeError('Interrupted.').
+_KUZU_TIMEOUT_MESSAGE = "Interrupted."
+
+
+@_guarded
+def cypher_query(config: LoreConfig, query: str) -> dict:
+    """Run one read-only Cypher statement.
+
+    run_guarded validates BEFORE Kuzu sees the string. That ordering is the
+    whole control: Kuzu on a read-only connection will happily execute
+    `COPY (...) TO '<path>'` and write the file. Never call kuzu.execute
+    directly here.
+    """
+    with open_stores(config) as stores:
+        try:
+            columns, rows, truncated = run_guarded(stores.kuzu, query)
+        except CypherRejected as exc:
+            return error("cypher_rejected", exc.reason)
+        except RuntimeError as exc:
+            if str(exc) == _KUZU_TIMEOUT_MESSAGE:
+                return error("timeout", f"the query exceeded {TIMEOUT_MS}ms")
+            raise
+        return CypherResult(
+            columns=columns, rows=[[_plain(v) for v in row] for row in rows],
+            truncated=truncated,
+        ).model_dump()

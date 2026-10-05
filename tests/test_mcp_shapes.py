@@ -122,3 +122,12 @@ def test_ingest_status_accepts_the_shape_task_7_builds():
     assert out["jobs"][0]["detail"] is None
     assert [j["kind"] for j in out["dead_letters"]] == ["embed"]
     json.dumps(out, allow_nan=False)
+
+
+def test_chunk_hit_distance_may_be_none_and_stays_strict_json():
+    import json
+    from lore.mcp.shapes import ChunkHit
+    hit = ChunkHit(chunk_id="c", book_id="b", book_title="B", chapter_seq=1,
+                   text="t", distance=None).model_dump()
+    assert hit["distance"] is None
+    json.dumps(hit, allow_nan=False)

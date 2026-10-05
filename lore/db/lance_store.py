@@ -45,6 +45,24 @@ class LanceStore:
         table = self._db.open_table("chunks")
         return table.search(vector).limit(limit).to_list()
 
+    def search_chunks_in_book(
+        self, vector: list[float], book_id: str, limit: int = 5
+    ) -> list[dict]:
+        """Nearest chunks of ONE book. The filter runs inside the search.
+
+        `prefilter=True` is explicit: filtering the global top-`limit`
+        afterwards returns fewer rows than asked for, or none, when the
+        book's chunks are not among the library's nearest.
+        """
+        escaped = book_id.replace("'", "''")
+        return (
+            self._db.open_table("chunks")
+            .search(vector)
+            .where(f"book_id = '{escaped}'", prefilter=True)
+            .limit(limit)
+            .to_list()
+        )
+
     def add_entities(self, rows: list[dict]) -> None:
         self._db.open_table("entities").add(rows)
 
