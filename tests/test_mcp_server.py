@@ -105,7 +105,26 @@ async def test_subgraph_takes_entity_as_its_parameter(served_config):
     assert "error" not in result.structured_content
 
 
+def _is_protocol_frame(line: str) -> bool:
+    try:
+        return json.loads(line).get("jsonrpc") == "2.0"
+    except (ValueError, AttributeError):
+        return False
+
+
 def test_stdio_serves_tools_and_prints_only_protocol_frames(tmp_path):
+    """stdin stays open until the tools/list reply has arrived.
+
+    The old version wrote all frames with communicate(), which closes stdin
+    at once: the server read EOF and began shutting down, and when shutdown
+    beat the tools/list handler no reply was written (StopIteration, ~2 runs
+    in 15). That was the test racing its own teardown, not a server bug, so
+    the fix is ordering -- never a sleep or a retry, which would only hide it.
+    """
+    import queue
+    import threading
+    import time
+
     env = {**os.environ, "LORE_DATA_DIR": str(tmp_path / "d")}
     frames = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
@@ -114,21 +133,70 @@ def test_stdio_serves_tools_and_prints_only_protocol_frames(tmp_path):
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
     ]
-    stdin = "".join(json.dumps(f) + "\n" for f in frames)
-    proc = subprocess.Popen(
-        [str(Path(sys.executable).parent / "lore"), "mcp"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, env=env,
-    )
+    # stderr to a file, not a pipe: the server logs there, and an undrained
+    # pipe would fill and block it.
+    stderr_path = tmp_path / "stderr.txt"
+    lines: queue.Queue[str | None] = queue.Queue()
+    with open(stderr_path, "w") as stderr:
+        proc = subprocess.Popen(
+            [str(Path(sys.executable).parent / "lore"), "mcp"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
+            text=True, env=env,
+        )
+
+    def read_stdout() -> None:
+        # A thread, so the main loop can wait on the queue with a deadline;
+        # a bare readline() on the pipe could block forever.
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)  # EOF
+
+    reader = threading.Thread(target=read_stdout, daemon=True)
+    reader.start()
+    received: list[str] = []
+    listing = None
     try:
-        out, _ = proc.communicate(stdin, timeout=60)
+        for frame in frames:
+            proc.stdin.write(json.dumps(frame) + "\n")
+            proc.stdin.flush()
+        deadline = time.monotonic() + 60
+        while listing is None:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, (
+                f"no tools/list reply within 60s; stdout so far: {received};"
+                f" stderr: {stderr_path.read_text()}")
+            try:
+                line = lines.get(timeout=remaining)
+            except queue.Empty:
+                continue
+            assert line is not None, (
+                f"server exited before replying; stdout: {received};"
+                f" stderr: {stderr_path.read_text()}")
+            if not line.strip():
+                continue
+            received.append(line)
+            assert _is_protocol_frame(line), f"non-protocol stdout: {line!r}"
+            message = json.loads(line)
+            if message.get("id") == 2:
+                listing = message
+        # Only now let the server see EOF, and make sure it exits.
+        proc.stdin.close()
+        proc.wait(timeout=30)
+        reader.join(timeout=30)
+        # Anything written after the reply must be protocol too: a stray
+        # print during shutdown would corrupt a real client's stream.
+        while True:
+            line = lines.get_nowait() if not lines.empty() else None
+            if line is None:
+                break
+            if line.strip():
+                received.append(line)
+                assert _is_protocol_frame(line), f"non-protocol stdout: {line!r}"
     finally:
         if proc.poll() is None:
             proc.kill()
             proc.wait()
-    messages = [json.loads(line) for line in out.splitlines() if line.strip()]
-    assert messages and all(m.get("jsonrpc") == "2.0" for m in messages)
-    listing = next(m for m in messages if m.get("id") == 2)
+    assert received and all(_is_protocol_frame(line) for line in received)
     assert {t["name"] for t in listing["result"]["tools"]} == EXPECTED
 
 
