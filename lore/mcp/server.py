@@ -14,6 +14,8 @@ a supervisor that restarts it. There is deliberately no per-query isolation.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -25,7 +27,7 @@ def build_server(config: LoreConfig) -> MCPServer:
     mcp = MCPServer("lore")
 
     @mcp.tool()
-    async def lore_search(query: str) -> dict:
+    async def lore_search(query: str) -> dict[str, Any]:
         """Answer a question from the knowledge graph, with quoted citations.
 
         This is the only tool that spends Gemini budget (the other six never
@@ -36,7 +38,7 @@ def build_server(config: LoreConfig) -> MCPServer:
 
     @mcp.tool()
     async def vector_search(query: str, book_id: str | None = None,
-                            limit: int = 10) -> dict:
+                            limit: int = 10) -> dict[str, Any]:
         """Find passages nearest a query by meaning, optionally within one book.
 
         Runs locally and spends no Gemini budget, so it keeps working after
@@ -45,41 +47,44 @@ def build_server(config: LoreConfig) -> MCPServer:
         return await tools.vector_search(config, query, book_id, limit)
 
     @mcp.tool()
-    def cypher_query(query: str) -> dict:
+    def cypher_query(query: str) -> dict[str, Any]:
         """Run a read-only Cypher query against the graph, capped at 200 rows.
 
         Any query containing COPY, LOAD, EXPORT, IMPORT, ATTACH, INSTALL,
-        CREATE, MERGE, SET, DELETE, DROP, ALTER or CALL as a whole word is
-        rejected, even inside a string literal. A question about a book titled
-        "The Call of the Wild" must go through entity or subgraph instead.
+        CREATE, MERGE, SET, DELETE, DROP or ALTER as a whole word is rejected,
+        even inside a string literal. CALL is rejected the same way, except
+        for the three allowlisted procedures show_tables, table_info and
+        db_version. A question about a book titled "The Call of the Wild"
+        must go through entity or subgraph instead.
         """
         return tools.cypher_query(config, query)
 
     @mcp.tool()
-    def entity(name: str) -> dict:
+    def entity(name: str) -> dict[str, Any]:
         """The canonical card for one entity: aliases, books and edges.
 
-        Resolves an alias to its canonical entity; an ambiguous name returns
-        the candidates, and an unknown name returns a not_found error.
+        Resolves an alias to its canonical entity. An unknown name returns a
+        not_found error; so does an ambiguous one, whose message lists the
+        candidates to choose from.
         """
         return tools.entity(config, name)
 
     @mcp.tool()
-    def subgraph(entity_name: str, depth: int = 1) -> dict:
+    def subgraph(entity: str, depth: int = 1) -> dict[str, Any]:
         """A bounded subgraph around one entity, as nodes and edges.
 
         `depth` is clamped to 1-3, and node and edge counts are capped; the
         result says when it was truncated.
         """
-        return tools.subgraph(config, entity_name, depth)
+        return tools.subgraph(config, entity, depth)
 
     @mcp.tool()
-    def library() -> dict:
+    def library() -> dict[str, Any]:
         """Every book in the library, with its status and entity counts."""
         return tools.library(config)
 
     @mcp.tool()
-    def ingest_status(book_id: str) -> dict:
+    def ingest_status(book_id: str) -> dict[str, Any]:
         """Pipeline state for one book: its jobs and any dead letters."""
         return tools.ingest_status(config, book_id)
 
