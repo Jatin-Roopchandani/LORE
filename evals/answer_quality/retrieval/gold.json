@@ -1,0 +1,895 @@
+[
+ {
+  "id": "Q1",
+  "fact": "SiS: Tobias Gregson",
+  "chunks": [
+   "05ab674df048d13f:7:2"
+  ],
+  "quote": "Gregson is the smartest of the Scotland Yarders",
+  "comment": ""
+ },
+ {
+  "id": "Q1",
+  "fact": "SiS: Lestrade",
+  "chunks": [
+   "05ab674df048d13f:7:2",
+   "05ab674df048d13f:10:1"
+  ],
+  "quote": "he and Lestrade are the pick of a bad lot",
+  "comment": ""
+ },
+ {
+  "id": "Q1",
+  "fact": "SoF: Athelney Jones",
+  "chunks": [
+   "0ee225a9a3b5fbc2:9:7",
+   "0ee225a9a3b5fbc2:14:2"
+  ],
+  "quote": "Mr. Athelney Jones, of Scotland Yard",
+  "comment": ""
+ },
+ {
+  "id": "Q2",
+  "fact": "Motive was revenge for deaths of Lucy and her father",
+  "chunks": [
+   "05ab674df048d13f:17:4"
+  ],
+  "quote": "followed him and his accomplice over two continents",
+  "comment": ""
+ },
+ {
+  "id": "Q2",
+  "fact": "Stangerson shot John Ferrier",
+  "chunks": [
+   "05ab674df048d13f:16:9"
+  ],
+  "quote": "Stangerson had shot her father",
+  "comment": ""
+ },
+ {
+  "id": "Q2",
+  "fact": "Lucy forced to marry Drebber and died (within a month)",
+  "chunks": [
+   "05ab674df048d13f:16:10",
+   "05ab674df048d13f:17:4"
+  ],
+  "quote": "poor Lucy never held up her head again, but pined away and died within a month",
+  "comment": ""
+ },
+ {
+  "id": "Q2",
+  "fact": "Hope had been going to marry Lucy",
+  "chunks": [
+   "05ab674df048d13f:17:4"
+  ],
+  "quote": "was to have married me twenty years ago",
+  "comment": ""
+ },
+ {
+  "id": "Q2",
+  "fact": "Hope pursued them for about twenty years",
+  "chunks": [
+   "05ab674df048d13f:17:4"
+  ],
+  "quote": "was to have married me twenty years ago",
+  "comment": ""
+ },
+ {
+  "id": "Q3",
+  "fact": "Hope courted Lucy, Ferrier's adopted daughter (Ferrier consented)",
+  "chunks": [
+   "05ab674df048d13f:13:10"
+  ],
+  "quote": "He has given his consent, provided we get these mines working",
+  "comment": ""
+ },
+ {
+  "id": "Q3",
+  "fact": "Hope saved Lucy from a cattle stampede",
+  "chunks": [
+   "05ab674df048d13f:13:6",
+   "05ab674df048d13f:13:7"
+  ],
+  "quote": "a sinewy brown hand caught the frightened horse by the curb",
+  "comment": ""
+ },
+ {
+  "id": "Q3",
+  "fact": "Hope became a favourite with the old farmer",
+  "chunks": [
+   "05ab674df048d13f:13:9"
+  ],
+  "quote": "He soon became a favourite with the old farmer",
+  "comment": ""
+ },
+ {
+  "id": "Q3",
+  "fact": "Ferrier sent for Hope when the Elders threatened him",
+  "chunks": [
+   "05ab674df048d13f:14:6",
+   "05ab674df048d13f:15:0"
+  ],
+  "quote": "he entrusted him with his message to Jefferson Hope",
+  "comment": ""
+ },
+ {
+  "id": "Q3",
+  "fact": "Hope returned and led them out of Utah",
+  "chunks": [
+   "05ab674df048d13f:15:12"
+  ],
+  "quote": "Jefferson Hope led the other along the precipitous and dangerous path",
+  "comment": ""
+ },
+ {
+  "id": "Q3",
+  "fact": "Ferrier killed in the flight; Hope found his grave and swore revenge",
+  "chunks": [
+   "05ab674df048d13f:16:5",
+   "05ab674df048d13f:16:6"
+  ],
+  "quote": "a stick had been planted on it, with a sheet of paper",
+  "comment": ""
+ },
+ {
+  "id": "Q4",
+  "fact": "Bosom friends",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:29"
+  ],
+  "quote": "They were bosom friends, those two",
+  "comment": ""
+ },
+ {
+  "id": "Q4",
+  "fact": "Brother officers (34th Bombay Infantry) in charge of the Andaman convict-guard",
+  "chunks": [
+   "0ee225a9a3b5fbc2:5:3"
+  ],
+  "quote": "one of the officers in charge of the convict-guard",
+  "comment": ""
+ },
+ {
+  "id": "Q4",
+  "fact": "Both made the treasure deal with Small",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:31",
+   "0ee225a9a3b5fbc2:15:33"
+  ],
+  "quote": "we came to an arrangement",
+  "comment": ""
+ },
+ {
+  "id": "Q4",
+  "fact": "Sholto took the whole treasure and cheated Morstan",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:10"
+  ],
+  "quote": "I have clung to Morstan’s share as well as to my own",
+  "comment": ""
+ },
+ {
+  "id": "Q4",
+  "fact": "Morstan came to claim his share; they quarrelled",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:8"
+  ],
+  "quote": "he came straight over here to claim his share",
+  "comment": ""
+ },
+ {
+  "id": "Q4",
+  "fact": "Morstan had a weak heart and fell dead",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:8"
+  ],
+  "quote": "He had suffered for years from a weak heart",
+  "comment": ""
+ },
+ {
+  "id": "Q4",
+  "fact": "He struck his head on the treasure-chest",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:8"
+  ],
+  "quote": "cutting his head against the corner of the treasure-chest",
+  "comment": ""
+ },
+ {
+  "id": "Q5",
+  "fact": "SiS: Gregson arrests Arthur Charpentier",
+  "chunks": [
+   "05ab674df048d13f:10:4"
+  ],
+  "quote": "Arthur Charpentier, sub-lieutenant in Her Majesty’s navy",
+  "comment": ""
+ },
+ {
+  "id": "Q5",
+  "fact": "SiS: Lestrade chases the innocent Stangerson",
+  "chunks": [
+   "05ab674df048d13f:11:11"
+  ],
+  "quote": "Lestrade went after his man, Stangerson",
+  "comment": ""
+ },
+ {
+  "id": "Q5",
+  "fact": "SoF: Athelney Jones arrests Thaddeus Sholto",
+  "chunks": [
+   "0ee225a9a3b5fbc2:10:4"
+  ],
+  "quote": "He has arrested not only friend Thaddeus",
+  "comment": ""
+ },
+ {
+  "id": "Q5",
+  "fact": "SoF: housekeeper Mrs Bernstone, Lal Rao and McMurdo also arrested",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:8"
+  ],
+  "quote": "Mrs. Bernstone, an Indian butler named Lal Rao",
+  "comment": ""
+ },
+ {
+  "id": "Q5",
+  "fact": "Thaddeus and the housekeeper later released",
+  "chunks": [
+   "0ee225a9a3b5fbc2:12:5"
+  ],
+  "quote": "both released yesterday evening",
+  "comment": ""
+ },
+ {
+  "id": "Q6",
+  "fact": "Tonga killed him",
+  "chunks": [
+   "0ee225a9a3b5fbc2:14:0",
+   "0ee225a9a3b5fbc2:15:39"
+  ],
+  "quote": "that little hell-hound Tonga who shot one of his cursed darts into him",
+  "comment": ""
+ },
+ {
+  "id": "Q6",
+  "fact": "With a poisoned thorn",
+  "chunks": [
+   "0ee225a9a3b5fbc2:8:9",
+   "0ee225a9a3b5fbc2:9:6"
+  ],
+  "quote": "It is a thorn. You may pick it out. But be careful, for it is poisoned",
+  "comment": ""
+ },
+ {
+  "id": "Q6",
+  "fact": "Blown from a blow-pipe",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:12"
+  ],
+  "quote": "They are from a blow-pipe",
+  "comment": ""
+ },
+ {
+  "id": "Q6",
+  "fact": "Tonga acted before Small climbed in; Small bore no grudge",
+  "chunks": [
+   "0ee225a9a3b5fbc2:10:17"
+  ],
+  "quote": "He bore no grudge against Bartholomew Sholto",
+  "comment": ""
+ },
+ {
+  "id": "Q7",
+  "fact": "Mordecai Smith owned the Aurora",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:10"
+  ],
+  "quote": "steam launch called the Aurora, owner Mordecai Smith",
+  "comment": ""
+ },
+ {
+  "id": "Q8",
+  "fact": "SiS: 221B Baker Street",
+  "chunks": [
+   "05ab674df048d13f:6:0"
+  ],
+  "quote": "No. 221b, Baker Street",
+  "comment": ""
+ },
+ {
+  "id": "Q8",
+  "fact": "SoF: 221B Baker Street",
+  "chunks": [
+   "0ee225a9a3b5fbc2:12:6"
+  ],
+  "quote": "221b Baker Street",
+  "comment": ""
+ },
+ {
+  "id": "Q8",
+  "fact": "Same address in both",
+  "chunks": [
+   "05ab674df048d13f:6:0",
+   "0ee225a9a3b5fbc2:12:6"
+  ],
+  "quote": "",
+  "comment": ""
+ },
+ {
+  "id": "H1",
+  "fact": "Spokesman is Wiggins",
+  "chunks": [
+   "05ab674df048d13f:10:3"
+  ],
+  "quote": "send up Wiggins alone to report",
+  "comment": ""
+ },
+ {
+  "id": "H1",
+  "fact": "Wiggins is spokesman in both novels",
+  "chunks": [
+   "05ab674df048d13f:10:3",
+   "0ee225a9a3b5fbc2:11:10"
+  ],
+  "quote": "Wiggins",
+  "comment": ""
+ },
+ {
+  "id": "H1",
+  "fact": "SiS: sent to find the cabman (Jefferson Hope) via cab proprietors",
+  "chunks": [
+   "05ab674df048d13f:18:6"
+  ],
+  "quote": "sent them systematically to every cab proprietor in London",
+  "comment": ""
+ },
+ {
+  "id": "H1",
+  "fact": "SoF: sent to find the steam launch Aurora",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:10"
+  ],
+  "quote": "I want to find the whereabouts of a steam launch called the Aurora",
+  "comment": ""
+ },
+ {
+  "id": "H2",
+  "fact": "SiS: shoulder",
+  "chunks": [
+   "05ab674df048d13f:5:0"
+  ],
+  "quote": "struck on the shoulder by a Jezail bullet",
+  "comment": ""
+ },
+ {
+  "id": "H2",
+  "fact": "SoF: leg",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:3"
+  ],
+  "quote": "I had a Jezail bullet through it",
+  "comment": ""
+ },
+ {
+  "id": "H3",
+  "fact": "SiS: the landlady's old dying terrier",
+  "chunks": [
+   "05ab674df048d13f:11:6"
+  ],
+  "quote": "that poor little devil of a terrier",
+  "comment": ""
+ },
+ {
+  "id": "H3",
+  "fact": "SiS: used to test the pills; second kills it, so one is poison and one harmless",
+  "chunks": [
+   "05ab674df048d13f:11:8",
+   "05ab674df048d13f:11:9"
+  ],
+  "quote": "one was of the most deadly poison, and the other was entirely harmless",
+  "comment": ""
+ },
+ {
+  "id": "H3",
+  "fact": "SoF: Toby",
+  "chunks": [
+   "0ee225a9a3b5fbc2:10:3",
+   "0ee225a9a3b5fbc2:10:4"
+  ],
+  "quote": "Toby proved to be an ugly, long-haired, lop-eared creature",
+  "comment": ""
+ },
+ {
+  "id": "H3",
+  "fact": "Toby is half spaniel, half lurcher",
+  "chunks": [
+   "0ee225a9a3b5fbc2:10:4"
+  ],
+  "quote": "half spaniel and half lurcher",
+  "comment": ""
+ },
+ {
+  "id": "H3",
+  "fact": "Borrowed from Sherman, No. 3 Pinchin Lane, Lambeth",
+  "chunks": [
+   "0ee225a9a3b5fbc2:9:13",
+   "0ee225a9a3b5fbc2:10:2"
+  ],
+  "quote": "No. 3, Pinchin Lane",
+  "comment": ""
+ },
+ {
+  "id": "H3",
+  "fact": "Used to follow the creosote scent",
+  "chunks": [
+   "0ee225a9a3b5fbc2:10:6",
+   "0ee225a9a3b5fbc2:10:7"
+  ],
+  "quote": "He pushed the creasote handkerchief under the dog’s nose",
+  "comment": ""
+ },
+ {
+  "id": "H4",
+  "fact": "The man was Jefferson Hope, the murderer",
+  "chunks": [
+   "05ab674df048d13f:9:3",
+   "05ab674df048d13f:17:14"
+  ],
+  "quote": "this man would rather risk anything than lose the ring",
+  "comment": ""
+ },
+ {
+  "id": "H4",
+  "fact": "He was only pretending to be drunk",
+  "chunks": [
+   "05ab674df048d13f:9:3",
+   "05ab674df048d13f:17:14"
+  ],
+  "quote": "He had to pretend to be drunk",
+  "comment": ""
+ },
+ {
+  "id": "H4",
+  "fact": "He came back for Lucy's ring",
+  "chunks": [
+   "05ab674df048d13f:9:3",
+   "05ab674df048d13f:17:14"
+  ],
+  "quote": "I was ready to dare anything rather than lose the ring",
+  "comment": ""
+ },
+ {
+  "id": "H5",
+  "fact": "A crocodile bit off his right leg while swimming in the Ganges",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:4",
+   "0ee225a9a3b5fbc2:15:5"
+  ],
+  "quote": "A crocodile took me",
+  "comment": ""
+ },
+ {
+  "id": "H5",
+  "fact": "His wooden stump sank into the mud when he jumped from the Aurora, holding him fast",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:12",
+   "0ee225a9a3b5fbc2:13:13"
+  ],
+  "quote": "his stump instantly sank its whole length",
+  "comment": ""
+ },
+ {
+  "id": "H6",
+  "fact": "Employer is Mrs Cecil Forrester (as governess)",
+  "chunks": [
+   "0ee225a9a3b5fbc2:5:0"
+  ],
+  "quote": "my employer, Mrs. Cecil Forrester",
+  "comment": ""
+ },
+ {
+  "id": "H6",
+  "fact": "Holmes helped her unravel a little domestic complication",
+  "chunks": [
+   "0ee225a9a3b5fbc2:5:0"
+  ],
+  "quote": "to unravel a little domestic complication",
+  "comment": ""
+ },
+ {
+  "id": "H6",
+  "fact": "She lives in Lower Camberwell",
+  "chunks": [
+   "0ee225a9a3b5fbc2:9:12"
+  ],
+  "quote": "She lives with Mrs. Cecil Forrester, in Lower Camberwell",
+  "comment": ""
+ },
+ {
+  "id": "H7",
+  "fact": "Rache is German for 'revenge'",
+  "chunks": [
+   "05ab674df048d13f:7:16"
+  ],
+  "quote": "“‘Rache,’ is the German for ‘revenge’",
+  "comment": ""
+ },
+ {
+  "id": "H8",
+  "fact": "Jonathan Small",
+  "chunks": [
+   "0ee225a9a3b5fbc2:6:3"
+  ],
+  "quote": "Jonathan Small, Mahomet Singh, Abdullah Khan, Dost Akbar",
+  "comment": ""
+ },
+ {
+  "id": "H8",
+  "fact": "Mahomet Singh",
+  "chunks": [
+   "0ee225a9a3b5fbc2:6:3"
+  ],
+  "quote": "Jonathan Small, Mahomet Singh, Abdullah Khan, Dost Akbar",
+  "comment": ""
+ },
+ {
+  "id": "H8",
+  "fact": "Abdullah Khan",
+  "chunks": [
+   "0ee225a9a3b5fbc2:6:3"
+  ],
+  "quote": "Jonathan Small, Mahomet Singh, Abdullah Khan, Dost Akbar",
+  "comment": ""
+ },
+ {
+  "id": "H8",
+  "fact": "Dost Akbar",
+  "chunks": [
+   "0ee225a9a3b5fbc2:6:3"
+  ],
+  "quote": "Jonathan Small, Mahomet Singh, Abdullah Khan, Dost Akbar",
+  "comment": ""
+ },
+ {
+  "id": "C1",
+  "fact": "SiS: a test for blood (re-agent precipitated by haemoglobin)",
+  "chunks": [
+   "05ab674df048d13f:5:6"
+  ],
+  "quote": "a re-agent which is precipitated by hæmoglobin",
+  "comment": ""
+ },
+ {
+  "id": "C1",
+  "fact": "SoF: a chemical analysis, dissolving a hydrocarbon",
+  "chunks": [
+   "0ee225a9a3b5fbc2:12:4",
+   "0ee225a9a3b5fbc2:13:2"
+  ],
+  "quote": "abstruse chemical analysis",
+  "comment": ""
+ },
+ {
+  "id": "C2",
+  "fact": "SiS: messenger is a retired sergeant of Marines",
+  "chunks": [
+   "05ab674df048d13f:6:18"
+  ],
+  "quote": "the retired sergeant of Marines",
+  "comment": ""
+ },
+ {
+  "id": "C2",
+  "fact": "SiS: reasons (anchor tattoo, military carriage, side whiskers, air of command)",
+  "chunks": [
+   "05ab674df048d13f:7:1"
+  ],
+  "quote": "a great blue anchor tattooed on the back of the fellow’s hand",
+  "comment": ""
+ },
+ {
+  "id": "C2",
+  "fact": "SoF: watch belonged to elder brother, inherited from father",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:10"
+  ],
+  "quote": "the watch belonged to your elder brother, who inherited it from your father",
+  "comment": ""
+ },
+ {
+  "id": "C2",
+  "fact": "SoF: brother careless, poor with short prosperous spells, took to drink and died",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:10",
+   "0ee225a9a3b5fbc2:4:13"
+  ],
+  "quote": "finally, taking to drink, he died",
+  "comment": ""
+ },
+ {
+  "id": "C4",
+  "fact": "SoF: Holmes injects himself, three times a day for months (so yes)",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:0"
+  ],
+  "quote": "Three times a day for many months I had witnessed this performance",
+  "comment": ""
+ },
+ {
+  "id": "C4",
+  "fact": "SoF: it is cocaine, a seven-per-cent solution",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:1"
+  ],
+  "quote": "It is cocaine,” he said,—“a seven-per-cent. solution",
+  "comment": ""
+ },
+ {
+  "id": "C4",
+  "fact": "SiS: Watson might have suspected a narcotic, but Holmes's temperance ruled it out",
+  "chunks": [
+   "05ab674df048d13f:6:1"
+  ],
+  "quote": "I might have suspected him of being addicted to the use of some narcotic",
+  "comment": ""
+ },
+ {
+  "id": "C4",
+  "fact": "SoF end: 'there still remains the cocaine-bottle'",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:42",
+   "0ee225a9a3b5fbc2:15:43"
+  ],
+  "quote": "there still remains the cocaine-bottle",
+  "comment": ""
+ },
+ {
+  "id": "C5",
+  "fact": "An (aortic) aneurism",
+  "chunks": [
+   "05ab674df048d13f:17:2"
+  ],
+  "quote": "you have an aortic aneurism",
+  "comment": ""
+ },
+ {
+  "id": "C5",
+  "fact": "Got from over-exposure and under-feeding in the Salt Lake Mountains",
+  "chunks": [
+   "05ab674df048d13f:17:2"
+  ],
+  "quote": "over-exposure and under-feeding among the Salt Lake Mountains",
+  "comment": ""
+ },
+ {
+  "id": "C5",
+  "fact": "It burst the night after his capture; found dead in his cell",
+  "chunks": [
+   "05ab674df048d13f:18:0"
+  ],
+  "quote": "the aneurism burst, and he was found in the morning stretched upon the floor of the cell",
+  "comment": ""
+ },
+ {
+  "id": "C5",
+  "fact": "So he never came before the magistrates",
+  "chunks": [
+   "05ab674df048d13f:17:17",
+   "05ab674df048d13f:18:0"
+  ],
+  "quote": "the prisoner will be brought before the magistrates",
+  "comment": ""
+ },
+ {
+  "id": "C6",
+  "fact": "At Halliday's Private Hotel",
+  "chunks": [
+   "05ab674df048d13f:10:13"
+  ],
+  "quote": "Stangerson,” said Lestrade gravely, “was murdered at Halliday’s Private Hotel",
+  "comment": ""
+ },
+ {
+  "id": "C6",
+  "fact": "In his second-floor room",
+  "chunks": [
+   "05ab674df048d13f:11:3"
+  ],
+  "quote": "it was on the second floor",
+  "comment": ""
+ },
+ {
+  "id": "C6",
+  "fact": "Stabbed in the side/heart",
+  "chunks": [
+   "05ab674df048d13f:11:3"
+  ],
+  "quote": "The cause of death was a deep stab in the left side",
+  "comment": ""
+ },
+ {
+  "id": "C6",
+  "fact": "Hope entered at dawn by ladders from the lane behind",
+  "chunks": [
+   "05ab674df048d13f:17:15",
+   "05ab674df048d13f:11:4"
+  ],
+  "quote": "I took advantage of some ladders which were lying in the lane behind the hotel",
+  "comment": ""
+ },
+ {
+  "id": "C6",
+  "fact": "Offered the same choice of pills",
+  "chunks": [
+   "05ab674df048d13f:17:15"
+  ],
+  "quote": "I gave him the same choice of the poisoned pills",
+  "comment": ""
+ },
+ {
+  "id": "C6",
+  "fact": "Stangerson flew at his throat; Hope stabbed him in self-defence",
+  "chunks": [
+   "05ab674df048d13f:17:15",
+   "05ab674df048d13f:17:16"
+  ],
+  "quote": "he sprang from his bed and flew at my throat",
+  "comment": ""
+ },
+ {
+  "id": "C7",
+  "fact": "The box was empty",
+  "chunks": [
+   "0ee225a9a3b5fbc2:14:8",
+   "0ee225a9a3b5fbc2:14:9"
+  ],
+  "quote": "The box was empty!",
+  "comment": ""
+ },
+ {
+  "id": "C7",
+  "fact": "Small threw the treasure into the Thames during the chase, scattering it",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:0",
+   "0ee225a9a3b5fbc2:15:1"
+  ],
+  "quote": "I put the loot away in a safe place",
+  "comment": ""
+ },
+ {
+  "id": "C7",
+  "fact": "Motive: rather than let it go to Sholto's or Morstan's kin",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:1"
+  ],
+  "quote": "rather than let it go to kith or kin of Sholto or of Morstan",
+  "comment": ""
+ },
+ {
+  "id": "C8",
+  "fact": "He measured the whole house's cubic space",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:16"
+  ],
+  "quote": "he worked out all the cubic space of the house",
+  "comment": ""
+ },
+ {
+  "id": "C8",
+  "fact": "Building 74 ft high but rooms add up to 70 ft",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:16"
+  ],
+  "quote": "the height of the building was seventy-four feet",
+  "comment": ""
+ },
+ {
+  "id": "C8",
+  "fact": "Four feet unaccounted for at the top",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:16"
+  ],
+  "quote": "There were four feet unaccounted for",
+  "comment": ""
+ },
+ {
+  "id": "C8",
+  "fact": "Knocked through the highest ceiling and found a sealed garret with the chest",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:16"
+  ],
+  "quote": "He knocked a hole, therefore, in the lath-and-plaster ceiling",
+  "comment": ""
+ },
+ {
+  "id": "C9",
+  "fact": "Condition: only as believers in the Mormon creed",
+  "chunks": [
+   "05ab674df048d13f:12:14"
+  ],
+  "quote": "it can only be as believers in our own creed",
+  "comment": ""
+ },
+ {
+  "id": "C9",
+  "fact": "Brother Stangerson put in charge of them",
+  "chunks": [
+   "05ab674df048d13f:12:14",
+   "05ab674df048d13f:12:15"
+  ],
+  "quote": "Take him, Brother Stangerson",
+  "comment": ""
+ },
+ {
+  "id": "C9",
+  "fact": "Stangerson to feed them and teach Ferrier the creed",
+  "chunks": [
+   "05ab674df048d13f:12:15"
+  ],
+  "quote": "Let it be your task also to teach him our holy creed",
+  "comment": ""
+ },
+ {
+  "id": "C10",
+  "fact": "Engaged to Mary Morstan",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:41"
+  ],
+  "quote": "Miss Morstan has done me the honour to accept me as a husband",
+  "comment": ""
+ },
+ {
+  "id": "C10",
+  "fact": "Love is emotional, opposed to the cold reason Holmes values",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:42"
+  ],
+  "quote": "whatever is emotional is opposed to that true cold reason",
+  "comment": ""
+ },
+ {
+  "id": "C10",
+  "fact": "He would never marry lest it bias his judgment",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:42"
+  ],
+  "quote": "I should never marry myself, lest I bias my judgment",
+  "comment": ""
+ },
+ {
+  "id": "C3",
+  "fact": "SiS: Knowledge of Literature - Nil",
+  "chunks": [
+   "05ab674df048d13f:6:5"
+  ],
+  "quote": "Knowledge of Literature. —Nil",
+  "comment": ""
+ },
+ {
+  "id": "C3",
+  "fact": "SiS: Holmes did not know who Carlyle was",
+  "chunks": [
+   "05ab674df048d13f:6:3"
+  ],
+  "quote": "Upon my quoting Thomas Carlyle, he inquired in the naivest way who he might be",
+  "comment": ""
+ },
+ {
+  "id": "C3",
+  "fact": "SoF: Holmes quotes Goethe",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:42"
+  ],
+  "quote": "old Goethe",
+  "comment": ""
+ },
+ {
+  "id": "C3",
+  "fact": "SoF: Holmes discusses Jean Paul",
+  "chunks": [
+   "0ee225a9a3b5fbc2:10:17"
+  ],
+  "quote": "Are you well up in your Jean Paul?",
+  "comment": ""
+ }
+]
