@@ -56,6 +56,8 @@ async def test_descriptions_say_what_matters(served_config):
     assert "Call of the Wild" in tools["cypher_query"]
     assert "1" in tools["subgraph"] and "3" in tools["subgraph"]
     assert "Gemini" in tools["vector_search"]
+    for name in ("vector_search", "lore_search"):
+        assert "Ollama" in tools[name] and "upstream_unavailable" in tools[name]
 
 
 async def test_no_tool_exposes_internal_parameters(served_config):

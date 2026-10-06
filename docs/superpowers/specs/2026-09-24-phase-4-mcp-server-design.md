@@ -250,7 +250,7 @@ a client branches on the code and a human reads the message.
 | `cypher_rejected` | which guard rule tripped, and the token that tripped it; or Kuzu itself refused a query that passed the guard (a parser or binder exception), with Kuzu's own message |
 | `not_found` | unknown entity name or book id |
 | `timeout` | the query timeout fired |
-| `upstream_unavailable` | Gemini failed for a reason that is not the daily budget: every model refusing or cooling down, a transport error, malformed output, or a missing or invalid key. `lore_search` only |
+| `upstream_unavailable` | A model server failed for a reason that is not the daily budget. Gemini (`lore_search`): every model refusing or cooling down, a transport error, malformed output, or a missing or invalid key. The local Ollama embedder (`vector_search` and `lore_search`): not running, unreachable, or answering an HTTP error; the message names Ollama and the CPU-only start command, `CUDA_VISIBLE_DEVICES=-1 ~/.local/ollama/bin/ollama serve` |
 
 `upstream_unavailable` was added during implementation: none of the five codes
 above tells the truth about a Gemini failure that is not our ledger, and

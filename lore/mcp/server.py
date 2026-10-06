@@ -32,7 +32,9 @@ def build_server(config: LoreConfig) -> MCPServer:
 
         This is the only tool that spends Gemini budget (the other six never
         do); it returns a budget_exhausted error once the daily cap is spent.
-        Use vector_search or entity when you want a free lookup.
+        Use vector_search or entity when you want a free lookup. Needs the
+        local Ollama server running to embed the question; if it is not,
+        this returns upstream_unavailable.
         """
         return await tools.lore_search(config, query)
 
@@ -42,7 +44,9 @@ def build_server(config: LoreConfig) -> MCPServer:
         """Find passages nearest a query by meaning, optionally within one book.
 
         Runs locally and spends no Gemini budget, so it keeps working after
-        the daily Gemini cap is reached. `limit` is clamped to 1-50.
+        the daily Gemini cap is reached. `limit` is clamped to 1-50. Needs
+        the local Ollama server running to embed the query; if it is not,
+        this returns upstream_unavailable.
         """
         return await tools.vector_search(config, query, book_id, limit)
 

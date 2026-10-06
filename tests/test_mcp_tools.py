@@ -874,3 +874,45 @@ def test_concurrent_tool_calls_never_report_a_false_no_graph(graph_config):
     errors = [r["error"] for r in results if "error" in r]
     assert errors == []
     assert len(results) == threads * 4
+
+
+# --- the local embedder down ------------------------------------------------------
+
+async def test_vector_search_with_ollama_down_is_upstream_unavailable(search_config):
+    import httpx
+
+    async def down(texts):
+        raise httpx.ConnectError("[Errno 111] Connection refused")
+
+    result = await vector_search(search_config, "q", embed=down)
+    assert result["error"]["code"] == "upstream_unavailable"
+    message = result["error"]["message"]
+    assert "Ollama" in message and "Connection refused" in message
+    assert "CUDA_VISIBLE_DEVICES=-1" in message
+
+
+async def test_vector_search_closes_the_embedder_when_ollama_errors(
+    search_config, monkeypatch
+):
+    import httpx
+    from lore.query import agent as agent_module
+    closed = []
+
+    class DownOllama:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def embed(self, texts, model=None):
+            request = httpx.Request("POST", "http://localhost:11434/api/embed")
+            raise httpx.HTTPStatusError(
+                "404 model not found", request=request,
+                response=httpx.Response(404, request=request))
+
+        async def aclose(self):
+            closed.append(True)
+
+    monkeypatch.setattr(agent_module, "OllamaProvider", DownOllama)
+    result = await vector_search(search_config, "q", embed=None)
+    assert result["error"]["code"] == "upstream_unavailable"
+    assert "Ollama" in result["error"]["message"]
+    assert closed == [True]

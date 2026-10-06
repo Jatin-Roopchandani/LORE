@@ -11,6 +11,8 @@ import functools
 import inspect
 import math
 
+import httpx
+
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.registry import list_books
@@ -371,6 +373,26 @@ VECTOR_LIMIT_MIN = 1
 VECTOR_LIMIT_MAX = 50
 
 
+def _ollama_unavailable(config: LoreConfig, exc: httpx.HTTPError) -> dict:
+    """The local model server failed: refused, timed out, or answered an
+    HTTP error (a model not pulled is a 404).
+
+    Caught, not left to the SDK: mcp 2.3.0 reports an escaped exception as
+    the bare "Error executing tool ...", and on this machine Ollama is
+    normally stopped and started by hand, so this is the likeliest failure
+    of the tools documented as always working. The start command is the
+    CPU-only one on purpose: loading a model onto this machine's GPU
+    reboots the whole WSL VM.
+    """
+    return error(
+        "upstream_unavailable",
+        f"Ollama at {config.ollama.host} failed: {exc}. vector_search and"
+        " lore_search embed the question with the local Ollama model, so"
+        " Ollama must be running; start it (CPU-only) with"
+        " `CUDA_VISIBLE_DEVICES=-1 ~/.local/ollama/bin/ollama serve`.",
+    )
+
+
 def _finite_or_none(value) -> float | None:
     try:
         number = float(value)
@@ -415,6 +437,8 @@ async def vector_search(config: LoreConfig, query: str,
     try:
         # QUERY_PREFIX is applied exactly once, inside embed_question.
         vector = await embed_question(query, embed)
+    except httpx.HTTPError as exc:
+        return _ollama_unavailable(config, exc)
     finally:
         if embedder is not None:
             await embedder.aclose()
@@ -610,6 +634,11 @@ async def lore_search(config: LoreConfig, query: str,
             return to_search_result(answer, titles).model_dump()
         except GeminiError as exc:
             return _upstream(exc)
+        except httpx.HTTPError as exc:
+            # Distinct from GeminiError: GeminiClient wraps its own httpx
+            # failures in GeminiTransportError, so a raw httpx error here
+            # came from Ollama (the embedder, or a step set to run locally).
+            return _ollama_unavailable(config, exc)
         finally:
             if models is not None:
                 await models.aclose()

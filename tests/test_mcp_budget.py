@@ -5,6 +5,7 @@ that makes one real call through the injected models, and the models are
 fakes; the one test that goes through make_query_models patches the HTTP
 transport.
 """
+import dataclasses
 import functools
 import json
 import sqlite3
@@ -323,3 +324,31 @@ async def test_an_empty_model_list_is_not_reported_as_a_key_problem(live_config)
     with patch("lore.mcp.tools.resolve_api_key", return_value=SECRET), \
             pytest.raises(ValueError, match="model id"):
         await lore_search(config, "Who?")
+
+
+# --- the local embedder ----------------------------------------------------------
+#
+# Ollama is usually stopped on this machine and must be started by hand. Its
+# httpx errors used to escape, and mcp 2.3.0 shows an escaped exception only
+# as "Error executing tool ...".
+
+async def test_ollama_down_is_upstream_unavailable_naming_ollama(live_config):
+    closed = []
+    base = _models(live_config, closed=closed)
+
+    async def embed(texts):
+        raise httpx.ConnectError("[Errno 111] Connection refused")
+
+    models = dataclasses.replace(base, embed=embed)
+
+    async def answer(conn, kuzu, lance, question, models, *, baseline=False):
+        await models.embed([question])
+        return ANSWER
+
+    with patch("lore.mcp.tools.answer_question", answer):
+        result = await lore_search(live_config, "Who?", models=models)
+    assert result["error"]["code"] == "upstream_unavailable"
+    message = result["error"]["message"]
+    assert "Ollama" in message and "Connection refused" in message
+    assert "CUDA_VISIBLE_DEVICES=-1" in message
+    assert closed == [True]
