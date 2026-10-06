@@ -448,9 +448,15 @@ def cypher_query(config: LoreConfig, query: str) -> dict:
         except CypherRejected as exc:
             return error("cypher_rejected", exc.reason)
         except RuntimeError as exc:
+            # The exact timeout text first; anything else Kuzu raised here is
+            # the engine refusing the query (a parser or binder exception --
+            # the usual outcome of LLM-written Cypher). It is returned, not
+            # re-raised: measured on mcp 2.3.0, an escaped exception reaches
+            # the client only as "Error executing tool cypher_query", with
+            # Kuzu's message dropped, so the caller cannot see its typo.
             if str(exc) == _KUZU_TIMEOUT_MESSAGE:
                 return error("timeout", f"the query exceeded {TIMEOUT_MS}ms")
-            raise
+            return error("cypher_rejected", f"Kuzu could not run the query: {exc}")
         return CypherResult(
             columns=columns, rows=[[_plain(v) for v in row] for row in rows],
             truncated=truncated,

@@ -624,11 +624,32 @@ def test_cypher_query_timeout_is_mapped_from_a_real_kuzu_timeout(
     assert result["error"]["code"] == "timeout"
 
 
-def test_cypher_query_other_runtime_errors_are_not_called_timeouts(library_config):
-    # A syntax error is Kuzu's RuntimeError too; it must propagate to the
-    # SDK, not be mislabelled a timeout.
-    with pytest.raises(RuntimeError):
-        cypher_query(library_config, "MATCH (e:Entity RETURN e")
+def test_a_cypher_typo_is_rejected_with_kuzus_own_message(library_config):
+    # Not re-raised: mcp 2.3.0 turns an escaped exception into the bare text
+    # "Error executing tool cypher_query" and drops Kuzu's message, so an LLM
+    # that typoed its Cypher could not see what to fix.
+    result = cypher_query(library_config, "MATCH (e:Entity) RETRN e")
+    assert result["error"]["code"] == "cypher_rejected"
+    assert "Parser exception" in result["error"]["message"]
+    assert "RETRN" in result["error"]["message"]
+
+
+def test_a_wrong_property_is_rejected_with_the_binder_message(library_config):
+    result = cypher_query(library_config, "MATCH (e:Entity) RETURN e.nme")
+    assert result["error"]["code"] == "cypher_rejected"
+    assert "Binder exception" in result["error"]["message"]
+    assert "nme" in result["error"]["message"]
+
+
+async def test_a_cypher_typo_reaches_an_mcp_client_with_its_message(library_config):
+    from mcp import Client
+    from lore.mcp.server import build_server
+    async with Client(build_server(library_config)) as client:
+        result = await client.call_tool("cypher_query",
+                                        {"query": "MATCH (e:Entity) RETRN e"})
+    assert not result.is_error
+    assert result.structured_content["error"]["code"] == "cypher_rejected"
+    assert "Parser exception" in result.structured_content["error"]["message"]
 
 
 def test_cypher_tools_without_a_graph(empty_config):

@@ -247,7 +247,7 @@ a client branches on the code and a human reads the message.
 |---|---|
 | `no_graph` | stores missing — the condition `lore ask` already checks at `cli.py:692` |
 | `budget_exhausted` | Gemini daily cap; message names the reset time. `lore_search` only |
-| `cypher_rejected` | which guard rule tripped, and the token that tripped it |
+| `cypher_rejected` | which guard rule tripped, and the token that tripped it; or Kuzu itself refused a query that passed the guard (a parser or binder exception), with Kuzu's own message |
 | `not_found` | unknown entity name or book id |
 | `timeout` | the query timeout fired |
 | `upstream_unavailable` | Gemini failed for a reason that is not the daily budget: every model refusing or cooling down, a transport error, malformed output, or a missing or invalid key. `lore_search` only |
