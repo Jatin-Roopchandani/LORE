@@ -21,3 +21,6 @@ kaggle.json
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Answer-quality eval outputs (raw answers per run)
+evals/answer_quality/runs/
