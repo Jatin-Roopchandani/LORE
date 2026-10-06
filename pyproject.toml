@@ -13,6 +13,7 @@ dependencies = [
     "pysbd>=0.3.4",
     "ebooklib>=0.20",
     "pymupdf>=1.28.2",
+    "mcp>=2.2",
 ]
 
 [project.scripts]

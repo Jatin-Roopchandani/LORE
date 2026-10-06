@@ -789,3 +789,28 @@ def ask(
     if len(answer.sub_questions) > 1:
         # One line, so a multi-part answer shows which parts it searched for.
         typer.echo("sub-questions: " + " | ".join(answer.sub_questions))
+
+
+@app.command(name="mcp")
+def mcp_command(
+    http: bool = typer.Option(False, "--http",
+                              help="serve Streamable HTTP instead of stdio"),
+    host: str = typer.Option("127.0.0.1", help="HTTP bind address"),
+    port: int = typer.Option(8765, help="HTTP port"),
+) -> None:
+    """Serve LORE's seven read-only tools over MCP.
+
+    Read-only: nothing in the library is created or modified. Store handles
+    open and close per request, so `lore graph load` keeps working while
+    this is running.
+    """
+    from lore.mcp.server import run_http, run_stdio
+
+    config = LoreConfig.load()
+    if http:
+        # stderr: in stdio mode stdout is the protocol channel, and the habit
+        # is worth keeping in both.
+        typer.echo(f"lore mcp: streamable-http on http://{host}:{port}", err=True)
+        run_http(config, host, port)
+    else:
+        run_stdio(config)
