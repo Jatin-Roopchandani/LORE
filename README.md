@@ -77,6 +77,34 @@ its seed entities and its evidence passages. The key comes from
 the key is never read from `lore.toml`. If either step is on Gemini and no key
 is found, `ask` exits. It never quietly uses the local model instead.
 
+## Ask LORE from an MCP client
+
+`lore mcp` serves the library to any MCP client. Register it in `.mcp.json`
+with an absolute path, so it works whatever directory the client starts in:
+
+    {
+      "mcpServers": {
+        "lore": {
+          "command": "/home/jatin/LORE/.venv/bin/lore",
+          "args": ["mcp"]
+        }
+      }
+    }
+
+There are two transports:
+
+    lore mcp                    # stdio, for a client that spawns it
+    lore mcp --http --port 8765 # Streamable HTTP, loopback only (127.0.0.1)
+
+The HTTP server answers only requests addressed to a loopback host. A request
+carrying any other `Host` header is refused. Every tool is read-only. Only
+`lore_search` spends Gemini budget. `lore_search` and `vector_search` embed the
+question through Ollama, so it has to be running, and on this machine it must
+be CPU-only (`CUDA_VISIBLE_DEVICES=-1 ollama serve`). A long-lived `--http`
+server should run under a supervisor, because an engine crash takes the whole
+process down. The first `lore_search` migrates `data/lore.db` to schema v4,
+which adds the Gemini budget ledger.
+
 ## How it works: from book to answer
 
 LORE turns a book into a knowledge graph in three commands, then answers
