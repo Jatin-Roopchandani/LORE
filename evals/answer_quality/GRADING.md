@@ -56,3 +56,34 @@ A prompt or code change is accepted only if, against the run before it:
 
 If coverage rises but a new false claim appears, the change is rejected,
 or fixed and re-run. Correctness comes before fullness.
+
+## Not overfitting
+
+Iterating against the same 26 questions will eventually tune the system to
+those 26 instead of making it better. Six rules guard against that.
+
+1. **Two sets.** `questions.json` (26) is the **dev set**. Every change is
+   judged on it. `heldout.json` is the **held-out set**. It is never used
+   to decide a change, and its per-question answers are not read while
+   iterating. It is run only at milestones, to check that a dev gain also
+   shows up on questions the changes never saw. A dev gain that does not
+   carry over to the held-out set is overfitting, and the change is
+   rolled back.
+2. **No leakage.** No prompt text may quote or paraphrase an eval question
+   or answer. Examples in prompts must come from neither set. The test
+   `test_the_prompt_leaks_nothing_from_the_eval_set` catches copied
+   phrases but not paraphrases, so every prompt change is also read for
+   leakage before it runs.
+3. **General changes only.** A change must describe a failure that could
+   happen to any question ("stops at one passage", "states a negative
+   from excerpts"). It must never describe one particular question. If a
+   fix only makes sense for one dev question, it is overfitting.
+4. **Noise floor.** Re-running unchanged code gives a slightly different
+   score, because Gemini is not fully deterministic even at temperature 0.
+   Measure that variance by re-running the baseline. A dev gain smaller
+   than the noise floor is not a gain.
+5. **Retrieval tuning counts too.** Tuning numbers such as k, caps and
+   budgets to the dev set overfits just as prompts do. The same held-out
+   check applies.
+6. **The grader stays blind and fixed.** It uses the same rubric every
+   round, and it is never told which answer is the new one.
