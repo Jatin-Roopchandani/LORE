@@ -1028,3 +1028,43 @@ def test_claim_is_importable_from_both_modules():
     from lore.query.synthesize import Claim as FromSynthesize
 
     assert FromModels is FromSynthesize
+
+
+def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
+    """No distinctive 3-word phrase of a dev or held-out question or verified
+    answer may appear in the synthesis prompt. An early round-1 draft used
+    "221B Baker Street" (eval Q8's answer) as an example, which would have
+    inflated exactly the question being scored.
+
+    A phrase counts when at least two of its three words are not common
+    function words, so answer terms ("221b baker street") are caught and
+    shared grammar ("the passage gives") is not. It does NOT catch a
+    paraphrase built from common words -- leakage review of every prompt
+    change stays a manual step (evals/answer_quality/GRADING.md).
+    """
+    import json
+    import re
+    from pathlib import Path
+
+    from lore.query import synthesize as synthesize_module
+
+    common = set(
+        "a an the and or but nor of to in on at by for from with as into is"
+        " are was were be been being has have had do does did this that these"
+        " those it its he him his she her they them their i me my we us our"
+        " you your not no so than then there here which who whom whose what"
+        " when where why how each every one other own all any some only also"
+        " just more most such very can could would should may might will"
+        " shall must said say says".split())
+
+    def grams(text: str) -> set[str]:
+        words = re.findall(r"[a-z0-9']+", text.lower())
+        return {" ".join(words[i:i + 3]) for i in range(len(words) - 2)
+                if sum(w not in common for w in words[i:i + 3]) >= 2}
+
+    evals = Path(__file__).parents[1] / "evals/answer_quality"
+    sets = [evals / "questions.json", evals / "heldout.json"]
+    prompt = grams(synthesize_module._PROMPT)
+    for q in (q for path in sets for q in json.loads(path.read_text())):
+        leaked = (grams(q["question"]) | grams(q["verified"])) & prompt
+        assert not leaked, f"{q['id']} leaks into the prompt: {sorted(leaked)}"
