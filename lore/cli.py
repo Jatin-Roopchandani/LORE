@@ -795,7 +795,9 @@ def ask(
 def mcp_command(
     http: bool = typer.Option(False, "--http",
                               help="serve Streamable HTTP instead of stdio"),
-    host: str = typer.Option("127.0.0.1", help="HTTP bind address"),
+    host: str = typer.Option(
+        "127.0.0.1",
+        help="HTTP bind address; loopback only (127.0.0.0/8, localhost, ::1)"),
     port: int = typer.Option(8765, help="HTTP port"),
 ) -> None:
     """Serve LORE's seven read-only tools over MCP.
@@ -804,10 +806,17 @@ def mcp_command(
     open and close per request, so `lore graph load` keeps working while
     this is running.
     """
-    from lore.mcp.server import run_http, run_stdio
+    from lore.mcp.server import NonLoopbackHost, _check_loopback, run_http, run_stdio
 
     config = LoreConfig.load()
     if http:
+        # run_http checks this too (so nothing can bypass it); checking here
+        # first turns the refusal into a clean message instead of a traceback.
+        try:
+            _check_loopback(host)
+        except NonLoopbackHost as exc:
+            typer.echo(f"lore mcp: {exc}", err=True)
+            raise typer.Exit(2)
         # stderr: in stdio mode stdout is the protocol channel, and the habit
         # is worth keeping in both.
         typer.echo(f"lore mcp: streamable-http on http://{host}:{port}", err=True)

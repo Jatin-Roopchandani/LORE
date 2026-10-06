@@ -14,6 +14,7 @@ a supervisor that restarts it. There is deliberately no per-query isolation.
 """
 from __future__ import annotations
 
+import ipaddress
 from typing import Any
 
 from mcp.server import MCPServer
@@ -99,11 +100,44 @@ def run_stdio(config: LoreConfig) -> None:
     build_server(config).run(transport="stdio")
 
 
+class NonLoopbackHost(ValueError):
+    """`--host` named an address beyond loopback."""
+
+
+def _check_loopback(host: str) -> None:
+    """Refuse any bind address that is not loopback.
+
+    The server has no authentication, so binding beyond loopback hands
+    `cypher_query` and the user's Gemini budget (through `lore_search`) to
+    anyone on the network. The DNS-rebinding check does not stop that: a
+    LAN client sets its own Host header. Verified: with host 0.0.0.0, a
+    request carrying `Host: 127.0.0.1:8765` was accepted (200). Checked
+    here, on the path both run_http and build_http_app take, so no caller
+    -- the CLI included -- can skip it.
+    """
+    if host.lower() == "localhost":
+        return
+    try:
+        loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:  # a hostname, a bracketed IPv6, or ""
+        loopback = False
+    if not loopback:
+        raise NonLoopbackHost(
+            f"refusing to bind {host!r}: LORE's MCP server has no"
+            " authentication yet, so it only binds loopback (127.0.0.0/8,"
+            " localhost, ::1)"
+        )
+
+
 def _security(host: str, port: int) -> TransportSecuritySettings:
     # Loopback bind plus the SDK's DNS-rebinding protection: without an
     # allowed-hosts list a page in the user's browser can reach a localhost port.
+    _check_loopback(host)
+    # An IPv6 literal is bracketed in a Host header (`[::1]:8765`, RFC 3986);
+    # the bare `::1:8765` matched no real request, so every one got 421.
+    shown = f"[{host}]" if ":" in host else host
     return TransportSecuritySettings(
-        allowed_hosts=[f"{host}:{port}", f"127.0.0.1:{port}", f"localhost:{port}"],
+        allowed_hosts=[f"{shown}:{port}", f"127.0.0.1:{port}", f"localhost:{port}"],
     )
 
 

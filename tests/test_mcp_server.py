@@ -130,3 +130,72 @@ def test_stdio_serves_tools_and_prints_only_protocol_frames(tmp_path):
     assert messages and all(m.get("jsonrpc") == "2.0" for m in messages)
     listing = next(m for m in messages if m.get("id") == 2)
     assert {t["name"] for t in listing["result"]["tools"]} == EXPECTED
+
+
+# --- loopback only ------------------------------------------------------------------
+#
+# The HTTP server has no authentication, so it must never bind beyond loopback.
+# Verified before the fix: with --host 0.0.0.0 a LAN request carrying
+# `Host: 127.0.0.1:8765` was accepted (200), exposing cypher_query and the
+# user's Gemini budget.
+
+_INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+    "protocolVersion": "2025-06-18", "capabilities": {},
+    "clientInfo": {"name": "t", "version": "0"}}}
+_HEADERS = {"Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json"}
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.5", "::", "example.com",
+                                  "", "[::1]"])
+def test_a_non_loopback_host_is_refused(served_config, host):
+    from lore.mcp.server import NonLoopbackHost, build_http_app, run_http
+    with pytest.raises(NonLoopbackHost, match="loopback"):
+        build_http_app(served_config, host, 8765)
+    with pytest.raises(NonLoopbackHost, match="no authentication"):
+        run_http(served_config, host, 8765)  # refused before it binds
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2", "localhost",
+                                  "LocalHost", "::1"])
+def test_loopback_hosts_are_accepted(served_config, host):
+    from lore.mcp.server import build_http_app
+    assert build_http_app(served_config, host, 8765) is not None
+
+
+def test_the_ipv6_allowed_host_is_bracketed():
+    # The real Host header for ::1 is "[::1]:8765"; "::1:8765" matched nothing,
+    # so every request got 421.
+    from lore.mcp.server import _security
+    assert "[::1]:8765" in _security("::1", 8765).allowed_hosts
+    assert "::1:8765" not in _security("::1", 8765).allowed_hosts
+
+
+@pytest.mark.parametrize("host,good", [("127.0.0.1", "127.0.0.1:8765"),
+                                       ("::1", "[::1]:8765")])
+def test_a_foreign_host_header_gets_421_and_loopback_does_not(
+    served_config, host, good
+):
+    from starlette.testclient import TestClient
+    from lore.mcp.server import build_http_app
+    app = build_http_app(served_config, host, 8765)
+    with TestClient(app, base_url="http://127.0.0.1:8765") as client:
+        foreign = client.post("/mcp", json=_INIT,
+                              headers={**_HEADERS, "Host": "evil.example:8765"})
+        local = client.post("/mcp", json=_INIT, headers={**_HEADERS, "Host": good})
+    assert foreign.status_code == 421
+    assert local.status_code != 421
+    assert local.status_code == 200
+
+
+def test_the_cli_refuses_a_non_loopback_host(tmp_path, monkeypatch):
+    from unittest.mock import patch
+    from typer.testing import CliRunner
+    from lore.cli import app
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    with patch("lore.mcp.server.MCPServer.run") as run:
+        result = CliRunner().invoke(app, ["mcp", "--http", "--host", "0.0.0.0"])
+    assert result.exit_code == 2
+    assert "loopback" in result.output
+    run.assert_not_called()
