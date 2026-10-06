@@ -57,6 +57,16 @@ async def run(label: str, only: list[str] | None, qset: str) -> None:
             continue
         started = time.monotonic()
         result = await tools.lore_search(config, q["question"])
+        # A transient Gemini refusal (overload 503, a cooling model) is not a
+        # quality signal: in the noise-floor run one cost a whole question's
+        # facts. Retry it, after a pause, before recording.
+        for attempt in range(2):
+            err = result.get("error")
+            if not err or err["code"] != "upstream_unavailable":
+                break
+            print(f"{q['id']}: upstream_unavailable, retrying in 60s", flush=True)
+            await asyncio.sleep(60)
+            result = await tools.lore_search(config, q["question"])
         record = {"id": q["id"], "question": q["question"],
                   "seconds": round(time.monotonic() - started, 1), **result}
         with out.open("a") as f:
