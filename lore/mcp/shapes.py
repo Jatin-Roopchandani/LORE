@@ -132,6 +132,12 @@ class EntityCard(BaseModel):
     books: list[str]
     edges_out: list[EdgeOut]
     edges_in: list[EdgeOut]
+    # Each direction is capped (tools.CARD_EDGE_CAP); the totals say how
+    # many edges exist, so a UI can show "50 of 172" and fetch the rest
+    # through `subgraph` or `cypher_query`.
+    edges_out_total: int
+    edges_in_total: int
+    truncated: bool
 
 
 class SubgraphOut(BaseModel):

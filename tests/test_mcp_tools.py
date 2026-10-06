@@ -261,6 +261,34 @@ def test_entity_card_edges_are_ordered_by_book_chapter_chunk(graph_config):
     assert [e["chunk_id"] for e in result["edges_in"]] == ["c2", "c6"]
 
 
+# The card used to return every edge. On the live graph Mr. Sherlock Holmes
+# has 172 out and 111 in -- a 103 KB result that Claude Code refused as one
+# tool response. Each direction is capped, the totals say how many exist,
+# and `truncated` says the card is partial.
+
+def test_the_card_reports_edge_totals_when_nothing_is_cut(graph_config):
+    result = entity(graph_config, "Dr. Watson")
+    assert result["edges_in_total"] == 2 and len(result["edges_in"]) == 2
+    assert result["edges_out_total"] == len(result["edges_out"])
+    assert result["truncated"] is False
+
+
+def test_the_card_caps_each_direction_and_keeps_the_first_edges(
+        graph_config, monkeypatch):
+    monkeypatch.setattr(tools_module, "CARD_EDGE_CAP", 1)
+    result = entity(graph_config, "Dr. Watson")
+    # The same total order as the uncapped card: c2 (ch 1) survives, c6 goes.
+    assert [e["chunk_id"] for e in result["edges_in"]] == ["c2"]
+    assert result["edges_in_total"] == 2
+    assert result["truncated"] is True
+
+
+def test_exactly_cap_card_edges_is_not_truncated(graph_config, monkeypatch):
+    monkeypatch.setattr(tools_module, "CARD_EDGE_CAP", 2)
+    result = entity(graph_config, "Dr. Watson")
+    assert len(result["edges_in"]) == 2 and result["truncated"] is False
+
+
 def test_entity_resolves_an_alias_to_its_canonical(graph_config):
     assert entity(graph_config, ALIAS_NAME)["name"] == HOLMES
     assert entity(graph_config, ALIAS_NAME) == entity(graph_config, HOLMES)

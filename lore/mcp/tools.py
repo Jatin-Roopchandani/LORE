@@ -134,6 +134,9 @@ SUBGRAPH_NODE_CAP = 300
 # Nodes alone do not bound edges: Holmes at depth 3 was 286 nodes, 995 edges,
 # ~344 KB. Evidence text is never shortened to fit; edges are dropped instead.
 SUBGRAPH_EDGE_CAP = 500
+# Per direction, on the entity card. 50 + 50 Holmes edges is ~36 KB, well
+# inside one tool result; the uncapped 283 was 103 KB and was refused.
+CARD_EDGE_CAP = 50
 
 # Every Kuzu query below that is capped or whose rows are presented ends in a
 # TOTAL ORDER BY (down to unique fields), and none uses RETURN DISTINCT with
@@ -218,8 +221,14 @@ def _edge(subject: str, subject_id: str, obj: str, object_id: str,
     )
 
 
-def _entity_card(kuzu, entity_id: str) -> EntityCard:
-    """The entity row plus every REL edge in and out, in a stable order.
+def _entity_card(kuzu, entity_id: str, edge_cap: int) -> EntityCard:
+    """The entity row plus up to `edge_cap` REL edges each way, in a stable
+    order, with the true totals.
+
+    Capped because the uncapped card for the live graph's biggest hub (Mr.
+    Sherlock Holmes: 172 out, 111 in) was a 103 KB result that Claude Code
+    refused as a single tool response. The cap sits on the same total
+    ORDER BY as before, so which edges survive is deterministic.
 
     Edge subject/object are names and subject_id/object_id the ids, as in
     the subgraph: one meaning for EdgeOut in every tool.
@@ -234,25 +243,38 @@ def _entity_card(kuzu, entity_id: str) -> EntityCard:
     row = rows[0]
     # b.id after the edge columns: two edges to different entities with the
     # same name and text must not tie.
+    params = {"id": entity_id, "cap": edge_cap}
     edges_out = [
         _edge(row[1], row[0], r[7], r[8], r) for r in kuzu.execute(
             f"MATCH (e:Entity)-[r:REL]->(b:Entity) WHERE e.id = $id"
             f" RETURN {_EDGE_COLUMNS}, b.name, b.id"
-            f" ORDER BY {_EDGE_ORDER}, b.id",
-            {"id": entity_id},
+            f" ORDER BY {_EDGE_ORDER}, b.id LIMIT $cap",
+            params,
         )
     ]
     edges_in = [
         _edge(r[7], r[8], row[1], row[0], r) for r in kuzu.execute(
             f"MATCH (b:Entity)-[r:REL]->(e:Entity) WHERE e.id = $id"
             f" RETURN {_EDGE_COLUMNS}, b.name, b.id"
-            f" ORDER BY {_EDGE_ORDER}, b.id",
-            {"id": entity_id},
+            f" ORDER BY {_EDGE_ORDER}, b.id LIMIT $cap",
+            params,
         )
     ]
+    out_total = _count(kuzu, "MATCH (e:Entity)-[r:REL]->(:Entity)"
+                             " WHERE e.id = $id RETURN count(r)", entity_id)
+    in_total = _count(kuzu, "MATCH (:Entity)-[r:REL]->(e:Entity)"
+                            " WHERE e.id = $id RETURN count(r)", entity_id)
     return EntityCard(id=row[0], name=row[1], kind=row[2] or "",
                       aliases=list(row[3] or []), books=list(row[4] or []),
-                      edges_out=edges_out, edges_in=edges_in)
+                      edges_out=edges_out, edges_in=edges_in,
+                      edges_out_total=out_total, edges_in_total=in_total,
+                      truncated=(len(edges_out) < out_total
+                                 or len(edges_in) < in_total))
+
+
+def _count(kuzu, cypher: str, entity_id: str) -> int:
+    rows = list(kuzu.execute(cypher, {"id": entity_id}))
+    return int(rows[0][0]) if rows else 0
 
 
 @_guarded
@@ -260,7 +282,9 @@ def entity(config: LoreConfig, name: str) -> dict:
     with open_stores(config) as stores:
         try:
             entity_id = _resolve_one(stores.kuzu, name)
-            return _entity_card(stores.kuzu, entity_id).model_dump()
+            # Read at call time, so a test can monkeypatch the module value.
+            return _entity_card(stores.kuzu, entity_id,
+                                CARD_EDGE_CAP).model_dump()
         except _NotFound:
             return error("not_found", f"no entity named {name!r}")
         except _Ambiguous as exc:

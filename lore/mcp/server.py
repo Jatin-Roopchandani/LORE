@@ -70,7 +70,9 @@ def build_server(config: LoreConfig) -> MCPServer:
 
         Resolves an alias to its canonical entity. An unknown name returns a
         not_found error; so does an ambiguous one, whose message lists the
-        candidates to choose from.
+        candidates to choose from. At most 50 edges are returned each way;
+        edges_out_total and edges_in_total give the real counts, and
+        truncated says the card is partial -- use subgraph for more.
         """
         return tools.entity(config, name)
 
