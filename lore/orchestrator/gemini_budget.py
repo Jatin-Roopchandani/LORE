@@ -5,15 +5,21 @@ point of one ledger is that `lore ask` in a terminal and `lore_search`
 over MCP spend the SAME daily allowance: a server-only counter reports a
 number that is wrong on any day the CLI was also used, which is most days.
 
-The day is LOCAL, not UTC. Google's free-tier day resets at midnight
-Pacific, which this does not model; a local day is the honest
-approximation and the report says which day it counted.
+The ledger day is Google's day: it rolls over at midnight Pacific
+(America/Los_Angeles, so PST or PDT as the date demands), when Google's
+free-tier allowance resets. That is what makes the refusal message's
+"resets at midnight Pacific" true of LORE's own refusal. Do not "simplify"
+this back to `datetime.now()`: this machine's local zone is UTC, and a UTC
+day rolls over at 16:00/17:00 Pacific, so every request between 00:00 and
+~07:00 UTC landed on a fresh ledger day while Google was still charging
+the old one -- the ledger approved searches Google then refused with 429.
 """
 from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from lore.db.sqlite import open_db
@@ -24,8 +30,26 @@ class BudgetExceeded(RuntimeError):
     """This call would exceed the model's free-tier daily allowance."""
 
 
+# Resolved from the system zone database (/usr/share/zoneinfo); there is no
+# `tzdata` wheel in this environment.
+GOOGLE_DAY_ZONE = ZoneInfo("America/Los_Angeles")
+
+
 def today(now: datetime | None = None) -> str:
-    moment = now if now is not None else datetime.now()
+    """The ledger day (YYYY-MM-DD) in Google's free-tier zone, Pacific.
+
+    `now` is for tests and must be timezone-aware; it is converted to
+    Pacific first. A naive datetime is refused rather than guessed at:
+    Python would read it as the machine's local zone (UTC here), and that
+    guess is exactly the drift this function exists to remove.
+    """
+    if now is None:
+        moment = datetime.now(GOOGLE_DAY_ZONE)
+    elif now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("today() needs a timezone-aware datetime, not a"
+                         " naive one: its zone cannot be guessed")
+    else:
+        moment = now.astimezone(GOOGLE_DAY_ZONE)
     return moment.strftime("%Y-%m-%d")
 
 
