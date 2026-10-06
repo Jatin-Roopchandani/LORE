@@ -140,6 +140,44 @@ class QueryModels:
     check: Generate | None = field(default=None)
 
 
+@dataclass(frozen=True)
+class QueryEmbedder:
+    embed: Embed
+    aclose: Callable[[], Awaitable[None]]
+    # Exposed so `make_query_models` can point its generators at the same one.
+    provider: OllamaProvider
+
+
+def make_query_embedder(
+    config: LoreConfig, *, ollama: OllamaProvider | None = None
+) -> QueryEmbedder:
+    """The local query embedder alone, with no Gemini key or client needed.
+
+    Callers that only embed (the MCP `vector_search` tool, which is
+    documented as spending no Gemini budget) must use this, never
+    `make_query_models`: that builds the whole stack and refuses without a
+    key whenever selection or synthesis is on Gemini.
+
+    Deliberately NOT the one from `lore.graph.adjudicate.make_ollama_pair`:
+    that applies DOCUMENT_PREFIX, and a query embedded with the document
+    prefix retrieves worse without ever erroring. This one adds no prefix;
+    QUERY_PREFIX is applied exactly once, in `seed.embed_question`, and
+    `answer_question` embeds each question once and reuses that vector, so
+    it is never doubled.
+
+    An injected `ollama` is the caller's to share; `aclose` closes whichever
+    provider is in use, once.
+    """
+    local = ollama if ollama is not None else OllamaProvider(
+        config.ollama, timeout=OLLAMA_TIMEOUT_S
+    )
+
+    async def embed(texts: list[str]) -> list[list[float]]:
+        return await local.embed(texts, model=config.extraction.embed_model_ollama)
+
+    return QueryEmbedder(embed, local.aclose, local)
+
+
 def make_query_models(
     config: LoreConfig,
     api_key: str | None = None,
@@ -150,12 +188,9 @@ def make_query_models(
 ) -> QueryModels:
     """Build the query side's models. `ollama`/`gemini` are for tests.
 
-    The embedder is deliberately NOT the one from
-    `lore.graph.adjudicate.make_ollama_pair`: that applies DOCUMENT_PREFIX,
-    and a query embedded with the document prefix retrieves worse without
-    ever erroring. This one adds no prefix; QUERY_PREFIX is applied exactly
-    once, in `seed.embed_question`, and `answer_question` embeds each
-    question once and reuses that vector, so it is never doubled.
+    The embedder comes from `make_query_embedder`, which carries the warning
+    about `make_ollama_pair`'s DOCUMENT_PREFIX embedder and about QUERY_PREFIX
+    being applied exactly once, in `seed.embed_question`.
 
     With either step on "gemini" and neither a key nor a client, this raises
     rather than quietly using the local model: that would hide the quality
@@ -173,9 +208,9 @@ def make_query_models(
         # Checked before any client opens, so a refusal leaks nothing.
         sections = " and ".join(f"[lore.{name}]" for name in remote_steps)
         raise ValueError(f'{sections} provider = "gemini" needs an API key')
-    local = ollama if ollama is not None else OllamaProvider(
-        config.ollama, timeout=OLLAMA_TIMEOUT_S
-    )
+    embedder = make_query_embedder(config, ollama=ollama)
+    # The one provider the embedder built (or was given): generators share it.
+    local = embedder.provider
     remotes: dict[tuple[str, ...], GeminiClient] = {}
 
     def remote(models: list[str]) -> GeminiClient:
@@ -186,8 +221,7 @@ def make_query_models(
             remotes[key] = GeminiClient(api_key, models=models, recorder=recorder)
         return remotes[key]
 
-    async def embed(texts: list[str]) -> list[list[float]]:
-        return await local.embed(texts, model=config.extraction.embed_model_ollama)
+    embed = embedder.embed
 
     if config.selection.provider == "gemini":
         selector = remote(config.selection.models)

@@ -633,3 +633,44 @@ def test_cypher_query_other_runtime_errors_are_not_called_timeouts(library_confi
 
 def test_cypher_tools_without_a_graph(empty_config):
     assert cypher_query(empty_config, "RETURN 1")["error"]["code"] == "no_graph"
+
+
+async def test_vector_search_needs_no_gemini_key(search_config, monkeypatch):
+    """The default path (embed=None) must not build the Gemini-gated query
+    stack: selection and synthesis are on Gemini here with no key reachable,
+    and a local-only tool still has to answer. Every other test injects
+    `embed`, which is how this path went untested."""
+    from lore.query import agent as agent_module
+    from lore.extract.embed import QUERY_PREFIX
+
+    config = search_config.model_copy(deep=True)
+    config.selection.provider = "gemini"
+    config.synthesis.provider = "gemini"
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "LORE_GEMINI_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    # No real ~/.config/lore/gemini.env: HOME points at an empty dir.
+    monkeypatch.setenv("HOME", str(search_config.data_dir / "no-home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(search_config.data_dir / "no-xdg"))
+
+    seen: list[list[str]] = []
+    closed: list[bool] = []
+
+    class FakeOllama:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def embed(self, texts, model=None):
+            seen.append(list(texts))
+            return [_vec(0.0) for _ in texts]
+
+        async def aclose(self):
+            closed.append(True)
+
+    monkeypatch.setattr(agent_module, "OllamaProvider", FakeOllama)
+
+    result = await vector_search(config, "a murder", embed=None)
+
+    assert "error" not in result
+    assert result["chunks"]
+    assert seen == [[QUERY_PREFIX + "a murder"]]
+    assert closed == [True]

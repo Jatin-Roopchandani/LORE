@@ -379,11 +379,21 @@ async def vector_search(config: LoreConfig, query: str,
         # empty list, which looks the same as "no passages matched".
         if book_id is not None and book_id not in titles:
             return error("not_found", f"no book with id {book_id!r}")
+        embedder = None
         if embed is None:
-            from lore.query.agent import make_query_models
-            embed = make_query_models(config).embed
-        # QUERY_PREFIX is applied exactly once, inside embed_question.
-        vector = await embed_question(query, embed)
+            # Must NOT use make_query_models: it builds the Gemini-gated
+            # stack and raises "needs an API key" when selection/synthesis
+            # are on Gemini, which would break the one tool documented as
+            # needing no key. Only the local embedder is built, and closed.
+            from lore.query.agent import make_query_embedder
+            embedder = make_query_embedder(config)
+            embed = embedder.embed
+        try:
+            # QUERY_PREFIX is applied exactly once, inside embed_question.
+            vector = await embed_question(query, embed)
+        finally:
+            if embedder is not None:
+                await embedder.aclose()
         if book_id is None:
             rows = stores.lance.search_chunks(vector, limit=limit)
         else:
