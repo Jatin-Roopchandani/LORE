@@ -340,8 +340,6 @@ def _expand(kuzu, root: str, depth: int, node_cap: int,
 
 @_guarded
 def subgraph(config: LoreConfig, entity_name: str, depth: int = 1) -> dict:
-    # The parameter is `entity_name`: `entity` is a function in this module,
-    # and shadowing it here is how the shared resolver stops being called.
     with open_stores(config) as stores:
         try:
             root = _resolve_one(stores.kuzu, entity_name)

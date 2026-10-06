@@ -85,7 +85,9 @@ class SeedOut(BaseModel):
     name: str
     kind: str
     books: list[str]
-    # A squared-L2 distance (lower is nearer). None when it is not finite:
+    # A squared-L2 distance (lower is nearer). 0.0 means the entity was
+    # NAMED in the question: named seeds score 0.0 by construction, so it
+    # does not mean an identical vector. None when it is not finite:
     # seed.py scores a chunk with no `_distance` as inf, and json.dumps
     # writes that as `Infinity`, which strict JSON-RPC clients reject.
     score: float | None

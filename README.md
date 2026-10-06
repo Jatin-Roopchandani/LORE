@@ -39,8 +39,9 @@ verified on a Kaggle T4; this `lore.toml` sets 10 for Gemini, see below).
     uv run lore ask "Who owned the steam launch Aurora?"       # cited answer from the graph
     uv run lore ask "Who owned the steam launch Aurora?" --baseline   # vector search alone
 
-`ask` is read-only. It answers from books that have been loaded into the
-graph by `lore process`. The model picks one of a fixed set of graph searches,
+`ask` does not modify your books, graph or vectors (it records its Gemini
+requests in a ledger table; see below). It answers from books that have been
+loaded into the graph by `lore process`. The model picks one of a fixed set of graph searches,
 then writes the answer as claims. Each claim must quote its cited passage word
 for word, and code drops any claim whose quote isn't there. One further call
 then judges every surviving claim against the passage it cites and drops the
@@ -96,14 +97,30 @@ There are two transports:
     lore mcp                    # stdio, for a client that spawns it
     lore mcp --http --port 8765 # Streamable HTTP, loopback only (127.0.0.1)
 
-The HTTP server answers only requests addressed to a loopback host. A request
-carrying any other `Host` header is refused. Every tool is read-only. Only
-`lore_search` spends Gemini budget. `lore_search` and `vector_search` embed the
-question through Ollama, so it has to be running, and on this machine it must
-be CPU-only (`CUDA_VISIBLE_DEVICES=-1 ollama serve`). A long-lived `--http`
-server should run under a supervisor, because an engine crash takes the whole
-process down. The first `lore_search` migrates `data/lore.db` to schema v4,
-which adds the Gemini budget ledger.
+The HTTP server has no authentication, so it binds loopback only: `--host`
+accepts 127.0.0.0/8, `localhost` or `::1` and refuses anything else, such as
+`0.0.0.0`. It also answers only requests addressed to a loopback host; a
+request carrying any other `Host` header gets 421.
+
+No tool modifies your books, graph or vectors. `lore_search` records its
+Gemini requests in a ledger table in `data/lore.db`, and its first run migrates
+`lore.db` to schema v4, which adds that ledger. Only `lore_search` spends
+Gemini budget. `lore_search` and `vector_search` embed the question through
+Ollama, so Ollama has to be running; if it is not, they return
+`upstream_unavailable`. On this machine it must run CPU-only
+(`CUDA_VISIBLE_DEVICES=-1 ~/.local/ollama/bin/ollama serve`).
+
+`library`, `ingest_status` and `vector_search` do not need the graph, so they
+keep answering before `lore graph load` has run and while a load holds the
+graph's lock. During that time `library` lists every book with
+`entity_count: null` and a `note` saying why. `entity`, `subgraph`,
+`cypher_query` and `lore_search` need the graph and return `no_graph` without
+it. A book that was chunked but never loaded has no embedded passages, and
+`vector_search` limited to that book says so instead of returning an empty
+list.
+
+A long-lived `--http` server should run under a supervisor, because an engine
+crash takes the whole process down.
 
 ## How it works: from book to answer
 
@@ -273,8 +290,10 @@ next `lore process --skip-extract` applies them. See the Gemini section below.
     answer + sources (book, chapter) + mode + the models that selected
     and answered
 
-`ask` never writes: it opens SQLite read-only and Kuzu read-only, and treats a
-book as queryable when the graph holds a `Book` node for it.
+`ask` opens SQLite read-only and Kuzu read-only, and treats a book as
+queryable when the graph holds a `Book` node for it. Its one write is
+bookkeeping: when a step runs on Gemini, each request is recorded in the
+`gemini_ledger` table of `lore.db`, which may first migrate it to schema v4.
 
 The model never writes Cypher: it chooses among seven hand-written templates
 (`neighbours`, `two_hop`, `path_between`, `by_predicate`, `shared_neighbours`,

@@ -22,13 +22,19 @@ import re
 
 ROW_CAP = 200
 TIMEOUT_MS = 5000
-# TIMEOUT_MS is applied where the connection is made (Task 5's stores.py),
-# not here -- run_guarded does not set it. It is insurance for a larger
-# library, not a demonstrated control: it could not be made to fire on
-# this corpus (560 entities is too small to build a slow query, and
-# Kuzu's optimizer folds count(*) over a triple product into arithmetic,
-# answered in 30ms). The row cap below is the real resource control,
-# because Kuzu streams rows lazily -- see run_guarded's docstring.
+# TIMEOUT_MS is applied where the connection is made (stores.py), not
+# here -- run_guarded does not set it. The two limits bound different
+# queries, and both are demonstrated, not assumed:
+#   * ROW_CAP bounds STREAMING queries. Kuzu returns rows lazily, so the
+#     first rows of a 175,616,000-row cartesian product arrive in ~60 ms
+#     and reading 200 then stopping costs nothing.
+#   * TIMEOUT_MS bounds BLOCKING queries: a sort or aggregation that must
+#     materialise everything before its first row. Measured on 0.11.3: an
+#     ORDER BY over a three-way cross product ran 0.22 s against a 200 ms
+#     limit and raised RuntimeError('Interrupted.'); tools.cypher_query
+#     maps exactly that to `timeout`.
+# Not every big-looking query is either: count(*) over a cross product is
+# folded into arithmetic by the optimizer (~30 ms) and never times out.
 
 _ALLOWED_OPENINGS = ("OPTIONAL MATCH", "MATCH", "RETURN", "WITH", "UNWIND", "CALL")
 _ALLOWED_CALLS = frozenset({"show_tables", "table_info", "db_version"})
@@ -233,10 +239,13 @@ def run_guarded(kuzu, query: str, row_cap: int = ROW_CAP):
 
     Returns (columns, rows, truncated).
 
-    The row cap is the real resource control, not the timeout: Kuzu
-    streams, so `MATCH (a:Entity),(b:Entity),(c:Entity) RETURN ...` --
-    175,616,000 rows on the live graph -- returns its first rows in 60ms,
-    and reading 200 then stopping costs nothing.
+    The row cap bounds queries Kuzu can stream: `MATCH (a:Entity),
+    (b:Entity),(c:Entity) RETURN ...` -- 175,616,000 rows on the live graph
+    -- returns its first rows in 60ms, and reading 200 then stopping costs
+    nothing. It cannot bound a query that blocks before its first row (an
+    ORDER BY or aggregation over that product); the connection's query
+    timeout (TIMEOUT_MS, set in stores.py) does, raising
+    RuntimeError('Interrupted.'). See the comment at TIMEOUT_MS.
     """
     validate_cypher(query)
     result = kuzu.execute(query)

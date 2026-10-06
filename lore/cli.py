@@ -670,7 +670,9 @@ def ask(
     both), which sends the question, its seed entity names and its evidence
     passages to Google.
 
-    Read-only: nothing in the library is created or modified.
+    Your books, graph and vectors are not modified. When a step runs on
+    Gemini, each request is recorded in the gemini_ledger table of lore.db,
+    and that write may first apply a pending schema migration (v3 to v4).
     """
     if not question.strip():
         # Checked before anything opens or any model is asked: a blank
@@ -800,11 +802,13 @@ def mcp_command(
         help="HTTP bind address; loopback only (127.0.0.0/8, localhost, ::1)"),
     port: int = typer.Option(8765, help="HTTP port"),
 ) -> None:
-    """Serve LORE's seven read-only tools over MCP.
+    """Serve LORE's seven query tools over MCP.
 
-    Read-only: nothing in the library is created or modified. Store handles
+    No tool modifies your books, graph or vectors. lore_search records its
+    Gemini requests in the gemini_ledger table of lore.db, and that write
+    may first apply a pending schema migration (v3 to v4). Store handles
     open and close per request, so `lore graph load` keeps working while
-    this is running.
+    this is running. --http binds loopback only: there is no authentication.
     """
     from lore.mcp.server import NonLoopbackHost, _check_loopback, run_http, run_stdio
 

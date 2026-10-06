@@ -1,4 +1,4 @@
-"""The seven read-only tools, over stdio and Streamable HTTP.
+"""The seven query tools, over stdio and Streamable HTTP.
 
 The server class is `MCPServer` (mcp 2.x); `FastMCP` is the 1.x name. SPEC
 originally said SSE, the HTTP transport the MCP spec superseded; this serves

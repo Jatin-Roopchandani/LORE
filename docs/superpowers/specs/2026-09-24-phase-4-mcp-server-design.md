@@ -125,6 +125,12 @@ lore mcp --http --port 8765     # streamable-http, for the Phase 5 UI
 | `library()` | books: id, title, author, status, chunk and entity counts | no |
 | `ingest_status(book_id)` | job states, last run, dead letters | no |
 
+*Amended during implementation:* `library`, `ingest_status` and `vector_search`
+open only the stores they need (`open_stores(config, kuzu=, lance=)`), so they
+answer while the graph is absent or locked by a load. `library` then returns
+`entity_count: null` per book and a top-level `note` saying why. The other four
+still require the graph.
+
 ### 4.1 The `Answer` widening
 
 `Answer` (`lore/query/models.py`) carries `text`, `passages`, `mode`, `template`,
@@ -196,15 +202,19 @@ read-only connection is the backstop.
    has to trust. False positives are the right side to err on.
 3. **One statement.** A `;` joining two statements is rejected; otherwise rule 1
    vets only the first.
-4. **Row cap**, default 200, returning `truncated: true` when it bites. This is
-   the real resource control: Kuzu streams, so
+4. **Row cap**, default 200, returning `truncated: true` when it bites. It
+   bounds **streaming** queries: Kuzu streams, so
    `MATCH (a:Entity),(b:Entity),(c:Entity) RETURN a.id,b.id,c.id` — 175,616,000
    rows — returns its first rows in 60 ms, and reading 200 then stopping costs
    nothing.
-5. **`set_query_timeout(5000)`.** Insurance, and unproven on this corpus: 560
-   entities is too small to build a slow query, and the optimizer folds
-   `count(*)` over a triple product into arithmetic (answered in 30 ms). It is
-   there for a larger library, not because it was demonstrated here.
+5. **`set_query_timeout(5000)`.** It bounds **blocking** queries, the ones the
+   row cap cannot: a sort or aggregation that must materialise before its
+   first row. *Amended during implementation:* this was first written as
+   "unproven on this corpus". Task 9 demonstrated it: an `ORDER BY` over a
+   three-way cross product ran 0.22 s against a 200 ms limit and Kuzu raised
+   `RuntimeError('Interrupted.')`, which `cypher_query` returns as `timeout`.
+   `count(*)` over a cross product is still folded into arithmetic by the
+   optimizer (answered in 30 ms) and never times out.
 6. **Read-only connection**, as the engine-level backstop for rule 2.
 
 ---
@@ -214,7 +224,7 @@ read-only connection is the backstop.
 ```sql
 CREATE TABLE gemini_ledger (
     id      INTEGER PRIMARY KEY,
-    day     TEXT NOT NULL,        -- 2026-09-24, local date
+    day     TEXT NOT NULL,        -- 2026-09-24, Pacific date (Google's day)
     model   TEXT NOT NULL,        -- gemini-3.5-flash-lite
     count   INTEGER NOT NULL,
     UNIQUE (day, model)
@@ -224,9 +234,19 @@ CREATE TABLE gemini_ledger (
 **The counter lives in the inference layer, not the server.** `lore/inference/
 gemini.py` is the one place every caller passes through — extraction,
 disambiguation, adjudication, `lore ask`, `lore_search`. It gains a recorder that
-increments `(day, model)` on each call and reads the day's count before one. Put
-the counter in the MCP server instead and the number is wrong the moment an
-extraction run happens.
+increments `(day, model)` on each call. Put the counter in the MCP server instead
+and the number is wrong the moment an extraction run happens.
+
+*Amended during implementation, to describe what was built:* every caller
+records, and none checks the count before each call. The one pre-check is in
+`lore_search`: before the search starts, it checks the day's count for the
+configured synthesis models and refuses with `budget_exhausted` only when every
+one of them is at its cap (the client cascades, so one capped model just falls
+through to the next). Google enforces the real limit; the pre-check exists to
+refuse a search cleanly before spending anything, not to police each request.
+The day is Google's day: `today()` rolls over at midnight Pacific
+(America/Los_Angeles), when the free-tier allowance resets, not at local or UTC
+midnight.
 
 `lore quota` grows a Gemini section beside the GPU-hours one.
 
@@ -284,13 +304,15 @@ Claude Code, against the live graph.
 ## 9. Out of scope
 
 - The web UI (Phase 5). This phase produces the JSON it will draw, nothing more.
-- Authentication on the HTTP transport. It binds `127.0.0.1` and sets
+- Authentication on the HTTP transport. It binds `127.0.0.1` (any `--host`
+  that is not loopback — 127.0.0.0/8, `localhost`, `::1` — is refused) and sets
   `TransportSecuritySettings` (the SDK's DNS-rebinding protection: an
   `allowed_hosts` / `allowed_origins` allowlist, which matters because a page
   in your browser can otherwise reach a localhost port). The Phase 5 spec
   revisits auth if anything is ever exposed beyond the loopback interface.
-- Writing through MCP. Every tool is read-only. Ingestion and extraction stay on
-  the CLI.
+- Writing through MCP. No tool modifies the books, graph or vectors; the one
+  write is `lore_search`'s Gemini ledger row (§6), which may first migrate
+  `lore.db` to schema v4. Ingestion and extraction stay on the CLI.
 - The carried graph debt from Phase 3 (4 false `KILLS` edges, the
   "Miss Mary Morstan" split, Drebber's node name, 1 schema-failing chunk). These
   are data defects, not server defects; Phase 7 owns them.
