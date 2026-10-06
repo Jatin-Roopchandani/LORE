@@ -396,12 +396,88 @@ def test_edges_name_their_ends_and_ids_join_to_nodes(graph_config):
         assert e["object"] == names[e["object_id"]]
 
 
+# Parallel edges. On the live graph Jefferson Hope's depth-1 subgraph had 31
+# nodes but 205 edges -- the same pair repeated once per passage -- an 82 KB
+# result Claude Code refused. The subgraph returns one link per
+# subject->object pair: how many passages back it, which predicates, and one
+# representative citation; links are ordered strongest first, so a capped
+# hub keeps its real relationships and drops the one-off mentions.
+
+@pytest.fixture
+def parallel_config(tmp_path: Path) -> LoreConfig:
+    def entity_row(i, name):
+        return (i, name, "Character", [BOOK_ID], [])
+
+    def edge(s, o, p, chunk, seq):
+        return (s, o, p, chunk, BOOK_ID, seq)
+
+    return build_store_triple(
+        tmp_path,
+        books=[(BOOK_ID, "A Study")],
+        entities=[entity_row("h", HOLMES), entity_row("w", "Dr. Watson"),
+                  entity_row("j", "Jabez Wilson")],
+        edges=[
+            edge("h", "w", "knows", "c8", 4),
+            edge("h", "w", "knows", "c2", 1),
+            edge("h", "w", "admires", "c9", 4),
+            edge("w", "h", "knows", "c3", 2),
+            edge("h", "j", "knows", "c4", 2),
+        ],
+    )
+
+
+def test_parallel_edges_become_one_link_per_direction(parallel_config):
+    result = subgraph(parallel_config, HOLMES, depth=1)
+    by_pair = {(e["subject_id"], e["object_id"]): e for e in result["edges"]}
+    assert set(by_pair) == {("h", "w"), ("w", "h"), ("h", "j")}
+    hw = by_pair[("h", "w")]
+    assert hw["count"] == 3
+    assert hw["predicates"] == {"knows": 2, "admires": 1}
+    # One citation, the first edge in book/chapter/chunk order: c2 (ch 1).
+    assert [c["chunk_id"] for c in hw["citations"]] == ["c2"]
+    assert hw["citations"][0]["predicate"] == "knows"
+    assert by_pair[("w", "h")]["count"] == 1
+
+
+def test_links_are_ordered_strongest_first(parallel_config):
+    result = subgraph(parallel_config, HOLMES, depth=1)
+    # h->w (3) first; the count-1 links tie and fall back to (subject, object).
+    assert [(e["subject_id"], e["object_id"]) for e in result["edges"]] == [
+        ("h", "w"), ("h", "j"), ("w", "h")]
+
+
+def test_a_capped_subgraph_keeps_the_strongest_links(parallel_config, monkeypatch):
+    monkeypatch.setattr(tools_module, "SUBGRAPH_EDGE_CAP", 1)
+    result = subgraph(parallel_config, HOLMES, depth=1)
+    assert [(e["subject_id"], e["object_id"]) for e in result["edges"]] == [("h", "w")]
+    assert result["truncated"] is True
+
+
+def test_a_capped_subgraph_drops_nodes_only_its_cut_links_reached(
+        parallel_config, monkeypatch):
+    # Live graph: Holmes at depth 3 kept 100 links but still listed 286 nodes
+    # (75 KB) -- most reachable only through links the cap had dropped.
+    monkeypatch.setattr(tools_module, "SUBGRAPH_EDGE_CAP", 1)
+    result = subgraph(parallel_config, HOLMES, depth=1)
+    assert [n["id"] for n in result["nodes"]] == ["h", "w"]   # j's link was cut
+
+
+def test_the_root_stays_even_with_no_links(graph_config):
+    result = subgraph(graph_config, "Lonely Hall", depth=2)
+    assert [n["id"] for n in result["nodes"]] == ["lonely"]
+
+
+def test_grouped_subgraph_is_plain_json(parallel_config):
+    json.dumps(subgraph(parallel_config, HOLMES, depth=1), allow_nan=False)
+
+
 def test_a_self_loop_terminates_and_appears_once(graph_config):
     result = subgraph(graph_config, HOLMES, depth=3)
     ids = [n["id"] for n in result["nodes"]]
     assert ids.count("far") == 1
     loops = [e for e in result["edges"] if e["subject_id"] == e["object_id"]]
-    assert [(e["subject_id"], e["predicate"]) for e in loops] == [("far", "self")]
+    assert [(e["subject_id"], e["predicates"]) for e in loops] == [
+        ("far", {"self": 1})]
     # And a walk rooted ON the loop node terminates too.
     rooted = subgraph(graph_config, "Far Away Place", depth=3)
     assert [n["id"] for n in rooted["nodes"]].count("far") == 1

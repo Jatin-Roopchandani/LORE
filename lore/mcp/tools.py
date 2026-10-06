@@ -22,8 +22,9 @@ from lore.inference.gemini import (
 )
 from lore.mcp.guards import TIMEOUT_MS, CypherRejected, run_guarded
 from lore.mcp.shapes import (
-    BookOut, ChunkHit, CypherResult, EdgeOut, EntityCard, IngestStatus,
-    JobOut, NodeOut, SubgraphOut, error, to_search_result,
+    BookOut, ChunkHit, Citation, CypherResult, EdgeOut, EntityCard,
+    IngestStatus, JobOut, LinkOut, NodeOut, SubgraphOut, error,
+    to_search_result,
 )
 from lore.mcp.stores import StoresMissing, open_graph, open_stores
 from lore.orchestrator.gemini_budget import (
@@ -133,7 +134,15 @@ MAX_DEPTH = 3
 SUBGRAPH_NODE_CAP = 300
 # Nodes alone do not bound edges: Holmes at depth 3 was 286 nodes, 995 edges,
 # ~344 KB. Evidence text is never shortened to fit; edges are dropped instead.
-SUBGRAPH_EDGE_CAP = 500
+# Links (one per subject->object pair), not raw edges, kept strongest first.
+# Measured on the live graph with one citation each: Holmes at depth 1 has
+# 180 pairs (83 KB, refused by Claude Code); 100 keeps his real relationships
+# and fits one tool result.
+SUBGRAPH_EDGE_CAP = 100
+CITATIONS_PER_LINK = 1
+# A safety bound on raw REL rows read to build the links. Far above this
+# corpus (1,046 edges in total); if it is ever hit, `truncated` is set.
+SUBGRAPH_RAW_EDGE_LIMIT = 20_000
 # Per direction, on the entity card. 50 + 50 Holmes edges is ~36 KB, well
 # inside one tool result; the uncapped 283 was 103 KB and was refused.
 CARD_EDGE_CAP = 50
@@ -292,12 +301,13 @@ def entity(config: LoreConfig, name: str) -> dict:
 
 
 def _expand(kuzu, root: str, depth: int, node_cap: int,
-            edge_cap: int = SUBGRAPH_EDGE_CAP) -> tuple[list[NodeOut], list[EdgeOut], bool]:
+            edge_cap: int = SUBGRAPH_EDGE_CAP) -> tuple[list[NodeOut], list[LinkOut], bool]:
     """Breadth-first from `root`: up to `depth` hops, `node_cap` nodes.
 
-    Returns (nodes, edges, truncated). Nodes are in discovery order (root
-    first); edges are every REL edge between two collected nodes, so the
-    result is drawable with no dangling endpoint.
+    Returns (nodes, links, truncated). Nodes are in discovery order (root
+    first); links group every REL edge between two collected nodes by
+    (subject, object), so the result is drawable with no dangling endpoint
+    and no pair drawn thirty times.
 
     Deterministic by construction, not by luck: the frontier is a list kept
     in discovery order, each hop's neighbour query is ordered by (frontier
@@ -342,24 +352,60 @@ def _expand(kuzu, root: str, depth: int, node_cap: int,
                 books=list(info[i][3] or []))
         for i in order if i in info
     ]
-    # LIMIT cap+1 over a TOTAL order: the extra row only detects overflow, and
-    # which edges survive is the same on every run. Both ends are collected
-    # nodes, so a kept edge never dangles.
+    # Raw rows over a TOTAL order, so grouping is deterministic: within a
+    # pair, edges arrive in book/chapter/chunk order and the first are the
+    # citations. Both ends are collected nodes, so no link dangles.
     names = {i: info[i][1] for i in info}
     rows = list(kuzu.execute(
         f"MATCH (s:Entity)-[r:REL]->(o:Entity)"
         f" WHERE s.id IN $ids AND o.id IN $ids"
         f" RETURN {_EDGE_COLUMNS}, s.id, o.id"
         f" ORDER BY s.id, o.id, {_EDGE_ORDER}"
-        f" LIMIT {int(edge_cap) + 1}",
+        f" LIMIT {SUBGRAPH_RAW_EDGE_LIMIT + 1}",
         {"ids": order},
     ))
-    if len(rows) > edge_cap:
+    if len(rows) > SUBGRAPH_RAW_EDGE_LIMIT:
         truncated = True
-        rows = rows[:edge_cap]
-    edges = [_edge(names[r[7]], r[7], names[r[8]], r[8], r)
-             for r in rows if r[7] in names and r[8] in names]
-    return nodes, edges, truncated
+        rows = rows[:SUBGRAPH_RAW_EDGE_LIMIT]
+    groups: dict[tuple[str, str], list] = {}
+    for r in rows:
+        if r[7] in names and r[8] in names:
+            groups.setdefault((r[7], r[8]), []).append(r)
+    # Strongest first, then (subject id, object id): a total order, so a
+    # capped hub keeps the same links on every run -- its real relationships,
+    # not whichever ids sort lowest.
+    ranked = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    if len(ranked) > edge_cap:
+        truncated = True
+        ranked = ranked[:edge_cap]
+    links = [_link(names[s], s, names[o], o, group) for (s, o), group in ranked]
+    # Keep the root and every node a kept link touches. Uncapped, this drops
+    # nothing (each discovered node has the link it was discovered by); capped,
+    # it drops nodes reachable only through cut links. Live graph: Holmes at
+    # depth 3 kept 100 links but listed 286 nodes (75 KB) before this.
+    touched = {root} | {l.subject_id for l in links} | {l.object_id for l in links}
+    nodes = [n for n in nodes if n.id in touched]
+    return nodes, links, truncated
+
+
+def _link(subject: str, subject_id: str, obj: str, object_id: str,
+          group: list) -> LinkOut:
+    counts: dict[str, int] = {}
+    for r in group:
+        counts[r[0] or ""] = counts.get(r[0] or "", 0) + 1
+    # Most frequent predicate first, then by name: dict order is part of the
+    # JSON, and the output must be byte-identical across runs.
+    predicates = dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    citations = [
+        Citation(predicate=r[0] or "", predicate_raw=r[1] or "",
+                 evidence=r[2] or "", confidence=float(r[3] or 0.0),
+                 book_id=r[4] or "", chapter_seq=int(r[5] or 0),
+                 chunk_id=r[6] or "")
+        for r in group[:CITATIONS_PER_LINK]
+    ]
+    return LinkOut(subject=subject, subject_id=subject_id, object=obj,
+                   object_id=object_id, count=len(group),
+                   predicates=predicates, citations=citations)
 
 
 @_guarded

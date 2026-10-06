@@ -140,9 +140,42 @@ class EntityCard(BaseModel):
     truncated: bool
 
 
+class Citation(BaseModel):
+    """One passage backing a link: the extracted edge's own fields."""
+
+    predicate: str
+    predicate_raw: str
+    evidence: str
+    confidence: float
+    book_id: str
+    chapter_seq: int
+    chunk_id: str
+
+
+class LinkOut(BaseModel):
+    """Every REL edge from one entity to another, as one drawable link.
+
+    The subgraph returns these, not raw edges: on the live graph Jefferson
+    Hope's depth-1 subgraph was 31 nodes but 205 edges -- each pair repeated
+    once per passage -- an 82 KB result Claude Code refused. `count` is how
+    many passages back the link, `predicates` how they split, and
+    `citations` the first of them in book/chapter/chunk order. Direction is
+    kept: h->w and w->h are separate links. subject/object are names,
+    *_id the ids, as everywhere else.
+    """
+
+    subject: str
+    subject_id: str
+    object: str
+    object_id: str
+    count: int
+    predicates: dict[str, int]
+    citations: list[Citation]
+
+
 class SubgraphOut(BaseModel):
     nodes: list[NodeOut]
-    edges: list[EdgeOut]
+    edges: list[LinkOut]
     truncated: bool
     # The depth actually walked after clamping, so a client that asked for
     # more can see it did not get it; `note` says why.

@@ -78,10 +78,13 @@ def build_server(config: LoreConfig) -> MCPServer:
 
     @mcp.tool()
     def subgraph(entity: str, depth: int = 1) -> dict[str, Any]:
-        """A bounded subgraph around one entity, as nodes and edges.
+        """A bounded subgraph around one entity, as nodes and links.
 
-        `depth` is clamped to 1-3, and node and edge counts are capped; the
-        result says when it was truncated.
+        Each link is one subject->object pair: how many passages back it,
+        which predicates, and one quoted citation. Links are ordered
+        strongest first and capped at 100, so a large hub keeps its main
+        relationships; `depth` is clamped to 1-3. The result says when it
+        was truncated.
         """
         return tools.subgraph(config, entity, depth)
 
