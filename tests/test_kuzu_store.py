@@ -109,3 +109,26 @@ def test_read_only_never_creates_a_database(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError):
         KuzuStore(tmp_path / "absent", read_only=True)
     assert not (tmp_path / "absent").exists()
+
+
+def test_read_only_opens_bound_the_address_space_and_writers_do_not(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Kuzu reserves max_db_size of virtual address space per Database (8 TiB
+    # by default); unbounded read-only opens on many threads exhaust it.
+    import kuzu
+    from lore.db import kuzu_store
+
+    seen: list[dict] = []
+    real = kuzu.Database
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs)
+        return real(*args, **kwargs)
+
+    KuzuStore(tmp_path / "g").close()
+    monkeypatch.setattr(kuzu_store.kuzu, "Database", spy)
+    KuzuStore(tmp_path / "g", read_only=True).close()
+    KuzuStore(tmp_path / "g").close()
+    assert seen[0] == {"read_only": True, "max_db_size": 1 << 40}
+    assert "max_db_size" not in seen[1]

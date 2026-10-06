@@ -5,6 +5,9 @@ from pathlib import Path
 
 import kuzu
 
+# Address space each read-only Database reserves; see KuzuStore.__init__.
+READ_ONLY_MAX_DB_SIZE = 1 << 40  # 1 TiB
+
 _SCHEMA: list[str] = [
     "CREATE NODE TABLE Book (id STRING, title STRING, author STRING, PRIMARY KEY (id))",
     "CREATE NODE TABLE Chapter (id STRING, book_id STRING, seq INT64, title STRING, PRIMARY KEY (id))",
@@ -31,7 +34,19 @@ class KuzuStore:
             # For readers such as `lore ask`: no directory, no schema, no
             # migration, and Kuzu itself refuses any write. Opening a path
             # with no database raises rather than creating one.
-            self._db = kuzu.Database(str(path), read_only=True)
+            #
+            # max_db_size is bounded for readers because every Database
+            # reserves that much virtual address space up front, 8 TiB
+            # (2**43) by default. The MCP server opens one per tool call on
+            # up to 40 worker threads, and measured on a fixture, above ~14
+            # simultaneous opens the 128 TiB user address space ran out:
+            # "Buffer manager exception: Mmap for size 8796093022208
+            # failed", which surfaced as a false "graph may be corrupt"
+            # (16 threads x 200 mixed calls: 41-73 failures; 32 threads with
+            # this bound: none). 1 TiB is still far beyond any library this
+            # project builds. Writable opens keep Kuzu's default.
+            self._db = kuzu.Database(str(path), read_only=True,
+                                     max_db_size=READ_ONLY_MAX_DB_SIZE)
             self._conn = kuzu.Connection(self._db)
             return
         path.parent.mkdir(parents=True, exist_ok=True)

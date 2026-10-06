@@ -695,3 +695,37 @@ async def test_vector_search_needs_no_gemini_key(search_config, monkeypatch):
     assert result["chunks"]
     assert seen == [[QUERY_PREFIX + "a murder"]]
     assert closed == [True]
+
+
+# --- concurrent calls ---------------------------------------------------------------
+
+def test_concurrent_tool_calls_never_report_a_false_no_graph(graph_config):
+    """Sync tools run on anyio worker threads (up to 40 at once), and each
+    call opens its own read-only Kuzu Database. Kuzu reserves `max_db_size`
+    of virtual address space per Database -- 8 TiB by default -- so above
+    ~14 simultaneous opens the 128 TiB user address space ran out:
+    "Mmap for size 8796093022208 failed", reported as no_graph ("may be
+    corrupt"). Measured: 16 threads x 200 mixed calls gave 41-73 spurious
+    no_graph before kuzu_store bounded read-only opens."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    threads = 32
+    barrier = threading.Barrier(threads)
+    calls = [
+        lambda: entity(graph_config, HOLMES),
+        lambda: subgraph(graph_config, HOLMES, depth=2),
+        lambda: library(graph_config),
+        lambda: cypher_query(graph_config,
+                             "MATCH (e:Entity) RETURN e.id ORDER BY e.id"),
+    ]
+
+    def worker(n: int) -> list[dict]:
+        barrier.wait()
+        return [calls[(n + i) % len(calls)]() for i in range(4)]
+
+    with ThreadPoolExecutor(max_workers=threads) as pool:
+        results = [r for batch in pool.map(worker, range(threads)) for r in batch]
+    errors = [r["error"] for r in results if "error" in r]
+    assert errors == []
+    assert len(results) == threads * 4
