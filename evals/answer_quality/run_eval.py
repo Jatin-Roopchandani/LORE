@@ -43,7 +43,33 @@ def _done(path: Path) -> set[str]:
             if line.strip()}
 
 
-async def run(label: str, only: list[str] | None, qset: str) -> None:
+def _evidence_only_models(config):
+    """The real query models with synthesis and the faithfulness check stubbed.
+
+    Decomposition and template selection still run (they decide the
+    evidence), but no answer is written: about half the Gemini requests,
+    and a deterministic target -- whether the gold chunks reached the
+    evidence (retrieval/recall.py) -- instead of a noisy graded answer.
+    """
+    import dataclasses
+
+    from lore.inference.gemini import default_key_file, resolve_api_key
+    from lore.orchestrator.gemini_budget import recorder_for
+    from lore.query.agent import make_query_models
+    from lore.query.synthesize import Synthesis
+
+    models = make_query_models(
+        config, api_key=resolve_api_key(key_file=default_key_file()),
+        recorder=recorder_for(config.sqlite_path))
+
+    async def no_answer(prompt, schema):
+        return Synthesis(claims=[], can_answer=False)
+
+    return dataclasses.replace(models, synthesize=no_answer, check=None)
+
+
+async def run(label: str, only: list[str] | None, qset: str,
+              evidence_only: bool = False) -> None:
     config = LoreConfig.load(ROOT / "lore.toml")
     questions = json.loads(SETS[qset].read_text())
     if only:
@@ -56,7 +82,14 @@ async def run(label: str, only: list[str] | None, qset: str) -> None:
             print(f"{q['id']}: already recorded, skipped", flush=True)
             continue
         started = time.monotonic()
-        result = await tools.lore_search(config, q["question"])
+
+        async def ask():
+            if evidence_only:
+                return await tools.lore_search(
+                    config, q["question"], models=_evidence_only_models(config))
+            return await tools.lore_search(config, q["question"])
+
+        result = await ask()
         # A transient Gemini refusal (overload 503, a cooling model) is not a
         # quality signal: in the noise-floor run one cost a whole question's
         # facts. Retry it, after a pause, before recording.
@@ -66,7 +99,7 @@ async def run(label: str, only: list[str] | None, qset: str) -> None:
                 break
             print(f"{q['id']}: upstream_unavailable, retrying in 60s", flush=True)
             await asyncio.sleep(60)
-            result = await tools.lore_search(config, q["question"])
+            result = await ask()
         record = {"id": q["id"], "question": q["question"],
                   "seconds": round(time.monotonic() - started, 1), **result}
         with out.open("a") as f:
@@ -88,10 +121,13 @@ def main() -> None:
                         default="dev",
                         help="dev (26, used to decide changes) or heldout (16,"
                              " milestones only -- see GRADING.md)")
+    parser.add_argument("--evidence-only", action="store_true",
+                        help="stop before writing answers; record only the"
+                             " evidence (for retrieval/recall.py --run)")
     parser.add_argument("--only", nargs="*",
                         help="question ids to run (default: all 26)")
     args = parser.parse_args()
-    asyncio.run(run(args.label, args.only, args.qset))
+    asyncio.run(run(args.label, args.only, args.qset, args.evidence_only))
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ results for the question and for each of the baseline's sub-questions
 (embedded exactly as the agent does, QUERY_PREFIX once), and whether the
 baseline's final evidence actually contained it.
 """
-import asyncio, json, sys
+import argparse, asyncio, json, sys
 from collections import Counter
 from pathlib import Path
 
@@ -21,11 +21,11 @@ ROOT = HERE.parents[2]
 TOP = 100
 
 
-async def main():
+async def main(run: str):
     cfg = LoreConfig.load(ROOT / "lore.toml")
     gold = json.loads((HERE / "gold.json").read_text())
     base = {json.loads(l)["id"]: json.loads(l)
-            for l in open(ROOT / "evals/answer_quality/runs/baseline.jsonl")}
+            for l in open(ROOT / f"evals/answer_quality/runs/{run}.jsonl")}
     lance = LanceStore(cfg.lancedb_dir)
     emb = make_query_embedder(cfg)
     ranks_cache: dict[str, dict[str, int]] = {}
@@ -62,11 +62,14 @@ async def main():
         hit = sum(1 for o in out if o["best_rank"] and o["best_rank"] <= k)
         print(f"  vector recall@{k:<3}: {hit}/{n} ({100*hit//n}%)")
     ev = sum(o["in_baseline_evidence"] for o in out)
-    print(f"  gold chunk in the baseline's actual evidence: {ev}/{n} ({100*ev//n}%)")
+    print(f"  gold chunk in run {run!r} evidence: {ev}/{n} ({100*ev//n}%)")
     miss = [o for o in out if not o["in_baseline_evidence"]]
     print(f"\nnot in evidence ({len(miss)}), best vector rank:")
     for o in miss:
         print(f"  {o['id']:4s} rank {str(o['best_rank']):>4}  {o['fact']}")
 
 
-asyncio.run(main())
+parser = argparse.ArgumentParser(description="gold-chunk recall for one run")
+parser.add_argument("--run", default="baseline",
+                    help="run label whose evidence to check (default: baseline)")
+asyncio.run(main(parser.parse_args().run))
