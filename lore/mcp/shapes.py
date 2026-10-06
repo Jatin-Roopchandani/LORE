@@ -148,7 +148,9 @@ class BookOut(BaseModel):
     author: str | None
     status: str
     chunk_count: int
-    entity_count: int
+    # None when the graph could not be opened (absent, or locked by a load):
+    # unknown, which is not the same as zero. `library` says why in `note`.
+    entity_count: int | None
 
 
 class JobOut(BaseModel):

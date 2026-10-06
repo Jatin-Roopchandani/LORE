@@ -94,20 +94,97 @@ def test_ingest_status_for_an_unknown_book(library_config):
     assert "no-such-book" in result["error"]["message"]
 
 
-def test_ingest_status_without_a_graph_returns_no_graph(empty_config):
+def test_ingest_status_without_a_library_returns_no_graph(empty_config):
     assert ingest_status(empty_config, "x")["error"]["code"] == "no_graph"
 
 
 def test_stores_unavailable_is_no_graph_with_the_honest_message(
     library_config, monkeypatch
 ):
-    def boom(config):
+    def boom(config, **scope):
         raise StoresUnavailable("the graph exists but could not be opened")
     monkeypatch.setattr(tools_module, "open_stores", boom)
-    result = library(library_config)
+    result = entity(library_config, "Holmes")
     assert result["error"]["code"] == "no_graph"
     assert "could not be opened" in result["error"]["message"]
     assert "lore ingest" not in result["error"]["message"]
+
+
+# --- tools that do not need the graph ---------------------------------------------
+#
+# ingest_status exists to watch the pipeline, so it must work exactly while the
+# graph is absent (between ingest and `lore graph load`) or locked (during one).
+
+def _drop_graph(config: LoreConfig) -> None:
+    import shutil
+    path = config.kuzu_dir / "graph"
+    path.unlink() if path.is_file() else shutil.rmtree(path)
+
+
+def test_ingest_status_works_without_a_graph(library_config, a_book_id):
+    _drop_graph(library_config)
+    result = ingest_status(library_config, a_book_id)
+    assert "error" not in result, result
+    assert len(result["jobs"]) == 2
+
+
+def test_library_without_a_graph_lists_books_with_null_entity_counts(library_config):
+    _drop_graph(library_config)
+    result = library(library_config)
+    assert "error" not in result, result
+    assert {b["id"] for b in result["books"]} == {BOOK_ID, EMPTY_BOOK_ID}
+    assert all(b["entity_count"] is None for b in result["books"])
+    assert "graph" in result["note"] and "unavailable" in result["note"]
+    json.dumps(result, allow_nan=False)
+
+
+def test_library_with_a_graph_has_full_counts_and_no_note(library_config):
+    result = library(library_config)
+    assert result["note"] is None
+    assert {b["id"]: b["entity_count"] for b in result["books"]} == {
+        BOOK_ID: 2, EMPTY_BOOK_ID: 0}
+
+
+def _hold_the_write_lock(config: LoreConfig):
+    """A separate process holding the graph's write lock, as `lore graph
+    load` does; returns the Popen once the lock is really held."""
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import sys; from pathlib import Path;"
+         "from lore.db.kuzu_store import KuzuStore;"
+         "s = KuzuStore(Path(sys.argv[1])); print('ready', flush=True);"
+         "sys.stdin.readline(); s.close()", str(config.kuzu_dir / "graph")],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    )
+    assert holder.stdout.readline().strip() == "ready"
+    return holder
+
+
+def _release(holder) -> None:
+    holder.stdin.write("\n")
+    holder.stdin.flush()
+    holder.wait(timeout=60)
+
+
+async def test_the_graph_free_tools_work_during_a_rebuild(library_config, a_book_id):
+    LanceStore(library_config.lancedb_dir).add_chunks([
+        {"vector": _vec(0.0), "chunk_id": "c1", "book_id": BOOK_ID,
+         "chapter_seq": 1, "text": "alpha", "entity_ids": []}])
+    holder = _hold_the_write_lock(library_config)
+    try:
+        status = ingest_status(library_config, a_book_id)
+        books = library(library_config)
+        hits = await vector_search(library_config, "q", embed=_fake_embed)
+        card = entity(library_config, "Holmes")
+    finally:
+        _release(holder)
+    assert "error" not in status, status
+    assert "error" not in hits, hits
+    assert [h["chunk_id"] for h in hits["chunks"]] == ["c1"]
+    assert all(b["entity_count"] is None for b in books["books"])
+    assert "rebuild" in books["note"]
+    # The graph tools still need the graph, and say so.
+    assert card["error"]["code"] == "no_graph"
 
 
 def test_both_tools_emit_strict_json(library_config, a_book_id):
@@ -507,9 +584,77 @@ async def _real_distance(config, monkeypatch):
     return result["chunks"][0]["distance"]
 
 
-async def test_vector_search_without_a_graph(empty_config):
+async def test_vector_search_without_a_library(empty_config):
     result = await vector_search(empty_config, "q", embed=_fake_embed)
     assert result["error"]["code"] == "no_graph"
+
+
+async def test_vector_search_works_with_the_graph_missing(search_config):
+    _drop_graph(search_config)
+    result = await vector_search(search_config, "q", limit=2, embed=_fake_embed)
+    assert [h["chunk_id"] for h in result["chunks"]] == ["a0", "a1"]
+
+
+async def test_vector_search_holds_no_store_while_it_embeds(search_config, monkeypatch):
+    # The embedder can take seconds (or hang on a stopped Ollama); no store
+    # handle -- above all no Kuzu lock -- may be held across it.
+    from contextlib import contextmanager
+    real = tools_module.open_stores
+    opened: list[dict] = []
+    active = []
+
+    @contextmanager
+    def spy(config, **scope):
+        opened.append(scope)
+        active.append(1)
+        try:
+            with real(config, **scope) as stores:
+                yield stores
+        finally:
+            active.pop()
+
+    async def embed(texts):
+        assert not active, "a store is open while embedding"
+        return [_vec(0.0) for _ in texts]
+
+    monkeypatch.setattr(tools_module, "open_stores", spy)
+    result = await vector_search(search_config, "q", book_id=BOOK_A, embed=embed)
+    assert result["chunks"]
+    assert opened and all(scope.get("kuzu") is False for scope in opened)
+
+
+# A book chunked by `lore ingest` but never `lore graph load`ed has no Lance
+# rows: the live "Pride and Prejudice" (731 chunks, 0 vectors). An empty list
+# there would read as "nothing matched" when nothing was ever searchable.
+UNEMBEDDED = "book-pp"
+
+
+async def test_vector_search_in_an_unembedded_book_says_so(tmp_path):
+    config = build_store_triple(
+        tmp_path, books=[(BOOK_A, "Alpha"), (UNEMBEDDED, "Pride and Prejudice")],
+        chunks=[("p1", UNEMBEDDED, 1)],
+    )
+    LanceStore(config.lancedb_dir).add_chunks([
+        {"vector": _vec(0.0), "chunk_id": "a0", "book_id": BOOK_A,
+         "chapter_seq": 1, "text": "alpha", "entity_ids": []}])
+    result = await vector_search(config, "q", book_id=UNEMBEDDED,
+                                 embed=_fake_embed)
+    assert result["error"]["code"] == "not_found"
+    assert "Pride and Prejudice" in result["error"]["message"]
+    assert "lore graph load" in result["error"]["message"]
+    # A book that does have rows still returns hits.
+    hits = await vector_search(config, "q", book_id=BOOK_A, embed=_fake_embed)
+    assert [h["chunk_id"] for h in hits["chunks"]] == ["a0"]
+
+
+async def test_an_embedded_book_with_no_match_is_still_an_empty_list(
+    search_config, monkeypatch
+):
+    monkeypatch.setattr(LanceStore, "search_chunks_in_book",
+                        lambda self, vector, book_id, limit=5: [])
+    result = await vector_search(search_config, "q", book_id=BOOK_A,
+                                 embed=_fake_embed)
+    assert result == {"chunks": []}
 
 
 def test_cypher_query_returns_rows(library_config):

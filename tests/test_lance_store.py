@@ -124,3 +124,15 @@ def test_search_chunks_in_book_filters_inside_the_search(tmp_path: Path) -> None
     hits = store.search_chunks_in_book(query, "b", limit=2)
     assert [h["chunk_id"] for h in hits] == ["b1", "b2"]
     assert store.search_chunks_in_book(query, "it's", limit=2) == []
+
+
+def test_book_has_chunks(tmp_path: Path) -> None:
+    store = LanceStore(tmp_path / "lance")
+    assert not store.book_has_chunks("b1")
+    store.add_chunks([
+        {"vector": [0.0] * EMBED_DIM, "chunk_id": "x:1:0", "book_id": "o'brien",
+         "chapter_seq": 1, "text": "t", "entity_ids": []},
+    ])
+    assert store.book_has_chunks("o'brien")      # quoted, not broken by the '
+    assert not store.book_has_chunks("b1")
+    assert not store.book_has_chunks("x' OR '1'='1")  # no filter injection

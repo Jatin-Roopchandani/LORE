@@ -195,3 +195,58 @@ def test_a_body_error_is_not_rewrapped(store_config):
         with open_stores(store_config):
             raise RuntimeError("from the tool")
     assert not isinstance(info.value, StoresMissing)
+
+
+# --- scoped opens -----------------------------------------------------------------
+
+def _drop(config: LoreConfig, victim: str) -> None:
+    import shutil
+    target = config.data_dir / victim if victim != "graph" else config.kuzu_dir / "graph"
+    shutil.rmtree(target) if target.is_dir() else target.unlink()
+
+
+def test_a_scope_without_kuzu_needs_no_graph(store_config):
+    _drop(store_config, "graph")
+    with open_stores(store_config, kuzu=False) as stores:
+        assert stores.kuzu is None
+        assert stores.lance.table_names()
+        assert stores.conn.execute("SELECT 1").fetchone() == (1,)
+
+
+def test_a_sqlite_only_scope_needs_neither_graph_nor_vectors(store_config):
+    _drop(store_config, "graph")
+    _drop(store_config, "lancedb")
+    with open_stores(store_config, kuzu=False, lance=False) as stores:
+        assert stores.kuzu is None and stores.lance is None
+        assert stores.conn.execute("SELECT 1").fetchone() == (1,)
+    # And it does not create what it did not open.
+    assert not store_config.lancedb_dir.exists()
+
+
+def test_a_scope_without_kuzu_never_opens_it(store_config, monkeypatch):
+    def boom(*args, **kwargs):
+        raise AssertionError("Kuzu was opened")
+    monkeypatch.setattr(stores_module, "KuzuStore", boom)
+    with open_stores(store_config, kuzu=False):
+        pass
+
+
+def test_sqlite_is_still_required(store_config):
+    _drop(store_config, "lore.db")
+    with pytest.raises(StoresMissing):
+        with open_stores(store_config, kuzu=False, lance=False):
+            pass
+
+
+def test_the_default_scope_still_requires_the_graph(store_config):
+    _drop(store_config, "graph")
+    with pytest.raises(StoresMissing, match="lore graph load"):
+        with open_stores(store_config):
+            pass
+
+
+def test_sqlite_is_opened_read_only(store_config):
+    with open_stores(store_config, kuzu=False, lance=False) as stores:
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            stores.conn.execute(
+                "INSERT INTO books (id, title, file_path) VALUES ('x', 'x', 'x')")

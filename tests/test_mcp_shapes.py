@@ -132,3 +132,13 @@ def test_chunk_hit_distance_may_be_none_and_stays_strict_json():
                    text="t", distance=None).model_dump()
     assert hit["distance"] is None
     json.dumps(hit, allow_nan=False)
+
+
+def test_book_entity_count_may_be_null_when_the_graph_is_unavailable():
+    from lore.mcp.shapes import BookOut
+    unknown = BookOut(id="b", title="T", author=None, status="chunked",
+                      chunk_count=3, entity_count=None).model_dump()
+    assert unknown["entity_count"] is None
+    json.dumps(unknown, allow_nan=False)
+    assert BookOut(id="b", title="T", author=None, status="loaded",
+                   chunk_count=3, entity_count=0).entity_count == 0

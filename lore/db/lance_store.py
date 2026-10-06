@@ -63,6 +63,18 @@ class LanceStore:
             .to_list()
         )
 
+    def book_has_chunks(self, book_id: str) -> bool:
+        """Whether ONE book has any chunk rows at all.
+
+        Chunks are embedded only by `lore graph load`, so a book that was
+        chunked but never loaded has none, and a book-filtered search of it
+        is empty for that reason rather than because nothing matched. The
+        filter is quoted the same way as everywhere else in this class.
+        """
+        escaped = book_id.replace("'", "''")
+        return self._db.open_table("chunks").count_rows(
+            f"book_id = '{escaped}'") > 0
+
     def add_entities(self, rows: list[dict]) -> None:
         self._db.open_table("entities").add(rows)
 

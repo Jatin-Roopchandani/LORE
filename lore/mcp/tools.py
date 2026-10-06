@@ -23,7 +23,7 @@ from lore.mcp.shapes import (
     BookOut, ChunkHit, CypherResult, EdgeOut, EntityCard, IngestStatus,
     JobOut, NodeOut, SubgraphOut, error, to_search_result,
 )
-from lore.mcp.stores import StoresMissing, open_stores
+from lore.mcp.stores import StoresMissing, open_graph, open_stores
 from lore.orchestrator.gemini_budget import (
     BudgetExceeded, check_budget, recorder_for, today,
 )
@@ -66,27 +66,43 @@ def _guarded(fn):
 
 @_guarded
 def library(config: LoreConfig) -> dict:
-    with open_stores(config) as stores:
+    """Every book, from SQLite; entity counts from the graph if it opens.
+
+    The graph is best-effort: between `lore ingest` and `lore graph load`,
+    or while a load holds the lock, the books are still listed, with
+    `entity_count` None (unknown, not zero) and a `note` saying why.
+    """
+    with open_stores(config, kuzu=False, lance=False) as stores:
         books = list_books(stores.conn)
-        # One query, not one per book: the entity count per book id. Verified
-        # against Kuzu: UNWIND skips entities whose `books` is NULL, and a
-        # book with no entities simply has no row, hence the .get(..., 0).
-        counts: dict[str, int] = {}
-        for row in stores.kuzu.execute(
-            "MATCH (e:Entity) UNWIND e.books AS book RETURN book, count(e)"
-        ):
-            counts[row[0]] = int(row[1])
-        return {"books": [
-            BookOut(id=b["id"], title=b["title"], author=b["author"],
-                    status=b["status"], chunk_count=b["chunk_count"],
-                    entity_count=counts.get(b["id"], 0)).model_dump()
-            for b in books
-        ]}
+    counts: dict[str, int] | None = {}
+    note = None
+    try:
+        with open_graph(config) as kuzu:
+            # One query, not one per book: the entity count per book id.
+            # Verified against Kuzu: UNWIND skips entities whose `books` is
+            # NULL, and a book with no entities simply has no row, hence
+            # the .get(..., 0).
+            for row in kuzu.execute(
+                "MATCH (e:Entity) UNWIND e.books AS book RETURN book, count(e)"
+            ):
+                counts[row[0]] = int(row[1])
+    except StoresMissing as exc:  # StoresUnavailable included
+        counts = None
+        note = f"the graph is unavailable, so entity counts are null: {exc}"
+    return {"books": [
+        BookOut(id=b["id"], title=b["title"], author=b["author"],
+                status=b["status"], chunk_count=b["chunk_count"],
+                entity_count=None if counts is None else counts.get(b["id"], 0),
+                ).model_dump()
+        for b in books
+    ], "note": note}
 
 
 @_guarded
 def ingest_status(config: LoreConfig, book_id: str) -> dict:
-    with open_stores(config) as stores:
+    # SQLite only: this tool watches the pipeline, so it must answer while
+    # the graph is absent or locked by a load.
+    with open_stores(config, kuzu=False, lance=False) as stores:
         books = {b["id"]: b for b in list_books(stores.conn)}
         if book_id not in books:
             return error("not_found", f"no book with id {book_id!r}")
@@ -373,32 +389,53 @@ async def vector_search(config: LoreConfig, query: str,
     the daily cap. `embed` is for tests; None builds the local embedder.
     """
     limit = max(VECTOR_LIMIT_MIN, min(int(limit), VECTOR_LIMIT_MAX))
-    with open_stores(config) as stores:
+    # Three short phases, and no store is held across the embedding, which
+    # can take seconds (or wait on a stopped Ollama). Kuzu is never opened:
+    # this tool needs only SQLite and LanceDB, so it keeps working while the
+    # graph is absent or a rebuild holds its lock.
+    #
+    # 1. Check the library exists and the book is real. Checked before
+    #    searching: a filter that matches nothing returns an empty list,
+    #    which looks the same as "no passages matched".
+    with open_stores(config, kuzu=False) as stores:
         titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
-        # Checked before searching: a filter that matches nothing returns an
-        # empty list, which looks the same as "no passages matched".
-        if book_id is not None and book_id not in titles:
-            return error("not_found", f"no book with id {book_id!r}")
-        embedder = None
-        if embed is None:
-            # Must NOT use make_query_models: it builds the Gemini-gated
-            # stack and raises "needs an API key" when selection/synthesis
-            # are on Gemini, which would break the one tool documented as
-            # needing no key. Only the local embedder is built, and closed.
-            from lore.query.agent import make_query_embedder
-            embedder = make_query_embedder(config)
-            embed = embedder.embed
-        try:
-            # QUERY_PREFIX is applied exactly once, inside embed_question.
-            vector = await embed_question(query, embed)
-        finally:
-            if embedder is not None:
-                await embedder.aclose()
+    if book_id is not None and book_id not in titles:
+        return error("not_found", f"no book with id {book_id!r}")
+
+    # 2. Embed, holding nothing.
+    embedder = None
+    if embed is None:
+        # Must NOT use make_query_models: it builds the Gemini-gated
+        # stack and raises "needs an API key" when selection/synthesis
+        # are on Gemini, which would break the one tool documented as
+        # needing no key. Only the local embedder is built, and closed.
+        from lore.query.agent import make_query_embedder
+        embedder = make_query_embedder(config)
+        embed = embedder.embed
+    try:
+        # QUERY_PREFIX is applied exactly once, inside embed_question.
+        vector = await embed_question(query, embed)
+    finally:
+        if embedder is not None:
+            await embedder.aclose()
+
+    # 3. Search.
+    with open_stores(config, kuzu=False) as stores:
         if book_id is None:
             rows = stores.lance.search_chunks(vector, limit=limit)
         else:
             rows = stores.lance.search_chunks_in_book(vector, book_id,
                                                       limit=limit)
+            # Chunks are embedded only by `lore graph load`. A book that was
+            # chunked but never loaded (the live "Pride and Prejudice": 731
+            # chunks, 0 vectors) would otherwise come back [] and read as
+            # "nothing matched". A book WITH rows and no match stays [].
+            if not rows and not stores.lance.book_has_chunks(book_id):
+                return error(
+                    "not_found",
+                    f"{titles[book_id]!r} has no embedded passages yet --"
+                    " passages are embedded by `lore graph load`",
+                )
         # `_distance` missing or non-finite is None, never seed.py's inf.
         return {"chunks": [
             ChunkHit(chunk_id=r["chunk_id"], book_id=r["book_id"],

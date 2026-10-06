@@ -40,53 +40,85 @@ class StoresUnavailable(StoresMissing):
 @dataclass(frozen=True)
 class Stores:
     conn: sqlite3.Connection
-    kuzu: KuzuStore
-    lance: LanceStore
+    # None when the caller's scope left that store out (see open_stores).
+    kuzu: KuzuStore | None
+    lance: LanceStore | None
+
+
+_NOT_BUILT = ("no graph yet -- run `lore ingest`, `lore process`, then"
+              " `lore graph load` before querying")
 
 
 @contextmanager
-def open_stores(config: LoreConfig) -> Iterator[Stores]:
-    """Open the three stores read-only, yield them, and close them.
+def open_graph(config: LoreConfig) -> Iterator[KuzuStore]:
+    """Open the Kuzu graph read-only, with the query timeout, and close it.
 
-    The same existence check `lore ask` makes: a question must not create,
-    migrate, or touch the library.
-
-    SQLite uses plain `sqlite3.connect`, not `open_db`: `open_db` runs
-    migrations, and a read-only tool must not migrate the user's library as
-    a side effect of a query. The Gemini ledger gets its migration through
-    its own recorder path.
+    Raises StoresMissing if there is no graph, StoresUnavailable if it
+    exists but cannot be opened. On its own so `library` can try the graph
+    best-effort after reading SQLite.
     """
     graph_path = config.kuzu_dir / "graph"
-    if not (graph_path.exists()
-            and config.sqlite_path.is_file()
-            and config.lancedb_dir.is_dir()):
-        raise StoresMissing(
-            "no graph yet -- run `lore ingest`, `lore process`, then"
-            " `lore graph load` before querying"
-        )
+    if not graph_path.exists():
+        raise StoresMissing(_NOT_BUILT)
+    try:
+        kuzu = KuzuStore(graph_path, read_only=True)
+    except RuntimeError as exc:
+        # Narrow on purpose: only the open. While `lore graph load`
+        # holds the write lock this is what Kuzu raises, which is the
+        # very scenario this module exists for.
+        raise StoresUnavailable(
+            "the graph exists but could not be opened \u2014 a rebuild"
+            " (`lore graph load`) may be running, or the graph may be"
+            f" corrupt: {exc}"
+        ) from exc
+    try:
+        kuzu.set_query_timeout(TIMEOUT_MS)
+        yield kuzu
+    finally:
+        kuzu.close()
+
+
+@contextmanager
+def open_stores(config: LoreConfig, *, kuzu: bool = True,
+                lance: bool = True) -> Iterator[Stores]:
+    """Open SQLite plus the requested stores, yield them, and close them.
+
+    SQLite is always opened, READ-ONLY (`file:...?mode=ro`, as `lore ask`
+    opens it): a write through `stores.conn` raises "attempt to write a
+    readonly database". It is deliberately not `open_db`, which runs
+    migrations; a query must not migrate the user's library as a side
+    effect. The Gemini ledger gets its migration through its own recorder
+    path, and lore_search's budget check uses its own `open_db` connection.
+    Kuzu is opened read-only. LanceDB is opened as LanceStore opens it,
+    which has no read-only mode.
+
+    The scope: only the requested stores must exist and are opened; the
+    others are None. `ingest_status` asks for SQLite alone and
+    `vector_search` for SQLite and LanceDB, so neither refuses while the
+    graph is absent or locked by a rebuild -- which is exactly when
+    `ingest_status` is wanted. The default is all three.
+
+    The existence check is the one `lore ask` makes, and it runs before
+    anything opens: `sqlite3.connect` on a missing path, even read-only,
+    must never be what reports "not built".
+    """
+    if not (config.sqlite_path.is_file()
+            and (not kuzu or (config.kuzu_dir / "graph").exists())
+            and (not lance or config.lancedb_dir.is_dir())):
+        raise StoresMissing(_NOT_BUILT)
 
     # Nested try/finally, opened in order: a failure partway through opening
     # (Kuzu fine, LanceDB raises) or inside the caller's body still releases
     # every handle that was acquired, and one close() raising cannot skip
     # the next.
-    conn = sqlite3.connect(config.sqlite_path)
+    conn = sqlite3.connect(f"file:{config.sqlite_path}?mode=ro", uri=True)
     try:
-        try:
-            kuzu = KuzuStore(graph_path, read_only=True)
-        except RuntimeError as exc:
-            # Narrow on purpose: only the open. While `lore graph load`
-            # holds the write lock this is what Kuzu raises, which is the
-            # very scenario this module exists for.
-            raise StoresUnavailable(
-                "the graph exists but could not be opened \u2014 a rebuild"
-                " (`lore graph load`) may be running, or the graph may be"
-                f" corrupt: {exc}"
-            ) from exc
-        try:
-            kuzu.set_query_timeout(TIMEOUT_MS)
-            lance = LanceStore(config.lancedb_dir)
-            yield Stores(conn=conn, kuzu=kuzu, lance=lance)
-        finally:
-            kuzu.close()
+        if not kuzu:
+            yield Stores(conn=conn, kuzu=None,
+                         lance=LanceStore(config.lancedb_dir) if lance else None)
+            return
+        with open_graph(config) as graph:
+            yield Stores(conn=conn, kuzu=graph,
+                         lance=LanceStore(config.lancedb_dir) if lance else None)
     finally:
         conn.close()
