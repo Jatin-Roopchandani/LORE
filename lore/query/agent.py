@@ -16,6 +16,7 @@ from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import list_books
 from lore.query.decompose import split
+from lore.query.keyword import KeywordIndex, fused
 from lore.query.models import Answer, EdgeRow, Evidence, SeedEntity
 from lore.query.seed import (
     embed_question,
@@ -88,6 +89,17 @@ RELEVANCE_FLOOR = 0.62
 # 31% of the gold chunks in the vector top 8 never reached the graph
 # evidence. The same k and the same question vector as the baseline.
 VECTOR_K = 5
+# How many candidates the graph path takes per sub-question from EACH of
+# vector search and keyword search (lore/query/keyword.py); the evidence
+# budget, not this, decides how many reach the prompt. The answer-quality
+# work (evals/answer_quality) found 22 of the 43 key facts missing from
+# the evidence ranked within the vector top 30 -- VECTOR_K cut them off --
+# and keyword search finds facts vector search ranks past 100. Each part
+# then ranks its candidates by the two ranks fused (keyword.fused): ranked
+# by cosine alone, the extra candidates lose to the same passages as
+# before. 0 for KEYWORD_K turns keyword search off.
+CANDIDATE_K = 20
+KEYWORD_K = 20
 # The evidence budget when Gemini writes the answer. MAX_EVIDENCE_CHARS
 # (12,000) was sized for the local 3B's 12,288-token context and stays the
 # Ollama budget. On the Holmes library the median chunk is ~1,473 chars, so
@@ -324,6 +336,18 @@ async def _vector_answer(lance, question, vector, models, titles, *, mode,
                              book_titles=titles)
 
 
+def _keyword_hits(conn: sqlite3.Connection,
+                  parts: list[str]) -> list[list[tuple[str, str, int]]]:
+    """Each part's keyword-search candidates, one index for all parts."""
+    if KEYWORD_K <= 0:
+        return [[] for _ in parts]
+    index = KeywordIndex(conn)
+    try:
+        return [index.search(part, KEYWORD_K) for part in parts]
+    finally:
+        index.close()
+
+
 def _cosine(row: dict) -> float:
     # Squared L2 on unit vectors -> cosine; a row with no distance is farthest.
     return 1 - float(row.get("_distance", float("inf"))) / 2
@@ -372,7 +396,7 @@ async def answer_question(
     empty = Evidence(edges=(), passages=(), truncated=False)
     # The baseline's passages for the whole question, then each part's.
     nearest: dict[tuple, list[dict]] = {tuple(vector): lance.search_chunks(
-        vector, limit=VECTOR_K)}
+        vector, limit=CANDIDATE_K)}
     if not nearest[tuple(vector)]:
         # Vector search returns a nearest chunk whenever there is any chunk,
         # so no part could find one either: skip decomposition.
@@ -383,7 +407,7 @@ async def answer_question(
     sub_questions = tuple(part for part, _ in parts)
     for v in (v for _, v in parts):
         if tuple(v) not in nearest:
-            nearest[tuple(v)] = lance.search_chunks(v, limit=VECTOR_K)
+            nearest[tuple(v)] = lance.search_chunks(v, limit=CANDIDATE_K)
     best = max((_cosine(row) for _, v in parts for row in nearest[tuple(v)]),
                default=float("-inf"))
     if best < RELEVANCE_FLOOR:
@@ -443,8 +467,14 @@ async def answer_question(
     extra = [(str(row["chunk_id"]), str(row.get("book_id", "")),
               int(row.get("chapter_seq", 0)))
              for found in nearest.values() for row in found]
+    keyword_hits = _keyword_hits(conn, [part for part, _ in parts])
+    extra += [hit for hits in keyword_hits for hit in hits]
     candidates = sorted({row.chunk_id for row in rows} | {c for c, _, _ in extra})
     stored = lance.chunk_vectors(candidates)
+    score_lists = [relevance(v, stored) for _, v in parts]
+    if KEYWORD_K > 0:
+        score_lists = [fused(scores, [c for c, _, _ in hits])
+                       for scores, hits in zip(score_lists, keyword_hits)]
     # Task 10e: within a part, relevance alone decides; a question about
     # each book is already one part per book. Book fairness is kept only on
     # the no-decomposition fallback -- decomposition failed or was not run,
@@ -453,7 +483,7 @@ async def answer_question(
     book_fair = len(parts) == 1 and (not decomposed or "across_books" in templates)
     evidence = assemble_ranked(conn, rows, extra_chunks=extra,
                                max_chars=models.evidence_chars,
-                               score_lists=[relevance(v, stored) for _, v in parts],
+                               score_lists=score_lists,
                                book_fair=book_fair)
     # One synthesis call per part, over its own share (synthesize_parts).
     if rows:

@@ -687,6 +687,7 @@ async def test_the_floor_does_not_apply_to_the_baseline(tmp_path: Path) -> None:
 # --- Task 10d: vector union, decomposition, named seeds, budget ----------------
 
 from lore.query.agent import (  # noqa: E402
+    CANDIDATE_K,
     GEMINI_EVIDENCE_CHARS,
     VECTOR_K,
     evidence_budget,
@@ -795,8 +796,8 @@ async def test_the_union_adds_a_vector_only_chunk_to_the_evidence(tmp_path: Path
     assert answer.mode == "graph"
     assert [p.chunk_id for p in answer.passages] == ["b1:1:0", "b1:9:0"]
     assert "VECTORONLY" in calls["synthesize"][0]
-    # The union uses the baseline's k and the question's own vector.
-    assert (tuple(Q), VECTOR_K) in lance.searches
+    # The union takes CANDIDATE_K per vector, the question's own included.
+    assert (tuple(Q), CANDIDATE_K) in lance.searches
     conn.close()
 
 
@@ -1178,4 +1179,69 @@ async def test_seeds_are_deduplicated_by_id_not_by_full_value(tmp_path: Path) ->
     # First-found wins: e1 was named (score 0.0) in the first part, before
     # it was ever vector-found (score 0.4) in the second.
     assert answer.seeds[0].score == 0.0
+    conn.close()
+
+
+async def test_keyword_search_adds_a_passage_vector_search_missed(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    _chunk(conn, "b1:9:0", "Upon my quoting Carlyle, he inquired who he might be.", 9)
+    # Vector search finds only the edge chunk; b1:9:0 points elsewhere (B).
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]},
+                        {"b1:1:0": Q, "b1:9:0": B})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    question = "who was Carlyle?"
+    models, calls = _scripted({QUERY_PREFIX + question: Q}, [question],
+                              [TemplateChoice(template="neighbours", entities=[1])])
+    answer = await answer_question(conn, kuzu, lance, question, models)
+    assert "b1:9:0" in [p.chunk_id for p in answer.passages]
+    assert "inquired who he might be" in calls["synthesize"][0]
+    conn.close()
+
+
+async def test_keyword_search_off_leaves_only_vector_and_graph_passages(
+        tmp_path: Path, monkeypatch) -> None:
+    from lore.query import agent
+    monkeypatch.setattr(agent, "KEYWORD_K", 0)
+    conn = _conn(tmp_path)
+    _chunk(conn, "b1:9:0", "Upon my quoting Carlyle, he inquired who he might be.", 9)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]},
+                        {"b1:1:0": Q, "b1:9:0": B})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    question = "who was Carlyle?"
+    models, _ = _scripted({QUERY_PREFIX + question: Q}, [question],
+                          [TemplateChoice(template="neighbours", entities=[1])])
+    answer = await answer_question(conn, kuzu, lance, question, models)
+    assert [p.chunk_id for p in answer.passages] == ["b1:1:0"]
+    conn.close()
+
+
+async def test_a_keyword_match_outranks_a_closer_vector_passage_under_the_budget(
+        tmp_path: Path) -> None:
+    # Room for two passages: the edge chunk, then whichever of a vector-only
+    # passage (closer by cosine) and a keyword match ranks higher fused.
+    conn = _conn(tmp_path)
+    _chunk(conn, "b1:8:0", "V" * 40, 8)
+    _chunk(conn, "b1:9:0", "Carlyle " + "K" * 32, 9)
+    near = [0.6, 0.6, 0.5]
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1),
+                                    _row("b1:8:0", [], 0.25, 8)]},
+                        {"b1:1:0": Q, "b1:8:0": near, "b1:9:0": B})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    question = "who was Carlyle?"
+    budget = len(TEXT) + 40
+    models, _ = _scripted({QUERY_PREFIX + question: Q}, [question],
+                          [TemplateChoice(template="neighbours", entities=[1])],
+                          evidence_chars=budget)
+    answer = await answer_question(conn, kuzu, lance, question, models)
+    kept = [p.chunk_id for p in answer.passages]
+    assert "b1:9:0" in kept and "b1:8:0" not in kept
+    conn.close()
+
+
+async def test_the_baseline_still_answers_from_vector_k_passages(tmp_path: Path) -> None:
+    conn = _conn(tmp_path)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]}, {"b1:1:0": Q})
+    models, _ = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"], [])
+    await answer_question(conn, EntityKuzu({}), lance, "who?", models, baseline=True)
+    assert lance.searches == [(tuple(Q), VECTOR_K)]
     conn.close()

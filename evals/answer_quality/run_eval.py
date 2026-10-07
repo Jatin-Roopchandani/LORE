@@ -68,9 +68,23 @@ def _evidence_only_models(config):
     return dataclasses.replace(models, synthesize=no_answer, check=None)
 
 
+def _retrieval(candidate_k: int | None, keyword_k: int | None) -> dict:
+    """Override the agent's retrieval settings for this run, and return the
+    settings in force, so a comparison runs every arm from the same code."""
+    from lore.query import agent
+    if candidate_k is not None:
+        agent.CANDIDATE_K = candidate_k
+    if keyword_k is not None:
+        agent.KEYWORD_K = keyword_k
+    return {"candidate_k": agent.CANDIDATE_K, "keyword_k": agent.KEYWORD_K}
+
+
 async def run(label: str, only: list[str] | None, qset: str,
-              evidence_only: bool = False) -> None:
+              evidence_only: bool = False, candidate_k: int | None = None,
+              keyword_k: int | None = None) -> None:
     config = LoreConfig.load(ROOT / "lore.toml")
+    retrieval = _retrieval(candidate_k, keyword_k)
+    print(f"retrieval: {retrieval}", flush=True)
     questions = json.loads(SETS[qset].read_text())
     if only:
         questions = [q for q in questions if q["id"] in only]
@@ -101,7 +115,8 @@ async def run(label: str, only: list[str] | None, qset: str,
             await asyncio.sleep(60)
             result = await ask()
         record = {"id": q["id"], "question": q["question"],
-                  "seconds": round(time.monotonic() - started, 1), **result}
+                  "seconds": round(time.monotonic() - started, 1),
+                  "retrieval": retrieval, **result}
         with out.open("a") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
         err = result.get("error")
@@ -124,10 +139,17 @@ def main() -> None:
     parser.add_argument("--evidence-only", action="store_true",
                         help="stop before writing answers; record only the"
                              " evidence (for retrieval/recall.py --run)")
+    parser.add_argument("--candidate-k", type=int,
+                        help="vector candidates per sub-question (default:"
+                             " the agent's CANDIDATE_K)")
+    parser.add_argument("--keyword-k", type=int,
+                        help="keyword candidates per sub-question, 0 = off"
+                             " (default: the agent's KEYWORD_K)")
     parser.add_argument("--only", nargs="*",
                         help="question ids to run (default: all 26)")
     args = parser.parse_args()
-    asyncio.run(run(args.label, args.only, args.qset, args.evidence_only))
+    asyncio.run(run(args.label, args.only, args.qset, args.evidence_only,
+                    args.candidate_k, args.keyword_k))
 
 
 if __name__ == "__main__":
