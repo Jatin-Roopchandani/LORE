@@ -827,3 +827,35 @@ def mcp_command(
         run_http(config, host, port)
     else:
         run_stdio(config)
+
+
+@app.command(name="ui")
+def ui_command(
+    host: str = typer.Option(
+        "127.0.0.1",
+        help="bind address; loopback only (127.0.0.0/8, localhost, ::1)"),
+    port: int | None = typer.Option(None, help="port (default: [lore.web] port, 8766)"),
+    dev: bool = typer.Option(False, "--dev",
+                             help="also accept the Vite dev server's origin (port 5173)"),
+) -> None:
+    """Serve LORE's web app: ask questions, read cited answers, explore the graph.
+
+    Read-only on your books, graph and vectors; asking a question spends
+    Gemini requests like `lore ask`. Loopback only: there is no
+    authentication.
+    """
+    import uvicorn
+
+    from lore.web.app import create_app
+    from lore.web.security import NonLoopbackHost, check_loopback
+
+    config = LoreConfig.load()
+    port = port or config.web.port
+    try:
+        check_loopback(host)
+    except NonLoopbackHost as exc:
+        typer.echo(f"lore ui: {exc}", err=True)
+        raise typer.Exit(2)
+    typer.echo(f"lore ui: http://{host}:{port}", err=True)
+    uvicorn.run(create_app(config, host=host, port=port, dev=dev),
+                host=host, port=port, log_level="warning")
