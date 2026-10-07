@@ -27,7 +27,7 @@ function setAt<T>(list: T[], index: number, value: T): T[] {
 }
 
 export function askReducer(state: AskState, event: AskEvent): AskState {
-  const s: AskState = { ...state, elapsed: event.t ?? state.elapsed };
+  const s: AskState = { ...state, elapsed: Math.max(state.elapsed, event.t ?? 0) };
   switch (event.type) {
     case "step": {
       const i = STEP_ORDER.indexOf(event.name);

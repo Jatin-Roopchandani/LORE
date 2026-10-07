@@ -54,3 +54,7 @@ test("errors and empty answers", () => {
   expect(e.status).toBe("done");
   expect(e.steps.every((x) => x.state === "skipped")).toBe(true);
 });
+
+test("elapsed never goes backwards", () => {
+  expect(run(interrupted).elapsed).toBe(0.5);
+});
