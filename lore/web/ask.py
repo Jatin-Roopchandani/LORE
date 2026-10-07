@@ -12,10 +12,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import time
 from typing import AsyncIterator
 
 from lore.mcp import tools
+
+log = logging.getLogger(__name__)
 
 BUSY = {"code": "busy", "message": "LORE is still answering the previous question."}
 
@@ -37,6 +40,7 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
         return
     async with lock:
         queue: asyncio.Queue[dict] = asyncio.Queue()
+        getter = None
         task = asyncio.create_task(search(config, question, on_event=queue.put_nowait))
         try:
             while True:
@@ -52,12 +56,24 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
             while not queue.empty():
                 event = queue.get_nowait()
                 yield sse(event.pop("type"), stamp(event))
-            result = task.result()
+            try:
+                result = task.result()
+            except Exception:
+                log.exception("lore_search failed")
+                yield sse("error", stamp({"error": {
+                    "code": "internal",
+                    "message": "LORE hit an unexpected error while answering."
+                              " The server log has the details."}}))
+                return
             if isinstance(result, dict) and "error" in result:
                 yield sse("error", stamp({"error": result["error"]}))
             else:
                 yield sse("answer", stamp({"result": result}))
         finally:
+            if getter is not None and not getter.done():
+                getter.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await getter
             if not task.done():
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

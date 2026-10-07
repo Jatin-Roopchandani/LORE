@@ -80,10 +80,48 @@ async def test_closing_the_stream_cancels_the_run():
     gen = ask_events(None, "q", lock, search=slow)
     first = await gen.__anext__()
     assert b"event: step" in first
-    await gen.aclose()                       # what Starlette does on disconnect
+    await gen.aclose()                       # generator-close path (the disconnect path is tested below)
     await asyncio.sleep(0)
     assert calls_after == ["cancelled"]
     assert not lock.locked()
+
+
+async def test_a_crashing_search_ends_with_an_internal_error():
+    async def boom(config, query, models=None, on_event=None):
+        raise RuntimeError("kuzu exploded")
+    lock = asyncio.Lock()
+    events = parse(await collect(ask_events(None, "q", lock, search=boom)))
+    assert events[-1][0] == "error" and events[-1][1]["error"]["code"] == "internal"
+    assert not lock.locked()
+
+
+async def test_a_disconnect_cancels_the_run_and_leaves_no_tasks():
+    seen = []
+
+    async def slow(config, query, models=None, on_event=None):
+        on_event({"type": "step", "name": "split", "state": "start", "part": None, "detail": None})
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            seen.append("cancelled")
+            raise
+
+    lock = asyncio.Lock()
+
+    async def consume():
+        async for _ in ask_events(None, "q", lock, search=slow):
+            pass
+
+    consumer = asyncio.create_task(consume())
+    for _ in range(5):
+        await asyncio.sleep(0)
+    consumer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await consumer
+    await asyncio.sleep(0)
+    assert seen == ["cancelled"]
+    assert not lock.locked()
+    assert asyncio.all_tasks() == {asyncio.current_task()}
 
 
 async def test_events_with_infinite_scores_are_valid_json():
