@@ -13,19 +13,26 @@ function palette() {
 }
 
 // Sigma's default node program (circle) has no border, so a seed is marked by a larger disc in its part colour.
-export function GraphCanvas({ view, positions, onNodeClick }: { view: GraphView; positions: Positions; onNodeClick: (id: string) => void }) {
+// While `pinned` is false the camera fits the whole layout on every change (staging and the answer).
+// Once it turns true (an expansion) the current framing is frozen before new nodes land, so nodes
+// already on screen stay put. Bumping `fitRequest` refits once and re-pins if still pinned.
+export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitRequest = 0 }:
+  { view: GraphView; positions: Positions; onNodeClick: (id: string) => void; pinned?: boolean; fitRequest?: number }) {
   const box = useRef<HTMLDivElement>(null);
   const sigma = useRef<Sigma | null>(null);
   const graph = useRef(new Graph({ multi: false, type: "directed" }));
   const click = useRef(onNodeClick);
   click.current = onNodeClick;
-  const latest = useRef({ view, positions });
-  latest.current = { view, positions };
+  const latest = useRef({ view, positions, pinned });
+  latest.current = { view, positions, pinned };
 
   const paint = () => {
     const g = graph.current;
-    const { view: v, positions: pos } = latest.current;
+    const { view: v, positions: pos, pinned: pin } = latest.current;
     const p = palette();
+    const s = sigma.current;
+    if (s && pin && !s.getCustomBBox()) s.setCustomBBox(s.getBBox());
+    if (s && !pin && s.getCustomBBox()) s.setCustomBBox(null);
     const keepNodes = new Set(v.nodes.map((n) => n.id));
     g.forEachNode((id) => { if (!keepNodes.has(id)) g.dropNode(id); });
     for (const n of v.nodes) {
@@ -68,6 +75,14 @@ export function GraphCanvas({ view, positions, onNodeClick }: { view: GraphView;
     return () => { obs.disconnect(); mq.removeEventListener("change", paint); sigma.current?.kill(); sigma.current = null; };
     // paint reads everything through refs, so the mount-time closure stays current.
   }, []);
-  useEffect(paint, [view, positions]);
+  useEffect(paint, [view, positions, pinned]);
+  useEffect(() => {
+    const s = sigma.current;
+    if (!s || fitRequest === 0) return;
+    s.setCustomBBox(null);
+    s.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
+    s.refresh();
+    if (latest.current.pinned) s.setCustomBBox(s.getBBox());
+  }, [fitRequest]);
   return <div ref={box} className="gcanvas" role="img" aria-label="Entities and relationships used for the answer" />;
 }

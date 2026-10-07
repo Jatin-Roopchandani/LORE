@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, isError } from "./api";
 import { ChatPane } from "./components/ChatPane";
 import { GraphPane } from "./components/GraphPane";
@@ -25,6 +25,7 @@ export default function App() {
     setRefreshKey((k) => k + 1);
     api.quota().then((q) => { if (!isError(q)) setResetsAt(q.resets_at); });
   }, [ask.state.status]);
+  const bookTitles = useMemo(() => new Map(books.map((b) => [b.id, b.title])), [books]);
   const graphed = books.filter((b) => b.status === "graphed");
   const noBooks = graphed.length > 0 && graphed.every((b) => hiddenBooks.has(b.id));
   return (
@@ -32,7 +33,7 @@ export default function App() {
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey} />
       <div className="panes">
         <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunk={setHoverChunk} />
-        <GraphPane state={ask.state} hiddenBooks={hiddenBooks} hoverChunk={hoverChunk} noBooks={noBooks} />
+        <GraphPane state={ask.state} hiddenBooks={hiddenBooks} hoverChunk={hoverChunk} noBooks={noBooks} bookTitles={bookTitles} />
       </div>
     </div>
   );
