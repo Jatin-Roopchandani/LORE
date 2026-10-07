@@ -35,3 +35,9 @@ test("a plain upstream_unavailable gets the busy text and no command", () => {
 test("unknown codes fall back to the server's message", () => {
   expect(errorMessage({ code: "weird", message: "it broke" }, { showInternals: true }).text).toBe("it broke");
 });
+
+test("forbidden explains the address and offers no retry", () => {
+  const m = errorMessage({ code: "forbidden", message: "" }, { showInternals: true });
+  expect(m.text).toBe("This page isn't allowed to talk to LORE. Open it from the address lore ui printed.");
+  expect(m.retry).toBeUndefined();
+});

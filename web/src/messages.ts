@@ -42,6 +42,8 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
       return { text: "The connection dropped before the answer finished.", retry: true };
     case "unreachable":
       return { text: "LORE isn't reachable. Check that `lore ui` is still running.", retry: true };
+    case "forbidden":
+      return { text: "This page isn't allowed to talk to LORE. Open it from the address lore ui printed." };
     case "no_graph":
       return { text: error.message || "There's no graph yet. Process a book first." };
     case "bad_request":

@@ -22,3 +22,19 @@ test("an unfound quote marks nothing and keeps the text", () => {
   const spans = highlightQuote("plain text", "not here at all");
   expect(spans).toEqual([{ text: "plain text", mark: false }]);
 });
+
+test("single quote marks are ignored in passage and quote", () => {
+  expect(marked(highlightQuote("‘Hello there friend,’ he said.", "Hello there friend, he said"))).toHaveLength(1);
+  expect(marked(highlightQuote("He told us hello there friend today.", "'hello there friend'"))).toEqual(["hello there friend"]);
+});
+
+test("an apostrophe inside a word is kept", () => {
+  expect(marked(highlightQuote("He took Hope's ring away.", "took Hope's ring"))).toEqual(["took Hope's ring"]);
+  expect(marked(highlightQuote("He took Hope's ring away.", "took Hopes ring"))).toEqual([]);
+});
+
+test("matches whole words only", () => {
+  const spans = highlightQuote("she said hello. he said hello there", "he said hello there");
+  expect(spans.filter((s) => s.mark)).toEqual([{ text: "he said hello there", mark: true }]);
+  expect(spans[0].text).toBe("she said hello. ");
+});
