@@ -81,8 +81,15 @@ def _retrieval(candidate_k: int | None, keyword_k: int | None) -> dict:
 
 async def run(label: str, only: list[str] | None, qset: str,
               evidence_only: bool = False, candidate_k: int | None = None,
-              keyword_k: int | None = None) -> None:
+              keyword_k: int | None = None,
+              gemini_model: str | None = None) -> None:
     config = LoreConfig.load(ROOT / "lore.toml")
+    if gemini_model:
+        # One model for selection and synthesis, no cascade: arms compared
+        # on different models differ by the model, not the change.
+        config = config.model_copy(update={
+            step: getattr(config, step).model_copy(update={"models": [gemini_model]})
+            for step in ("selection", "synthesis")})
     retrieval = _retrieval(candidate_k, keyword_k)
     print(f"retrieval: {retrieval}", flush=True)
     questions = json.loads(SETS[qset].read_text())
@@ -145,11 +152,14 @@ def main() -> None:
     parser.add_argument("--keyword-k", type=int,
                         help="keyword candidates per sub-question, 0 = off"
                              " (default: the agent's KEYWORD_K)")
+    parser.add_argument("--gemini-model",
+                        help="pin selection and synthesis to this one model"
+                             " (default: the configured cascade)")
     parser.add_argument("--only", nargs="*",
                         help="question ids to run (default: all 26)")
     args = parser.parse_args()
     asyncio.run(run(args.label, args.only, args.qset, args.evidence_only,
-                    args.candidate_k, args.keyword_k))
+                    args.candidate_k, args.keyword_k, args.gemini_model))
 
 
 if __name__ == "__main__":
