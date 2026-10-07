@@ -7,6 +7,7 @@ MCP; 4xx only for a malformed request to this API).
 """
 from __future__ import annotations
 
+import asyncio
 import shutil
 import socket
 import sqlite3
@@ -14,17 +15,32 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, field_validator
 
 from lore.config import LoreConfig
 from lore.mcp import tools
 from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE, day_report, today
+from lore.web.ask import ask_events
 from lore.web.security import OriginGuard, allowed_hosts, allowed_origins
 
 STATIC = Path(__file__).parent / "static"
 MCP_PORT = 8765
+MAX_QUESTION_CHARS = 2000
+
+
+class AskBody(BaseModel):
+    question: str
+
+    @field_validator("question")
+    @classmethod
+    def _sized(cls, value: str) -> str:
+        value = value.strip()
+        if not value or len(value) > MAX_QUESTION_CHARS:
+            raise ValueError(f"a question is 1-{MAX_QUESTION_CHARS} characters")
+        return value
 
 _NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>LORE</title>
 <body style="font:15px system-ui;margin:3rem;max-width:40rem">
@@ -105,6 +121,21 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     @api.get("/api/settings")
     def settings():
         return {"show_internals": config.web.show_internals}
+
+    lock = asyncio.Lock()
+
+    @api.post("/api/ask")
+    async def ask(request: Request):
+        if request.headers.get("content-type", "").split(";")[0] != "application/json":
+            raise HTTPException(415, "send JSON")
+        try:
+            body = AskBody.model_validate(await request.json())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return StreamingResponse(
+            ask_events(config, body.question, lock, search=tools.lore_search),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     if (STATIC / "index.html").exists():
         api.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
