@@ -98,8 +98,12 @@ VECTOR_K = 5
 # then ranks its candidates by the two ranks fused (keyword.fused): ranked
 # by cosine alone, the extra candidates lose to the same passages as
 # before. 0 for KEYWORD_K turns keyword search off.
-CANDIDATE_K = 20
-KEYWORD_K = 20
+# Round 3 (2026-10-07) did not adopt either: 20 candidates raised dev-set
+# key facts 45 -> 54 but the held-out set fell 52 -> 48, and keyword
+# search only traded facts for others inside a full evidence budget. Both
+# stay at today's behaviour until a change passes the held-out check.
+CANDIDATE_K = VECTOR_K
+KEYWORD_K = 0
 # The evidence budget when Gemini writes the answer. MAX_EVIDENCE_CHARS
 # (12,000) was sized for the local 3B's 12,288-token context and stays the
 # Ollama budget. On the Holmes library the median chunk is ~1,473 chars, so

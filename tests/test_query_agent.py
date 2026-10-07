@@ -1182,7 +1182,10 @@ async def test_seeds_are_deduplicated_by_id_not_by_full_value(tmp_path: Path) ->
     conn.close()
 
 
-async def test_keyword_search_adds_a_passage_vector_search_missed(tmp_path: Path) -> None:
+async def test_keyword_search_adds_a_passage_vector_search_missed(
+        tmp_path: Path, monkeypatch) -> None:
+    from lore.query import agent
+    monkeypatch.setattr(agent, "KEYWORD_K", 20)
     conn = _conn(tmp_path)
     _chunk(conn, "b1:9:0", "Upon my quoting Carlyle, he inquired who he might be.", 9)
     # Vector search finds only the edge chunk; b1:9:0 points elsewhere (B).
@@ -1216,7 +1219,9 @@ async def test_keyword_search_off_leaves_only_vector_and_graph_passages(
 
 
 async def test_a_keyword_match_outranks_a_closer_vector_passage_under_the_budget(
-        tmp_path: Path) -> None:
+        tmp_path: Path, monkeypatch) -> None:
+    from lore.query import agent
+    monkeypatch.setattr(agent, "KEYWORD_K", 20)
     # Room for two passages: the edge chunk, then whichever of a vector-only
     # passage (closer by cosine) and a keyword match ranks higher fused.
     conn = _conn(tmp_path)
