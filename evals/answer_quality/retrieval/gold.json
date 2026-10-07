@@ -891,5 +891,1462 @@
   ],
   "quote": "Are you well up in your Jean Paul?",
   "comment": ""
+ },
+ {
+  "id": "D1",
+  "fact": "Holmes: smokes strong tobacco",
+  "chunks": [
+   "05ab674df048d13f:5:10"
+  ],
+  "quote": "You don’t mind the smell of strong tobacco, I hope?",
+  "comment": ""
+ },
+ {
+  "id": "D1",
+  "fact": "Holmes: keeps chemicals about and does experiments",
+  "chunks": [
+   "05ab674df048d13f:5:10"
+  ],
+  "quote": "I generally have chemicals about, and occasionally do experiments.",
+  "comment": ""
+ },
+ {
+  "id": "D1",
+  "fact": "Holmes: gets in the dumps and doesn't speak for days",
+  "chunks": [
+   "05ab674df048d13f:5:10"
+  ],
+  "quote": "I get in the dumps at times, and don’t open my mouth for days on end.",
+  "comment": ""
+ },
+ {
+  "id": "D1",
+  "fact": "Watson: keeps a bull pup and objects to rows (nerves shaken)",
+  "chunks": [
+   "05ab674df048d13f:5:10"
+  ],
+  "quote": "“I keep a bull pup,” I said, “and I object to rows because my nerves are shaken",
+  "comment": ""
+ },
+ {
+  "id": "D1",
+  "fact": "Watson: gets up at ungodly hours and is extremely lazy",
+  "chunks": [
+   "05ab674df048d13f:5:10"
+  ],
+  "quote": "I get up at all sorts of ungodly hours, and I am extremely lazy",
+  "comment": ""
+ },
+ {
+  "id": "D1",
+  "fact": "Holmes asks whether violin-playing counts as a row",
+  "chunks": [
+   "05ab674df048d13f:5:10"
+  ],
+  "quote": "“Do you include violin-playing in your category of rows?” he asked, anxiously.",
+  "comment": ""
+ },
+ {
+  "id": "D2",
+  "fact": "The article claimed an observant man can learn much by systematic examination of everything",
+  "chunks": [
+   "05ab674df048d13f:6:8"
+  ],
+  "quote": "it attempted to show how much an observant man might learn by an accurate and systematic examination of all that came in his way",
+  "comment": ""
+ },
+ {
+  "id": "D2",
+  "fact": "Example: from a drop of water a logician could infer an Atlantic or a Niagara",
+  "chunks": [
+   "05ab674df048d13f:6:10",
+   "05ab674df048d13f:6:11"
+  ],
+  "quote": "a logician could infer the possibility of an Atlantic or a Niagara without having seen or heard of one or the other",
+  "comment": ""
+ },
+ {
+  "id": "D2",
+  "fact": "Watson called it 'ineffable twaddle' / rubbish",
+  "chunks": [
+   "05ab674df048d13f:6:11"
+  ],
+  "quote": "“What ineffable twaddle!” I cried, slapping the magazine down on the table, “I never read such rubbish in my life.”",
+  "comment": ""
+ },
+ {
+  "id": "D2",
+  "fact": "Watson thought it the theory of an arm-chair lounger, not practical",
+  "chunks": [
+   "05ab674df048d13f:6:12"
+  ],
+  "quote": "It is evidently the theory of some arm-chair lounger who evolves all these neat little paradoxes in the seclusion of his own study.",
+  "comment": ""
+ },
+ {
+  "id": "D2",
+  "fact": "Holmes wrote it himself",
+  "chunks": [
+   "05ab674df048d13f:6:12"
+  ],
+  "quote": "“As for the article, I wrote it myself.”",
+  "comment": ""
+ },
+ {
+  "id": "D2",
+  "fact": "Holmes explains he is a consulting detective and depends on these theories for a living",
+  "chunks": [
+   "05ab674df048d13f:6:13"
+  ],
+  "quote": "I’m a consulting detective, if you can understand what that is.",
+  "comment": ""
+ },
+ {
+  "id": "D3",
+  "fact": "A gold watch by Barraud of London, with a gold Albert chain",
+  "chunks": [
+   "05ab674df048d13f:7:10"
+  ],
+  "quote": "A gold watch, No. 97163, by Barraud, of London. Gold Albert chain, very heavy and solid.",
+  "comment": ""
+ },
+ {
+  "id": "D3",
+  "fact": "A gold ring with masonic device and a bull-dog's-head gold pin with ruby eyes",
+  "chunks": [
+   "05ab674df048d13f:7:10"
+  ],
+  "quote": "Gold ring, with masonic device. Gold pin—bull-dog’s head, with rubies as eyes.",
+  "comment": ""
+ },
+ {
+  "id": "D3",
+  "fact": "A card-case with cards of Enoch J. Drebber of Cleveland",
+  "chunks": [
+   "05ab674df048d13f:7:10"
+  ],
+  "quote": "Russian leather card-case, with cards of Enoch J. Drebber of Cleveland",
+  "comment": ""
+ },
+ {
+  "id": "D3",
+  "fact": "No purse, but about seven pounds thirteen in loose money",
+  "chunks": [
+   "05ab674df048d13f:7:10"
+  ],
+  "quote": "No purse, but loose money to the extent of seven pounds thirteen.",
+  "comment": ""
+ },
+ {
+  "id": "D3",
+  "fact": "A pocket Decameron with Joseph Stangerson's name on the fly-leaf",
+  "chunks": [
+   "05ab674df048d13f:7:10"
+  ],
+  "quote": "Pocket edition of Boccaccio’s Decameron, with name of Joseph Stangerson upon the fly-leaf.",
+  "comment": ""
+ },
+ {
+  "id": "D3",
+  "fact": "Two letters (to Drebber and Stangerson) from the Guion Steamship Company about sailings from Liverpool",
+  "chunks": [
+   "05ab674df048d13f:7:10"
+  ],
+  "quote": "They are both from the Guion Steamship Company, and refer to the sailing of their boats from Liverpool.",
+  "comment": ""
+ },
+ {
+  "id": "D4",
+  "fact": "The word RACHE written in blood above the body",
+  "chunks": [
+   "05ab674df048d13f:11:3",
+   "05ab674df048d13f:11:4"
+  ],
+  "quote": "“The word RACHE, written in letters of blood,” he said.",
+  "comment": ""
+ },
+ {
+  "id": "D4",
+  "fact": "Drebber's purse with eighty odd pounds, nothing taken",
+  "chunks": [
+   "05ab674df048d13f:11:5"
+  ],
+  "quote": "There was eighty odd pounds in it, but nothing had been taken.",
+  "comment": ""
+ },
+ {
+  "id": "D4",
+  "fact": "An unsigned telegram from Cleveland: 'J. H. is in Europe'",
+  "chunks": [
+   "05ab674df048d13f:11:5"
+  ],
+  "quote": "a single telegram, dated from Cleveland about a month ago, and containing the words, ‘J. H. is in Europe.’ There was no name appended to this message.",
+  "comment": ""
+ },
+ {
+  "id": "D4",
+  "fact": "His novel, his pipe and a glass of water",
+  "chunks": [
+   "05ab674df048d13f:11:5"
+  ],
+  "quote": "The man’s novel, with which he had read himself to sleep was lying upon the bed, and his pipe was on a chair beside him. There was a glass of water on the table",
+  "comment": ""
+ },
+ {
+  "id": "D4",
+  "fact": "A small chip ointment box with two pills on the window-sill",
+  "chunks": [
+   "05ab674df048d13f:11:5"
+  ],
+  "quote": "on the window-sill a small chip ointment box containing a couple of pills",
+  "comment": ""
+ },
+ {
+  "id": "D4",
+  "fact": "Holmes called the pill box the last link that completed his case",
+  "chunks": [
+   "05ab674df048d13f:11:5"
+  ],
+  "quote": "“The last link,” he cried, exultantly. “My case is complete.”",
+  "comment": ""
+ },
+ {
+  "id": "D5",
+  "fact": "Holmes had steel handcuffs ready and showed them to Lestrade",
+  "chunks": [
+   "05ab674df048d13f:11:14"
+  ],
+  "quote": "taking a pair of steel handcuffs from a drawer. “See how beautifully the spring works. They fasten in an instant.”",
+  "comment": ""
+ },
+ {
+  "id": "D5",
+  "fact": "He had the cabman called up to help with his boxes",
+  "chunks": [
+   "05ab674df048d13f:11:14"
+  ],
+  "quote": "“The cabman may as well help me with my boxes. Just ask him to step up, Wiggins.”",
+  "comment": ""
+ },
+ {
+  "id": "D5",
+  "fact": "He asked the cabman to help with a buckle while strapping a portmanteau, and snapped the handcuffs on",
+  "chunks": [
+   "05ab674df048d13f:11:14"
+  ],
+  "quote": "“Just give me a help with this buckle, cabman,” he said, kneeling over his task, and never turning his head.",
+  "comment": ""
+ },
+ {
+  "id": "D5",
+  "fact": "Holmes introduced him as Jefferson Hope, murderer of Drebber and Stangerson",
+  "chunks": [
+   "05ab674df048d13f:11:15"
+  ],
+  "quote": "let me introduce you to Mr. Jefferson Hope, the murderer of Enoch Drebber and of Joseph Stangerson.",
+  "comment": ""
+ },
+ {
+  "id": "D5",
+  "fact": "Hope tried to escape through the window and fought fiercely",
+  "chunks": [
+   "05ab674df048d13f:11:15"
+  ],
+  "quote": "the prisoner wrenched himself free from Holmes’s grasp, and hurled himself through the window.",
+  "comment": ""
+ },
+ {
+  "id": "D5",
+  "fact": "He was subdued only when Lestrade half-strangled him and his feet were pinioned",
+  "chunks": [
+   "05ab674df048d13f:11:16"
+  ],
+  "quote": "It was not until Lestrade succeeded in getting his hand inside his neckcloth and half-strangling him that we made him realize that his struggles were of no avail",
+  "comment": ""
+ },
+ {
+  "id": "D6",
+  "fact": "He was given as large and fertile a tract of land as any settler except Young and the four Elders",
+  "chunks": [
+   "05ab674df048d13f:13:1",
+   "05ab674df048d13f:13:2"
+  ],
+  "quote": "he should be provided with as large and as fertile a tract of land as any of the settlers, with the exception of Young himself",
+  "comment": ""
+ },
+ {
+  "id": "D6",
+  "fact": "His log-house grew into a roomy villa",
+  "chunks": [
+   "05ab674df048d13f:13:2"
+  ],
+  "quote": "John Ferrier built himself a substantial log-house, which received so many additions in succeeding years that it grew into a roomy villa",
+  "comment": ""
+ },
+ {
+  "id": "D6",
+  "fact": "He grew rich; within twelve years hardly half a dozen men in Salt Lake City could compare with him",
+  "chunks": [
+   "05ab674df048d13f:13:2"
+  ],
+  "quote": "in nine he was rich, and in twelve there were not half a dozen men in the whole of Salt Lake City who could compare with him",
+  "comment": ""
+ },
+ {
+  "id": "D6",
+  "fact": "He offended them by refusing to take wives (no 'female establishment')",
+  "chunks": [
+   "05ab674df048d13f:13:2",
+   "05ab674df048d13f:13:3"
+  ],
+  "quote": "No argument or persuasion could ever induce him to set up a female establishment after the manner of his companions.",
+  "comment": ""
+ },
+ {
+  "id": "D6",
+  "fact": "He never gave reasons for refusing",
+  "chunks": [
+   "05ab674df048d13f:13:2",
+   "05ab674df048d13f:13:3"
+  ],
+  "quote": "He never gave reasons for this persistent refusal",
+  "comment": ""
+ },
+ {
+  "id": "D7",
+  "fact": "Young said Ferrier had neglected the condition of conforming to the faith: he had no wives",
+  "chunks": [
+   "05ab674df048d13f:14:3"
+  ],
+  "quote": "“Where are your wives?” asked Young, looking round him.",
+  "comment": ""
+ },
+ {
+  "id": "D7",
+  "fact": "Young had heard Lucy was sealed to a Gentile",
+  "chunks": [
+   "05ab674df048d13f:14:4"
+  ],
+  "quote": "stories that she is sealed to some Gentile",
+  "comment": ""
+ },
+ {
+  "id": "D7",
+  "fact": "He cited Joseph Smith's thirteenth rule that a maiden of the faith must marry one of the elect",
+  "chunks": [
+   "05ab674df048d13f:14:4"
+  ],
+  "quote": "‘Let every maiden of the true faith marry one of the elect; for if she wed a Gentile, she commits a grievous sin.’",
+  "comment": ""
+ },
+ {
+  "id": "D7",
+  "fact": "Lucy must choose between the sons of Stangerson and Drebber",
+  "chunks": [
+   "05ab674df048d13f:14:4",
+   "05ab674df048d13f:14:5"
+  ],
+  "quote": "Stangerson has a son, and Drebber has a son, and either of them would gladly welcome your daughter to their house. Let her choose between them.",
+  "comment": ""
+ },
+ {
+  "id": "D7",
+  "fact": "He left with a threat that they would be better dead than defy the Holy Four",
+  "chunks": [
+   "05ab674df048d13f:14:5"
+  ],
+  "quote": "that you and she were now lying blanched skeletons upon the Sierra Blanco, than that you should put your weak wills against the orders of the Holy Four!",
+  "comment": ""
+ },
+ {
+  "id": "D8",
+  "fact": "Stangerson: he has only four wives to Drebber's seven, so his claim is stronger",
+  "chunks": [
+   "05ab674df048d13f:15:1"
+  ],
+  "quote": "As I have but four wives and Brother Drebber here has seven, it appears to me that my claim is the stronger one.",
+  "comment": ""
+ },
+ {
+  "id": "D8",
+  "fact": "Drebber: his father has given him the mills, so he is richer",
+  "chunks": [
+   "05ab674df048d13f:15:1"
+  ],
+  "quote": "My father has now given over his mills to me, and I am the richer man.",
+  "comment": ""
+ },
+ {
+  "id": "D8",
+  "fact": "Stangerson: he will inherit the tanning yard and leather factory, and is elder and higher in the Church",
+  "chunks": [
+   "05ab674df048d13f:15:1"
+  ],
+  "quote": "I shall have his tanning yard and his leather factory. Then I am your elder, and am higher in the Church.",
+  "comment": ""
+ },
+ {
+  "id": "D8",
+  "fact": "Ferrier threw them out: the door or the window",
+  "chunks": [
+   "05ab674df048d13f:15:1",
+   "05ab674df048d13f:15:2"
+  ],
+  "quote": "“There are two ways out of the room,” cried Ferrier; “there is the door, and there is the window. Which do you care to use?”",
+  "comment": ""
+ },
+ {
+  "id": "D8",
+  "fact": "They left threatening he would rue defying the Prophet and Council of Four",
+  "chunks": [
+   "05ab674df048d13f:15:2"
+  ],
+  "quote": "You have defied the Prophet and the Council of Four. You shall rue it to the end of your days.",
+  "comment": ""
+ },
+ {
+  "id": "D9",
+  "fact": "Those who held out against the Church vanished without trace",
+  "chunks": [
+   "05ab674df048d13f:14:1"
+  ],
+  "quote": "The man who held out against the Church vanished away, and none knew whither he had gone or what had befallen him.",
+  "comment": ""
+ },
+ {
+  "id": "D9",
+  "fact": "At first it punished those who wanted to abandon the faith",
+  "chunks": [
+   "05ab674df048d13f:14:1"
+  ],
+  "quote": "At first this vague and terrible power was exercised only upon the recalcitrants who, having embraced the Mormon faith, wished afterwards to pervert or to abandon it.",
+  "comment": ""
+ },
+ {
+  "id": "D9",
+  "fact": "Later it was rumoured to murder immigrants and carry off women for the Elders' harems",
+  "chunks": [
+   "05ab674df048d13f:14:1"
+  ],
+  "quote": "Strange rumours began to be bandied about—rumours of murdered immigrants and rifled camps in regions where Indians had never been seen.",
+  "comment": ""
+ },
+ {
+  "id": "D9",
+  "fact": "They were masked, armed gangs moving silently at night",
+  "chunks": [
+   "05ab674df048d13f:14:1",
+   "05ab674df048d13f:14:2"
+  ],
+  "quote": "gangs of armed men, masked, stealthy, and noiseless, who flitted by them in the darkness",
+  "comment": ""
+ },
+ {
+  "id": "D9",
+  "fact": "Members were secret, so anyone, even a friend, might be one and every man feared his neighbour",
+  "chunks": [
+   "05ab674df048d13f:14:2"
+  ],
+  "quote": "None knew who belonged to this ruthless society.",
+  "comment": ""
+ },
+ {
+  "id": "D10",
+  "fact": "Drebber and Stangerson went to Euston and missed the Liverpool train",
+  "chunks": [
+   "05ab674df048d13f:17:6"
+  ],
+  "quote": "I heard them ask for the Liverpool train, and the guard answer that one had just gone and there would not be another for some hours.",
+  "comment": ""
+ },
+ {
+  "id": "D10",
+  "fact": "Drebber went off alone on 'business', to rejoin Stangerson at Halliday's Private Hotel if he missed the last train",
+  "chunks": [
+   "05ab674df048d13f:17:7"
+  ],
+  "quote": "if he missed the last train he should rejoin him at Halliday’s Private Hotel",
+  "comment": ""
+ },
+ {
+  "id": "D10",
+  "fact": "Drebber went back to the boarding-house and was kicked out by a young man for insulting a girl",
+  "chunks": [
+   "05ab674df048d13f:17:9"
+  ],
+  "quote": "‘You hound,’ he cried, shaking his stick at him; ‘I’ll teach you to insult an honest girl!’",
+  "comment": ""
+ },
+ {
+  "id": "D10",
+  "fact": "Fleeing, Drebber hailed Hope's cab and asked for Halliday's Private Hotel",
+  "chunks": [
+   "05ab674df048d13f:17:9"
+  ],
+  "quote": "seeing my cab, he hailed me and jumped in. ‘Drive me to Halliday’s Private Hotel,’ said he.",
+  "comment": ""
+ },
+ {
+  "id": "D10",
+  "fact": "He stopped at a gin palace till closing time and came out very drunk",
+  "chunks": [
+   "05ab674df048d13f:17:9",
+   "05ab674df048d13f:17:10"
+  ],
+  "quote": "There he remained until closing time, and when he came out he was so far gone that I knew the game was in my own hands.",
+  "comment": ""
+ },
+ {
+  "id": "D11",
+  "fact": "He wrote it in his own blood, from a nosebleed",
+  "chunks": [
+   "05ab674df048d13f:17:13",
+   "05ab674df048d13f:17:14"
+  ],
+  "quote": "The blood had been streaming from my nose, but I had taken no notice of it.",
+  "comment": ""
+ },
+ {
+  "id": "D11",
+  "fact": "He dipped his finger in his blood and printed it on the wall",
+  "chunks": [
+   "05ab674df048d13f:17:14"
+  ],
+  "quote": "I dipped my finger in my own blood and printed it on a convenient place on the wall",
+  "comment": ""
+ },
+ {
+  "id": "D11",
+  "fact": "He meant to set the police on a wrong track",
+  "chunks": [
+   "05ab674df048d13f:17:14"
+  ],
+  "quote": "Perhaps it was some mischievous idea of setting the police upon a wrong track",
+  "comment": ""
+ },
+ {
+  "id": "D11",
+  "fact": "He remembered a German found in New York with RACHE above him, blamed on secret societies",
+  "chunks": [
+   "05ab674df048d13f:17:14"
+  ],
+  "quote": "I remembered a German being found in New York with RACHE written up above him, and it was argued at the time in the newspapers that the secret societies must have done it.",
+  "comment": ""
+ },
+ {
+  "id": "D11",
+  "fact": "He guessed it would puzzle Londoners as it had New Yorkers",
+  "chunks": [
+   "05ab674df048d13f:17:14"
+  ],
+  "quote": "I guessed that what puzzled the New Yorkers would puzzle the Londoners",
+  "comment": ""
+ },
+ {
+  "id": "D12",
+  "fact": "No wound, but his agitated face showed he foresaw his fate (natural deaths show no agitation)",
+  "chunks": [
+   "05ab674df048d13f:18:3"
+  ],
+  "quote": "Men who die from heart disease, or any sudden natural cause, never by any chance exhibit agitation upon their features.",
+  "comment": ""
+ },
+ {
+  "id": "D12",
+  "fact": "Holmes smelt a slightly sour smell on the lips and concluded poison",
+  "chunks": [
+   "05ab674df048d13f:18:3"
+  ],
+  "quote": "Having sniffed the dead man’s lips I detected a slightly sour smell, and I came to the conclusion that he had had poison forced upon him.",
+  "comment": ""
+ },
+ {
+  "id": "D12",
+  "fact": "The hatred and fear on the face showed the poison was forced on him",
+  "chunks": [
+   "05ab674df048d13f:18:3"
+  ],
+  "quote": "I argued that it had been forced upon him from the hatred and fear expressed upon his face",
+  "comment": ""
+ },
+ {
+  "id": "D12",
+  "fact": "Not robbery, because nothing was taken",
+  "chunks": [
+   "05ab674df048d13f:18:3",
+   "05ab674df048d13f:18:4"
+  ],
+  "quote": "Robbery had not been the object of the murder, for nothing was taken.",
+  "comment": ""
+ },
+ {
+  "id": "D12",
+  "fact": "Not politics: political assassins flee, but this murder was deliberate and the killer left tracks all over the room",
+  "chunks": [
+   "05ab674df048d13f:18:4"
+  ],
+  "quote": "Political assassins are only too glad to do their work and to fly. This murder had, on the contrary, been done most deliberately",
+  "comment": ""
+ },
+ {
+  "id": "D12",
+  "fact": "The inscription on the wall was evidently a blind",
+  "chunks": [
+   "05ab674df048d13f:18:4"
+  ],
+  "quote": "The thing was too evidently a blind.",
+  "comment": ""
+ },
+ {
+  "id": "D13",
+  "fact": "Bald, high head fringed with red hair; features constantly jerking",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:0"
+  ],
+  "quote": "a small man with a very high head, a bristle of red hair all round the fringe of it, and a bald, shining scalp",
+  "comment": ""
+ },
+ {
+  "id": "D13",
+  "fact": "He called his rooms an oasis of art in the howling desert of South London",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:0"
+  ],
+  "quote": "An oasis of art in the howling desert of South London.",
+  "comment": ""
+ },
+ {
+  "id": "D13",
+  "fact": "The rooms were luxurious and Eastern: tapestries, tiger-skins, a huge hookah",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:1"
+  ],
+  "quote": "Two great tiger-skins thrown athwart it increased the suggestion of Eastern luxury, as did a huge hookah which stood upon a mat in the corner.",
+  "comment": ""
+ },
+ {
+  "id": "D13",
+  "fact": "A hypochondriac, he asked Watson to check his mitral valve",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:1"
+  ],
+  "quote": "I have grave doubts as to my mitral valve, if you would be so very good.",
+  "comment": ""
+ },
+ {
+  "id": "D13",
+  "fact": "He smoked the hookah as a sedative for his nerves",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:3"
+  ],
+  "quote": "I am a little nervous, and I find my hookah an invaluable sedative.",
+  "comment": ""
+ },
+ {
+  "id": "D13",
+  "fact": "He boasted of his paintings (a genuine Corot, a Bouguereau)",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:4"
+  ],
+  "quote": "The landscape is a genuine Corot",
+  "comment": ""
+ },
+ {
+  "id": "D14",
+  "fact": "Sholto was about to reveal the treasure's hiding-place when he cried out at a face at the window",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:10"
+  ],
+  "quote": "‘Keep him out! For Christ’s sake keep him out!’",
+  "comment": ""
+ },
+ {
+  "id": "D14",
+  "fact": "The face was bearded and hairy, with wild cruel eyes; Sholto died at that moment",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:10"
+  ],
+  "quote": "It was a bearded, hairy face, with wild cruel eyes and an expression of concentrated malevolence.",
+  "comment": ""
+ },
+ {
+  "id": "D14",
+  "fact": "A single footmark was found under the window",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:11"
+  ],
+  "quote": "just under the window a single footmark was visible in the flower-bed",
+  "comment": ""
+ },
+ {
+  "id": "D14",
+  "fact": "Next morning his room had been rifled and 'The sign of the four' was pinned on his chest",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:11"
+  ],
+  "quote": "his cupboards and boxes had been rifled, and upon his chest was fixed a torn piece of paper, with the words ‘The sign of the four’ scrawled across it",
+  "comment": ""
+ },
+ {
+  "id": "D14",
+  "fact": "Small: hearing Sholto was dying, he came and watched through the window as he died",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:37"
+  ],
+  "quote": "looking through the window, I saw him lying in his bed, with his sons on each side of him",
+  "comment": ""
+ },
+ {
+  "id": "D14",
+  "fact": "Small entered that night to search his papers for the treasure, found nothing, and pinned the sign of the four on him",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:37"
+  ],
+  "quote": "I got into his room that same night, though, and I searched his papers to see if there was any record of where he had hidden our jewels.",
+  "comment": ""
+ },
+ {
+  "id": "D15",
+  "fact": "The treasure was in Bartholomew's laboratory at the top of the house, too high for Small's wooden leg",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:38"
+  ],
+  "quote": "I could not see how with my wooden leg I was to make my way up to it",
+  "comment": ""
+ },
+ {
+  "id": "D15",
+  "fact": "Small learned of a trap-door in the roof",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:38"
+  ],
+  "quote": "I learned, however, about a trap-door in the roof, and also about Mr. Sholto’s supper-hour.",
+  "comment": ""
+ },
+ {
+  "id": "D15",
+  "fact": "Tonga climbed in through the roof carrying a long rope",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:38"
+  ],
+  "quote": "I brought him out with me with a long rope wound round his waist. He could climb like a cat, and he soon made his way through the roof",
+  "comment": ""
+ },
+ {
+  "id": "D15",
+  "fact": "Small climbed up the rope to the window",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:38",
+   "0ee225a9a3b5fbc2:15:39"
+  ],
+  "quote": "when I came up by the rope I found him strutting about as proud as a peacock",
+  "comment": ""
+ },
+ {
+  "id": "D15",
+  "fact": "Small let the box down and slid down the rope",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:39"
+  ],
+  "quote": "I took the treasure-box and let it down, and then slid down myself",
+  "comment": ""
+ },
+ {
+  "id": "D15",
+  "fact": "Holmes had deduced the ally drew up the rope, snibbed the window and left the way he came",
+  "chunks": [
+   "0ee225a9a3b5fbc2:9:1",
+   "0ee225a9a3b5fbc2:9:2"
+  ],
+  "quote": "your ally would draw up the rope, untie it from the hook, shut the window, snib it on the inside, and get away in the way that he originally came",
+  "comment": ""
+ },
+ {
+  "id": "D16",
+  "fact": "First the trail ended at a creosote barrel in Broderick and Nelson's timber-yard",
+  "chunks": [
+   "0ee225a9a3b5fbc2:10:20"
+  ],
+  "quote": "Our course now ran down Nine Elms until we came to Broderick and Nelson’s large timber-yard",
+  "comment": ""
+ },
+ {
+  "id": "D16",
+  "fact": "Holmes said much creosote is carted about London, so the trail was crossed",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:0"
+  ],
+  "quote": "If you consider how much creasote is carted about London in one day, it is no great wonder that our trail should have been crossed.",
+  "comment": ""
+ },
+ {
+  "id": "D16",
+  "fact": "At Knight's Place there were two trails in opposite directions and they took the wrong one",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:0"
+  ],
+  "quote": "there were two different trails running in opposite directions. We took the wrong one.",
+  "comment": ""
+ },
+ {
+  "id": "D16",
+  "fact": "The true trail ended at a small wooden wharf at the end of Broad Street, by the water",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:0"
+  ],
+  "quote": "At the end of Broad Street it ran right down to the water’s edge, where there was a small wooden wharf.",
+  "comment": ""
+ },
+ {
+  "id": "D16",
+  "fact": "There the fugitives had taken a boat, at Mordecai Smith's boat-hire place",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:0",
+   "0ee225a9a3b5fbc2:11:1"
+  ],
+  "quote": "“They have taken to a boat here.”",
+  "comment": ""
+ },
+ {
+  "id": "D17",
+  "fact": "He won her over by giving her son Jack two shillings",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:1",
+   "0ee225a9a3b5fbc2:11:2"
+  ],
+  "quote": "“I’d like two shillin’ better,” the prodigy answered, after some thought. “Here you are, then! Catch!—A fine child, Mrs. Smith!”",
+  "comment": ""
+ },
+ {
+  "id": "D17",
+  "fact": "Her husband had gone in the steam launch since the previous morning, with very little coal",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:2"
+  ],
+  "quote": "it is in the steam launch that he has gone. That’s what puzzles me; for I know there ain’t more coals in her than would take her to about Woolwich and back.",
+  "comment": ""
+ },
+ {
+  "id": "D17",
+  "fact": "A wooden-legged man roused him at about three in the night, and he took his eldest son Jim",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:3"
+  ],
+  "quote": "He tapped at the winder,—about three it would be.",
+  "comment": ""
+ },
+ {
+  "id": "D17",
+  "fact": "The launch was the Aurora, black with two red streaks and a black funnel with a white band",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:3",
+   "0ee225a9a3b5fbc2:11:4"
+  ],
+  "quote": "She’s been fresh painted, black with two red streaks.",
+  "comment": ""
+ },
+ {
+  "id": "D17",
+  "fact": "Holmes's method: never let such people think their information is important",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:4"
+  ],
+  "quote": "is never to let them think that their information can be of the slightest importance to you. If you do, they will instantly shut up like an oyster.",
+  "comment": ""
+ },
+ {
+  "id": "D18",
+  "fact": "He reasoned they could not go far before daylight because Tonga would be noticed",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:3"
+  ],
+  "quote": "Therefore, I argued, they did not go very far.",
+  "comment": ""
+ },
+ {
+  "id": "D18",
+  "fact": "He guessed the launch had been handed to a boat-builder for a trifling change, hiding it in a yard",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:4"
+  ],
+  "quote": "I might hand the launch over to some boat-builder or repairer, with directions to make a trifling change in her.",
+  "comment": ""
+ },
+ {
+  "id": "D18",
+  "fact": "In seaman's disguise he tried the yards down the river; the sixteenth, Jacobson's, had the Aurora",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:5"
+  ],
+  "quote": "I drew blank at fifteen, but at the sixteenth—Jacobson’s—I learned that the Aurora had been handed over to them two days ago by a wooden-legged man",
+  "comment": ""
+ },
+ {
+  "id": "D18",
+  "fact": "The wooden-legged man had given trivial directions about the rudder",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:5"
+  ],
+  "quote": "‘There ain’t naught amiss with her rudder,’ said the foreman.",
+  "comment": ""
+ },
+ {
+  "id": "D18",
+  "fact": "Mordecai Smith arrived drunk and ordered the launch for eight that night",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:5"
+  ],
+  "quote": "‘I want her to-night at eight o’clock,’ said he",
+  "comment": ""
+ },
+ {
+  "id": "D18",
+  "fact": "Holmes posted one of his boys as sentry over the launch",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:5"
+  ],
+  "quote": "I stationed him as a sentry over the launch",
+  "comment": ""
+ },
+ {
+  "id": "D19",
+  "fact": "Tonga raised his blow-pipe (a piece of wood like a school-ruler) to his lips",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:12"
+  ],
+  "quote": "he plucked out from under his covering a short, round piece of wood, like a school-ruler, and clapped it to his lips",
+  "comment": ""
+ },
+ {
+  "id": "D19",
+  "fact": "Holmes and Watson fired together",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:12"
+  ],
+  "quote": "Our pistols rang out together.",
+  "comment": ""
+ },
+ {
+  "id": "D19",
+  "fact": "He fell sideways into the river",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:12"
+  ],
+  "quote": "He whirled round, threw up his arms, and with a kind of choking cough fell sideways into the stream.",
+  "comment": ""
+ },
+ {
+  "id": "D19",
+  "fact": "His body was never found; his bones lie at the bottom of the Thames",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:13"
+  ],
+  "quote": "Somewhere in the dark ooze at the bottom of the Thames lie the bones of that strange visitor to our shores.",
+  "comment": ""
+ },
+ {
+  "id": "D19",
+  "fact": "A dart was found stuck in the hatchway just behind where they had stood",
+  "chunks": [
+   "0ee225a9a3b5fbc2:13:13"
+  ],
+  "quote": "just behind where we had been standing, stuck one of those murderous darts which we knew so well",
+  "comment": ""
+ },
+ {
+  "id": "D19",
+  "fact": "Small said it was the last dart, the one already in the blow-pipe",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:40"
+  ],
+  "quote": "He had lost them all, sir, except the one which was in his blow-pipe at the time.",
+  "comment": ""
+ },
+ {
+  "id": "D20",
+  "fact": "Born near Pershore, Worcestershire, of small-farmer family",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:4"
+  ],
+  "quote": "I am a Worcestershire man myself,—born near Pershore.",
+  "comment": ""
+ },
+ {
+  "id": "D20",
+  "fact": "At about eighteen, after a mess over a girl, he enlisted in the 3rd Buffs bound for India",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:4"
+  ],
+  "quote": "I got into a mess over a girl, and could only get out of it again by taking the Queen’s shilling and joining the 3rd Buffs, which was just starting for India.",
+  "comment": ""
+ },
+ {
+  "id": "D20",
+  "fact": "After being invalided out, he became overseer for the indigo-planter Abel White",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:5"
+  ],
+  "quote": "A man named Abel White, who had come out there as an indigo-planter, wanted an overseer to look after his coolies and keep them up to their work.",
+  "comment": ""
+ },
+ {
+  "id": "D20",
+  "fact": "The plantation was at Muttra",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:6"
+  ],
+  "quote": "Our plantation was at a place called Muttra, near the border of the Northwest Provinces.",
+  "comment": ""
+ },
+ {
+  "id": "D20",
+  "fact": "In the Mutiny the Dawsons were killed and White's bungalow burned; Small fled to Agra",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:7",
+   "0ee225a9a3b5fbc2:15:8"
+  ],
+  "quote": "so I broke away across the paddy-fields, and found myself late at night safe within the walls at Agra",
+  "comment": ""
+ },
+ {
+  "id": "D21",
+  "fact": "Officers including Sholto and Morstan played cards nightly in the surgeon's rooms, which Small could watch",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:28"
+  ],
+  "quote": "There was Major Sholto, Captain Morstan, and Lieutenant Bromley Brown, who were in command of the native troops",
+  "comment": ""
+ },
+ {
+  "id": "D21",
+  "fact": "The soldiers always lost to the practised prison officials",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:28"
+  ],
+  "quote": "the soldiers used always to lose and the civilians to win",
+  "comment": ""
+ },
+ {
+  "id": "D21",
+  "fact": "Sholto was hardest hit, running up notes of hand for big sums and drinking",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:28"
+  ],
+  "quote": "Major Sholto was the hardest hit.",
+  "comment": ""
+ },
+ {
+  "id": "D21",
+  "fact": "Small overheard Sholto tell Morstan he was a ruined man",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:29"
+  ],
+  "quote": "‘It’s all up, Morstan,’ he was saying, as they passed my hut. ‘I shall have to send in my papers. I am a ruined man.’",
+  "comment": ""
+ },
+ {
+  "id": "D21",
+  "fact": "Small then approached him about half a million in hidden treasure",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:29"
+  ],
+  "quote": "I know where half a million worth lies",
+  "comment": ""
+ },
+ {
+  "id": "D22",
+  "fact": "Watson feared that, with Mary an heiress, she might think him a fortune-seeker",
+  "chunks": [
+   "0ee225a9a3b5fbc2:10:0"
+  ],
+  "quote": "Might she not look upon me as a mere vulgar fortune-seeker?",
+  "comment": ""
+ },
+ {
+  "id": "D22",
+  "fact": "The treasure stood like an impassable barrier between them",
+  "chunks": [
+   "0ee225a9a3b5fbc2:10:0",
+   "0ee225a9a3b5fbc2:10:1"
+  ],
+  "quote": "This Agra treasure intervened like an impassable barrier between us.",
+  "comment": ""
+ },
+ {
+  "id": "D22",
+  "fact": "When it was empty he felt the golden barrier was gone and said 'Thank God!'",
+  "chunks": [
+   "0ee225a9a3b5fbc2:14:9"
+  ],
+  "quote": "I could realise nothing save that the golden barrier was gone from between us. “Thank God!” I ejaculated from my very heart.",
+  "comment": ""
+ },
+ {
+  "id": "D22",
+  "fact": "He told her she was within his reach again and declared his love",
+  "chunks": [
+   "0ee225a9a3b5fbc2:14:9"
+  ],
+  "quote": "“Because you are within my reach again,” I said, taking her hand.",
+  "comment": ""
+ },
+ {
+  "id": "D22",
+  "fact": "Mary said 'Thank God' too",
+  "chunks": [
+   "0ee225a9a3b5fbc2:14:9"
+  ],
+  "quote": "“Then I say, ‘Thank God,’ too,” she whispered",
+  "comment": ""
+ },
+ {
+  "id": "D23",
+  "fact": "SiS: Gregson and Lestrade are 'the pick of a bad lot'",
+  "chunks": [
+   "05ab674df048d13f:7:2"
+  ],
+  "quote": "he and Lestrade are the pick of a bad lot",
+  "comment": ""
+ },
+ {
+  "id": "D23",
+  "fact": "SiS: quick and energetic but shockingly conventional, and jealous of each other",
+  "chunks": [
+   "05ab674df048d13f:7:2"
+  ],
+  "quote": "They are both quick and energetic, but conventional—shockingly so.",
+  "comment": ""
+ },
+ {
+  "id": "D23",
+  "fact": "SoF: Gregson, Lestrade and Jones are normally out of their depths and bring cases to him",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:2"
+  ],
+  "quote": "When Gregson or Lestrade or Athelney Jones are out of their depths—which, by the way, is their normal state—the matter is laid before me.",
+  "comment": ""
+ },
+ {
+  "id": "D23",
+  "fact": "SoF: Athelney Jones is 'not a bad fellow', and Holmes doesn't want to injure him professionally",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:5"
+  ],
+  "quote": "He is not a bad fellow, and I should not like to do anything which would injure him professionally.",
+  "comment": ""
+ },
+ {
+  "id": "D24",
+  "fact": "SiS: his playing was remarkable but eccentric",
+  "chunks": [
+   "05ab674df048d13f:6:6"
+  ],
+  "quote": "These were very remarkable, but as eccentric as all his other accomplishments.",
+  "comment": ""
+ },
+ {
+  "id": "D24",
+  "fact": "SiS: he could play difficult pieces such as Mendelssohn's Lieder at Watson's request",
+  "chunks": [
+   "05ab674df048d13f:6:6"
+  ],
+  "quote": "at my request he has played me some of Mendelssohn’s Lieder, and other favourites",
+  "comment": ""
+ },
+ {
+  "id": "D24",
+  "fact": "SiS: alone he scraped carelessly at the fiddle across his knee",
+  "chunks": [
+   "05ab674df048d13f:6:6"
+  ],
+  "quote": "he would close his eyes and scrape carelessly at the fiddle which was thrown across his knee",
+  "comment": ""
+ },
+ {
+  "id": "D24",
+  "fact": "SiS: he made up for it by playing Watson's favourite airs",
+  "chunks": [
+   "05ab674df048d13f:6:6"
+  ],
+  "quote": "playing in quick succession a whole series of my favourite airs as a slight compensation for the trial upon my patience",
+  "comment": ""
+ },
+ {
+  "id": "D24",
+  "fact": "SoF: he played a low dreamy air of his own improvisation to put Watson to sleep",
+  "chunks": [
+   "0ee225a9a3b5fbc2:11:14"
+  ],
+  "quote": "he began to play some low, dreamy, melodious air,—his own, no doubt, for he had a remarkable gift for improvisation",
+  "comment": ""
+ },
+ {
+  "id": "D25",
+  "fact": "SiS: the Echo credits Lestrade and Gregson entirely",
+  "chunks": [
+   "05ab674df048d13f:18:8",
+   "05ab674df048d13f:18:9"
+  ],
+  "quote": "the credit of this smart capture belongs entirely to the well-known Scotland Yard officials, Messrs. Lestrade and Gregson",
+  "comment": ""
+ },
+ {
+  "id": "D25",
+  "fact": "SiS: the paper patronises Holmes as an amateur",
+  "chunks": [
+   "05ab674df048d13f:18:8",
+   "05ab674df048d13f:18:9"
+  ],
+  "quote": "who has himself, as an amateur, shown some talent in the detective line",
+  "comment": ""
+ },
+ {
+  "id": "D25",
+  "fact": "SiS: Holmes laughs that it was all to get them a testimonial",
+  "chunks": [
+   "05ab674df048d13f:18:9",
+   "05ab674df048d13f:18:10"
+  ],
+  "quote": "“That’s the result of all our Study in Scarlet: to get them a testimonial!”",
+  "comment": ""
+ },
+ {
+  "id": "D25",
+  "fact": "SoF: Holmes claims no credit; his name is in no newspaper; the work is his reward",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:2"
+  ],
+  "quote": "I claim no credit in such cases. My name figures in no newspaper.",
+  "comment": ""
+ },
+ {
+  "id": "D25",
+  "fact": "SoF: he offers Athelney Jones all the official credit if Jones follows his lead",
+  "chunks": [
+   "0ee225a9a3b5fbc2:12:13"
+  ],
+  "quote": "You are welcome to all the official credit, but you must act on the line that I point out.",
+  "comment": ""
+ },
+ {
+  "id": "D26",
+  "fact": "SiS: Watson says Holmes's merits should be recognised and he will publish if Holmes won't",
+  "chunks": [
+   "05ab674df048d13f:18:7"
+  ],
+  "quote": "You should publish an account of the case. If you won’t, I will for you.",
+  "comment": ""
+ },
+ {
+  "id": "D26",
+  "fact": "SiS: Watson has the facts in his journal and the public shall know them",
+  "chunks": [
+   "05ab674df048d13f:18:9",
+   "05ab674df048d13f:18:10"
+  ],
+  "quote": "I have all the facts in my journal, and the public shall know them.",
+  "comment": ""
+ },
+ {
+  "id": "D26",
+  "fact": "SoF: Watson published it as a small brochure titled 'A Study in Scarlet'",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:2"
+  ],
+  "quote": "I even embodied it in a small brochure with the somewhat fantastic title of ‘A Study in Scarlet.’",
+  "comment": ""
+ },
+ {
+  "id": "D26",
+  "fact": "SoF: Holmes could not congratulate him: it was tinged with romanticism, like a love-story in Euclid",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:3"
+  ],
+  "quote": "You have attempted to tinge it with romanticism, which produces much the same effect as if you worked a love-story or an elopement into the fifth proposition of Euclid.",
+  "comment": ""
+ },
+ {
+  "id": "D26",
+  "fact": "SoF: Holmes said only the analytical reasoning deserved mention",
+  "chunks": [
+   "0ee225a9a3b5fbc2:4:3"
+  ],
+  "quote": "The only point in the case which deserved mention was the curious analytical reasoning from effects to causes by which I succeeded in unraveling it.",
+  "comment": ""
+ },
+ {
+  "id": "D27",
+  "fact": "SiS: on the Great Alkali Plain in America",
+  "chunks": [
+   "05ab674df048d13f:3:0"
+  ],
+  "quote": "PART II. THE COUNTRY OF THE SAINTS CHAPTER I. ON THE GREAT ALKALI PLAIN.",
+  "comment": ""
+ },
+ {
+  "id": "D27",
+  "fact": "SiS: beginning on 4 May 1847",
+  "chunks": [
+   "05ab674df048d13f:12:1",
+   "05ab674df048d13f:12:2"
+  ],
+  "quote": "there stood upon the fourth of May, eighteen hundred and forty-seven, a solitary traveller",
+  "comment": ""
+ },
+ {
+  "id": "D27",
+  "fact": "SiS: then in the Mormon settlement of Salt Lake City, Utah",
+  "chunks": [
+   "05ab674df048d13f:13:2"
+  ],
+  "quote": "there were not half a dozen men in the whole of Salt Lake City who could compare with him",
+  "comment": ""
+ },
+ {
+  "id": "D27",
+  "fact": "SoF: in India during the Mutiny (Muttra, Agra)",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:6"
+  ],
+  "quote": "Suddenly, without a note of warning, the great mutiny broke upon us.",
+  "comment": ""
+ },
+ {
+  "id": "D27",
+  "fact": "SoF: then the convict settlement on the Andaman Islands",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:27"
+  ],
+  "quote": "I was changed from Agra to Madras, and from there to Blair Island in the Andamans.",
+  "comment": ""
+ },
+ {
+  "id": "D28",
+  "fact": "SiS: an alkaloid extracted from South American arrow poison, which Hope stole while janitor at the York College laboratory",
+  "chunks": [
+   "05ab674df048d13f:17:10"
+  ],
+  "quote": "he showed his students some alkaloid, as he called it, which he had extracted from some South American arrow poison",
+  "comment": ""
+ },
+ {
+  "id": "D28",
+  "fact": "SiS: so powerful the least grain meant instant death",
+  "chunks": [
+   "05ab674df048d13f:17:10"
+  ],
+  "quote": "so powerful that the least grain meant instant death",
+  "comment": ""
+ },
+ {
+  "id": "D28",
+  "fact": "SoF: a strychnine-like vegetable alkaloid causing tetanus-like contraction",
+  "chunks": [
+   "0ee225a9a3b5fbc2:9:6"
+  ],
+  "quote": "“Death from some powerful vegetable alkaloid,” I answered,—“some strychnine-like substance which would produce tetanus.”",
+  "comment": ""
+ },
+ {
+  "id": "D28",
+  "fact": "SoF: delivered by a thorn shot into the scalp (from Tonga's blow-pipe)",
+  "chunks": [
+   "0ee225a9a3b5fbc2:9:6",
+   "0ee225a9a3b5fbc2:9:7"
+  ],
+  "quote": "I discovered a thorn which had been driven or shot with no great force into the scalp",
+  "comment": ""
+ },
+ {
+  "id": "D29",
+  "fact": "SiS: Hope told his story at the police station before an Inspector, who warned it would be taken down",
+  "chunks": [
+   "05ab674df048d13f:17:1"
+  ],
+  "quote": "I must warn you that your words will be taken down, and may be used against you.",
+  "comment": ""
+ },
+ {
+  "id": "D29",
+  "fact": "SiS: he expected to die of his aneurism before trial and wanted to leave an account, not be remembered as a cut-throat",
+  "chunks": [
+   "05ab674df048d13f:17:2"
+  ],
+  "quote": "I should like to leave some account of the business behind me. I don’t want to be remembered as a common cut-throat.",
+  "comment": ""
+ },
+ {
+  "id": "D29",
+  "fact": "SiS: his words were recorded in Lestrade's notebook",
+  "chunks": [
+   "05ab674df048d13f:17:3"
+  ],
+  "quote": "I have had access to Lestrade’s note-book, in which the prisoner’s words were taken down exactly as they were uttered",
+  "comment": ""
+ },
+ {
+  "id": "D29",
+  "fact": "SoF: Small told it in Holmes's Baker Street rooms, brought there by Athelney Jones",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:0"
+  ],
+  "quote": "when I got to Baker Street and showed him the empty box. They had only just arrived, Holmes, the prisoner, and he",
+  "comment": ""
+ },
+ {
+  "id": "D29",
+  "fact": "SoF: Small told it to show how Sholto wronged him and that he was innocent of Bartholomew's death",
+  "chunks": [
+   "0ee225a9a3b5fbc2:15:39",
+   "0ee225a9a3b5fbc2:15:40"
+  ],
+  "quote": "the best defence I can make is just to hold back nothing, but let all the world know how badly I have myself been served by Major Sholto, and how innocent I am of the death of his son",
+  "comment": ""
+ },
+ {
+  "id": "D30",
+  "fact": "SiS: 3, Lauriston Gardens, off the Brixton Road",
+  "chunks": [
+   "05ab674df048d13f:7:1",
+   "05ab674df048d13f:7:2"
+  ],
+  "quote": "There has been a bad business during the night at 3, Lauriston Gardens, off the Brixton Road.",
+  "comment": ""
+ },
+ {
+  "id": "D30",
+  "fact": "SiS: an empty house, one of four set back from the street, two empty, with 'To Let' cards",
+  "chunks": [
+   "05ab674df048d13f:7:4"
+  ],
+  "quote": "It was one of four which stood back some little way from the street, two being occupied and two empty.",
+  "comment": ""
+ },
+ {
+  "id": "D30",
+  "fact": "SoF: Pondicherry Lodge in Upper Norwood",
+  "chunks": [
+   "0ee225a9a3b5fbc2:7:5"
+  ],
+  "quote": "came to live at Pondicherry Lodge in Upper Norwood",
+  "comment": ""
+ },
+ {
+  "id": "D30",
+  "fact": "SoF: the house stood in its own grounds behind a high wall topped with broken glass",
+  "chunks": [
+   "0ee225a9a3b5fbc2:8:0"
+  ],
+  "quote": "Pondicherry Lodge stood in its own grounds, and was girt round with a very high stone wall topped with broken glass.",
+  "comment": ""
+ },
+ {
+  "id": "D30",
+  "fact": "SoF: the body was in Bartholomew's locked room, fitted up as a chemical laboratory",
+  "chunks": [
+   "0ee225a9a3b5fbc2:8:7"
+  ],
+  "quote": "It appeared to have been fitted up as a chemical laboratory.",
+  "comment": ""
  }
 ]

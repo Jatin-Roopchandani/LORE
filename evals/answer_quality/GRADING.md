@@ -1,7 +1,7 @@
 # Grading answer-quality runs
 
-Each run of `run_eval.py` records 26 answers. Grade them against the
-verified answers in `questions.json`. The verified answers are copied from
+Each run of `run_eval.py` records one answer per question. Grade them
+against the verified answers in `questions.json`. The verified answers are copied from
 the Phase 3 specs and were checked against the novels. Grade blind: the
 grader is not told which run, round or prompt produced an answer. When two
 runs are compared, the grader sees both answers to each question in random
@@ -9,8 +9,10 @@ order, labelled A and B.
 
 ## Per answer
 
-1. **Key facts.** Split the verified answer into its key facts, the
-   distinct things a complete answer must say. For Q2 those are: revenge;
+1. **Key facts.** Use the question's `key_facts` list, unchanged: the
+   distinct things a complete answer must say. (Before 2026-10-07 the dev
+   set had none and each grader split the answer itself, which added
+   grading noise; Q1-C10's lists now come from `retrieval/gold.json`.) For Q2 those are: revenge;
    Stangerson shot Lucy's father John Ferrier; Lucy was forced to marry
    Drebber and died within a month; Hope had been going to marry her; he
    pursued them for about twenty years. List each fact and mark it
@@ -59,10 +61,10 @@ or fixed and re-run. Correctness comes before fullness.
 
 ## Not overfitting
 
-Iterating against the same 26 questions will eventually tune the system to
-those 26 instead of making it better. Six rules guard against that.
+Iterating against the same questions will eventually tune the system to
+them instead of making it better. Six rules guard against that.
 
-1. **Two sets.** `questions.json` (26) is the **dev set**. Every change is
+1. **Two sets.** `questions.json` (56) is the **dev set**. Every change is
    judged on it. `heldout.json` is the **held-out set**. It is never used
    to decide a change, and its per-question answers are not read while
    iterating. It is run only at milestones, to check that a dev gain also
@@ -87,3 +89,17 @@ those 26 instead of making it better. Six rules guard against that.
    check applies.
 6. **The grader stays blind and fixed.** It uses the same rubric every
    round, and it is never told which answer is the new one.
+
+## Comparing two arms
+
+Use `run_pair.py`, not two `run_eval.py` runs. Round 3 ran its arms back
+to back, and the cascade's daily caps put the dev set on one Gemini model
+and the held-out set on another, so a model difference read as a change's
+effect. `run_pair.py` asks each question of both arms one after the other
+on one pinned model, alternating models between questions, so every
+question is a fair pair and the model is balanced across arms.
+
+The dev set grew from 26 to 56 questions (D1-D30, written from the text
+on 2026-10-07, clear of every dev and held-out topic) because the ±4-fact
+noise floor on 26 questions was as large as the effects being measured.
+Re-measure the noise floor on the larger set before relying on it.

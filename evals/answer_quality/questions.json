@@ -3,156 +3,1399 @@
   "id": "Q1",
   "question": "Which Scotland Yard detectives work with Sherlock Holmes on the case in each of the two novels?",
   "verified": "- **Answer (verified from the text):** In *A Study in Scarlet* they are Tobias\n  Gregson and Lestrade — \"the well-known Scotland Yard officials, Messrs.\n  Lestrade and Gregson\" (ch18 [Pt II ch. VII]), \"Mr. Lestrade and Mr. Gregson,\n  of Scotland Yard, are both engaged upon the case\" (ch10 [Pt I ch. VI]), and\n  Holmes's own \"Gregson is the smartest of the Scotland Yarders; he and\n  Lestrade are the pick of a bad lot\" (ch7 [Pt I ch. III]). In *The Sign of the\n  Four* it is Athelney Jones — \"Mr. Athelney Jones, of Scotland Yard\" (ch12\n  [ch. IX] and ch14 [ch. XI]). Gregson and Lestrade are named once in SoF, but\n  only in a list of officials who are \"out of their depths\"; neither works that\n  case.\n- **Supporting graph:** the cross-book `Place` node `Scotland Yard`\n  (`books` = both). SiS side: `Mr. Gregson -[ALLEGIANCE_TO]-> Scotland Yard`\n  (ch7), `-[LOCATED_IN]->` (ch10); `Mr. Lestrade -[LOCATED_IN]->` (ch10),\n  `-[ALLEGIANCE_TO]->` (ch11). SoF side: `Mr. Athelney Jones -[LOCATED_IN]->\n  Scotland Yard` (ch12), `-[ALLEGIANCE_TO]->` (ch14). Bridged to\n  `Mr. Sherlock Holmes` (cross-book) by `INTERACTS_WITH` to each of the three.\n  Known noise on this node that a correct answer must not repeat:\n  `Mr. Joseph Stangerson -[ALLEGIANCE_TO]-> Scotland Yard` is false, and\n  `John Rance` / `Murcher` are constables, not detectives.\n- **Hops:** cross-book (2 hops — Holmes → Scotland Yard → officer, partitioned\n  by `book_id`)\n- **Vector baseline:** all five chunks come from *A Study in Scarlet*.\n  `05ab674df048d13f:7:2` and `:10:2` name Gregson and Lestrade as Scotland Yard\n  men, so the SiS half is fully answerable from the chunks alone. No chunk from\n  *The Sign of the Four* is retrieved at all, so Athelney Jones is absent.\n- **Expected verdict:** graph agent should succeed; baseline should fail — it\n  can answer one book of the two and has no way to know the other exists.",
+  "key_facts": [
+   "SiS: Tobias Gregson",
+   "SiS: Lestrade",
+   "SoF: Athelney Jones"
+  ],
   "source": "docs/superpowers/specs/2026-09-04-phase-3-query-agent-design.md"
  },
  {
   "id": "Q2",
   "question": "Why did Jefferson Hope kill Enoch Drebber and Joseph Stangerson?",
   "verified": "- **Answer (verified from the text):** Revenge. Drebber and Stangerson were\n  both in the Danite party that hunted the fleeing Ferriers; Stangerson \"had\n  shot her father\", John Ferrier, and Lucy Ferrier — who was to have married\n  Hope — was forced into marriage with Drebber and \"pined away and died within\n  a month\" (ch16 [Pt II ch. V]). Hope took the wedding ring from her dead\n  finger and pursued the two men across America and Europe for twenty years\n  (ch16, ch17 [Pt II ch. VI]): \"they had been the cause of the deaths of two\n  human beings—a father and a daughter—and ... I determined that I should be\n  judge, jury, and executioner all rolled into one.\"\n- **Supporting graph:** `Mr. Jefferson Hope -[KILLS]-> Enoch J. Drebber`,\n  `-[KILLS]-> Mr. Drebber` (ch16, ch17), `-[KILLS]-> Mr. Joseph Stangerson`\n  (ch11, ch16, ch18); motive side `Mr. Jefferson Hope -[LOVES]-> Lucy Ferrier`\n  (ch13), `-[LOVES]-> Lucy` (ch13, ch15), `-[LOVES]-> John Ferrier` (ch16);\n  `Danite Band -[KILLS]-> John Ferrier` (ch14); `Mr. Drebber -[OPPOSES]->\n  Mr. Jefferson Hope`, `Mr. Joseph Stangerson -[OPPOSES]-> Mr. Jefferson Hope`\n  (ch16). The chain is `Hope → (Lucy | John Ferrier) → (Drebber | Stangerson)`.\n- **Hops:** 2\n- **Vector baseline:** strong. `05ab674df048d13f:16:9` carries \"Stangerson had\n  shot her father\", the forced marriage and Lucy's death in one chunk;\n  `:16:13` and `:16:14` carry the twenty-year pursuit.\n- **Expected verdict:** both should succeed. This question is in the set to\n  prove the baseline is not broken.",
+  "key_facts": [
+   "Motive was revenge for deaths of Lucy and her father",
+   "Stangerson shot John Ferrier",
+   "Lucy forced to marry Drebber and died (within a month)",
+   "Hope had been going to marry Lucy",
+   "Hope pursued them for about twenty years"
+  ],
   "source": "docs/superpowers/specs/2026-09-04-phase-3-query-agent-design.md"
  },
  {
   "id": "Q3",
   "question": "How is Jefferson Hope connected to John Ferrier?",
   "verified": "- **Answer (verified from the text):** Hope was courting Lucy Ferrier, John\n  Ferrier's adopted daughter, after saving her from a cattle stampede in Salt\n  Lake City; he became \"a favourite with the old farmer\" (ch13 [Pt II ch. II]).\n  When the Elders threatened Ferrier over Lucy's marriage, Ferrier sent word\n  into the Nevada mountains for Hope (ch15 [Pt II ch. IV]), and Hope returned\n  and led the two of them out of Utah. Ferrier was killed during the flight;\n  Hope found his grave — \"JOHN FERRIER, Formerly of Salt Lake City, Died August\n  4th, 1860\" — and swore the revenge that drives the rest of the book (ch16\n  [Pt II ch. V]).\n- **Supporting graph:** `Mr. Jefferson Hope -[LOVES]-> Lucy Ferrier` (ch13) and\n  `John Ferrier -[LOVES]-> Lucy Ferrier` (ch12) give the two-hop path through\n  the daughter; `Mr. Jefferson Hope -[LOVES]-> John Ferrier` (ch16),\n  `-[BECOMES]->` / `-[UNCATEGORIZED]-> John Ferrier` (ch13) and\n  `Danite Band -[KILLS]-> John Ferrier` (ch14) close it. Note the split node:\n  `John Ferrier` exists twice, as `Character` (degree 20) and as `Faction`\n  (degree 5); the `Character` node carries the edges above.\n- **Hops:** 2\n- **Vector baseline:** strong. `05ab674df048d13f:13:9` alone states that Hope\n  called on John Ferrier and became a favourite of the old farmer; `:15:0` has\n  Ferrier sending his message to Hope, and `:16:6` has the grave.\n- **Expected verdict:** both should succeed. Second of the two questions kept\n  as a baseline-health check.",
+  "key_facts": [
+   "Hope courted Lucy, Ferrier's adopted daughter (Ferrier consented)",
+   "Hope saved Lucy from a cattle stampede",
+   "Hope became a favourite with the old farmer",
+   "Ferrier sent for Hope when the Elders threatened him",
+   "Hope returned and led them out of Utah",
+   "Ferrier killed in the flight; Hope found his grave and swore revenge"
+  ],
   "source": "docs/superpowers/specs/2026-09-04-phase-3-query-agent-design.md"
  },
  {
   "id": "Q4",
   "question": "What connected Major Sholto to Captain Morstan, and how did Morstan die?",
   "verified": "- **Answer (verified from the text):** They were brother officers of the 34th\n  Bombay Infantry, \"bosom friends\", both in charge of the convict-guard on Blair\n  Island in the Andamans (ch5 [ch. II], ch15 [ch. XII]), and both took Jonathan\n  Small's Agra-treasure secret in exchange for a promise of freedom. Sholto\n  sailed home with the whole treasure and cheated Morstan. On the night Morstan\n  reached London, 3 December 1878, he went straight to Sholto to claim his\n  share; they quarrelled, and Morstan — who \"had suffered for years from a weak\n  heart\" — fell dead, striking his head on the corner of the treasure-chest.\n  Sholto and his servant Lal Chowdar hid the body (ch7 [ch. IV], chunks\n  `0ee225a9a3b5fbc2:7:8` and `:7:9`).\n- **Supporting graph:** `Captain Morstan -[ALLEGIANCE_TO]-> Major Sholto`\n  (ch15, evidence \"They were bosom friends, those two, and never far apart\"),\n  three `Captain Morstan <-[UNCATEGORIZED]-> Major Sholto` edges (ch7, chunk\n  `0ee225a9a3b5fbc2:7:4`), `Major Sholto -[POSSESSES]-> the Agra treasure`\n  (ch14), and `Captain Morstan -[KILLS]-> Lal Chowdar` (ch7, chunk\n  `0ee225a9a3b5fbc2:7:9`) — a mis-directed predicate whose `evidence` string is\n  nevertheless the disposal of Morstan's body, and whose chunk is Thaddeus\n  Sholto's account of the quarrel and the death.\n- **Hops:** 2\n- **Vector baseline:** partial. `0ee225a9a3b5fbc2:6:1` gives Holmes's deduction\n  that Sholto is the only man Morstan could have visited, `:15:29` gives \"bosom\n  friends\", `:15:34` gives the cheated treasure. None of the five chunks says\n  how Morstan died — the weak heart, the quarrel and the fall are in `:7:8`\n  and `:7:9`, which are not retrieved.\n- **Expected verdict:** graph agent should succeed; baseline should fail on the\n  second half of the question.",
+  "key_facts": [
+   "Bosom friends",
+   "Brother officers (34th Bombay Infantry) in charge of the Andaman convict-guard",
+   "Both made the treasure deal with Small",
+   "Sholto took the whole treasure and cheated Morstan",
+   "Morstan came to claim his share; they quarrelled",
+   "Morstan had a weak heart and fell dead",
+   "He struck his head on the treasure-chest"
+  ],
   "source": "docs/superpowers/specs/2026-09-04-phase-3-query-agent-design.md"
  },
  {
   "id": "Q5",
   "question": "In each novel the police arrest the wrong person before Holmes finds the real culprit. Who is wrongly arrested in each?",
   "verified": "- **Answer (verified from the text):** In *A Study in Scarlet*, Gregson arrests\n  \"Arthur Charpentier, sub-lieutenant in Her Majesty's navy\" for Drebber's\n  murder (ch10 [Pt I ch. VI]), while Lestrade is separately chasing Stangerson,\n  \"who had no more to do with the crime than the babe unborn\"; the real\n  murderer is Jefferson Hope. In *The Sign of the Four*, Athelney Jones arrests\n  Thaddeus Sholto — with the housekeeper Mrs. Bernstone, the Indian butler Lal\n  Rao and the gatekeeper McMurdo — for Bartholomew Sholto's murder (ch10\n  [ch. VII], ch11 [ch. VIII]); Thaddeus and the housekeeper are released two\n  days later (ch12 [ch. IX]) and the real killer is Tonga.\n- **Supporting graph:** SiS side, `Lieutenant Charpentier -[KILLS]-> Mr.\n  Drebber` (ch10, chunk `05ab674df048d13f:10:11`, evidence \"I suppose you are\n  arresting me for being concerned in the death of that scoundrel Drebber\") —\n  the graph has the wrong predicate but the right chunk. SoF side,\n  `Mr. Athelney Jones -[UNCATEGORIZED]-> Mr. Thaddeus Sholto` (ch10, evidence\n  \"He has arrested not only friend Thaddeus, but the gatekeeper, the\n  housekeeper, and the Indian servant\"; ch11, evidence \"the brother, Thaddeus\n  Sholto, has already been arrested, together with the housekeeper, Mrs.\n  Bernstone, an Indian butler named Lal Rao, and a porter, or gatekeeper, named\n  McMurdo\"), plus the parallel edges to `housekeeper, Mrs. Bernstone` and\n  `McMurdo`. The real culprits are reachable by `Mr. Jefferson Hope -[KILLS]->\n  Mr. Drebber` and `Tonga -[KILLS]-> Mr. Bartholomew Sholto`.\n- **Hops:** cross-book (2 hops on each side — victim → arrested man, victim →\n  real killer)\n- **Vector baseline:** weak. The five chunks are Holmes's pre-murder deduction\n  in SoF (`0ee225a9a3b5fbc2:6:0`, `:6:1`) and Gregson's self-congratulation in\n  SiS (`05ab674df048d13f:10:2`, `:10:5`, `:7:2`). `:10:5` mentions only that\n  Lestrade \"is after the secretary Stangerson\"; the Charpentier arrest is in\n  `:10:4`, which is not retrieved, and no chunk mentions Thaddeus Sholto's\n  arrest.\n- **Expected verdict:** graph agent should succeed; baseline should fail on\n  both halves.",
+  "key_facts": [
+   "SiS: Gregson arrests Arthur Charpentier",
+   "SiS: Lestrade chases the innocent Stangerson",
+   "SoF: Athelney Jones arrests Thaddeus Sholto",
+   "SoF: housekeeper Mrs Bernstone, Lal Rao and McMurdo also arrested",
+   "Thaddeus and the housekeeper later released"
+  ],
   "source": "docs/superpowers/specs/2026-09-04-phase-3-query-agent-design.md"
  },
  {
   "id": "Q6",
   "question": "Who killed Bartholomew Sholto, and how?",
   "verified": "- **Answer (verified from the text):** Tonga, the Andaman Islander, killed him\n  with a poisoned thorn blown from a blow-pipe, before Jonathan Small could\n  climb into the room. \"Tonga thought he had done something very clever in\n  killing him\" (ch15 [ch. XII]); Small \"bore no grudge against Bartholomew\n  Sholto ... the savage instincts of his companion had broken out, and the\n  poison had done its work\" (ch10 [ch. VII]). The thorn is found in the scalp\n  in ch8 [ch. V].\n- **Supporting graph:** `Tonga -[KILLS]-> Mr. Bartholomew Sholto` (ch15, twice,\n  chunk `0ee225a9a3b5fbc2:15:39`), with `Jonathan Small -[OPPOSES]->\n  Mr. Bartholomew Sholto` (ch10) as the contrast. The graph carries no\n  Tonga–Small edge, so the agent must take \"his companion\" from the evidence\n  and chunk text, not from an edge.\n- **Hops:** 1\n- **Vector baseline:** strong. `0ee225a9a3b5fbc2:15:39` names Tonga as the\n  killer and `:10:17` supplies \"the poison had done its work\".\n- **Expected verdict:** both should succeed.",
+  "key_facts": [
+   "Tonga killed him",
+   "With a poisoned thorn",
+   "Blown from a blow-pipe",
+   "Tonga acted before Small climbed in; Small bore no grudge"
+  ],
   "source": "docs/superpowers/specs/2026-09-04-phase-3-query-agent-design.md"
  },
  {
   "id": "Q7",
   "question": "Who owned the steam launch Aurora?",
   "verified": "- **Answer (verified from the text):** Mordecai Smith, a Thames boatman working\n  from Smith's Wharf, who ran her with his eldest son Jim — \"a steam launch\n  called the Aurora, owner Mordecai Smith\" (ch11 [ch. VIII]); \"at that moment\n  who should come down but Mordecai Smith, the missing owner?\" (ch13 [ch. X]).\n  Small hired her for the escape: \"I engaged with old Smith\" (ch15 [ch. XII]).\n- **Supporting graph:** `Mordecai Smith -[POSSESSES]-> steam launch Aurora` and\n  `Jim -[POSSESSES]-> steam launch Aurora` (both ch12). The `steam launch\n  Aurora` node is kind `Place` rather than `Object` and exists as an\n  `ALIAS_OF`-linked pair (degree 21 and degree 0), so the answer requires the\n  alias hop that §2.1 mandates; there are also separate `Aurora` (`Object`) and\n  `Aurora herself` (`Character`) nodes that carry no ownership edge.\n- **Hops:** 1\n- **Vector baseline:** strong. `0ee225a9a3b5fbc2:11:10` states the owner\n  outright, and `:13:5` calls Mordecai Smith \"the missing owner\".\n- **Expected verdict:** both should succeed.",
+  "key_facts": [
+   "Mordecai Smith owned the Aurora"
+  ],
   "source": "docs/superpowers/specs/2026-09-04-phase-3-query-agent-design.md"
  },
  {
   "id": "Q8",
   "question": "At what address do Holmes and Watson live, and is it the same address in both novels?",
   "verified": "- **Answer (verified from the text):** 221B Baker Street, in both. *A Study in\n  Scarlet*: \"we ... inspected the rooms at No. 221b, Baker Street\" (ch6 [Pt I\n  ch. II]), and Watson's own advertisement is signed \"Dr. Watson, 221B, Baker\n  Street\" (ch9 [Pt I ch. V]). *The Sign of the Four*: Holmes's newspaper\n  advertisement directs replies \"at 221b Baker Street\" (ch12 [ch. IX]).\n- **Supporting graph:** the cross-book `Place` node `Baker Street`\n  (`books` = both), with `Mr. Sherlock Holmes -[ALLEGIANCE_TO]-> Baker Street`\n  (SiS ch5) and `-[LOCATED_IN]-> Baker Street` (SoF ch4, ch12), plus\n  `John H. Watson, M.D. -[LOCATED_IN]-> Baker Street` (SoF ch4). The street\n  number lives on the book-local nodes `No. 221b, Baker Street` (SiS ch6,\n  `Mr. Sherlock Holmes -[LOCATED_IN]->`) and `221b Baker Street` (SoF ch12,\n  `Mr. Sherlock Holmes -[BECOMES]->`), which the resolver did not merge; the\n  cross-book claim therefore rests on `Baker Street` plus one number node per\n  book.\n- **Hops:** cross-book (1 hop per book)\n- **Vector baseline:** strong. `05ab674df048d13f:6:0` gives \"No. 221b, Baker\n  Street\" for SiS and `0ee225a9a3b5fbc2:12:7` puts Holmes at \"The Baker Street\n  address\" in SoF, though the number itself in SoF sits in `:12:6`, which is\n  not retrieved.\n- **Expected verdict:** both should succeed; the baseline's SoF half is\n  slightly weaker, so a baseline answer that hedges on \"the same address\" is a\n  legitimate partial.\n\n### Summary",
+  "key_facts": [
+   "SiS: 221B Baker Street",
+   "SoF: 221B Baker Street",
+   "Same address in both"
+  ],
   "source": "docs/superpowers/specs/2026-09-04-phase-3-query-agent-design.md"
  },
  {
   "id": "H1",
   "question": "In both novels Holmes employs a gang of street boys. Who is their spokesman, and what does Holmes send them to find in each novel?",
   "verified": "- **Answer (verified from the text):** Their spokesman in both books is **Wiggins**. In *A Study\n  in Scarlet* Holmes sends them round the cab proprietors of London to find the cabman who turns\n  out to be Jefferson Hope. In *The Sign of the Four* he sends them to find the steam launch\n  **Aurora** on the river.\n- **Where:**\n  - *A Study in Scarlet*, ch 10 [Part I, Chapter VI, \"Tobias Gregson Shows What He Can Do\"]:\n    \"In future you shall send up Wiggins alone to report … Have you found it, Wiggins?\"\n  - *A Study in Scarlet*, ch 11 [Part I, Chapter VII, \"Light in the Darkness\"]: \"the spokesman\n    of the street Arabs, young Wiggins … 'Please, sir,' he said, … 'I have the cab downstairs.'\"\n  - *A Study in Scarlet*, ch 18 [Part II, Chapter VII, \"The Conclusion\"]: \"I therefore organized\n    my Street Arab detective corps, and sent them systematically to every cab proprietor in\n    London until they ferreted out the man that I wanted.\"\n  - *The Sign of the Four*, ch 11 [Chapter VIII, \"The Baker Street Irregulars\"]: \"That wire was to\n    my dirty little lieutenant, Wiggins\" and \"In future they can report to you, Wiggins, and you\n    to me. … I want to find the whereabouts of a steam launch called the Aurora\".\n- **Shape:** cross-book",
+  "key_facts": [
+   "Spokesman is Wiggins",
+   "Wiggins is spokesman in both novels",
+   "SiS: sent to find the cabman (Jefferson Hope) via cab proprietors",
+   "SoF: sent to find the steam launch Aurora"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-questions.md"
  },
  {
   "id": "H2",
   "question": "Watson was wounded by a Jezail bullet in Afghanistan. Where on his body does each novel say the bullet hit him?",
   "verified": "- **Answer (verified from the text):** The two books disagree. *A Study in Scarlet* says the\n  **shoulder** (at the battle of Maiwand). *The Sign of the Four* says his **leg**.\n- **Where:**\n  - *A Study in Scarlet*, ch 5 [Part I, Chapter I, \"Mr. Sherlock Holmes\"]: \"I served at the fatal\n    battle of Maiwand. There I was struck on the shoulder by a Jezail bullet, which shattered the\n    bone and grazed the subclavian artery.\"\n  - *The Sign of the Four*, ch 4 [Chapter I, \"The Science of Deduction\"]: \"sat nursing my wounded\n    leg. I had a Jezail bullet through it some time before\".\n- **Shape:** cross-book",
+  "key_facts": [
+   "SiS: shoulder",
+   "SoF: leg"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-questions.md"
  },
  {
   "id": "H3",
   "question": "Holmes makes use of a dog in each novel. Which dog is it in each book, and what does he use it for?",
   "verified": "- **Answer (verified from the text):** In *A Study in Scarlet* it is the landlady's old, dying\n  **terrier**. Holmes feeds it the pills to test them: the first half-pill does nothing, the\n  second kills it, which shows one pill was deadly poison and the other harmless. In *The Sign of\n  the Four* it is **Toby**, \"half spaniel and half lurcher\", borrowed from old Sherman at No. 3\n  Pinchin Lane, Lambeth. Holmes has it follow the scent of the creosote that the intruder stepped\n  in.\n- **Where:**\n  - *A Study in Scarlet*, ch 11 [Part I, Chapter VII, \"Light in the Darkness\"]: \"that poor little\n    devil of a terrier which has been bad so long, and which the landlady wanted you to put out of\n    its pain\" and \"Of the two pills in that box one was of the most deadly poison, and the other\n    was entirely harmless.\"\n  - *The Sign of the Four*, ch 9 [Chapter VI, \"Sherlock Holmes Gives a Demonstration\"]: \"No. 3,\n    Pinchin Lane, down near the water's edge at Lambeth. … Sherman is the name. … I want Toby at\n    once.\"\n  - *The Sign of the Four*, ch 10 [Chapter VII, \"The Episode of the Barrel\"]: \"Toby proved to be an\n    ugly, long-haired, lop-eared creature, half spaniel and half lurcher\" and \"He pushed the\n    creasote handkerchief under the dog's nose\".\n- **Shape:** cross-book",
+  "key_facts": [
+   "SiS: the landlady's old dying terrier",
+   "SiS: used to test the pills; second kills it, so one is poison and one harmless",
+   "SoF: Toby",
+   "Toby is half spaniel, half lurcher",
+   "Borrowed from Sherman, No. 3 Pinchin Lane, Lambeth",
+   "Used to follow the creosote scent"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-questions.md"
  },
  {
   "id": "H4",
   "question": "In A Study in Scarlet, Constable John Rance saw a drunk man at the gate of the murder house. Who was that man really, and why had he come back to the house?",
   "verified": "- **Answer (verified from the text):** He was the murderer himself, **Jefferson Hope**, who was\n  only pretending to be drunk. He had come back for **Lucy's ring**, which he found was missing\n  from his pocket and thought he had dropped over Drebber's body.\n- **Where:**\n  - *A Study in Scarlet*, ch 8 [Part I, Chapter IV, \"What John Rance Had to Tell\"]: \"He was at the\n    gate when I came out, a-leanin' up agin the railings, and a-singin' at the pitch o' his lungs\"\n    and Holmes: \"The man whom you held in your hands is the man who holds the clue of this\n    mystery\" … \"The ring, man, the ring: that was what he came back for.\"\n  - *A Study in Scarlet*, ch 17 [Part II, Chapter VI, \"A Continuation of the Reminiscences of John\n    Watson, M.D.\"], Hope's statement: \"I put my hand into the pocket in which I usually kept\n    Lucy's ring, and found that it was not there. … I drove back … When I arrived there, I walked\n    right into the arms of a police-officer who was coming out, and only managed to disarm his\n    suspicions by pretending to be hopelessly drunk.\"\n- **Shape:** multi-hop",
+  "key_facts": [
+   "The man was Jefferson Hope, the murderer",
+   "He was only pretending to be drunk",
+   "He came back for Lucy's ring"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-questions.md"
  },
  {
   "id": "H5",
   "question": "How did Jonathan Small lose his leg, and how did his wooden leg lead to his capture on the Thames?",
   "verified": "- **Answer (verified from the text):** As a young soldier with the 3rd Buffs he went swimming in\n  the Ganges and **a crocodile bit off his right leg** just above the knee. At the end of the\n  chase the Aurora ran onto a mud-bank, and when he jumped out **his wooden stump sank into the\n  mud** and held him fast, so that Holmes and Watson had to haul him out with a rope.\n- **Where:**\n  - *The Sign of the Four*, ch 15 [Chapter XII, \"The Strange Story of Jonathan Small\"]: \"fool\n    enough to go swimming in the Ganges. … A crocodile took me, just as I was half-way across, and\n    nipped off my right leg as clean as a surgeon could have done it, just above the knee.\"\n  - *The Sign of the Four*, ch 13 [Chapter X, \"The End of the Islander\"]: \"The fugitive sprang out,\n    but his stump instantly sank its whole length into the sodden soil. … he was so firmly\n    anchored that it was only by throwing the end of a rope over his shoulders that we were able\n    to haul him out\".\n- **Shape:** multi-hop",
+  "key_facts": [
+   "A crocodile bit off his right leg while swimming in the Ganges",
+   "His wooden stump sank into the mud when he jumped from the Aurora, holding him fast"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-questions.md"
  },
  {
   "id": "H6",
   "question": "Who is Mary Morstan's employer, what had Holmes once done for that employer, and in what district does she live?",
   "verified": "- **Answer (verified from the text):** She is governess to **Mrs. Cecil Forrester**. Holmes had\n  once helped Mrs. Forrester \"unravel a little domestic complication\". She lives in **Lower\n  Camberwell**.\n- **Where:**\n  - *The Sign of the Four*, ch 5 [Chapter II, \"The Statement of the Case\"]: \"you once enabled my\n    employer, Mrs. Cecil Forrester, to unravel a little domestic complication\" and \"I had at that\n    time just entered the family of Mrs. Cecil Forrester in the capacity of governess.\"\n  - *The Sign of the Four*, ch 9 [Chapter VI, \"Sherlock Holmes Gives a Demonstration\"]: \"She lives\n    with Mrs. Cecil Forrester, in Lower Camberwell\".\n- **Shape:** multi-hop",
+  "key_facts": [
+   "Employer is Mrs Cecil Forrester (as governess)",
+   "Holmes helped her unravel a little domestic complication",
+   "She lives in Lower Camberwell"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-questions.md"
  },
  {
   "id": "H7",
   "question": "According to Sherlock Holmes, what does the word \"Rache\", written in blood on the wall at Lauriston Gardens, mean?",
   "verified": "- **Answer (verified from the text):** It is the **German for \"revenge\"**. Holmes says this to\n  rebut the idea that the writer was starting the name \"Rachel\".\n- **Where:**\n  - *A Study in Scarlet*, ch 7 [Part I, Chapter III, \"The Lauriston Gardens Mystery\"]: \"'Rache,'\n    is the German for 'revenge'; so don't lose your time looking for Miss Rachel.\"\n- **Shape:** single-passage",
+  "key_facts": [
+   "Rache is German for 'revenge'"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-questions.md"
  },
  {
   "id": "H8",
   "question": "Who were \"the four\" named in the sign of the four?",
   "verified": "- **Answer (verified from the text):** **Jonathan Small, Mahomet Singh, Abdullah Khan and Dost\n  Akbar.**\n- **Where:**\n  - *The Sign of the Four*, ch 6 [Chapter III, \"In Quest of a Solution\"], on the paper Miss Morstan says\n    \"was found in papa's desk\": \"'The sign of the four,—Jonathan Small, Mahomet Singh, Abdullah Khan,\n    Dost Akbar.'\"\n  - Also in ch 15 [Chapter XII, \"The Strange Story of Jonathan Small\"]: \"a second meeting, at which\n    Mahomet Singh, Abdullah Khan, and Dost Akbar were all present.\"\n- **Shape:** single-passage",
+  "key_facts": [
+   "Jonathan Small",
+   "Mahomet Singh",
+   "Abdullah Khan",
+   "Dost Akbar"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-questions.md"
  },
  {
   "id": "C1",
   "question": "In each novel Watson finds Holmes busy with a chemistry experiment. What was Holmes working on in each book?",
   "verified": "- **Answer (verified from the text):** In *A Study in Scarlet*, a test for blood: at their first\n  meeting Holmes shouts \"I have found a re-agent which is precipitated by hæmoglobin, and by\n  nothing else.\" In *The Sign of the Four*, while stuck on the case he did \"a chemical analysis\"\n  and was \"dissolving the hydrocarbon which I was at work at\".\n- **Where:**\n  - *A Study in Scarlet*, ch 5 [Part I, Chapter I, \"Mr. Sherlock Holmes\"]: \"I have found a\n    re-agent which is precipitated by hæmoglobin, and by nothing else.\"\n  - *The Sign of the Four*, ch 13 [Chapter X, \"The End of the Islander\"]: \"I gave my mind a\n    thorough rest by plunging into a chemical analysis … When I had succeeded in dissolving the\n    hydrocarbon which I was at work at, I came back to our problem of the Sholtos\".\n- **Shape:** cross-book",
+  "key_facts": [
+   "SiS: a test for blood (re-agent precipitated by haemoglobin)",
+   "SoF: a chemical analysis, dissolving a hydrocarbon"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
  },
  {
   "id": "C2",
   "question": "Early in each novel Holmes shows off his powers of deduction. What does he deduce about the messenger in the street in A Study in Scarlet, and about Watson's watch in The Sign of the Four?",
   "verified": "- **Answer (verified from the text):** In *A Study in Scarlet* he says a man in the street with a\n  message is \"the retired sergeant of Marines\", inferred from \"a great blue anchor tattooed on the\n  back of the fellow's hand\", \"a military carriage … and regulation side whiskers\", and his \"air of\n  command\". In *The Sign of the Four* he deduces the watch \"belonged to your elder brother, who\n  inherited it from your father\", and that the brother was careless, \"lived for some time in\n  poverty with occasional short intervals of prosperity, and finally, taking to drink, he died\" —\n  from the dents and scratches on the case, four pawnbroker's numbers inside it, and the scratches\n  round the keyhole (\"you will never see a drunkard's watch without them\").\n- **Where:**\n  - *A Study in Scarlet*, ch 6 [Part I, Chapter II, \"The Science of Deduction\"]: \"You mean the\n    retired sergeant of Marines,\" said Sherlock Holmes.\n  - *A Study in Scarlet*, ch 7 [Part I, Chapter III, \"The Lauriston Gardens Mystery\"]: \"I could see\n    a great blue anchor tattooed on the back of the fellow's hand. That smacked of the sea. He had\n    a military carriage, however, and regulation side whiskers. There we have the marine.\"\n  - *The Sign of the Four*, ch 4 [Chapter I, \"The Science of Deduction\"]: \"I should judge that the\n    watch belonged to your elder brother, who inherited it from your father\" … \"finally, taking to\n    drink, he died.\"\n- **Shape:** cross-book",
+  "key_facts": [
+   "SiS: messenger is a retired sergeant of Marines",
+   "SiS: reasons (anchor tattoo, military carriage, side whiskers, air of command)",
+   "SoF: watch belonged to elder brother, inherited from father",
+   "SoF: brother careless, poor with short prosperous spells, took to drink and died"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
  },
  {
   "id": "C3",
   "question": "In A Study in Scarlet, how does Watson rate Holmes's knowledge of literature, and which German writers does Holmes quote or discuss in The Sign of the Four?",
   "verified": "- **Answer (verified from the text):** In *A Study in Scarlet* Watson's list of Holmes's limits\n  gives \"Knowledge of Literature.—Nil\", and Holmes did not even know who Thomas Carlyle was. In\n  *The Sign of the Four* Holmes quotes Goethe in German (\"Goethe is always pithy\"; later \"those\n  lines of old Goethe\") and asks Watson \"Are you well up in your Jean Paul?\", discussing a remark of\n  his (Watson says he \"worked back to him through Carlyle\").\n- **Where:**\n  - *A Study in Scarlet*, ch 6 [Part I, Chapter II, \"The Science of Deduction\"]: \"Upon my quoting\n    Thomas Carlyle, he inquired in the naivest way who he might be and what he had done\" and\n    \"1. Knowledge of Literature.—Nil.\"\n  - *The Sign of the Four*, ch 9 [Chapter VI, \"Sherlock Holmes Gives a Demonstration\"]: \"'Wir sind\n    gewohnt dass die Menschen verhöhnen was sie nicht verstehen.' Goethe is always pithy.\"\n  - *The Sign of the Four*, ch 10 [Chapter VII, \"The Episode of the Barrel\"]: \"Are you well up in\n    your Jean Paul?\" / \"Fairly so. I worked back to him through Carlyle.\"\n  - *The Sign of the Four*, ch 15 [Chapter XII, \"The Strange Story of Jonathan Small\"]: \"I often\n    think of those lines of old Goethe\".\n- **Shape:** cross-book",
+  "key_facts": [
+   "SiS: Knowledge of Literature - Nil",
+   "SiS: Holmes did not know who Carlyle was",
+   "SoF: Holmes quotes Goethe",
+   "SoF: Holmes discusses Jean Paul"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
  },
  {
   "id": "C4",
   "question": "Does Holmes take drugs? What does Watson say about this in each novel?",
   "verified": "- **Answer (verified from the text):** In *A Study in Scarlet* Watson only wonders: during Holmes's\n  listless spells he \"might have suspected him of being addicted to the use of some narcotic, had\n  not the temperance and cleanliness of his whole life forbidden such a notion.\" In *The Sign of\n  the Four* Holmes injects cocaine, \"a seven-per-cent. solution\", which Watson had watched \"Three\n  times a day for many months\"; and at the end, asked what remains for him, Holmes says \"there\n  still remains the cocaine-bottle.\"\n- **Where:**\n  - *A Study in Scarlet*, ch 6 [Part I, Chapter II, \"The Science of Deduction\"]: \"I might have\n    suspected him of being addicted to the use of some narcotic, had not the temperance and\n    cleanliness of his whole life forbidden such a notion.\"\n  - *The Sign of the Four*, ch 4 [Chapter I, \"The Science of Deduction\"]: \"Which is it to-day?\" I\n    asked,—\"morphine or cocaine?\" … \"It is cocaine,\" he said,—\"a seven-per-cent. solution.\"\n  - *The Sign of the Four*, ch 15 [Chapter XII, \"The Strange Story of Jonathan Small\"]: \"For me,\"\n    said Sherlock Holmes, \"there still remains the cocaine-bottle.\"\n- **Shape:** cross-book",
+  "key_facts": [
+   "SoF: Holmes injects himself, three times a day for months (so yes)",
+   "SoF: it is cocaine, a seven-per-cent solution",
+   "SiS: Watson might have suspected a narcotic, but Holmes's temperance ruled it out",
+   "SoF end: 'there still remains the cocaine-bottle'"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
  },
  {
   "id": "C5",
   "question": "What medical condition did Watson discover in Jefferson Hope, and how did it keep Hope from ever standing trial?",
   "verified": "- **Answer (verified from the text):** An aortic aneurism, which Hope said he got \"from\n  over-exposure and under-feeding among the Salt Lake Mountains\". On the night after his capture\n  the aneurism burst and he was found dead in his cell, so he never came before the magistrates.\n- **Where:**\n  - *A Study in Scarlet*, ch 17 [Part II, Chapter VI, \"A Continuation of the Reminiscences of John\n    Watson, M.D.\"]: \"Why,\" I cried, \"you have an aortic aneurism!\" … \"I got it from over-exposure\n    and under-feeding among the Salt Lake Mountains.\"\n  - *A Study in Scarlet*, ch 18 [Part II, Chapter VII, \"The Conclusion\"]: \"On the very night after\n    his capture the aneurism burst, and he was found in the morning stretched upon the floor of the\n    cell\".\n- **Shape:** multi-hop",
+  "key_facts": [
+   "An (aortic) aneurism",
+   "Got from over-exposure and under-feeding in the Salt Lake Mountains",
+   "It burst the night after his capture; found dead in his cell",
+   "So he never came before the magistrates"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
  },
  {
   "id": "C6",
   "question": "Where was Joseph Stangerson's body found, and how did he come to be killed?",
   "verified": "- **Answer (verified from the text):** In his second-floor room at Halliday's Private Hotel, in\n  Little George Street, dead from \"a deep stab in the left side, which must have penetrated the\n  heart\". Jefferson Hope climbed in at dawn by ladders from the lane behind the hotel and offered\n  him the same choice of pills as Drebber, but Stangerson \"sprang from his bed and flew at my\n  throat\", and Hope \"stabbed him to the heart\" in self-defence.\n- **Where:**\n  - *A Study in Scarlet*, ch 11 [Part I, Chapter VII, \"Light in the Darkness\"] (Lestrade's\n    account): \"I reached Halliday's Private Hotel, in Little George Street\" … \"The cause of death\n    was a deep stab in the left side, which must have penetrated the heart.\"\n  - *A Study in Scarlet*, ch 17 [Part II, Chapter VI, \"A Continuation of the Reminiscences of John\n    Watson, M.D.\"] (Hope's statement): \"I took advantage of some ladders which were lying in the\n    lane behind the hotel\" … \"he sprang from his bed and flew at my throat. In self-defence I\n    stabbed him to the heart.\"\n- **Shape:** multi-hop",
+  "key_facts": [
+   "At Halliday's Private Hotel",
+   "In his second-floor room",
+   "Stabbed in the side/heart",
+   "Hope entered at dawn by ladders from the lane behind",
+   "Offered the same choice of pills",
+   "Stangerson flew at his throat; Hope stabbed him in self-defence"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
  },
  {
   "id": "C7",
   "question": "When Watson forced open the Agra treasure chest, what was inside it, and why?",
   "verified": "- **Answer (verified from the text):** Nothing: \"The box was empty!\" Jonathan Small had thrown the\n  treasure into the Thames when he saw the police launch would catch them, scattering it \"over five\n  miles or so\", because he would rather lose it than \"let it go to kith or kin of Sholto or of\n  Morstan\".\n- **Where:**\n  - *The Sign of the Four*, ch 14 [Chapter XI, \"The Great Agra Treasure\"]: \"The box was empty!\" …\n    \"It was absolutely and completely empty.\"\n  - *The Sign of the Four*, ch 15 [Chapter XII, \"The Strange Story of Jonathan Small\"]: \"throw the\n    treasure into the Thames rather than let it go to kith or kin of Sholto or of Morstan\" … \"When I\n    saw that your launch must catch us, I put the loot away in a safe place\" … \"Now that they are\n    scattered over five miles or so, it may be a harder job.\"\n- **Shape:** multi-hop",
+  "key_facts": [
+   "The box was empty",
+   "Small threw the treasure into the Thames during the chase, scattering it",
+   "Motive: rather than let it go to Sholto's or Morstan's kin"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
  },
  {
   "id": "C8",
   "question": "How did Bartholomew Sholto work out where the treasure was hidden in Pondicherry Lodge?",
   "verified": "- **Answer (verified from the text):** He measured the whole house. The building was seventy-four\n  feet high, but the rooms added up to no more than seventy feet, leaving \"four feet unaccounted\n  for\" at the top. He knocked through the ceiling of the highest room and found a sealed garret\n  with the treasure-chest in it.\n- **Where:** *The Sign of the Four*, ch 7 [Chapter IV, \"The Story of the Bald-Headed Man\"]\n  (Thaddeus Sholto): \"he found that the height of the building was seventy-four feet, but on adding\n  together the heights of all the separate rooms … he could not bring the total to more than\n  seventy feet. There were four feet unaccounted for. … He knocked a hole, therefore, in the\n  lath-and-plaster ceiling of the highest room, and there, sure enough, he came upon another little\n  garret above it, which had been sealed up\".\n- **Shape:** single-passage",
+  "key_facts": [
+   "He measured the whole house's cubic space",
+   "Building 74 ft high but rooms add up to 70 ft",
+   "Four feet unaccounted for at the top",
+   "Knocked through the highest ceiling and found a sealed garret with the chest"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
  },
  {
   "id": "C9",
   "question": "When the Mormons found John Ferrier and the child Lucy starving on the plain, on what condition did they agree to take them along, and who was put in charge of them?",
   "verified": "- **Answer (verified from the text):** Only \"as believers in our own creed\"; Ferrier said he would\n  come \"on any terms\". The leader then told Brother Stangerson to take them, feed them, and teach\n  Ferrier the Mormon creed.\n- **Where:** *A Study in Scarlet*, ch 12 [Part II, Chapter I, \"On the Great Alkali Plain\"]: \"If we\n  take you with us,\" he said, in solemn words, \"it can only be as believers in our own creed.\" …\n  \"Take him, Brother Stangerson,\" he said, \"give him food and drink, and the child likewise. Let it\n  be your task also to teach him our holy creed.\"\n- **Shape:** single-passage",
+  "key_facts": [
+   "Condition: only as believers in the Mormon creed",
+   "Brother Stangerson put in charge of them",
+   "Stangerson to feed them and teach Ferrier the creed"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
  },
  {
   "id": "C10",
   "question": "At the end of The Sign of the Four, whom does Watson become engaged to, and why does Holmes say he cannot congratulate him?",
   "verified": "- **Answer (verified from the text):** Mary Morstan. Holmes thinks her \"one of the most charming\n  young ladies I ever met\", but \"love is an emotional thing, and whatever is emotional is opposed to\n  that true cold reason which I place above all things\"; he would never marry himself, \"lest I bias\n  my judgment.\"\n- **Where:** *The Sign of the Four*, ch 15 [Chapter XII, \"The Strange Story of Jonathan Small\"]:\n  \"Miss Morstan has done me the honour to accept me as a husband in prospective.\" … \"I really cannot\n  congratulate you.\" … \"But love is an emotional thing, and whatever is emotional is opposed to that\n  true cold reason which I place above all things. I should never marry myself, lest I bias my\n  judgment.\"\n- **Shape:** single-passage",
+  "key_facts": [
+   "Engaged to Mary Morstan",
+   "Love is emotional, opposed to the cold reason Holmes values",
+   "He would never marry lest it bias his judgment"
+  ],
   "source": "docs/superpowers/specs/2026-09-17-phase-3-heldout-set-c.md"
+ },
+ {
+  "id": "D1",
+  "question": "Before Holmes and Watson took rooms together in A Study in Scarlet, what shortcomings did each of them confess to the other?",
+  "verified": "In Part I ch. 1 Holmes warns that he smokes strong tobacco (“You don’t mind the smell of strong tobacco, I hope?”), keeps chemicals and does experiments, and gets “in the dumps at times, and don’t open my mouth for days on end.” Watson confesses: “I keep a bull pup,” he objects to rows because his nerves are shaken, gets up at ungodly hours and is “extremely lazy.” Holmes also anxiously asks whether violin-playing counts as a row.",
+  "key_facts": [
+   "Holmes: smokes strong tobacco",
+   "Holmes: keeps chemicals about and does experiments",
+   "Holmes: gets in the dumps and doesn't speak for days",
+   "Watson: keeps a bull pup and objects to rows (nerves shaken)",
+   "Watson: gets up at ungodly hours and is extremely lazy",
+   "Holmes asks whether violin-playing counts as a row"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:5:10",
+    "quote": "You don’t mind the smell of strong tobacco, I hope?"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:10",
+    "quote": "I generally have chemicals about, and occasionally do experiments."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:10",
+    "quote": "I get in the dumps at times, and don’t open my mouth for days on end."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:10",
+    "quote": "“I keep a bull pup,” I said, “and I object to rows because my nerves are shaken"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:10",
+    "quote": "I get up at all sorts of ungodly hours, and I am extremely lazy"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:10",
+    "quote": "“Do you include violin-playing in your category of rows?” he asked, anxiously."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D2",
+  "question": "What was the magazine article \"The Book of Life\" about, what did Watson think of it, and who turned out to have written it?",
+  "verified": "In Part I ch. 2 Watson reads a marked article titled “The Book of Life”, which “attempted to show how much an observant man might learn by an accurate and systematic examination of all that came in his way.” It claims that “From a drop of water ... a logician could infer the possibility of an Atlantic or a Niagara.” Watson cries “What ineffable twaddle!” and calls it the theory of “some arm-chair lounger”. Holmes says: “As for the article, I wrote it myself,” and explains that he is a consulting detective who lives by these theories.",
+  "key_facts": [
+   "The article claimed an observant man can learn much by systematic examination of everything",
+   "Example: from a drop of water a logician could infer an Atlantic or a Niagara",
+   "Watson called it 'ineffable twaddle' / rubbish",
+   "Watson thought it the theory of an arm-chair lounger, not practical",
+   "Holmes wrote it himself",
+   "Holmes explains he is a consulting detective and depends on these theories for a living"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:6:8",
+    "quote": "it attempted to show how much an observant man might learn by an accurate and systematic examination of all that came in his way"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:10",
+    "quote": "a logician could infer the possibility of an Atlantic or a Niagara without having seen or heard of one or the other"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:11",
+    "quote": "“What ineffable twaddle!” I cried, slapping the magazine down on the table, “I never read such rubbish in my life.”"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:12",
+    "quote": "It is evidently the theory of some arm-chair lounger who evolves all these neat little paradoxes in the seclusion of his own study."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:12",
+    "quote": "“As for the article, I wrote it myself.”"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:13",
+    "quote": "I’m a consulting detective, if you can understand what that is."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D3",
+  "question": "What did Gregson find in the dead man's pockets at Lauriston Gardens?",
+  "verified": "Part I ch. 3: Gregson lists “A gold watch, No. 97163, by Barraud, of London. Gold Albert chain ... Gold ring, with masonic device. Gold pin—bull-dog’s head, with rubies as eyes. Russian leather card-case, with cards of Enoch J. Drebber of Cleveland ... No purse, but loose money to the extent of seven pounds thirteen. Pocket edition of Boccaccio’s Decameron, with name of Joseph Stangerson upon the fly-leaf. Two letters—one addressed to E. J. Drebber and one to Joseph Stangerson.” The letters were from the Guion Steamship Company about sailings from Liverpool.",
+  "key_facts": [
+   "A gold watch by Barraud of London, with a gold Albert chain",
+   "A gold ring with masonic device and a bull-dog's-head gold pin with ruby eyes",
+   "A card-case with cards of Enoch J. Drebber of Cleveland",
+   "No purse, but about seven pounds thirteen in loose money",
+   "A pocket Decameron with Joseph Stangerson's name on the fly-leaf",
+   "Two letters (to Drebber and Stangerson) from the Guion Steamship Company about sailings from Liverpool"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:7:10",
+    "quote": "A gold watch, No. 97163, by Barraud, of London. Gold Albert chain, very heavy and solid."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:10",
+    "quote": "Gold ring, with masonic device. Gold pin—bull-dog’s head, with rubies as eyes."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:10",
+    "quote": "Russian leather card-case, with cards of Enoch J. Drebber of Cleveland"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:10",
+    "quote": "No purse, but loose money to the extent of seven pounds thirteen."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:10",
+    "quote": "Pocket edition of Boccaccio’s Decameron, with name of Joseph Stangerson upon the fly-leaf."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:10",
+    "quote": "They are both from the Guion Steamship Company, and refer to the sailing of their boats from Liverpool."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D4",
+  "question": "What did Lestrade find in Joseph Stangerson's room at Halliday's Private Hotel, apart from the body?",
+  "verified": "Part I ch. 7: above the body was “The word RACHE, written in letters of blood.” Stangerson had Drebber’s purse with “eighty odd pounds in it, but nothing had been taken.” The only paper was “a single telegram, dated from Cleveland about a month ago, and containing the words, ‘J. H. is in Europe.’” with no name. Also a novel on the bed, a pipe, a glass of water, and “on the window-sill a small chip ointment box containing a couple of pills,” which made Holmes cry that his case was complete.",
+  "key_facts": [
+   "The word RACHE written in blood above the body",
+   "Drebber's purse with eighty odd pounds, nothing taken",
+   "An unsigned telegram from Cleveland: 'J. H. is in Europe'",
+   "His novel, his pipe and a glass of water",
+   "A small chip ointment box with two pills on the window-sill",
+   "Holmes called the pill box the last link that completed his case"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:11:3",
+    "quote": "“The word RACHE, written in letters of blood,” he said."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:5",
+    "quote": "There was eighty odd pounds in it, but nothing had been taken."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:5",
+    "quote": "a single telegram, dated from Cleveland about a month ago, and containing the words, ‘J. H. is in Europe.’ There was no name appended to this message."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:5",
+    "quote": "The man’s novel, with which he had read himself to sleep was lying upon the bed, and his pipe was on a chair beside him. There was a glass of water on the table"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:5",
+    "quote": "on the window-sill a small chip ointment box containing a couple of pills"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:5",
+    "quote": "“The last link,” he cried, exultantly. “My case is complete.”"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D5",
+  "question": "How did Holmes trap and arrest Jefferson Hope in the Baker Street rooms?",
+  "verified": "Part I ch. 7: Holmes showed Lestrade a pair of steel handcuffs (“See how beautifully the spring works. They fasten in an instant.”), then had Wiggins ask the cabman to come up to help with his boxes. While Holmes knelt strapping a portmanteau he said “Just give me a help with this buckle, cabman,” and when the man bent to help there was “a sharp click” and the handcuffs were on his wrists. Holmes announced “Mr. Jefferson Hope, the murderer of Enoch Drebber and of Joseph Stangerson.” Hope tried to hurl himself through the window and fought furiously until Lestrade half-strangled him and they bound his feet; his own cab took him to Scotland Yard.",
+  "key_facts": [
+   "Holmes had steel handcuffs ready and showed them to Lestrade",
+   "He had the cabman called up to help with his boxes",
+   "He asked the cabman to help with a buckle while strapping a portmanteau, and snapped the handcuffs on",
+   "Holmes introduced him as Jefferson Hope, murderer of Drebber and Stangerson",
+   "Hope tried to escape through the window and fought fiercely",
+   "He was subdued only when Lestrade half-strangled him and his feet were pinioned"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:11:14",
+    "quote": "taking a pair of steel handcuffs from a drawer. “See how beautifully the spring works. They fasten in an instant.”"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:14",
+    "quote": "“The cabman may as well help me with my boxes. Just ask him to step up, Wiggins.”"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:14",
+    "quote": "“Just give me a help with this buckle, cabman,” he said, kneeling over his task, and never turning his head."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:15",
+    "quote": "let me introduce you to Mr. Jefferson Hope, the murderer of Enoch Drebber and of Joseph Stangerson."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:15",
+    "quote": "the prisoner wrenched himself free from Holmes’s grasp, and hurled himself through the window."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:16",
+    "quote": "It was not until Lestrade succeeded in getting his hand inside his neckcloth and half-strangling him that we made him realize that his struggles were of no avail"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D6",
+  "question": "How did John Ferrier fare in Utah after the Mormons settled, and in what one way did he offend his fellow Mormons?",
+  "verified": "Part II ch. 2: Ferrier was given as large and fertile a tract of land as any settler except Young and the four principal Elders. He built a log-house that grew into a roomy villa, and “In three years he was better off than his neighbours, in six he was well-to-do, in nine he was rich, and in twelve there were not half a dozen men in the whole of Salt Lake City who could compare with him.” But “No argument or persuasion could ever induce him to set up a female establishment after the manner of his companions” — he refused to take wives, and never gave reasons.",
+  "key_facts": [
+   "He was given as large and fertile a tract of land as any settler except Young and the four Elders",
+   "His log-house grew into a roomy villa",
+   "He grew rich; within twelve years hardly half a dozen men in Salt Lake City could compare with him",
+   "He offended them by refusing to take wives (no 'female establishment')",
+   "He never gave reasons for refusing"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:13:1",
+    "quote": "he should be provided with as large and as fertile a tract of land as any of the settlers, with the exception of Young himself"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:2",
+    "quote": "John Ferrier built himself a substantial log-house, which received so many additions in succeeding years that it grew into a roomy villa"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:2",
+    "quote": "in nine he was rich, and in twelve there were not half a dozen men in the whole of Salt Lake City who could compare with him"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:2",
+    "quote": "No argument or persuasion could ever induce him to set up a female establishment after the manner of his companions."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:2",
+    "quote": "He never gave reasons for this persistent refusal"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D7",
+  "question": "When Brigham Young came to John Ferrier's farm, what did he reproach Ferrier with, and what did he demand about Lucy?",
+  "verified": "Part II ch. 3: Young reminds Ferrier that the Mormons picked him up starving and made him rich on condition that he embrace the faith and its usages, which he has neglected: “Where are your wives?” He has heard “stories that she is sealed to some Gentile,” and cites the thirteenth rule of Joseph Smith: “Let every maiden of the true faith marry one of the elect.” So Lucy must marry within the faith: “Stangerson has a son, and Drebber has a son ... Let her choose between them.” He leaves threatening that Ferrier and Lucy would be better dead than defy the Holy Four.",
+  "key_facts": [
+   "Young said Ferrier had neglected the condition of conforming to the faith: he had no wives",
+   "Young had heard Lucy was sealed to a Gentile",
+   "He cited Joseph Smith's thirteenth rule that a maiden of the faith must marry one of the elect",
+   "Lucy must choose between the sons of Stangerson and Drebber",
+   "He left with a threat that they would be better dead than defy the Holy Four"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:14:3",
+    "quote": "“Where are your wives?” asked Young, looking round him."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:4",
+    "quote": "stories that she is sealed to some Gentile"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:4",
+    "quote": "‘Let every maiden of the true faith marry one of the elect; for if she wed a Gentile, she commits a grievous sin.’"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:4",
+    "quote": "Stangerson has a son, and Drebber has a son, and either of them would gladly welcome your daughter to their house. Let her choose between them."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:5",
+    "quote": "that you and she were now lying blanched skeletons upon the Sierra Blanco, than that you should put your weak wills against the orders of the Holy Four!"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D8",
+  "question": "When young Stangerson and young Drebber came to Ferrier's house to court Lucy, how did each argue that he was the better match, and how did Ferrier respond?",
+  "verified": "Part II ch. 4: Stangerson argued: “As I have but four wives and Brother Drebber here has seven, it appears to me that my claim is the stronger one.” Drebber replied that what matters is how many they can keep: “My father has now given over his mills to me, and I am the richer man.” Stangerson countered that he would inherit his father’s tanning yard and leather factory and was the elder and higher in the Church. Ferrier ordered them out (“there is the door, and there is the window. Which do you care to use?”); they fled, threatening that he would rue defying the Prophet.",
+  "key_facts": [
+   "Stangerson: he has only four wives to Drebber's seven, so his claim is stronger",
+   "Drebber: his father has given him the mills, so he is richer",
+   "Stangerson: he will inherit the tanning yard and leather factory, and is elder and higher in the Church",
+   "Ferrier threw them out: the door or the window",
+   "They left threatening he would rue defying the Prophet and Council of Four"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:15:1",
+    "quote": "As I have but four wives and Brother Drebber here has seven, it appears to me that my claim is the stronger one."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:1",
+    "quote": "My father has now given over his mills to me, and I am the richer man."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:1",
+    "quote": "I shall have his tanning yard and his leather factory. Then I am your elder, and am higher in the Church."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:1",
+    "quote": "“There are two ways out of the room,” cried Ferrier; “there is the door, and there is the window. Which do you care to use?”"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:2",
+    "quote": "You have defied the Prophet and the Council of Four. You shall rue it to the end of your days."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D9",
+  "question": "Who were the Danite Band, or Avenging Angels, in A Study in Scarlet, and why did they inspire such terror?",
+  "verified": "Part II ch. 3: a secret organisation of the Mormon Church: “The man who held out against the Church vanished away, and none knew whither he had gone.” At first it struck only at those who wished to abandon the faith, but as women ran short there were rumours of murdered immigrants and new weeping women in the Elders’ harems, and of “gangs of armed men, masked, stealthy, and noiseless.” These became known as “the Danite Band, or the Avenging Angels.” “None knew who belonged to this ruthless society”; even a friend might be a member, “Hence every man feared his neighbour.”",
+  "key_facts": [
+   "Those who held out against the Church vanished without trace",
+   "At first it punished those who wanted to abandon the faith",
+   "Later it was rumoured to murder immigrants and carry off women for the Elders' harems",
+   "They were masked, armed gangs moving silently at night",
+   "Members were secret, so anyone, even a friend, might be one and every man feared his neighbour"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:14:1",
+    "quote": "The man who held out against the Church vanished away, and none knew whither he had gone or what had befallen him."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:1",
+    "quote": "At first this vague and terrible power was exercised only upon the recalcitrants who, having embraced the Mormon faith, wished afterwards to pervert or to abandon it."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:1",
+    "quote": "Strange rumours began to be bandied about—rumours of murdered immigrants and rifled camps in regions where Indians had never been seen."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:1",
+    "quote": "gangs of armed men, masked, stealthy, and noiseless, who flitted by them in the darkness"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:2",
+    "quote": "None knew who belonged to this ruthless society."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D10",
+  "question": "According to Jefferson Hope's statement, how did Enoch Drebber end up alone in his cab on the night of the murder?",
+  "verified": "Part II ch. 6: Hope followed Drebber and Stangerson from Torquay Terrace to Euston Station, where they had just missed the Liverpool train. Drebber said he had business of his own and went off alone, agreeing that if he missed the last train he would rejoin Stangerson at Halliday’s Private Hotel. After drinking, Drebber returned to the boarding-house, but a young man threw him out (“I’ll teach you to insult an honest girl!”). Drebber then hailed Hope’s cab: “Drive me to Halliday’s Private Hotel.” He stopped at a gin palace until closing time and came out so drunk that Hope knew “the game was in my own hands.”",
+  "key_facts": [
+   "Drebber and Stangerson went to Euston and missed the Liverpool train",
+   "Drebber went off alone on 'business', to rejoin Stangerson at Halliday's Private Hotel if he missed the last train",
+   "Drebber went back to the boarding-house and was kicked out by a young man for insulting a girl",
+   "Fleeing, Drebber hailed Hope's cab and asked for Halliday's Private Hotel",
+   "He stopped at a gin palace till closing time and came out very drunk"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:17:6",
+    "quote": "I heard them ask for the Liverpool train, and the guard answer that one had just gone and there would not be another for some hours."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:7",
+    "quote": "if he missed the last train he should rejoin him at Halliday’s Private Hotel"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:9",
+    "quote": "‘You hound,’ he cried, shaking his stick at him; ‘I’ll teach you to insult an honest girl!’"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:9",
+    "quote": "seeing my cab, he hailed me and jumped in. ‘Drive me to Halliday’s Private Hotel,’ said he."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:9",
+    "quote": "There he remained until closing time, and when he came out he was so far gone that I knew the game was in my own hands."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D11",
+  "question": "Why did Jefferson Hope write RACHE on the wall at Lauriston Gardens, and what did he write it with?",
+  "verified": "Part II ch. 6: Hope says “The blood had been streaming from my nose,” and he wrote with it — “I dipped my finger in my own blood and printed it on a convenient place on the wall.” His reason: “Perhaps it was some mischievous idea of setting the police upon a wrong track.” He remembered “a German being found in New York with RACHE written up above him,” which the newspapers blamed on secret societies, and “guessed that what puzzled the New Yorkers would puzzle the Londoners.”",
+  "key_facts": [
+   "He wrote it in his own blood, from a nosebleed",
+   "He dipped his finger in his blood and printed it on the wall",
+   "He meant to set the police on a wrong track",
+   "He remembered a German found in New York with RACHE above him, blamed on secret societies",
+   "He guessed it would puzzle Londoners as it had New Yorkers"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:17:13",
+    "quote": "The blood had been streaming from my nose, but I had taken no notice of it."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:14",
+    "quote": "I dipped my finger in my own blood and printed it on a convenient place on the wall"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:14",
+    "quote": "Perhaps it was some mischievous idea of setting the police upon a wrong track"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:14",
+    "quote": "I remembered a German being found in New York with RACHE written up above him, and it was argued at the time in the newspapers that the secret societies must have done it."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:14",
+    "quote": "I guessed that what puzzled the New Yorkers would puzzle the Londoners"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D12",
+  "question": "When Holmes explains his reasoning at the end of A Study in Scarlet, how did he conclude that Drebber had been poisoned, and why did he rule out robbery and politics as the motive?",
+  "verified": "Part II ch. 7: there was no wound, but the agitated expression showed Drebber “had foreseen his fate,” which natural deaths never show. “Having sniffed the dead man’s lips I detected a slightly sour smell, and I came to the conclusion that he had had poison forced upon him,” forced because of the hatred and fear on his face. “Robbery had not been the object of the murder, for nothing was taken.” Politics was unlikely: “Political assassins are only too glad to do their work and to fly,” whereas this murderer had been deliberate and left tracks all over the room, so it was a private wrong. The writing on the wall was “too evidently a blind.”",
+  "key_facts": [
+   "No wound, but his agitated face showed he foresaw his fate (natural deaths show no agitation)",
+   "Holmes smelt a slightly sour smell on the lips and concluded poison",
+   "The hatred and fear on the face showed the poison was forced on him",
+   "Not robbery, because nothing was taken",
+   "Not politics: political assassins flee, but this murder was deliberate and the killer left tracks all over the room",
+   "The inscription on the wall was evidently a blind"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:18:3",
+    "quote": "Men who die from heart disease, or any sudden natural cause, never by any chance exhibit agitation upon their features."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:3",
+    "quote": "Having sniffed the dead man’s lips I detected a slightly sour smell, and I came to the conclusion that he had had poison forced upon him."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:3",
+    "quote": "I argued that it had been forced upon him from the hatred and fear expressed upon his face"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:3",
+    "quote": "Robbery had not been the object of the murder, for nothing was taken."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:4",
+    "quote": "Political assassins are only too glad to do their work and to fly. This murder had, on the contrary, been done most deliberately"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:4",
+    "quote": "The thing was too evidently a blind."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D13",
+  "question": "What was odd about Thaddeus Sholto and his rooms when Mary Morstan, Holmes and Watson first met him?",
+  "verified": "Ch. 4 of The Sign of the Four: he was a small man with a high bald head ringed by red hair, whose features were “in a perpetual jerk.” He called his rooms “An oasis of art in the howling desert of South London”: rich curtains and tapestries, tiger-skins and a huge hookah in a sorry house. He immediately asked Watson to examine his heart: “I have grave doubts as to my mitral valve.” He smoked his hookah as “an invaluable sedative,” boasted of a genuine Corot and a Bouguereau, and later wrapped up in a heavy coat despite the close night, calling himself a valetudinarian.",
+  "key_facts": [
+   "Bald, high head fringed with red hair; features constantly jerking",
+   "He called his rooms an oasis of art in the howling desert of South London",
+   "The rooms were luxurious and Eastern: tapestries, tiger-skins, a huge hookah",
+   "A hypochondriac, he asked Watson to check his mitral valve",
+   "He smoked the hookah as a sedative for his nerves",
+   "He boasted of his paintings (a genuine Corot, a Bouguereau)"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:0",
+    "quote": "a small man with a very high head, a bristle of red hair all round the fringe of it, and a bald, shining scalp"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:0",
+    "quote": "An oasis of art in the howling desert of South London."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:1",
+    "quote": "Two great tiger-skins thrown athwart it increased the suggestion of Eastern luxury, as did a huge hookah which stood upon a mat in the corner."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:1",
+    "quote": "I have grave doubts as to my mitral valve, if you would be so very good."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:3",
+    "quote": "I am a little nervous, and I find my hookah an invaluable sedative."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:4",
+    "quote": "The landscape is a genuine Corot"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D14",
+  "question": "What happened on the night Major Sholto died, and how does Jonathan Small's own story later explain it?",
+  "verified": "Thaddeus tells (ch. 4/5) that as his father was about to reveal where the treasure was hidden he yelled “Keep him out! For Christ’s sake keep him out!” — “a bearded, hairy face” was at the window — and then died. A footmark was found in the flower-bed; next morning the window was open, his cupboards and boxes rifled, and “upon his chest was fixed a torn piece of paper, with the words ‘The sign of the four’ scrawled across it.” In ch. 12 Small explains he got word Sholto was dying, looked through the window and saw him die, then “got into his room that same night” to search his papers for the treasure’s location, found nothing, and pinned the sign of the four on his bosom as a token of hatred.",
+  "key_facts": [
+   "Sholto was about to reveal the treasure's hiding-place when he cried out at a face at the window",
+   "The face was bearded and hairy, with wild cruel eyes; Sholto died at that moment",
+   "A single footmark was found under the window",
+   "Next morning his room had been rifled and 'The sign of the four' was pinned on his chest",
+   "Small: hearing Sholto was dying, he came and watched through the window as he died",
+   "Small entered that night to search his papers for the treasure, found nothing, and pinned the sign of the four on him"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:10",
+    "quote": "‘Keep him out! For Christ’s sake keep him out!’"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:10",
+    "quote": "It was a bearded, hairy face, with wild cruel eyes and an expression of concentrated malevolence."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:11",
+    "quote": "just under the window a single footmark was visible in the flower-bed"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:11",
+    "quote": "his cupboards and boxes had been rifled, and upon his chest was fixed a torn piece of paper, with the words ‘The sign of the four’ scrawled across it"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:37",
+    "quote": "looking through the window, I saw him lying in his bed, with his sons on each side of him"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:37",
+    "quote": "I got into his room that same night, though, and I searched his papers to see if there was any record of where he had hidden our jewels."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D15",
+  "question": "How did Jonathan Small and Tonga get into and out of Bartholomew Sholto's locked room at Pondicherry Lodge?",
+  "verified": "Small explains (ch. 12) that he learned the treasure was in Bartholomew’s chemical laboratory at the top of the house, but could not climb up with his wooden leg. He “learned, however, about a trap-door in the roof.” Tonga, carrying “a long rope wound round his waist,” climbed like a cat and came in through the roof; Small then came up by the rope. He let the treasure-box down and slid down himself. Holmes had already reasoned (ch. 6) that an ally lowered a rope tied to a hook so the wooden-legged man could “swarm up,” then drew it up, shut and snibbed the window and left the way he came; blood on the rope showed Small skinned his hand sliding down.",
+  "key_facts": [
+   "The treasure was in Bartholomew's laboratory at the top of the house, too high for Small's wooden leg",
+   "Small learned of a trap-door in the roof",
+   "Tonga climbed in through the roof carrying a long rope",
+   "Small climbed up the rope to the window",
+   "Small let the box down and slid down the rope",
+   "Holmes had deduced the ally drew up the rope, snibbed the window and left the way he came"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "I could not see how with my wooden leg I was to make my way up to it"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "I learned, however, about a trap-door in the roof, and also about Mr. Sholto’s supper-hour."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "I brought him out with me with a long rope wound round his waist. He could climb like a cat, and he soon made his way through the roof"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "when I came up by the rope I found him strutting about as proud as a peacock"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:39",
+    "quote": "I took the treasure-box and let it down, and then slid down myself"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:1",
+    "quote": "your ally would draw up the rope, untie it from the hook, shut the window, snib it on the inside, and get away in the way that he originally came"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D16",
+  "question": "Where did Toby's trail lead Holmes and Watson, why did it go wrong at first, and where did it finally end?",
+  "verified": "Ch. 7 of The Sign of the Four: Toby ran down Nine Elms to “Broderick and Nelson’s large timber-yard,” where he jumped triumphantly onto a creosote barrel, and Holmes and Watson burst out laughing. Holmes explained that much creosote is carted about London, and at Knight’s Place “there were two different trails running in opposite directions. We took the wrong one.” Following the other, Toby kept to the pavement down to the river: “At the end of Broad Street it ran right down to the water’s edge, where there was a small wooden wharf,” where the fugitives had taken a boat — the wharf of Mordecai Smith, boats to hire.",
+  "key_facts": [
+   "First the trail ended at a creosote barrel in Broderick and Nelson's timber-yard",
+   "Holmes said much creosote is carted about London, so the trail was crossed",
+   "At Knight's Place there were two trails in opposite directions and they took the wrong one",
+   "The true trail ended at a small wooden wharf at the end of Broad Street, by the water",
+   "There the fugitives had taken a boat, at Mordecai Smith's boat-hire place"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:20",
+    "quote": "Our course now ran down Nine Elms until we came to Broderick and Nelson’s large timber-yard"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:0",
+    "quote": "If you consider how much creasote is carted about London in one day, it is no great wonder that our trail should have been crossed."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:0",
+    "quote": "there were two different trails running in opposite directions. We took the wrong one."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:0",
+    "quote": "At the end of Broad Street it ran right down to the water’s edge, where there was a small wooden wharf."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:0",
+    "quote": "“They have taken to a boat here.”"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D17",
+  "question": "What did Holmes learn from Mrs. Smith at the boat-hire wharf, and how did he get her to tell him?",
+  "verified": "Ch. 8 of The Sign of the Four: Holmes charmed her by giving her boy Jack two shillings, then let her talk. Her husband had been away since the previous morning in the steam launch, with too little coal to go far. A wooden-legged man with “ugly face and outlandish talk” had called before, and roused him at about three in the night — her husband had steam up already, and took their eldest son Jim. Pretending to confuse the boat with a green one, Holmes learned the launch was the Aurora, “black with two red streaks,” funnel “Black with a white band.” He explained: never let such people think their information matters, or “they will instantly shut up like an oyster.”",
+  "key_facts": [
+   "He won her over by giving her son Jack two shillings",
+   "Her husband had gone in the steam launch since the previous morning, with very little coal",
+   "A wooden-legged man roused him at about three in the night, and he took his eldest son Jim",
+   "The launch was the Aurora, black with two red streaks and a black funnel with a white band",
+   "Holmes's method: never let such people think their information is important"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:1",
+    "quote": "“I’d like two shillin’ better,” the prodigy answered, after some thought. “Here you are, then! Catch!—A fine child, Mrs. Smith!”"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:2",
+    "quote": "it is in the steam launch that he has gone. That’s what puzzles me; for I know there ain’t more coals in her than would take her to about Woolwich and back."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:3",
+    "quote": "He tapped at the winder,—about three it would be."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:3",
+    "quote": "She’s been fresh painted, black with two red streaks."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:4",
+    "quote": "is never to let them think that their information can be of the slightest importance to you. If you do, they will instantly shut up like an oyster."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D18",
+  "question": "How did Holmes work out where the Aurora was hidden, and what did he find there?",
+  "verified": "Ch. 10 of The Sign of the Four: Holmes reasoned that Small would want to get back before daylight because Tonga’s appearance would cause talk, so “they did not go very far.” Small could not keep the launch at a wharf without making pursuit easy, so Holmes guessed he had handed it “over to some boat-builder or repairer, with directions to make a trifling change in her.” In seaman’s disguise he tried the yards down the river: “I drew blank at fifteen, but at the sixteenth—Jacobson’s—I learned that the Aurora had been handed over to them two days ago by a wooden-legged man.” Mordecai Smith turned up drunk and ordered her ready at eight that night; Holmes left one of his boys as sentry.",
+  "key_facts": [
+   "He reasoned they could not go far before daylight because Tonga would be noticed",
+   "He guessed the launch had been handed to a boat-builder for a trifling change, hiding it in a yard",
+   "In seaman's disguise he tried the yards down the river; the sixteenth, Jacobson's, had the Aurora",
+   "The wooden-legged man had given trivial directions about the rudder",
+   "Mordecai Smith arrived drunk and ordered the launch for eight that night",
+   "Holmes posted one of his boys as sentry over the launch"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:3",
+    "quote": "Therefore, I argued, they did not go very far."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:4",
+    "quote": "I might hand the launch over to some boat-builder or repairer, with directions to make a trifling change in her."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:5",
+    "quote": "I drew blank at fifteen, but at the sixteenth—Jacobson’s—I learned that the Aurora had been handed over to them two days ago by a wooden-legged man"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:5",
+    "quote": "‘There ain’t naught amiss with her rudder,’ said the foreman."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:5",
+    "quote": "‘I want her to-night at eight o’clock,’ said he"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:5",
+    "quote": "I stationed him as a sentry over the launch"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D19",
+  "question": "What happened to Tonga during the chase down the Thames?",
+  "verified": "Ch. 10 of The Sign of the Four: as the police launch drew within a boat’s length, Tonga “plucked out from under his covering a short, round piece of wood, like a school-ruler, and clapped it to his lips.” Holmes and Watson fired together; “He whirled round, threw up his arms, and with a kind of choking cough fell sideways into the stream.” No trace of him was found: “Somewhere in the dark ooze at the bottom of the Thames lie the bones of that strange visitor.” Afterwards a poisoned dart was found stuck in the hatchway just behind where they had stood. Small later said it was the one dart left in the blow-pipe.",
+  "key_facts": [
+   "Tonga raised his blow-pipe (a piece of wood like a school-ruler) to his lips",
+   "Holmes and Watson fired together",
+   "He fell sideways into the river",
+   "His body was never found; his bones lie at the bottom of the Thames",
+   "A dart was found stuck in the hatchway just behind where they had stood",
+   "Small said it was the last dart, the one already in the blow-pipe"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:12",
+    "quote": "he plucked out from under his covering a short, round piece of wood, like a school-ruler, and clapped it to his lips"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:12",
+    "quote": "Our pistols rang out together."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:12",
+    "quote": "He whirled round, threw up his arms, and with a kind of choking cough fell sideways into the stream."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:13",
+    "quote": "Somewhere in the dark ooze at the bottom of the Thames lie the bones of that strange visitor to our shores."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:13",
+    "quote": "just behind where we had been standing, stuck one of those murderous darts which we knew so well"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:40",
+    "quote": "He had lost them all, sir, except the one which was in his blow-pipe at the time."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D20",
+  "question": "Where did Jonathan Small come from, how did he get to India, and what work was he doing there when the Mutiny broke out?",
+  "verified": "Small’s story (ch. 12): “I am a Worcestershire man myself,—born near Pershore,” of chapel-going small farmers. At about eighteen he “got into a mess over a girl” and escaped it by “joining the 3rd Buffs, which was just starting for India.” Invalided out of the army, he became overseer for Abel White, an indigo-planter who wanted someone “to look after his coolies.” The plantation was at Muttra near the border of the Northwest Provinces. In the Mutiny he found Dawson and his wife dead and White’s bungalow burning, and fled to safety within the walls at Agra.",
+  "key_facts": [
+   "Born near Pershore, Worcestershire, of small-farmer family",
+   "At about eighteen, after a mess over a girl, he enlisted in the 3rd Buffs bound for India",
+   "After being invalided out, he became overseer for the indigo-planter Abel White",
+   "The plantation was at Muttra",
+   "In the Mutiny the Dawsons were killed and White's bungalow burned; Small fled to Agra"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:4",
+    "quote": "I am a Worcestershire man myself,—born near Pershore."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:4",
+    "quote": "I got into a mess over a girl, and could only get out of it again by taking the Queen’s shilling and joining the 3rd Buffs, which was just starting for India."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:5",
+    "quote": "A man named Abel White, who had come out there as an indigo-planter, wanted an overseer to look after his coolies and keep them up to their work."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:6",
+    "quote": "Our plantation was at a place called Muttra, near the border of the Northwest Provinces."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:7",
+    "quote": "so I broke away across the paddy-fields, and found myself late at night safe within the walls at Agra"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D21",
+  "question": "According to Jonathan Small, why was Major Sholto ready to listen to an offer of hidden treasure from a convict in the Andamans?",
+  "verified": "Small’s story (ch. 12): the officers, including Major Sholto, Captain Morstan and Lieutenant Bromley Brown, played cards in Dr. Somerton’s rooms, which Small could watch from the surgery. “the soldiers used always to lose and the civilians to win,” because the prison officials were practised players. “Major Sholto was the hardest hit,” paying first in notes and gold, then notes of hand for big sums, and drinking heavily. One night Small overheard him say “It’s all up, Morstan... I am a ruined man.” A couple of days later Small approached him on the beach about “half a million worth” of hidden treasure.",
+  "key_facts": [
+   "Officers including Sholto and Morstan played cards nightly in the surgeon's rooms, which Small could watch",
+   "The soldiers always lost to the practised prison officials",
+   "Sholto was hardest hit, running up notes of hand for big sums and drinking",
+   "Small overheard Sholto tell Morstan he was a ruined man",
+   "Small then approached him about half a million in hidden treasure"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:28",
+    "quote": "There was Major Sholto, Captain Morstan, and Lieutenant Bromley Brown, who were in command of the native troops"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:28",
+    "quote": "the soldiers used always to lose and the civilians to win"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:28",
+    "quote": "Major Sholto was the hardest hit."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:29",
+    "quote": "‘It’s all up, Morstan,’ he was saying, as they passed my hut. ‘I shall have to send in my papers. I am a ruined man.’"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:29",
+    "quote": "I know where half a million worth lies"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D22",
+  "question": "Why was Watson glad when the treasure box turned out to be empty?",
+  "verified": "Earlier (ch. 7) Watson had held back from speaking of love because Mary would be an heiress: “Might she not look upon me as a mere vulgar fortune-seeker?” and “This Agra treasure intervened like an impassable barrier between us.” When the box opened empty (ch. 11), “a great shadow seemed to pass from my soul... the golden barrier was gone from between us,” and he cried “Thank God!” He told her “Because you are within my reach again,” declared his love — the riches had “sealed my lips” — and she answered “Then I say, ‘Thank God,’ too.”",
+  "key_facts": [
+   "Watson feared that, with Mary an heiress, she might think him a fortune-seeker",
+   "The treasure stood like an impassable barrier between them",
+   "When it was empty he felt the golden barrier was gone and said 'Thank God!'",
+   "He told her she was within his reach again and declared his love",
+   "Mary said 'Thank God' too"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:0",
+    "quote": "Might she not look upon me as a mere vulgar fortune-seeker?"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:0",
+    "quote": "This Agra treasure intervened like an impassable barrier between us."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:9",
+    "quote": "I could realise nothing save that the golden barrier was gone from between us. “Thank God!” I ejaculated from my very heart."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:9",
+    "quote": "“Because you are within my reach again,” I said, taking her hand."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:9",
+    "quote": "“Then I say, ‘Thank God,’ too,” she whispered"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D23",
+  "question": "What does Holmes think of the official Scotland Yard detectives? Compare what he says in each novel.",
+  "verified": "SiS Part I ch. 3: “Gregson is the smartest of the Scotland Yarders... he and Lestrade are the pick of a bad lot. They are both quick and energetic, but conventional—shockingly so,” and jealous of each other. SoF ch. 1: when “Gregson or Lestrade or Athelney Jones are out of their depths—which, by the way, is their normal state—the matter is laid before me.” Of Jones in particular (SoF ch. 8) he says “He is not a bad fellow,” and does not want to injure him professionally.",
+  "key_facts": [
+   "SiS: Gregson and Lestrade are 'the pick of a bad lot'",
+   "SiS: quick and energetic but shockingly conventional, and jealous of each other",
+   "SoF: Gregson, Lestrade and Jones are normally out of their depths and bring cases to him",
+   "SoF: Athelney Jones is 'not a bad fellow', and Holmes doesn't want to injure him professionally"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:7:2",
+    "quote": "he and Lestrade are the pick of a bad lot"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:2",
+    "quote": "They are both quick and energetic, but conventional—shockingly so."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:2",
+    "quote": "When Gregson or Lestrade or Athelney Jones are out of their depths—which, by the way, is their normal state—the matter is laid before me."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:5",
+    "quote": "He is not a bad fellow, and I should not like to do anything which would injure him professionally."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D24",
+  "question": "What do we learn about Holmes's violin playing in each of the two novels?",
+  "verified": "SiS Part I ch. 2: his powers on the violin were “very remarkable, but as eccentric as all his other accomplishments.” He could play difficult pieces, such as Mendelssohn’s Lieder at Watson’s request, but alone he would “close his eyes and scrape carelessly at the fiddle,” then compensate with “a whole series of my favourite airs.” (Earlier he anxiously asked if violin-playing counted among rows.) SoF ch. 8: after the night at Pondicherry Lodge, Holmes told the exhausted Watson to lie down, and “began to play some low, dreamy, melodious air,—his own, no doubt, for he had a remarkable gift for improvisation,” putting him to sleep.",
+  "key_facts": [
+   "SiS: his playing was remarkable but eccentric",
+   "SiS: he could play difficult pieces such as Mendelssohn's Lieder at Watson's request",
+   "SiS: alone he scraped carelessly at the fiddle across his knee",
+   "SiS: he made up for it by playing Watson's favourite airs",
+   "SoF: he played a low dreamy air of his own improvisation to put Watson to sleep"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:6:6",
+    "quote": "These were very remarkable, but as eccentric as all his other accomplishments."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:6",
+    "quote": "at my request he has played me some of Mendelssohn’s Lieder, and other favourites"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:6",
+    "quote": "he would close his eyes and scrape carelessly at the fiddle which was thrown across his knee"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:6",
+    "quote": "playing in quick succession a whole series of my favourite airs as a slight compensation for the trial upon my patience"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:14",
+    "quote": "he began to play some low, dreamy, melodious air,—his own, no doubt, for he had a remarkable gift for improvisation"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D25",
+  "question": "Who gets the public credit for solving the case in each novel, and how does Holmes feel about it?",
+  "verified": "SiS Part II ch. 7: the Echo says “the credit of this smart capture belongs entirely to the well-known Scotland Yard officials, Messrs. Lestrade and Gregson,” calling Holmes an amateur who may learn from such instructors. Holmes laughs: “Didn’t I tell you so when we started?... to get them a testimonial!” SoF: in ch. 1 he says “I claim no credit in such cases. My name figures in no newspaper. The work itself... is my highest reward,” and in ch. 9 he tells Athelney Jones “You are welcome to all the official credit, but you must act on the line that I point out.”",
+  "key_facts": [
+   "SiS: the Echo credits Lestrade and Gregson entirely",
+   "SiS: the paper patronises Holmes as an amateur",
+   "SiS: Holmes laughs that it was all to get them a testimonial",
+   "SoF: Holmes claims no credit; his name is in no newspaper; the work is his reward",
+   "SoF: he offers Athelney Jones all the official credit if Jones follows his lead"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:18:8",
+    "quote": "the credit of this smart capture belongs entirely to the well-known Scotland Yard officials, Messrs. Lestrade and Gregson"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:8",
+    "quote": "who has himself, as an amateur, shown some talent in the detective line"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:9",
+    "quote": "“That’s the result of all our Study in Scarlet: to get them a testimonial!”"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:2",
+    "quote": "I claim no credit in such cases. My name figures in no newspaper."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:13",
+    "quote": "You are welcome to all the official credit, but you must act on the line that I point out."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D26",
+  "question": "At the end of A Study in Scarlet Watson promises to publish an account of the case. What does he say, and what does Holmes think of the result in The Sign of the Four?",
+  "verified": "SiS Part II ch. 7: Watson tells Holmes “Your merits should be publicly recognized. You should publish an account of the case. If you won’t, I will for you,” and later “I have all the facts in my journal, and the public shall know them.” SoF ch. 1: Watson says he “embodied it in a small brochure with the somewhat fantastic title of ‘A Study in Scarlet.’” Holmes “glanced over it” and could not congratulate him: Watson had tried “to tinge it with romanticism,” like working “a love-story or an elopement into the fifth proposition of Euclid”; only the analytical reasoning deserved mention. Watson was annoyed at this egotism.",
+  "key_facts": [
+   "SiS: Watson says Holmes's merits should be recognised and he will publish if Holmes won't",
+   "SiS: Watson has the facts in his journal and the public shall know them",
+   "SoF: Watson published it as a small brochure titled 'A Study in Scarlet'",
+   "SoF: Holmes could not congratulate him: it was tinged with romanticism, like a love-story in Euclid",
+   "SoF: Holmes said only the analytical reasoning deserved mention"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:18:7",
+    "quote": "You should publish an account of the case. If you won’t, I will for you."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:9",
+    "quote": "I have all the facts in my journal, and the public shall know them."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:2",
+    "quote": "I even embodied it in a small brochure with the somewhat fantastic title of ‘A Study in Scarlet.’"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:3",
+    "quote": "You have attempted to tinge it with romanticism, which produces much the same effect as if you worked a love-story or an elopement into the fifth proposition of Euclid."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:3",
+    "quote": "The only point in the case which deserved mention was the curious analytical reasoning from effects to causes by which I succeeded in unraveling it."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D27",
+  "question": "Both novels contain a long backstory set far from London. Where, and roughly when, does each take place?",
+  "verified": "SiS: Part II (The Country of the Saints) opens on the Great Alkali Plain, where on “the fourth of May, eighteen hundred and forty-seven” the starving John Ferrier is found; the story then moves to the Mormon settlement at Salt Lake City, Utah. SoF: Jonathan Small’s story is set in India during the great Mutiny — on an indigo plantation at Muttra and in the fort at Agra — and then in the convict settlement on the Andaman Islands (Blair Island, Hope Town).",
+  "key_facts": [
+   "SiS: on the Great Alkali Plain in America",
+   "SiS: beginning on 4 May 1847",
+   "SiS: then in the Mormon settlement of Salt Lake City, Utah",
+   "SoF: in India during the Mutiny (Muttra, Agra)",
+   "SoF: then the convict settlement on the Andaman Islands"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:3:0",
+    "quote": "PART II. THE COUNTRY OF THE SAINTS CHAPTER I. ON THE GREAT ALKALI PLAIN."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:12:1",
+    "quote": "there stood upon the fourth of May, eighteen hundred and forty-seven, a solitary traveller"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:2",
+    "quote": "there were not half a dozen men in the whole of Salt Lake City who could compare with him"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:6",
+    "quote": "Suddenly, without a note of warning, the great mutiny broke upon us."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:27",
+    "quote": "I was changed from Agra to Madras, and from there to Blair Island in the Andamans."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D28",
+  "question": "Poison is used in both novels. What kind of poison is it in each, and how was it delivered?",
+  "verified": "SiS: Jefferson Hope, once janitor at the York College laboratory, stole “some alkaloid, as he called it,” which the professor “had extracted from some South American arrow poison,” so powerful “that the least grain meant instant death.” He worked it into pills for his victims. SoF: Bartholomew Sholto’s rigid muscles and “risus sardonicus” pointed to “some powerful vegetable alkaloid... some strychnine-like substance which would produce tetanus,” delivered by “a thorn which had been driven or shot... into the scalp” — shot by Tonga from his blow-pipe.",
+  "key_facts": [
+   "SiS: an alkaloid extracted from South American arrow poison, which Hope stole while janitor at the York College laboratory",
+   "SiS: so powerful the least grain meant instant death",
+   "SoF: a strychnine-like vegetable alkaloid causing tetanus-like contraction",
+   "SoF: delivered by a thorn shot into the scalp (from Tonga's blow-pipe)"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:17:10",
+    "quote": "he showed his students some alkaloid, as he called it, which he had extracted from some South American arrow poison"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:10",
+    "quote": "so powerful that the least grain meant instant death"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:6",
+    "quote": "“Death from some powerful vegetable alkaloid,” I answered,—“some strychnine-like substance which would produce tetanus.”"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:6",
+    "quote": "I discovered a thorn which had been driven or shot with no great force into the scalp"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D29",
+  "question": "In each novel, where and to whom does the captured culprit tell his story, and why does he want to tell it?",
+  "verified": "SiS: Jefferson Hope is taken to the police station, where an Inspector warns him his words will be taken down. Because his aortic aneurism may kill him before trial (“I may never be tried”), he wants to “leave some account of the business behind me. I don’t want to be remembered as a common cut-throat.” Watson later used “Lestrade’s note-book, in which the prisoner’s words were taken down.” SoF: Holmes tells Small that Athelney Jones “is going to bring you up to my rooms, and I shall ask you for a true account,” and Small tells his story in Baker Street to Holmes, Watson and Jones, saying “the best defence I can make is just to hold back nothing,” to show how badly Sholto served him and that he is innocent of Bartholomew’s death.",
+  "key_facts": [
+   "SiS: Hope told his story at the police station before an Inspector, who warned it would be taken down",
+   "SiS: he expected to die of his aneurism before trial and wanted to leave an account, not be remembered as a cut-throat",
+   "SiS: his words were recorded in Lestrade's notebook",
+   "SoF: Small told it in Holmes's Baker Street rooms, brought there by Athelney Jones",
+   "SoF: Small told it to show how Sholto wronged him and that he was innocent of Bartholomew's death"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:17:1",
+    "quote": "I must warn you that your words will be taken down, and may be used against you."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:2",
+    "quote": "I should like to leave some account of the business behind me. I don’t want to be remembered as a common cut-throat."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:3",
+    "quote": "I have had access to Lestrade’s note-book, in which the prisoner’s words were taken down exactly as they were uttered"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:0",
+    "quote": "when I got to Baker Street and showed him the empty box. They had only just arrived, Holmes, the prisoner, and he"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:39",
+    "quote": "the best defence I can make is just to hold back nothing, but let all the world know how badly I have myself been served by Major Sholto, and how innocent I am of the death of his son"
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
+ },
+ {
+  "id": "D30",
+  "question": "Where is the first murder victim found in each novel, and what was the place like?",
+  "verified": "SiS: Gregson’s letter reports “a bad business during the night at 3, Lauriston Gardens, off the Brixton Road” — an empty house. It was “one of four which stood back some little way from the street, two being occupied and two empty,” with vacant windows and “To Let” cards. SoF: Bartholomew Sholto is found in Pondicherry Lodge, Upper Norwood, which “stood in its own grounds, and was girt round with a very high stone wall topped with broken glass.” His room at the top of the house, locked on the inside, “appeared to have been fitted up as a chemical laboratory.”",
+  "key_facts": [
+   "SiS: 3, Lauriston Gardens, off the Brixton Road",
+   "SiS: an empty house, one of four set back from the street, two empty, with 'To Let' cards",
+   "SoF: Pondicherry Lodge in Upper Norwood",
+   "SoF: the house stood in its own grounds behind a high wall topped with broken glass",
+   "SoF: the body was in Bartholomew's locked room, fitted up as a chemical laboratory"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:7:1",
+    "quote": "There has been a bad business during the night at 3, Lauriston Gardens, off the Brixton Road."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:4",
+    "quote": "It was one of four which stood back some little way from the street, two being occupied and two empty."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:5",
+    "quote": "came to live at Pondicherry Lodge in Upper Norwood"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:8:0",
+    "quote": "Pondicherry Lodge stood in its own grounds, and was girt round with a very high stone wall topped with broken glass."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:8:7",
+    "quote": "It appeared to have been fitted up as a chemical laboratory."
+   }
+  ],
+  "source": "written from the text, 2026-10-07"
  }
 ]

@@ -1,4 +1,4 @@
-"""Run the 26 acceptance questions through lore_search and record every answer.
+"""Run the dev (or held-out) questions through lore_search and record every answer.
 
     .venv/bin/python evals/answer_quality/run_eval.py --label baseline
     .venv/bin/python evals/answer_quality/run_eval.py --set heldout --label heldout-baseline
@@ -43,6 +43,43 @@ def _done(path: Path) -> set[str]:
             if line.strip()}
 
 
+def _real_models(config):
+    from lore.inference.gemini import default_key_file, resolve_api_key
+    from lore.orchestrator.gemini_budget import recorder_for
+    from lore.query.agent import make_query_models
+
+    return make_query_models(
+        config, api_key=resolve_api_key(key_file=default_key_file()),
+        recorder=recorder_for(config.sqlite_path))
+
+
+def _traced(models, sink: list):
+    """The same models, with every generate call's prompt and reply kept.
+
+    For diagnosis: an answer records only the claims that survived, so
+    whether the model proposed few claims or code dropped them (quote not
+    found, near-duplicate, faithfulness check) is otherwise invisible.
+    """
+    import dataclasses
+
+    def wrap(kind, generate):
+        if generate is None:
+            return None
+
+        async def traced(prompt, schema):
+            reply = await generate(prompt, schema)
+            sink.append({"kind": kind, "prompt": prompt,
+                         "reply": reply.model_dump(mode="json")})
+            return reply
+        return traced
+
+    return dataclasses.replace(
+        models, select=wrap("select", models.select),
+        synthesize=wrap("synthesize", models.synthesize),
+        decompose=wrap("decompose", models.decompose),
+        check=wrap("check", models.check))
+
+
 def _evidence_only_models(config):
     """The real query models with synthesis and the faithfulness check stubbed.
 
@@ -53,14 +90,9 @@ def _evidence_only_models(config):
     """
     import dataclasses
 
-    from lore.inference.gemini import default_key_file, resolve_api_key
-    from lore.orchestrator.gemini_budget import recorder_for
-    from lore.query.agent import make_query_models
     from lore.query.synthesize import Synthesis
 
-    models = make_query_models(
-        config, api_key=resolve_api_key(key_file=default_key_file()),
-        recorder=recorder_for(config.sqlite_path))
+    models = _real_models(config)
 
     async def no_answer(prompt, schema):
         return Synthesis(claims=[], can_answer=False)
@@ -82,7 +114,7 @@ def _retrieval(candidate_k: int | None, keyword_k: int | None) -> dict:
 async def run(label: str, only: list[str] | None, qset: str,
               evidence_only: bool = False, candidate_k: int | None = None,
               keyword_k: int | None = None,
-              gemini_model: str | None = None) -> None:
+              gemini_model: str | None = None, trace: bool = False) -> None:
     config = LoreConfig.load(ROOT / "lore.toml")
     if gemini_model:
         # One model for selection and synthesis, no cascade: arms compared
@@ -104,11 +136,19 @@ async def run(label: str, only: list[str] | None, qset: str,
             continue
         started = time.monotonic()
 
+        calls: list[dict] = []
+
         async def ask():
+            calls.clear()
             if evidence_only:
-                return await tools.lore_search(
-                    config, q["question"], models=_evidence_only_models(config))
-            return await tools.lore_search(config, q["question"])
+                models = _evidence_only_models(config)
+            elif trace:
+                models = _real_models(config)
+            else:
+                return await tools.lore_search(config, q["question"])
+            if trace:
+                models = _traced(models, calls)
+            return await tools.lore_search(config, q["question"], models=models)
 
         result = await ask()
         # A transient Gemini refusal (overload 503, a cooling model) is not a
@@ -126,6 +166,10 @@ async def run(label: str, only: list[str] | None, qset: str,
                   "retrieval": retrieval, **result}
         with out.open("a") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        if trace:
+            with (RUNS / f"{label}.trace.jsonl").open("a") as f:
+                f.write(json.dumps({"id": q["id"], "calls": calls},
+                                   ensure_ascii=False) + "\n")
         err = result.get("error")
         print(f"{q['id']}: {err['code'] if err else result.get('mode')}"
               f" | {len(result.get('claims', []))} claims"
@@ -141,7 +185,7 @@ def main() -> None:
                         help="run name, e.g. baseline or round-1")
     parser.add_argument("--set", dest="qset", choices=sorted(SETS),
                         default="dev",
-                        help="dev (26, used to decide changes) or heldout (16,"
+                        help="dev (56, used to decide changes) or heldout (16,"
                              " milestones only -- see GRADING.md)")
     parser.add_argument("--evidence-only", action="store_true",
                         help="stop before writing answers; record only the"
@@ -155,11 +199,15 @@ def main() -> None:
     parser.add_argument("--gemini-model",
                         help="pin selection and synthesis to this one model"
                              " (default: the configured cascade)")
+    parser.add_argument("--trace", action="store_true",
+                        help="also keep every Gemini prompt and reply, in"
+                             " runs/<label>.trace.jsonl")
     parser.add_argument("--only", nargs="*",
-                        help="question ids to run (default: all 26)")
+                        help="question ids to run (default: the whole set)")
     args = parser.parse_args()
     asyncio.run(run(args.label, args.only, args.qset, args.evidence_only,
-                    args.candidate_k, args.keyword_k, args.gemini_model))
+                    args.candidate_k, args.keyword_k, args.gemini_model,
+                    args.trace))
 
 
 if __name__ == "__main__":

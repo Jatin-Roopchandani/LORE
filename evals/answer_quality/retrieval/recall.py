@@ -39,7 +39,8 @@ async def main(run: str):
 
         out = []
         for g in gold:
-            if not g.get("chunks"):
+            # A run of an older, smaller question set scores the facts it has.
+            if not g.get("chunks") or g["id"] not in base:
                 continue
             r = base[g["id"]]
             queries = [r["question"], *r.get("sub_questions", [])]
