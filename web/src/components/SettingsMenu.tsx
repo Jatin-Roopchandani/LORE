@@ -22,18 +22,20 @@ export function SettingsMenu({ showInternals }: { showInternals: boolean }) {
   const [mcp, setMcp] = useState<McpInfo | null>(null);
   const [mode, setMode] = useState<ThemeMode>(loadTheme());
   const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (open) setMode(loadTheme()); }, [open]);
   useEffect(() => { if (open && showInternals) api.mcp().then((r) => { if (!isError(r)) setMcp(r); }); }, [open, showInternals]);
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); trigger.current?.focus(); } };
     document.addEventListener("mousedown", close); document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, [open]);
   const choose = (m: ThemeMode) => { applyTheme(m); setMode(m); };
   return (
     <div className="pop" ref={root}>
-      <button className="tbtn icon" type="button" aria-label="Settings" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)}>⚙</button>
+      <button ref={trigger} className="tbtn icon" type="button" aria-label="Settings" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>⚙</button>
       {open && (
         <div className="menu">
           {showInternals && (<>
@@ -49,7 +51,7 @@ export function SettingsMenu({ showInternals }: { showInternals: boolean }) {
             {tab === "http" && mcp && (<>
               <p className="hint">For clients that connect over HTTP. Start the server, then point the client at the address. Loopback only.</p>
               <Snip text={mcp.http_command} /><Snip text={mcp.http_url} />
-              <span className={`status${mcp.http_running ? " on" : ""}`}><i />{mcp.http_running ? "HTTP server running" : UI.mcpNotRunning}</span>
+              <span className={`status${mcp.http_running ? " on" : ""}`}><i />{mcp.http_running ? UI.mcpRunning : UI.mcpNotRunning}</span>
             </>)}
           </>)}
           <h4>Appearance</h4>

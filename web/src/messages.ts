@@ -16,6 +16,8 @@ export const UI = {
   showingEdges: (shown: number, total: number) => `Showing ${shown} of ${total} relationships`,
   ingestHint: "Adding books from the browser comes next. For now, run this in a terminal:",
   mcpNotRunning: "HTTP server not running",
+  mcpRunning: "HTTP server running",
+  wrongFileType: (name: string) => `${name} is not an EPUB or PDF. Choose a .epub or .pdf file.`,
 };
 
 function until(resetsAt: string | undefined, now: Date): string {

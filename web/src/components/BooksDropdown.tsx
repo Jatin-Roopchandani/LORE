@@ -5,6 +5,7 @@ export function BooksDropdown({ books, hiddenBooks, onChange }: { books: Book[];
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const graphed = books.filter((b) => b.status === "graphed");
   const on = graphed.filter((b) => !hiddenBooks.has(b.id));
   const label = on.length === graphed.length ? `All books (${graphed.length})` : on.length === 0 ? "No books"
@@ -12,7 +13,7 @@ export function BooksDropdown({ books, hiddenBooks, onChange }: { books: Book[];
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); trigger.current?.focus(); } };
     document.addEventListener("mousedown", close); document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, [open]);
@@ -20,7 +21,7 @@ export function BooksDropdown({ books, hiddenBooks, onChange }: { books: Book[];
   const toggle = (id: string, checked: boolean) => { const next = new Set(hiddenBooks); checked ? next.delete(id) : next.add(id); onChange(next); };
   return (
     <div className="pop" ref={root}>
-      <button className="tbtn" type="button" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button ref={trigger} className="tbtn" type="button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span>{label}</span><span className="caret" aria-hidden="true">▾</span>
       </button>
       {open && (
