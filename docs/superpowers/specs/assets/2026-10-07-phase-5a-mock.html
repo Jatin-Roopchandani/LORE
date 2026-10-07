@@ -1,0 +1,528 @@
+<title>LORE Reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: two panes. Conversation on the left (reading), evidence graph on the right (looking). Stacks on phones, graph first. */
+:root{
+  --bg:#ECEFF2; --panel:#F8FAFB; --sunk:#E3E8EC; --ink:#17212B; --muted:#5A6774; --line:#D3DAE0;
+  --accent:#1E5AA0; --accent-soft:#DCE7F4; --glow:#B97808; --glow-soft:#F6E7C8; --ok:#2E7D4F; --warn:#9A5B00;
+  --k-character:#2F6DB5; --k-place:#3D8B6E; --k-faction:#8A4FA3; --k-object:#B0662A; --k-other:#6C7A87;
+  --edge:#9AA7B3; --edge-faint:#CBD3DA;
+  --f-ui:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-book:"Newsreader",Georgia,"Times New Roman",serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E141A; --panel:#151D25; --sunk:#1B252F; --ink:#E3E9EF; --muted:#8C99A6; --line:#26323D;
+  --accent:#78AEEA; --accent-soft:#1D3047; --glow:#EBAA3C; --glow-soft:#3A2D14; --ok:#6CC596; --warn:#E3A44B;
+  --k-character:#6FA4E4; --k-place:#6CC1A0; --k-faction:#BC8AD3; --k-object:#E19A5C; --k-other:#93A2B0;
+  --edge:#5E6C79; --edge-faint:#2C3843; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E141A; --panel:#151D25; --sunk:#1B252F; --ink:#E3E9EF; --muted:#8C99A6; --line:#26323D;
+  --accent:#78AEEA; --accent-soft:#1D3047; --glow:#EBAA3C; --glow-soft:#3A2D14; --ok:#6CC596; --warn:#E3A44B;
+  --k-character:#6FA4E4; --k-place:#6CC1A0; --k-faction:#BC8AD3; --k-object:#E19A5C; --k-other:#93A2B0;
+  --edge:#5E6C79; --edge-faint:#2C3843; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-ui);margin:0}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{height:100%;display:grid;grid-template-rows:auto 1fr;padding-inline:16px;padding-block:0 16px;gap:12px}
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:12px 0}
+.mark{font:600 20px/1 var(--f-book);letter-spacing:.06em}
+.mark small{font:500 11px var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-left:8px}
+.mockflag{font:500 11px var(--f-mono);color:var(--warn);border:1px dashed var(--warn);padding:2px 8px;border-radius:999px}
+.spacer{flex:1}
+
+.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pop{position:relative}
+.tbtn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.tbtn:hover{border-color:var(--accent)}
+.tbtn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel);font-weight:600}
+.tbtn.icon{padding:6px 8px;line-height:1}
+.tbtn .caret{font-size:10px;color:var(--muted)}
+.tbtn.primary .caret{color:inherit}
+.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:20;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgb(0 0 0 / .16);padding:12px;width:min(360px,calc(100vw - 32px));display:flex;flex-direction:column;gap:10px}
+.menu.books-menu{left:0;right:auto;width:min(320px,calc(100vw - 32px))}
+.menu h4{margin:0;font:600 11px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.menu input[type=search]{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:6px 10px;font:inherit;color:var(--ink);width:100%}
+.booklist{list-style:none;margin:0;padding:0;max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.booklist label{display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:6px;cursor:pointer}
+.booklist label:hover{background:var(--sunk)}
+.booklist .meta{display:block;font:11px var(--f-mono);color:var(--muted)}
+.booklist .off{opacity:.55;cursor:not-allowed}
+.linkrow{display:flex;gap:12px;font-size:12px}
+.linkrow button{border:0;background:none;color:var(--accent);cursor:pointer;padding:0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--bg);padding:5px 12px;font-size:12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel)}
+.tabs{display:flex;gap:4px}
+.tabs button{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer}
+.tabs button[aria-selected="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.snip{position:relative;background:var(--sunk);border-radius:6px;padding:8px 10px;font:12px/1.5 var(--f-mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.snip .copy{position:absolute;top:6px;right:6px;border:1px solid var(--line);background:var(--panel);border-radius:4px;font:11px var(--f-ui);padding:1px 6px;cursor:pointer}
+.status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.status i{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
+.status.on i{background:var(--ok)}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.overlay{position:fixed;inset:0;background:rgb(10 16 22 / .45);display:grid;place-items:center;padding:16px;z-index:40}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;width:min(460px,100%);display:flex;flex-direction:column;gap:12px}
+.dialog h2{margin:0;font:600 20px var(--f-book)}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;color:var(--muted);cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+.drop strong{color:var(--ink)}
+.row-end{display:flex;justify-content:flex-end;gap:8px}
+.quota{font:12px var(--f-mono);color:var(--muted)}
+.panes{display:grid;grid-template-columns:minmax(340px,440px) 1fr;gap:12px;min-height:0}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+/* chat */
+.history{display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line);overflow-x:auto}
+.history button{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:4px 8px;font-size:12px;white-space:nowrap;cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.history button[aria-current="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.thread{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px;min-height:0}
+.q{align-self:flex-end;background:var(--accent-soft);border-radius:10px 10px 2px 10px;padding:8px 12px;max-width:90%;font-weight:500}
+.a{display:flex;flex-direction:column;gap:10px}
+.steps{list-style:none;margin:0;padding:10px 12px;background:var(--sunk);border-radius:8px;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.steps li{display:flex;gap:8px;align-items:baseline;color:var(--muted)}
+.steps li .dot{width:14px;flex:none;text-align:center;font-size:11px}
+.steps li.now{color:var(--ink);font-weight:500}
+.steps li.now .dot{color:var(--accent)}
+.steps li.done .dot{color:var(--ok)}
+.steps li .t{margin-left:auto;font:11px var(--f-mono);font-variant-numeric:tabular-nums}
+.claims{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.claim{padding:8px 10px;border-radius:8px;border:1px solid transparent;cursor:default;transition:background .15s,border-color .15s}
+.claim:hover,.claim.hot{background:var(--glow-soft);border-color:var(--glow)}
+.claim p{margin:0;font:16px/1.5 var(--f-book)}
+.cite{font:500 11px var(--f-mono);border:1px solid var(--line);background:var(--bg);border-radius:4px;padding:1px 5px;margin-left:4px;cursor:pointer;vertical-align:2px}
+.cite:hover{border-color:var(--accent);color:var(--accent)}
+.passage{margin:6px 0 0;padding:10px 12px;border-left:3px solid var(--glow);background:var(--bg);font:14px/1.6 var(--f-book);color:var(--ink)}
+.passage .src{display:block;font:11px var(--f-mono);color:var(--muted);margin-bottom:4px}
+mark{background:var(--glow-soft);color:inherit;border-bottom:2px solid var(--glow);padding:0 1px}
+details.how{border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:13px}
+details.how summary{cursor:pointer;font-weight:600}
+.how dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:10px 0 0}
+.how dt{color:var(--muted)}
+.how dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.how code{font:12px var(--f-mono)}
+.note{font-size:12px;color:var(--warn)}
+form.ask{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+form.ask input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font:inherit;color:var(--ink)}
+form.ask button{border:0;background:var(--accent);color:var(--panel);border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer}
+/* graph */
+.gwrap{position:relative;flex:1;min-height:0}
+svg.graph{width:100%;height:100%;display:block}
+.gbar{display:flex;gap:12px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.gbar .stage{color:var(--ink);font-weight:600}
+.legend{display:flex;gap:10px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.replay{margin-left:auto;border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 10px;cursor:pointer}
+.edge{stroke:var(--edge);stroke-width:1.4;fill:none;transition:stroke .3s,opacity .4s,stroke-width .3s}
+.edge.faint{stroke:var(--edge-faint);opacity:.6}
+.edge.cited{stroke:var(--glow);stroke-width:2.6;opacity:1}
+.edge.hot{stroke:var(--glow);stroke-width:4}
+.elabel{font:10px var(--f-mono);fill:var(--muted);pointer-events:none;transition:opacity .4s}
+.node{cursor:pointer;transition:opacity .4s}
+.node circle.body{stroke:var(--panel);stroke-width:2}
+.node circle.seedring{fill:none;stroke:var(--accent);stroke-width:2.5}
+.node text{font:12px var(--f-ui);fill:var(--ink);paint-order:stroke;stroke:var(--panel);stroke-width:4px;stroke-linejoin:round}
+.node.sel circle.body{stroke:var(--ink);stroke-width:3}
+.hidden-el{opacity:0;pointer-events:none}
+.dimmed{opacity:.25}
+@keyframes pulse{0%{r:14}50%{r:22}100%{r:14}}
+.pulse{animation:pulse 1s ease-out 2}
+.card{position:absolute;top:12px;right:12px;width:min(300px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;box-shadow:0 8px 24px rgb(0 0 0 / .12);display:flex;flex-direction:column;gap:8px}
+.card h3{margin:0;font:600 18px/1.25 var(--f-book);text-wrap:balance}
+.card .kind{font:500 11px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.card ul{margin:0;padding-left:16px;font-size:13px}
+.card .close{position:absolute;top:8px;right:10px;border:0;background:none;cursor:pointer;font-size:16px;color:var(--muted)}
+.card .btn{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px}
+.mono{font:11px var(--f-mono);color:var(--muted)}
+@media (max-width:900px){
+  .app{height:auto;min-height:100%}
+  .panes{grid-template-columns:1fr}
+  .pane.graphpane{order:-1;height:56vh}
+  .pane.chat{min-height:70vh}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<div class="app">
+  <header>
+    <span class="mark">LORE<small>Reader</small></span>
+    <span class="mockflag" title="Static mock: replays two answers recorded from the real system">mock · recorded answers</span>
+    <span class="spacer"></span>
+    <div class="tools">
+      <div class="pop">
+        <button class="tbtn" id="books-btn" type="button" aria-haspopup="true" aria-expanded="false"><span id="books-label">All books (2)</span><span class="caret">▾</span></button>
+        <div class="menu books-menu" id="books-menu" hidden>
+          <input type="search" id="book-search" placeholder="Filter books…" aria-label="Filter books">
+          <div class="linkrow"><button type="button" id="books-all">Select all</button><button type="button" id="books-none">Clear</button></div>
+          <ul class="booklist" id="booklist"></ul>
+          <p class="hint">Only graphed books can be searched. The rest are still processing.</p>
+        </div>
+      </div>
+      <button class="tbtn primary" id="upload-btn" type="button">＋ Add book</button>
+      <span class="quota" title="Gemini requests left today">Gemini: 412 / 1000 left</span>
+      <button class="tbtn icon" id="theme-btn" type="button" aria-label="Switch light or dark">◐</button>
+      <div class="pop">
+        <button class="tbtn icon" id="menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Settings">⚙</button>
+        <div class="menu" id="settings-menu" hidden>
+          <h4>Connect an MCP client</h4>
+          <div class="tabs" role="tablist">
+            <button type="button" role="tab" aria-selected="true" data-tab="stdio">Claude Code</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="http">HTTP</button>
+          </div>
+          <div data-panel="stdio">
+            <p class="hint">Run once in a terminal. Claude Code starts LORE itself when it needs it.</p>
+            <div class="snip">claude mcp add lore -- /home/jatin/LORE/.venv/bin/lore mcp<button class="copy" type="button">Copy</button></div>
+          </div>
+          <div data-panel="http" hidden>
+            <p class="hint">For clients that connect over HTTP. Start the server, then point the client at the address. Loopback only.</p>
+            <div class="snip">lore mcp --http --port 8765<button class="copy" type="button">Copy</button></div>
+            <div class="snip">http://127.0.0.1:8765/mcp<button class="copy" type="button">Copy</button></div>
+            <span class="status" id="mcp-status"><i></i>HTTP server not running</span>
+          </div>
+          <h4>Appearance</h4>
+          <div class="seg" role="group" aria-label="Theme">
+            <button type="button" data-theme-set="system" aria-pressed="true">System</button>
+            <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+            <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+  <div class="panes">
+    <section class="pane chat" aria-label="Conversation">
+      <nav class="history" id="history" aria-label="Earlier questions"></nav>
+      <div class="thread" id="thread" aria-live="polite"></div>
+      <form class="ask" id="ask">
+        <input id="ask-input" autocomplete="off" placeholder="Ask about your books…" aria-label="Question">
+        <button type="submit">Ask</button>
+      </form>
+    </section>
+    <section class="pane graphpane" aria-label="Evidence graph">
+      <div class="gbar">
+        <span class="stage" id="stage">Evidence graph</span>
+        <div class="legend">
+          <span><i style="background:var(--k-character)"></i>Character</span>
+          <span><i style="background:var(--k-place)"></i>Place</span>
+          <span><i style="background:var(--k-faction)"></i>Group</span>
+          <span><i style="background:var(--k-object)"></i>Object</span>
+          <span><i style="border:2px solid var(--accent);width:11px;height:11px"></i>Starting entity</span>
+          <span><i style="background:var(--glow);border-radius:2px;height:3px;width:14px"></i>Cited</span>
+        </div>
+        <button class="replay" id="replay" type="button">Replay search</button>
+      </div>
+      <div class="gwrap">
+        <svg class="graph" id="graph" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Entities and relationships used for the answer"></svg>
+        <aside class="card" id="card" hidden></aside>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="overlay" id="upload" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+    <h2 id="upload-title">Add a book</h2>
+    <label class="drop" id="drop" for="file-input"><strong>Drop an EPUB or PDF here</strong><br>or click to choose a file</label>
+    <input type="file" id="file-input" accept=".epub,.pdf" hidden>
+    <p class="hint" id="upload-msg">LORE splits the book into passages, then extracts characters, places and relationships. You can follow progress in the library.</p>
+    <div class="row-end"><button class="tbtn" type="button" id="upload-cancel">Cancel</button><button class="tbtn primary" type="button" id="upload-go" disabled>Add to library</button></div>
+  </div>
+</div>
+<script>
+const LIBRARY = [
+  {id:"05ab674df048d13f", title:"A Study in Scarlet", author:"Arthur Conan Doyle", status:"graphed", meta:"1887 · 1,412 relationships"},
+  {id:"0ee225a9a3b5fbc2", title:"The Sign of the Four", author:"Arthur Conan Doyle", status:"graphed", meta:"1890 · 1,377 relationships"},
+  {id:"pp", title:"Pride and Prejudice", author:"Jane Austen", status:"chunked", meta:"split into passages · not graphed yet"},
+];
+const DATA = [{"question": "How is Jefferson Hope connected to John Ferrier?", "sub_questions": ["How is Jefferson Hope connected to John Ferrier?"], "template": "path_between", "model": "gemini-3.5-flash-lite", "selection_model": "gemini-3.5-flash-lite", "mode": "graph", "note": null, "seconds": 14.4, "claims": [{"text": "Jefferson Hope intended to marry John Ferrier's adopted daughter, Lucy.", "passage": 2, "quote": "I will come and claim you then, my darling. There’s no one who can stand between us."}, {"text": "John Ferrier gave his consent to Jefferson Hope marrying Lucy, provided they got the mines working.", "passage": 2, "quote": "“He has given his consent, provided we get these mines working all right.”"}, {"text": "Jefferson Hope frequently visited John Ferrier at his farm.", "passage": 6, "quote": "He called on John Ferrier that night, and many times again, until his face was a familiar one at the farm-house."}, {"text": "John Ferrier sent a message to Jefferson Hope when threatened by danger.", "passage": 10, "quote": "John Ferrier went in to Salt Lake City, and having found his acquaintance, who was bound for the Nevada Mountains, he entrusted him with his message to Jefferson Hope."}, {"text": "Jefferson Hope planned their escape through the mountains to Carson City alongside John Ferrier.", "passage": 17, "quote": "We must push for Carson City through the mountains."}, {"text": "Jefferson Hope had a warrant issued against him by the Holy Four for assisting the Ferriers in escaping.", "passage": 22, "quote": "There is a warrant against you from the Holy Four for assisting the Ferriers away."}], "passages": [{"n": 1, "chunk_id": "05ab674df048d13f:11:15", "book_id": "05ab674df048d13f", "chapter_seq": 11, "text": "The fellow came forward with a somewhat sullen, defiant air, and put down his hands to assist. At that instant there was a sharp click, the jangling of metal, a"}, {"n": 2, "chunk_id": "05ab674df048d13f:13:10", "book_id": "05ab674df048d13f", "chapter_seq": 13, "text": "Wherever stirring adventures were to be had, Jefferson Hope had been there in search of them. He soon became a favourite with the old farmer, who spoke eloquently of his virtues. On such occasions, Lucy was silent, but her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own. Her honest father may not have observed these symptoms, but they were assuredly not thrown away upon the man who had won her affections. It was a summer evening when he came galloping down the road and pulled up at the gate. She was at the doorway, and came down to meet him. He threw the bridle over the fence and strode up the pathway. “I am off, Lucy,” he said, taking her two hands in his, and gazing tenderly down into her face; “I won’t ask you to come with me now, but will you be ready to come when I am here again?” “And when will that be?” she asked, blushing and laughing. “A couple of months at the outside. I will come and claim you then, my darling. There’s no one who can stand between us.” “And how about father?” she asked. “He has given his consent, provided we get these mines working all right. I have no fear on that head.” “Oh, well; of course, if you and father have arranged it all, there’s no more to be said,” she whispered, with her cheek against his broad breast. “Thank God!” he said, hoarsely, stooping and kissing her. “It is settled, then. The longer I stay, the harder it will be to go. They are waiting for me at the cañon. Good-bye, my own darling—good-bye. In two months you shall see me.”"}, {"n": 3, "chunk_id": "05ab674df048d13f:13:2", "book_id": "05ab674df048d13f", "chapter_seq": 13, "text": "In the meantime Ferrier having recovered from his privations, distinguished himself as a useful guide and an indefatigable hunter. So rapidly did he gain the es"}, {"n": 4, "chunk_id": "05ab674df048d13f:13:3", "book_id": "05ab674df048d13f", "chapter_seq": 13, "text": "No argument or persuasion could ever induce him to set up a female establishment after the manner of his companions. He never gave reasons for this persistent r"}, {"n": 5, "chunk_id": "05ab674df048d13f:13:8", "book_id": "05ab674df048d13f", "chapter_seq": 13, "text": "“He has a good deal to thank you for, and so have I,” she answered, “he’s awful fond of me. If those cows had jumped on me he’d have never got over it.” “Neithe"}, {"n": 6, "chunk_id": "05ab674df048d13f:13:9", "book_id": "05ab674df048d13f", "chapter_seq": 13, "text": "The sight of the fair young girl, as frank and wholesome as the Sierra breezes, had stirred his volcanic, untamed heart to its very depths. When she had vanished from his sight, he realized that a crisis had come in his life, and that neither silver speculations nor any other questions could ever be of such importance to him as this new and all-absorbing one. The love which had sprung up in his heart was not the sudden, changeable fancy of a boy, but rather the wild, fierce passion of a man of strong will and imperious temper. He had been accustomed to succeed in all that he undertook. He swore in his heart that he would not fail in this if human effort and human perseverance could render him successful. He called on John Ferrier that night, and many times again, until his face was a familiar one at the farm-house. John, cooped up in the valley, and absorbed in his work, had had little chance of learning the news of the outside world during the last twelve years. All this Jefferson Hope was able to tell him, and in a style which interested Lucy as well as her father. He had been a pioneer in California, and could narrate many a strange tale of fortunes made and fortunes lost in those wild, halcyon days. He had been a scout too, and a trapper, a silver explorer, and a ranchman. Wherever stirring adventures were to be had, Jefferson Hope had been there in search of them. He soon became a favourite with the old farmer, who spoke eloquently of his virtues."}, {"n": 7, "chunk_id": "05ab674df048d13f:14:0", "book_id": "05ab674df048d13f", "chapter_seq": 14, "text": "Three weeks had passed since Jefferson Hope and his comrades had departed from Salt Lake City. John Ferrier’s heart was sore within him when he thought of the y"}, {"n": 8, "chunk_id": "05ab674df048d13f:14:6", "book_id": "05ab674df048d13f", "chapter_seq": 14, "text": "With a threatening gesture of his hand, he turned from the door, and Ferrier heard his heavy step scrunching along the shingly path. He was still sitting with h"}, {"n": 9, "chunk_id": "05ab674df048d13f:14:7", "book_id": "05ab674df048d13f", "chapter_seq": 14, "text": "“When he comes, he will advise us for the best. But it is for you that I am frightened, dear. One hears—one hears such dreadful stories about those who oppose t"}, {"n": 10, "chunk_id": "05ab674df048d13f:15:0", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "On the morning which followed his interview with the Mormon Prophet, John Ferrier went in to Salt Lake City, and having found his acquaintance, who was bound for the Nevada Mountains, he entrusted him with his message to Jefferson Hope. In it he told the young man of the imminent danger which threatened them, and how necessary it was that he should return. Having done thus he felt easier in his mind, and returned home with a lighter heart. As he approached his farm, he was surprised to see a horse hitched to each of the posts of the gate. Still more surprised was he on entering to find two young men in possession of his sitting-room. One, with a long pale face, was leaning back in the rocking-chair, with his feet cocked up upon the stove. The other, a bull-necked youth with coarse bloated features, was standing in front of the window with his hands in his pocket, whistling a popular hymn. Both of them nodded to Ferrier as he entered, and the one in the rocking-chair commenced the conversation. “Maybe you don’t know us,” he said. “This here is the son of Elder Drebber, and I’m Joseph Stangerson, who travelled with you in the desert when the Lord stretched out His hand and gathered you into the true fold.” “As He will all the nations in His own good time,” said the other in a nasal voice; “He grindeth slowly but exceeding small.” John Ferrier bowed coldly. He had guessed who his visitors were."}, {"n": 11, "chunk_id": "05ab674df048d13f:15:1", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "John Ferrier bowed coldly. He had guessed who his visitors were. “We have come,” continued Stangerson, “at the advice of our fathers to solicit the hand of your"}, {"n": 12, "chunk_id": "05ab674df048d13f:15:10", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "“If they are too many for us we shall take two or three of them with us,” he said with a sinister smile. The lights inside the house had all been extinguished, "}, {"n": 13, "chunk_id": "05ab674df048d13f:15:12", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "“We are through the line of sentinels. Everything depends on speed. Hurry on!” Once on the high road they made rapid progress. Only once did they meet anyone, a"}, {"n": 14, "chunk_id": "05ab674df048d13f:15:13", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "On the other hand a wild chaos of boulders and debris made all advance impossible. Between the two ran the irregular track, so narrow in places that they had to"}, {"n": 15, "chunk_id": "05ab674df048d13f:15:2", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "“There are two ways out of the room,” cried Ferrier; “there is the door, and there is the window. Which do you care to use?” His brown face looked so savage, an"}, {"n": 16, "chunk_id": "05ab674df048d13f:15:7", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "Outside all was calm and quiet. The night was fine, and the stars were twinkling brightly overhead. The little front garden lay before the farmer’s eyes bounded"}, {"n": 17, "chunk_id": "05ab674df048d13f:15:8", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "“Does Lucy bear up well?” he asked, when he had satisfied his hunger. “Yes. She does not know the danger,” her father answered. “That is well. The house is watched on every side. That is why I crawled my way up to it. They may be darned sharp, but they’re not quite sharp enough to catch a Washoe hunter.” John Ferrier felt a different man now that he realized that he had a devoted ally. He seized the young man’s leathery hand and wrung it cordially. “You’re a man to be proud of,” he said. “There are not many who would come to share our danger and our troubles.” “You’ve hit it there, pard,” the young hunter answered. “I have a respect for you, but if you were alone in this business I’d think twice before I put my head into such a hornet’s nest. It’s Lucy that brings me here, and before harm comes on her I guess there will be one less o’ the Hope family in Utah.” “What are we to do?” “To-morrow is your last day, and unless you act to-night you are lost. I have a mule and two horses waiting in the Eagle Ravine. How much money have you?” “Two thousand dollars in gold, and five in notes.” “That will do. I have as much more to add to it. We must push for Carson City through the mountains. You had best wake Lucy. It is as well that the servants do not sleep in the house.” While Ferrier was absent, preparing his daughter for the approaching journey, Jefferson Hope packed all the eatables that he could find into a small parcel, and filled a stoneware jar with water, for he knew by experience that the mountain wells were few and far between."}, {"n": 18, "chunk_id": "05ab674df048d13f:15:9", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "“That will do. I have as much more to add to it. We must push for Carson City through the mountains. You had best wake Lucy. It is as well that the servants do "}, {"n": 19, "chunk_id": "05ab674df048d13f:16:1", "book_id": "05ab674df048d13f", "chapter_seq": 16, "text": "“They will be upon our track by this time,” he said. “Everything depends upon our speed. Once safe in Carson we may rest for the remainder of our lives.” During"}, {"n": 20, "chunk_id": "05ab674df048d13f:16:14", "book_id": "05ab674df048d13f", "chapter_seq": 16, "text": "It was but a glance of a face in a window, but that one glance told him that Cleveland in Ohio possessed the men whom he was in pursuit of. He returned to his m"}, {"n": 21, "chunk_id": "05ab674df048d13f:16:6", "book_id": "05ab674df048d13f", "chapter_seq": 16, "text": "A little way on one side of the camp was a low-lying heap of reddish soil, which had assuredly not been there before. There was no mistaking it for anything but"}, {"n": 22, "chunk_id": "05ab674df048d13f:16:8", "book_id": "05ab674df048d13f", "chapter_seq": 16, "text": "As he approached, he recognized him as a Mormon named Cowper, to whom he had rendered services at different times. He therefore accosted him when he got up to him, with the object of finding out what Lucy Ferrier’s fate had been. “I am Jefferson Hope,” he said. “You remember me.” The Mormon looked at him with undisguised astonishment—indeed, it was difficult to recognize in this tattered, unkempt wanderer, with ghastly white face and fierce, wild eyes, the spruce young hunter of former days. Having, however, at last, satisfied himself as to his identity, the man’s surprise changed to consternation. “You are mad to come here,” he cried. “It is as much as my own life is worth to be seen talking with you. There is a warrant against you from the Holy Four for assisting the Ferriers away.” “I don’t fear them, or their warrant,” Hope said, earnestly. “You must know something of this matter, Cowper. I conjure you by everything you hold dear to answer a few questions. We have always been friends. For God’s sake, don’t refuse to answer me.” “What is it?” the Mormon asked uneasily. “Be quick. The very rocks have ears and the trees eyes.” “What has become of Lucy Ferrier?” “She was married yesterday to young Drebber. Hold up, man, hold up, you have no life left in you.” “Don’t mind me,” said Hope faintly. He was white to the very lips, and had sunk down on the stone against which he had been leaning. “Married, you say?”"}, {"n": 23, "chunk_id": "05ab674df048d13f:17:3", "book_id": "05ab674df048d13f", "chapter_seq": 17, "text": "“You are at liberty, sir, to give your account, which I again warn you will be taken down.” “I’ll sit down, with your leave,” the prisoner said, suiting the act"}], "edges": [{"subject": "The Holy Four", "predicate": "OPPOSES", "object": "Mr. Jefferson Hope", "chunk_id": "05ab674df048d13f:16:8", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "There is a warrant against you from the Holy Four for assisting the Ferriers away."}, {"subject": "John Ferrier", "predicate": "INTERACTS_WITH", "object": "Mr. Jefferson Hope", "chunk_id": "05ab674df048d13f:13:9", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "He soon became a favourite with the old farmer, who spoke eloquently of his virtues."}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:13:9", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "He called on John Ferrier that night, and many times again, until his face was a familiar one at the farm-house."}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:13:9", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "All this Jefferson Hope was able to tell him, and in a style which interested Lucy as well as her father."}, {"subject": "Mr. Jefferson Hope", "predicate": "LOVES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:13:9", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "The love which had sprung up in his heart was not the sudden, changeable fancy of a boy, but rather the wild, fierce passion of a man of strong will and imperious temper."}, {"subject": "John Ferrier", "predicate": "POSSESSES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:13:9", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "interested Lucy as well as her father"}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:9", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "The greeting between the lovers was warm, but brief, for minutes were precious, and there was much to be done."}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:15:9", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "You had best wake Lucy."}, {"subject": "John Ferrier", "predicate": "LOCATED_IN", "object": "Carson City", "chunk_id": "05ab674df048d13f:15:9", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "We must push for Carson City through the mountains."}, {"subject": "Mr. Jefferson Hope", "predicate": "LOVES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:15:9", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "The greeting between the lovers was warm"}, {"subject": "John Ferrier", "predicate": "POSSESSES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:15:9", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "preparing his daughter"}, {"subject": "John Ferrier", "predicate": "INTERACTS_WITH", "object": "Mr. Jefferson Hope", "chunk_id": "05ab674df048d13f:15:0", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "he entrusted him with his message to Jefferson Hope."}, {"subject": "Mr. Joseph Stangerson", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:0", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "Both of them nodded to Ferrier as he entered"}, {"subject": "son of Elder Drebber", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:0", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "Both of them nodded to Ferrier as he entered"}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:10", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "the young man seized his two companions and dragged them down into the shadow"}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:15:10", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "the young man seized his two companions and dragged them down into the shadow"}, {"subject": "John Ferrier", "predicate": "LOVES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:15:10", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "the thought of the honour and happiness of his daughter outweighed any regret at his ruined fortunes"}, {"subject": "Mr. Jefferson Hope", "predicate": "LOCATED_IN", "object": "Salt Lake City", "chunk_id": "05ab674df048d13f:14:0", "chapter_seq": 14, "book_id": "05ab674df048d13f", "evidence": "Three weeks had passed since Jefferson Hope and his comrades had departed from Salt Lake City."}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:8", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "He seized the young man’s leathery hand and wrung it cordially."}, {"subject": "Mr. Jefferson Hope", "predicate": "LOVES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:15:8", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "It’s Lucy that brings me here"}, {"subject": "John Ferrier", "predicate": "POSSESSES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:15:8", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "preparing his daughter for the approaching journey"}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:13:8", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "The young hunter’s dark face grew so gloomy over this remark that Lucy Ferrier laughed aloud."}, {"subject": "Mr. Jefferson Hope", "predicate": "LOVES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:13:8", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "The sight of the fair young girl, as frank and wholesome as the Sierra breezes, had stirred his volcanic, untamed heart to its very depths."}, {"subject": "Mr. Jefferson Hope", "predicate": "UNCATEGORIZED", "object": "Salt Lake City", "chunk_id": "05ab674df048d13f:13:8", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "were returning to Salt Lake City in the hope of raising capital enough to work some lodes which they had discovered."}, {"subject": "John Ferrier", "predicate": "INTERACTS_WITH", "object": "Mr. Jefferson Hope", "chunk_id": "05ab674df048d13f:15:7", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "revealed to the astonished farmer the fierce face and resolute expression of Jefferson Hope."}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:7", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "“Good God!” gasped John Ferrier. “How you scared me! Whatever made you come in like that.”"}, {"subject": "Lucy Ferrier", "predicate": "UNCATEGORIZED", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:7", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "“Does Lucy bear up well?” he asked, when he had satisfied his hunger. “Yes. She does not know the danger,” her father answered."}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:12", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "old Ferrier upon one of the horses, with his money-bag, while Jefferson Hope led the other"}, {"subject": "John Ferrier", "predicate": "LOCATED_IN", "object": "Salt Lake City", "chunk_id": "05ab674df048d13f:13:2", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "in twelve there were not half a dozen men in the whole of Salt Lake City who could compare with him."}, {"subject": "Mr. Jefferson Hope", "predicate": "INTERACTS_WITH", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:16:1", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "Having tethered the horses, and bade Lucy adieu"}, {"subject": "Mr. Jefferson Hope", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:16:14", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "tracked his enemies from city to city"}, {"subject": "Mr. Jefferson Hope", "predicate": "OPPOSES", "object": "son of Elder Drebber", "chunk_id": "05ab674df048d13f:16:14", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "his concentrated hatred urged him to continue the pursuit"}, {"subject": "Lucy Ferrier", "predicate": "MEMBER_OF", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:13:3", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "Lucy Ferrier grew up within the log-house, and assisted her adopted father in all his undertakings."}, {"subject": "Lucy Ferrier", "predicate": "LOVES", "object": "Mr. Jefferson Hope", "chunk_id": "05ab674df048d13f:13:10", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own."}, {"subject": "Mr. Jefferson Hope", "predicate": "LOVES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:13:10", "chapter_seq": 13, "book_id": "05ab674df048d13f", "evidence": "I will come and claim you then, my darling."}, {"subject": "Mr. Jefferson Hope", "predicate": "KILLS", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:11:15", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "Mr. Jefferson Hope, the murderer of ... Joseph Stangerson."}, {"subject": "Mr. Jefferson Hope", "predicate": "KILLS", "object": "son of Elder Drebber", "chunk_id": "05ab674df048d13f:11:15", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "Mr. Jefferson Hope, the murderer of Enoch Drebber"}, {"subject": "Lucy Ferrier", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:2", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "Lucy seized him by the arm and restrained him."}, {"subject": "Mr. Joseph Stangerson", "predicate": "OPPOSES", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:2", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "You have defied the Prophet and the Council of Four. You shall rue it to the end of your days."}, {"subject": "son of Elder Drebber", "predicate": "OPPOSES", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:2", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "“The hand of the Lord shall be heavy upon you,” cried young Drebber; “He will arise and smite you!”"}, {"subject": "John Ferrier", "predicate": "POSSESSES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:15:2", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "the sturdy old farmer and his adopted daughter."}, {"subject": "Mr. Jefferson Hope", "predicate": "OPPOSES", "object": "son of Elder Drebber", "chunk_id": "05ab674df048d13f:17:3", "chapter_seq": 17, "book_id": "05ab674df048d13f", "evidence": "It don’t much matter to you why I hated these men,” he said; “it’s enough that they were guilty of the death of two human beings—a father and a daughter"}, {"subject": "John Ferrier", "predicate": "INTERACTS_WITH", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:14:7", "chapter_seq": 14, "book_id": "05ab674df048d13f", "evidence": "John Ferrier uttered these consoling remarks in a very confident tone"}, {"subject": "Lucy Ferrier", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:14:7", "chapter_seq": 14, "book_id": "05ab674df048d13f", "evidence": "her father answered"}, {"subject": "Mr. Joseph Stangerson", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:1", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "“We have come,” continued Stangerson, “at the advice of our fathers to solicit the hand of your daughter for whichever of us may seem good to you and to her."}, {"subject": "John Ferrier", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:15:1", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "John Ferrier had stood fuming in the doorway, hardly able to keep his riding-whip from the backs of his two visitors."}, {"subject": "John Ferrier", "predicate": "ALLEGIANCE_TO", "object": "The Holy Four", "chunk_id": "05ab674df048d13f:15:13", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "“The Holy Four,” answered Ferrier. His Mormon experiences had taught him that that was the highest authority to which he could refer."}, {"subject": "John Ferrier", "predicate": "LOVES", "object": "Lucy Ferrier", "chunk_id": "05ab674df048d13f:14:6", "chapter_seq": 14, "book_id": "05ab674df048d13f", "evidence": "drawing her to him, and passing his broad, rough hand caressingly over her chestnut hair."}, {"subject": "Lucy Ferrier", "predicate": "MEMBER_OF", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:14:6", "chapter_seq": 14, "book_id": "05ab674df048d13f", "evidence": "Oh, father, father, what shall we do?"}], "seeds": [{"name": "Mr. Jefferson Hope", "kind": "Character", "books": ["05ab674df048d13f"], "score": 0.0}, {"name": "John Ferrier", "kind": "Character", "books": ["05ab674df048d13f"], "score": 0.0}, {"name": "Indians", "kind": "Faction", "books": ["05ab674df048d13f", "0ee225a9a3b5fbc2"], "score": 0.4696643352508545}, {"name": "Salt Lake City", "kind": "Place", "books": ["05ab674df048d13f"], "score": 0.4696643352508545}, {"name": "Lucy Ferrier", "kind": "Character", "books": ["05ab674df048d13f"], "score": 0.4696643352508545}, {"name": "Mormon", "kind": "Faction", "books": ["05ab674df048d13f"], "score": 0.5223371386528015}, {"name": "son of Elder Drebber", "kind": "Character", "books": ["05ab674df048d13f"], "score": 0.5223371386528015}, {"name": "Cowper", "kind": "Character", "books": ["05ab674df048d13f"], "score": 0.5223371386528015}, {"name": "The Holy Four", "kind": "Faction", "books": ["05ab674df048d13f"], "score": 0.5223371386528015}, {"name": "California", "kind": "Place", "books": ["05ab674df048d13f"], "score": 0.5566421151161194}]}, {"question": "Where was Joseph Stangerson's body found, and how did he come to be killed?", "sub_questions": ["Where was Joseph Stangerson's body found?", "How did Joseph Stangerson come to be killed?"], "template": "neighbours+by_predicate", "model": "gemini-3.5-flash-lite", "selection_model": "gemini-3.5-flash-lite", "mode": "graph", "note": null, "seconds": 22.8, "claims": [{"text": "Joseph Stangerson was murdered at Halliday's Private Hotel.", "passage": 4, "quote": "murdered at Halliday’s Private Hotel"}, {"text": "Joseph Stangerson's body was found lying beside the window in his nightdress, all huddled up.", "passage": 10, "quote": "beside the window, all huddled up, lay the body of a man in his nightdress"}, {"text": "His body was found in his bedroom at the hotel.", "passage": 20, "quote": "made my way into his room in the grey of the dawn"}, {"text": "Jefferson Hope made his way into Stangerson's hotel room in the early morning by using ladders from the lane behind.", "passage": 20, "quote": "...early next morning I took advantage of some ladders which were lying in the lane behind the hotel, and so made my way into his room in the grey of the dawn."}, {"text": "Jefferson Hope woke Stangerson up and told him he had come to answer for a past life taken.", "passage": 20, "quote": "I woke him up and told him that the hour had come when he was to answer for the life he had taken so long before."}, {"text": "Jefferson Hope described Drebber's death and offered Stangerson the same choice of poisoned pills.", "passage": 20, "quote": "I described Drebber’s death to him, and I gave him the same choice of the poisoned pills."}, {"text": "Stangerson sprang from his bed and attacked Hope's throat instead of accepting the chance of safety.", "passage": 20, "quote": "Instead of grasping at the chance of safety which that offered him, he sprang from his bed and flew at my throat."}, {"text": "Jefferson Hope stabbed Stangerson to the heart in self-defence.", "passage": 20, "quote": "In self-defence I stabbed him to the heart."}], "passages": [{"n": 1, "chunk_id": "05ab674df048d13f:7:10", "book_id": "05ab674df048d13f", "chapter_seq": 7, "text": "“There’s been a woman here,” he cried. “It’s a woman’s wedding-ring.” He held it out, as he spoke, upon the palm of his hand. We all gathered round him and gaze"}, {"n": 2, "chunk_id": "05ab674df048d13f:7:11", "book_id": "05ab674df048d13f", "chapter_seq": 7, "text": "“Have you made any inquiries as to this man, Stangerson?” “I did it at once, sir,” said Gregson. “I have had advertisements sent to all the newspapers, and one "}, {"n": 3, "chunk_id": "05ab674df048d13f:10:1", "book_id": "05ab674df048d13f", "chapter_seq": 10, "text": "He had stayed at the boarding-house of Madame Charpentier, in Torquay Terrace, Camberwell. He was accompanied in his travels by his private secretary, Mr. Josep"}, {"n": 4, "chunk_id": "05ab674df048d13f:10:13", "book_id": "05ab674df048d13f", "chapter_seq": 10, "text": "“Ah, you find it so, Mr. Lestrade!” cried Gregson, triumphantly. “I thought you would come to that conclusion. Have you managed to find the Secretary, Mr. Joseph Stangerson?” “The Secretary, Mr. Joseph Stangerson,” said Lestrade gravely, “was murdered at Halliday’s Private Hotel about six o’clock this morning.”"}, {"n": 5, "chunk_id": "05ab674df048d13f:10:5", "book_id": "05ab674df048d13f", "chapter_seq": 10, "text": "“You do me too much honour,” said Holmes, gravely. “Let us hear how you arrived at this most gratifying result.” The detective seated himself in the arm-chair, "}, {"n": 6, "chunk_id": "05ab674df048d13f:11:1", "book_id": "05ab674df048d13f", "chapter_seq": 11, "text": "“Would you mind letting us know what you have seen and done?” “I have no objection,” Lestrade answered, seating himself. “I freely confess that I was of the opi"}, {"n": 7, "chunk_id": "05ab674df048d13f:11:11", "book_id": "05ab674df048d13f", "chapter_seq": 11, "text": "Mr. Gregson, who had listened to this address with considerable impatience, could contain himself no longer. “Look here, Mr. Sherlock Holmes,” he said, “we are "}, {"n": 8, "chunk_id": "05ab674df048d13f:11:15", "book_id": "05ab674df048d13f", "chapter_seq": 11, "text": "The fellow came forward with a somewhat sullen, defiant air, and put down his hands to assist. At that instant there was a sharp click, the jangling of metal, a"}, {"n": 9, "chunk_id": "05ab674df048d13f:11:2", "book_id": "05ab674df048d13f", "chapter_seq": 11, "text": "This morning I began very early, and at eight o’clock I reached Halliday’s Private Hotel, in Little George Street. On my enquiry as to whether a Mr. Stangerson "}, {"n": 10, "chunk_id": "05ab674df048d13f:11:3", "book_id": "05ab674df048d13f", "chapter_seq": 11, "text": "’ “‘I will go up and see him at once,’ I said. “It seemed to me that my sudden appearance might shake his nerves and lead him to say something unguarded. The Boots volunteered to show me the room: it was on the second floor, and there was a small corridor leading up to it. The Boots pointed out the door to me, and was about to go downstairs again when I saw something that made me feel sickish, in spite of my twenty years’ experience. From under the door there curled a little red ribbon of blood, which had meandered across the passage and formed a little pool along the skirting at the other side. I gave a cry, which brought the Boots back. He nearly fainted when he saw it. The door was locked on the inside, but we put our shoulders to it, and knocked it in. The window of the room was open, and beside the window, all huddled up, lay the body of a man in his nightdress. He was quite dead, and had been for some time, for his limbs were rigid and cold. When we turned him over, the Boots recognized him at once as being the same gentleman who had engaged the room under the name of Joseph Stangerson. The cause of death was a deep stab in the left side, which must have penetrated the heart. And now comes the strangest part of the affair. What do you suppose was above the murdered man?” I felt a creeping of the flesh, and a presentiment of coming horror, even before Sherlock Holmes answered. “The word RACHE, written in letters of blood,” he said. “That was it,” said Lestrade, in an awe-struck voice; and we were all silent for a while."}, {"n": 11, "chunk_id": "05ab674df048d13f:11:5", "book_id": "05ab674df048d13f", "chapter_seq": 11, "text": "There was, however, no trace of exultation or satisfaction upon his face. “Did you find nothing in the room which could furnish a clue to the murderer?” he aske"}, {"n": 12, "chunk_id": "05ab674df048d13f:11:7", "book_id": "05ab674df048d13f", "chapter_seq": 11, "text": "Indeed, its snow-white muzzle proclaimed that it had already exceeded the usual term of canine existence. I placed it upon a cushion on the rug. “I will now cut"}, {"n": 13, "chunk_id": "05ab674df048d13f:12:15", "book_id": "05ab674df048d13f", "chapter_seq": 12, "text": "“Take him, Brother Stangerson,” he said, “give him food and drink, and the child likewise. Let it be your task also to teach him our holy creed. We have delayed"}, {"n": 14, "chunk_id": "05ab674df048d13f:15:0", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "On the morning which followed his interview with the Mormon Prophet, John Ferrier went in to Salt Lake City, and having found his acquaintance, who was bound fo"}, {"n": 15, "chunk_id": "05ab674df048d13f:15:2", "book_id": "05ab674df048d13f", "chapter_seq": 15, "text": "“There are two ways out of the room,” cried Ferrier; “there is the door, and there is the window. Which do you care to use?” His brown face looked so savage, an"}, {"n": 16, "chunk_id": "05ab674df048d13f:16:11", "book_id": "05ab674df048d13f", "chapter_seq": 16, "text": "“She shall not be buried in that,” he cried with a fierce snarl, and before an alarm could be raised sprang down the stairs and was gone. So strange and so brie"}, {"n": 17, "chunk_id": "05ab674df048d13f:16:13", "book_id": "05ab674df048d13f", "chapter_seq": 16, "text": "Disguised, and under an assumed name, he returned to Salt Lake City, careless what became of his own life, as long as he obtained what he knew to be justice. Th"}, {"n": 18, "chunk_id": "05ab674df048d13f:16:14", "book_id": "05ab674df048d13f", "chapter_seq": 16, "text": "It was but a glance of a face in a window, but that one glance told him that Cleveland in Ohio possessed the men whom he was in pursuit of. He returned to his m"}, {"n": 19, "chunk_id": "05ab674df048d13f:17:14", "book_id": "05ab674df048d13f", "chapter_seq": 17, "text": "“The blood had been streaming from my nose, but I had taken no notice of it. I don’t know what it was that put it into my head to write upon the wall with it. P"}, {"n": 20, "chunk_id": "05ab674df048d13f:17:15", "book_id": "05ab674df048d13f", "chapter_seq": 17, "text": "All I had to do then was to do as much for Stangerson, and so pay off John Ferrier’s debt. I knew that he was staying at Halliday’s Private Hotel, and I hung about all day, but he never came out. I fancy that he suspected something when Drebber failed to put in an appearance. He was cunning, was Stangerson, and always on his guard. If he thought he could keep me off by staying indoors he was very much mistaken. I soon found out which was the window of his bedroom, and early next morning I took advantage of some ladders which were lying in the lane behind the hotel, and so made my way into his room in the grey of the dawn. I woke him up and told him that the hour had come when he was to answer for the life he had taken so long before. I described Drebber’s death to him, and I gave him the same choice of the poisoned pills. Instead of grasping at the chance of safety which that offered him, he sprang from his bed and flew at my throat. In self-defence I stabbed him to the heart. It would have been the same in any case, for Providence would never have allowed his guilty hand to pick out anything but the poison."}, {"n": 21, "chunk_id": "05ab674df048d13f:17:6", "book_id": "05ab674df048d13f", "chapter_seq": 17, "text": "Drebber himself was drunk half the time, but Stangerson was not to be caught napping. I watched them late and early, but never saw the ghost of a chance; but I "}, {"n": 22, "chunk_id": "05ab674df048d13f:17:7", "book_id": "05ab674df048d13f", "chapter_seq": 17, "text": "His companion remonstrated with him, and reminded him that they had resolved to stick together. Drebber answered that the matter was a delicate one, and that he"}, {"n": 23, "chunk_id": "05ab674df048d13f:18:6", "book_id": "05ab674df048d13f", "chapter_seq": 18, "text": "Where, then, could the driver be, unless he were inside the house? Again, it is absurd to suppose that any sane man would carry out a deliberate crime under the"}, {"n": 24, "chunk_id": "05ab674df048d13f:18:8", "book_id": "05ab674df048d13f", "chapter_seq": 18, "text": "“See here!” he continued, handing a paper over to me, “look at this!” It was the Echo for the day, and the paragraph to which he pointed was devoted to the case"}, {"n": 25, "chunk_id": "05ab674df048d13f:18:9", "book_id": "05ab674df048d13f", "chapter_seq": 18, "text": "“The public,” it said, “have lost a sensational treat through the sudden death of the man Hope, who was suspected of the murder of Mr. Enoch Drebber and of Mr. "}], "edges": [{"subject": "Mr. Joseph Stangerson", "predicate": "LOCATED_IN", "object": "Halliday’s Private Hotel", "chunk_id": "05ab674df048d13f:10:13", "chapter_seq": 10, "book_id": "05ab674df048d13f", "evidence": "was murdered at Halliday’s Private Hotel"}, {"subject": "Mr. Joseph Stangerson", "predicate": "INTERACTS_WITH", "object": "son of Elder Drebber", "chunk_id": "05ab674df048d13f:10:1", "chapter_seq": 10, "book_id": "05ab674df048d13f", "evidence": "He was accompanied in his travels by his private secretary, Mr. Joseph Stangerson."}, {"subject": "Mr. Joseph Stangerson", "predicate": "LOCATED_IN", "object": "Halliday’s Private Hotel", "chunk_id": "05ab674df048d13f:17:15", "chapter_seq": 17, "book_id": "05ab674df048d13f", "evidence": "I knew that he was staying at Halliday’s Private Hotel"}, {"subject": "The Boots", "predicate": "INTERACTS_WITH", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:11:3", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "the Boots recognized him at once as being the same gentleman who had engaged the room under the name of Joseph Stangerson"}, {"subject": "Mr. Jefferson Hope", "predicate": "KILLS", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:18:9", "chapter_seq": 18, "book_id": "05ab674df048d13f", "evidence": "the man Hope, who was suspected of the murder of... Mr. Joseph Stangerson"}, {"subject": "Mr. Joseph Stangerson", "predicate": "MEMBER_OF", "object": "Latter Day Saints", "chunk_id": "05ab674df048d13f:18:9", "chapter_seq": 18, "book_id": "05ab674df048d13f", "evidence": "It seems that both the victims belonged, in their younger days, to the Latter Day Saints"}, {"subject": "son of Elder Drebber", "predicate": "INTERACTS_WITH", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:16:13", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "his companion, Stangerson"}, {"subject": "Mr. Joseph Stangerson", "predicate": "LOCATED_IN", "object": "Cleveland", "chunk_id": "05ab674df048d13f:16:13", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "Cleveland in Ohio possessed the men whom he was in pursuit of."}, {"subject": "Mr. Jefferson Hope", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:16:13", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "he travelled from town to town through the United States in quest of his enemies... Cleveland in Ohio possessed the men whom he was in pursuit of."}, {"subject": "Mr. Joseph Stangerson", "predicate": "MEMBER_OF", "object": "Latter Day Saints", "chunk_id": "05ab674df048d13f:18:8", "chapter_seq": 18, "book_id": "05ab674df048d13f", "evidence": "It seems that both the victims belonged, in their younger days, to the Latter Day Saints"}, {"subject": "Mr. Jefferson Hope", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:18:8", "chapter_seq": 18, "book_id": "05ab674df048d13f", "evidence": "the man Hope, who was suspected of the murder of ... Mr. Joseph Stangerson"}, {"subject": "Mr. Joseph Stangerson", "predicate": "INTERACTS_WITH", "object": "son of Elder Drebber", "chunk_id": "05ab674df048d13f:11:1", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "They had been seen together at Euston Station about half-past eight on the evening of the third."}, {"subject": "Mr. Joseph Stangerson", "predicate": "LOCATED_IN", "object": "Halliday’s Private Hotel", "chunk_id": "05ab674df048d13f:11:1", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "On my enquiry as to whether a Mr. Stangerson was living there, they at once answered me in the affirmative."}, {"subject": "Mr. Lestrade", "predicate": "UNCATEGORIZED", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:11:1", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "The question which confronted me was to find out how Stangerson had been employed between 8.30 and the time of the crime"}, {"subject": "Mr. Sherlock Holmes", "predicate": "KILLS", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:18:6", "chapter_seq": 18, "book_id": "05ab674df048d13f", "evidence": "The murder of Stangerson was an incident which was entirely unexpected"}, {"subject": "Mr. Joseph Stangerson", "predicate": "MEMBER_OF", "object": "Mormons", "chunk_id": "05ab674df048d13f:16:11", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "The two young Mormons were not long in discovering the reason of these attempts upon their lives"}, {"subject": "Mr. Jefferson Hope", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:16:11", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him."}, {"subject": "Mr. Joseph Stangerson", "predicate": "LOCATED_IN", "object": "Europe", "chunk_id": "05ab674df048d13f:16:14", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "he and his secretary had departed for Europe"}, {"subject": "Mr. Joseph Stangerson", "predicate": "MEMBER_OF", "object": "son of Elder Drebber", "chunk_id": "05ab674df048d13f:16:14", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "Stangerson, who had become his private secretary"}, {"subject": "Mr. Jefferson Hope", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:16:14", "chapter_seq": 16, "book_id": "05ab674df048d13f", "evidence": "tracked his enemies from city to city"}, {"subject": "Mr. Jefferson Hope", "predicate": "KILLS", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:11:15", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "Mr. Jefferson Hope, the murderer of ... Joseph Stangerson."}, {"subject": "Mr. Lestrade", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:11:7", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "I cannot see, however, what it has to do with the death of Mr. Joseph Stangerson."}, {"subject": "Mr. Joseph Stangerson", "predicate": "INTERACTS_WITH", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:0", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "Both of them nodded to Ferrier as he entered"}, {"subject": "Mr. Joseph Stangerson", "predicate": "MEMBER_OF", "object": "Mormons", "chunk_id": "05ab674df048d13f:12:15", "chapter_seq": 12, "book_id": "05ab674df048d13f", "evidence": "Brother Stangerson... cried the crowd of Mormons"}, {"subject": "Mr. Joseph Stangerson", "predicate": "INTERACTS_WITH", "object": "son of Elder Drebber", "chunk_id": "05ab674df048d13f:17:7", "chapter_seq": 17, "book_id": "05ab674df048d13f", "evidence": "His companion remonstrated with him"}, {"subject": "Mr. Joseph Stangerson", "predicate": "MEMBER_OF", "object": "son of Elder Drebber", "chunk_id": "05ab674df048d13f:17:7", "chapter_seq": 17, "book_id": "05ab674df048d13f", "evidence": "reminded him that he was nothing more than his paid servant"}, {"subject": "Mr. Lestrade", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:11:11", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "Lestrade went after his man, Stangerson, and it appears that he was wrong too."}, {"subject": "Mr. Joseph Stangerson", "predicate": "MEMBER_OF", "object": "Council of Four", "chunk_id": "05ab674df048d13f:15:2", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "You have defied the Prophet and the Council of Four."}, {"subject": "Mr. Joseph Stangerson", "predicate": "OPPOSES", "object": "John Ferrier", "chunk_id": "05ab674df048d13f:15:2", "chapter_seq": 15, "book_id": "05ab674df048d13f", "evidence": "You have defied the Prophet and the Council of Four. You shall rue it to the end of your days."}, {"subject": "son of Elder Drebber", "predicate": "INTERACTS_WITH", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:11:5", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "Drebber parted from Stangerson at the station"}, {"subject": "Mr. Joseph Stangerson", "predicate": "POSSESSES", "object": "Drebber’s purse", "chunk_id": "05ab674df048d13f:11:5", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "Stangerson had Drebber’s purse in his pocket"}, {"subject": "Mr. Joseph Stangerson", "predicate": "LOCATED_IN", "object": "Halliday’s Private Hotel", "chunk_id": "05ab674df048d13f:17:14", "chapter_seq": 17, "book_id": "05ab674df048d13f", "evidence": "I knew that he was staying at Halliday’s Private Hotel"}, {"subject": "Mr. Lestrade", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:10:5", "chapter_seq": 10, "book_id": "05ab674df048d13f", "evidence": "He is after the secretary Stangerson, who had no more to do with the crime than the babe unborn."}, {"subject": "Mr. Lestrade", "predicate": "INTERACTS_WITH", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:11:2", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "I will go up and see him at once"}, {"subject": "Mr. Joseph Stangerson", "predicate": "MEMBER_OF", "object": "Halliday’s Private Hotel", "chunk_id": "05ab674df048d13f:11:2", "chapter_seq": 11, "book_id": "05ab674df048d13f", "evidence": "On my enquiry as to whether a Mr. Stangerson was living there, they at once answered me in the affirmative."}, {"subject": "Tobias Gregson", "predicate": "INTERACTS_WITH", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:7:11", "chapter_seq": 7, "book_id": "05ab674df048d13f", "evidence": "“I asked about Stangerson.”"}, {"subject": "son of Elder Drebber", "predicate": "INTERACTS_WITH", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:17:6", "chapter_seq": 17, "book_id": "05ab674df048d13f", "evidence": "Drebber and Stangerson followed it, and drove off."}, {"subject": "Mr. Joseph Stangerson", "predicate": "LOCATED_IN", "object": "Euston Station", "chunk_id": "05ab674df048d13f:17:6", "chapter_seq": 17, "book_id": "05ab674df048d13f", "evidence": "At Euston Station they got out"}, {"subject": "Mr. Joseph Stangerson", "predicate": "LOCATED_IN", "object": "Torquay Terrace", "chunk_id": "05ab674df048d13f:17:6", "chapter_seq": 17, "book_id": "05ab674df048d13f", "evidence": "Torquay Terrace, as the street was called in which they boarded"}, {"subject": "son of Elder Drebber", "predicate": "OPPOSES", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:17:6", "chapter_seq": 17, "book_id": "05ab674df048d13f", "evidence": "His companion remonstrated with him, and reminded him that they had resolved to stick together. Drebber answered that the matter was a delicate one, and that he must go alone."}, {"subject": "Guion Steamship Company", "predicate": "INTERACTS_WITH", "object": "Mr. Joseph Stangerson", "chunk_id": "05ab674df048d13f:7:10", "chapter_seq": 7, "book_id": "05ab674df048d13f", "evidence": "Two letters—one addressed to E. J. Drebber and one to Joseph Stangerson... They are both from the Guion Steamship Company"}, {"subject": "Mr. Joseph Stangerson", "predicate": "POSSESSES", "object": "Boccaccio’s Decameron", "chunk_id": "05ab674df048d13f:7:10", "chapter_seq": 7, "book_id": "05ab674df048d13f", "evidence": "Pocket edition of Boccaccio’s Decameron, with name of Joseph Stangerson upon the fly-leaf."}], "seeds": [{"name": "Mr. Joseph Stangerson", "kind": "Character", "books": ["05ab674df048d13f"], "score": 0.0}, {"name": "son of Elder Drebber", "kind": "Character", "books": ["05ab674df048d13f"], "score": 0.5318726897239685}, {"name": "129, Camberwell Road", "kind": "Place", "books": ["05ab674df048d13f", "0ee225a9a3b5fbc2"], "score": 0.5318726897239685}, {"name": "Mr. Lestrade", "kind": "Character", "books": ["05ab674df048d13f", "0ee225a9a3b5fbc2"], "score": 0.5318726897239685}, {"name": "Scotland Yard", "kind": "Faction", "books": ["05ab674df048d13f", "0ee225a9a3b5fbc2"], "score": 0.5318726897239685}, {"name": "Tobias Gregson", "kind": "Character", "books": ["05ab674df048d13f", "0ee225a9a3b5fbc2"], "score": 0.5318726897239685}, {"name": "Torquay Terrace", "kind": "Place", "books": ["05ab674df048d13f"], "score": 0.5318726897239685}, {"name": "Brixton Road", "kind": "Place", "books": ["05ab674df048d13f", "0ee225a9a3b5fbc2"], "score": 0.5318726897239685}, {"name": "Madame Charpentier", "kind": "Character", "books": ["05ab674df048d13f"], "score": 0.5318726897239685}, {"name": "Halliday’s Private Hotel", "kind": "Place", "books": ["05ab674df048d13f"], "score": 0.5100105404853821}, {"name": "John Ferrier", "kind": "Character", "books": ["05ab674df048d13f"], "score": 0.6001134514808655}]}];
+const BOOKS = {"05ab674df048d13f":"A Study in Scarlet","0ee225a9a3b5fbc2":"The Sign of the Four"};
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = (s, el=document) => el.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const wait = ms => new Promise(r => setTimeout(r, reduce ? 0 : ms));
+const kindVar = k => ({Character:"--k-character",Place:"--k-place",Faction:"--k-faction",Object:"--k-object"}[k] || "--k-other");
+let current = 0, runToken = 0, hiddenBooks = new Set(), selected = null;
+
+/* ---------- graph model ---------- */
+function model(d){
+  const nodes = new Map();
+  const add = (name, kind, book) => {
+    if(!nodes.has(name)) nodes.set(name, {name, kind: kind || "Other", books: new Set(), seed:false, edges:[]});
+    const n = nodes.get(name); if(book) n.books.add(book); if(kind && n.kind==="Other") n.kind = kind; return n;
+  };
+  d.seeds.forEach(s => { const n = add(s.name, s.kind); n.seed = true; s.books.forEach(b => n.books.add(b)); });
+  const pairs = new Map();
+  d.edges.forEach(e => {
+    const a = add(e.subject, null, e.book_id), b = add(e.object, null, e.book_id);
+    const key = e.subject + "\u0000" + e.object;
+    if(!pairs.has(key)) pairs.set(key, {a:e.subject, b:e.object, rows:[]});
+    pairs.get(key).rows.push(e); a.edges.push(e); b.edges.push(e);
+  });
+  // seeds with no edges in this answer still show; isolated far seeds are dropped to keep the view readable
+  for(const [k,n] of nodes) if(!n.edges.length && n.seed && nodes.size > 14) nodes.delete(k);
+  const kindOf = name => (DATA_KINDS[name] || nodes.get(name).kind);
+  for(const n of nodes.values()) n.kind = kindOf(n.name);
+  layout([...nodes.values()], [...pairs.values()]);
+  return {nodes, pairs:[...pairs.values()]};
+}
+const DATA_KINDS = {};
+DATA.forEach(d => d.seeds.forEach(s => DATA_KINDS[s.name] = s.kind));
+
+function layout(nodes, pairs){
+  const W=1000,H=700, idx=new Map(nodes.map((n,i)=>[n.name,i]));
+  nodes.forEach((n,i)=>{ const a=2*Math.PI*i/nodes.length; n.x=W/2+260*Math.cos(a); n.y=H/2+220*Math.sin(a); });
+  for(let it=0; it<400; it++){
+    const t = 1 - it/400;
+    for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++){
+      const A=nodes[i],B=nodes[j]; let dx=A.x-B.x, dy=A.y-B.y, d2=dx*dx+dy*dy+.01, d=Math.sqrt(d2);
+      const f=Math.min(40, 9000/d2)*t; A.x+=dx/d*f; A.y+=dy/d*f; B.x-=dx/d*f; B.y-=dy/d*f;
+    }
+    pairs.forEach(p=>{ const A=nodes[idx.get(p.a)],B=nodes[idx.get(p.b)]; if(!A||!B) return;
+      const dx=B.x-A.x, dy=B.y-A.y, d=Math.sqrt(dx*dx+dy*dy)+.01, f=(d-170)*0.02*t;
+      A.x+=dx/d*f; A.y+=dy/d*f; B.x-=dx/d*f; B.y-=dy/d*f; });
+    nodes.forEach(n=>{ n.x+=(W/2-n.x)*0.01*t; n.y+=(H/2-n.y)*0.012*t; });
+  }
+  const xs=nodes.map(n=>n.x), ys=nodes.map(n=>n.y), minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  nodes.forEach(n=>{ n.x=90+(n.x-minX)/((maxX-minX)||1)*(W-180); n.y=60+(n.y-minY)/((maxY-minY)||1)*(H-120); });
+}
+
+/* ---------- graph drawing ---------- */
+let G = null;
+function drawGraph(d){
+  G = model(d);
+  const svg = $("#graph"); svg.innerHTML = "";
+  const NS="http://www.w3.org/2000/svg", mk=(t,a)=>{const e=document.createElementNS(NS,t); for(const k in a) e.setAttribute(k,a[k]); return e;};
+  const ge = mk("g",{}), gl = mk("g",{}), gn = mk("g",{});
+  svg.append(ge, gl, gn);
+  const reverse = new Set(G.pairs.map(p=>p.a+"\u0000"+p.b));
+  G.pairs.forEach(p=>{
+    const A=G.nodes.get(p.a), B=G.nodes.get(p.b); if(!A||!B) return;
+    const bend = reverse.has(p.b+"\u0000"+p.a) ? 40 : 0;
+    const mx=(A.x+B.x)/2, my=(A.y+B.y)/2, dx=B.x-A.x, dy=B.y-A.y, L=Math.hypot(dx,dy)||1;
+    const cx=mx - dy/L*bend, cy=my + dx/L*bend;
+    p.el = mk("path",{d:`M${A.x},${A.y} Q${cx},${cy} ${B.x},${B.y}`, class:"edge hidden-el"});
+    const preds = {}; p.rows.forEach(r=>preds[r.predicate]=(preds[r.predicate]||0)+1);
+    const top = Object.entries(preds).sort((a,b)=>b[1]-a[1])[0][0];
+    p.label = mk("text",{x:(mx+cx)/2, y:(my+cy)/2-4, class:"elabel hidden-el","text-anchor":"middle"});
+    p.label.textContent = top.toLowerCase().replace(/_/g," ") + (p.rows.length>1 ? ` ×${p.rows.length}` : "");
+    p.chunks = new Set(p.rows.map(r=>r.chunk_id));
+    ge.append(p.el); gl.append(p.label);
+  });
+  for(const n of G.nodes.values()){
+    const g = mk("g",{class:"node hidden-el",transform:`translate(${n.x},${n.y})`,tabindex:"0",role:"button","aria-label":n.name});
+    const r = n.seed ? 11 : 8 + Math.min(6, n.edges.length/3);
+    if(n.seed) g.append(n.ring = mk("circle",{r:r+5,class:"seedring"}));
+    g.append(mk("circle",{r, class:"body", fill:`var(${kindVar(n.kind)})`}));
+    const t = mk("text",{y:r+16,"text-anchor":"middle"}); t.textContent = n.name.replace(/^Mr\. /,""); g.append(t);
+    g.addEventListener("click",()=>openCard(n)); g.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();openCard(n);} });
+    n.el = g; gn.append(g);
+  }
+  applyBookFilter();
+}
+const show = el => el && el.classList.remove("hidden-el");
+function setStage(t){ $("#stage").textContent = t; }
+
+function applyBookFilter(){
+  if(!G) return;
+  for(const n of G.nodes.values()){
+    const off = n.books.size && [...n.books].every(b=>hiddenBooks.has(b));
+    n.el.classList.toggle("dimmed", off);
+  }
+  G.pairs.forEach(p=>{ if(!p.el) return; const off = p.rows.every(r=>hiddenBooks.has(r.book_id)); p.el.classList.toggle("dimmed",off); p.label.classList.toggle("dimmed",off); });
+}
+
+function openCard(n){
+  if(selected) selected.el.classList.remove("sel");
+  selected = n; n.el.classList.add("sel");
+  const rels = {}; n.edges.forEach(e=>{ const other = e.subject===n.name ? e.object : e.subject; const k=`${e.predicate.toLowerCase().replace(/_/g," ")} · ${other}`; rels[k]=(rels[k]||0)+1; });
+  const chapters = [...new Set(n.edges.map(e=>e.chapter_seq))].sort((a,b)=>a-b);
+  const books = [...n.books].map(b=>BOOKS[b]).join(", ");
+  const card = $("#card");
+  card.innerHTML = `<button class="close" aria-label="Close" type="button">×</button>
+    <span class="kind">${esc(n.kind)}${n.seed ? " · starting entity" : ""}</span>
+    <h3>${esc(n.name)}</h3>
+    <span class="mono">${esc(books || "—")}</span>
+    <div><strong style="font-size:12px">In this answer</strong><ul>${Object.entries(rels).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`<li>${esc(k)}${v>1?` <span class="mono">×${v}</span>`:""}</li>`).join("") || "<li>No relationships in this answer</li>"}</ul></div>
+    <span class="mono">Chapters: ${chapters.join(", ") || "—"}</span>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" type="button" title="In the app this loads the entity's neighbours from the graph">Expand neighbours</button><button class="btn" type="button" title="In the app this opens the full entity card">Full card</button></div>
+    <span class="mono">Mock: the buttons load live data in the real app.</span>`;
+  card.hidden = false;
+  $(".close", card).onclick = () => { card.hidden = true; n.el.classList.remove("sel"); selected = null; };
+}
+
+/* ---------- conversation ---------- */
+function renderHistory(){
+  const h = $("#history"); h.innerHTML = "";
+  DATA.forEach((d,i)=>{ const b=document.createElement("button"); b.type="button"; b.textContent=d.question; b.title=d.question; b.setAttribute("aria-current", i===current); b.onclick=()=>run(i,false); h.append(b); });
+}
+function highlight(text, quote){
+  let html = esc(text);
+  const norm = s => s.replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/—/g,"-");
+  quote.split(/\.\.\.|…/).map(s=>s.trim()).filter(s=>s.split(/\s+/).length>=3).forEach(seg=>{
+    const i = norm(text).toLowerCase().indexOf(norm(seg).toLowerCase());
+    if(i<0) return;
+    const before = esc(text.slice(0,i)), mid = esc(text.slice(i,i+seg.length)), after = esc(text.slice(i+seg.length));
+    if(html === esc(text)) html = before + "<mark>" + mid + "</mark>" + after;
+  });
+  return html;
+}
+const STEPS = d => [
+  ["Splitting the question", d.sub_questions.length>1 ? `${d.sub_questions.length} parts` : "1 part"],
+  ["Finding starting entities", `${d.seeds.length} found`],
+  ["Searching the graph", `${d.template.replace(/\+/g," + ").replace(/_/g," ")} · ${d.edges.length} relationships`],
+  ["Ranking passages", `${d.passages.length} kept`],
+  ["Writing the answer", `${d.claims.length} claims`],
+  ["Checking claims against passages", "all supported"],
+];
+
+async function run(i, animate=true){
+  const token = ++runToken; current = i; renderHistory();
+  const d = DATA[i]; const thread = $("#thread"); thread.innerHTML = "";
+  $("#card").hidden = true; selected = null;
+  thread.insertAdjacentHTML("beforeend", `<div class="q">${esc(d.question)}</div>`);
+  const a = document.createElement("div"); a.className="a"; thread.append(a);
+  const steps = document.createElement("ol"); steps.className="steps"; a.append(steps);
+  const list = STEPS(d);
+  list.forEach(([t])=>steps.insertAdjacentHTML("beforeend", `<li><span class="dot">○</span><span>${esc(t)}</span><span class="t"></span></li>`));
+  drawGraph(d);
+  const lis = [...steps.children]; const total = d.seconds; const per = [0.08,0.12,0.18,0.1,0.42,0.1];
+  const stop = () => token !== runToken;
+  const step = async (k, ms, fn) => {
+    if(stop()) return false;
+    lis[k].className="now"; lis[k].querySelector(".dot").textContent="●"; setStage(list[k][0] + "…");
+    if(fn) await fn();
+    await wait(ms); if(stop()) return false;
+    lis[k].className="done"; lis[k].querySelector(".dot").textContent="✓";
+    lis[k].querySelector(".t").textContent = `${list[k][1]} · ${(total*per[k]).toFixed(1)}s`;
+    return true;
+  };
+  const speed = animate ? 1 : 0;
+  // 1. split
+  if(!await step(0, 700*speed, async()=>{})) return;
+  // 2. seeds light up
+  if(!await step(1, 500*speed, async()=>{
+    for(const n of G.nodes.values()) if(n.seed){ show(n.el); if(animate && n.ring) n.ring.classList.add("pulse"); await wait(90*speed); }
+  })) return;
+  // 3. template edges fan out from the seeds
+  if(!await step(2, 400*speed, async()=>{
+    const order = [...G.pairs].sort((p,q)=>(G.nodes.get(q.a)?.seed?1:0)-(G.nodes.get(p.a)?.seed?1:0));
+    for(const p of order){ if(stop()) return; show(G.nodes.get(p.a)?.el); show(G.nodes.get(p.b)?.el); show(p.el); show(p.label); await wait(Math.min(40, 700/order.length)*speed); }
+  })) return;
+  // 4. ranking
+  if(!await step(3, 600*speed)) return;
+  // 5. claims appear
+  const ul = document.createElement("ul"); ul.className="claims";
+  if(!await step(4, 300*speed, async()=>{
+    a.append(ul);
+    for(const c of d.claims){
+      const p = d.passages.find(x=>x.n===c.passage);
+      const li = document.createElement("li"); li.className="claim";
+      li.innerHTML = `<p>${esc(c.text)}<button class="cite" type="button" aria-expanded="false">${p ? esc(BOOKS[p.book_id].replace(/^(A |The )/,"").split(" ")[0]) + " ch." + p.chapter_seq : "?"} · [${c.passage}]</button></p>`;
+      const btn = $(".cite", li);
+      btn.onclick = () => {
+        const open = li.querySelector(".passage");
+        if(open){ open.remove(); btn.setAttribute("aria-expanded","false"); return; }
+        btn.setAttribute("aria-expanded","true");
+        li.insertAdjacentHTML("beforeend", `<blockquote class="passage"><span class="src">${esc(BOOKS[p.book_id])} · chapter ${p.chapter_seq} · ${esc(p.chunk_id)}</span>${highlight(p.text, c.quote)}</blockquote>`);
+      };
+      const chunk = p && p.chunk_id;
+      li.onmouseenter = () => G.pairs.forEach(q=>q.el && q.el.classList.toggle("hot", q.chunks.has(chunk)));
+      li.onmouseleave = () => G.pairs.forEach(q=>q.el && q.el.classList.remove("hot"));
+      ul.append(li); await wait(260*speed);
+    }
+  })) return;
+  // 6. check, then cited edges glow and the rest fade
+  if(!await step(5, 500*speed)) return;
+  const cited = new Set(d.claims.map(c=>d.passages.find(p=>p.n===c.passage)?.chunk_id));
+  G.pairs.forEach(p=>{ if(!p.el) return; const on=[...p.chunks].some(c=>cited.has(c)); p.el.classList.add(on?"cited":"faint"); if(!on) p.label.style.opacity=.35; });
+  for(const n of G.nodes.values()) show(n.el);
+  setStage(`Answered in ${d.seconds}s · cited relationships glow`);
+  const how = document.createElement("details"); how.className="how";
+  how.innerHTML = `<summary>How this was answered</summary><dl>
+    <dt>Parts</dt><dd>${d.sub_questions.map(s=>esc(s)).join("<br>")}</dd>
+    <dt>Graph search</dt><dd><code>${esc(d.template)}</code> · ${d.edges.length} relationships</dd>
+    <dt>Starting entities</dt><dd>${d.seeds.map(s=>esc(s.name)).join(", ")}</dd>
+    <dt>Passages read</dt><dd>${d.passages.length} (${d.claims.length} claims cite ${cited.size})</dd>
+    <dt>Models</dt><dd><code>${esc(d.selection_model||"—")}</code> chose the search; <code>${esc(d.model||"—")}</code> wrote the answer</dd>
+    </dl>${d.note ? `<p class="note">Note: ${esc(d.note)}</p>` : ""}`;
+  a.append(how);
+}
+
+$("#ask").addEventListener("submit", e => { e.preventDefault(); const v = $("#ask-input").value.trim(); $("#ask-input").value=""; run(current===0?1:0, true); if(v) $("#ask-input").placeholder = "Mock: questions replay a recorded answer"; });
+$("#replay").onclick = () => run(current, true);
+
+/* books dropdown */
+function renderBooks(){
+  const q = $("#book-search").value.trim().toLowerCase();
+  const ul = $("#booklist"); ul.innerHTML = "";
+  LIBRARY.filter(b=>!q || (b.title+" "+b.author).toLowerCase().includes(q)).forEach(b=>{
+    const ok = b.status === "graphed";
+    const li = document.createElement("li");
+    li.innerHTML = `<label class="${ok?"":"off"}"><input type="checkbox" ${ok && !hiddenBooks.has(b.id) ? "checked" : ""} ${ok?"":"disabled"} data-id="${b.id}"><span>${esc(b.title)}<span class="meta">${esc(b.author)} · ${esc(b.meta)}</span></span></label>`;
+    $("input", li).onchange = e => { e.target.checked ? hiddenBooks.delete(b.id) : hiddenBooks.add(b.id); booksChanged(); };
+    ul.append(li);
+  });
+  if(!ul.children.length) ul.innerHTML = `<li class="hint" style="padding:6px">No book matches “${esc(q)}”.</li>`;
+}
+function booksChanged(){
+  const graphed = LIBRARY.filter(b=>b.status==="graphed"), on = graphed.filter(b=>!hiddenBooks.has(b.id));
+  $("#books-label").textContent = on.length === graphed.length ? `All books (${graphed.length})` : on.length === 0 ? "No books" : on.length === 1 ? on[0].title : `${on.length} of ${graphed.length} books`;
+  applyBookFilter();
+}
+$("#book-search").oninput = renderBooks;
+$("#books-all").onclick = () => { hiddenBooks.clear(); renderBooks(); booksChanged(); };
+$("#books-none").onclick = () => { LIBRARY.forEach(b=>b.status==="graphed" && hiddenBooks.add(b.id)); renderBooks(); booksChanged(); };
+
+/* popovers */
+function popover(btnId, menuId, onOpen){
+  const btn = $("#"+btnId), menu = $("#"+menuId);
+  btn.onclick = e => { e.stopPropagation(); const open = menu.hidden; closeMenus(); if(open){ menu.hidden = false; btn.setAttribute("aria-expanded","true"); onOpen && onOpen(); } };
+  menu.onclick = e => e.stopPropagation();
+}
+function closeMenus(){ document.querySelectorAll(".menu").forEach(m=>m.hidden=true); document.querySelectorAll("[aria-haspopup]").forEach(b=>b.setAttribute("aria-expanded","false")); }
+popover("books-btn","books-menu", () => { renderBooks(); $("#book-search").focus(); });
+popover("menu-btn","settings-menu");
+document.addEventListener("click", closeMenus);
+document.addEventListener("keydown", e => { if(e.key==="Escape"){ closeMenus(); $("#upload").hidden = true; } });
+document.querySelectorAll(".tabs [data-tab]").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tabs [data-tab]").forEach(x=>x.setAttribute("aria-selected", x===t));
+  document.querySelectorAll("[data-panel]").forEach(p=>p.hidden = p.dataset.panel !== t.dataset.tab);
+});
+document.querySelectorAll(".snip .copy").forEach(btn=>btn.onclick=()=>{
+  const text = btn.parentElement.firstChild.textContent.trim();
+  const done = () => { btn.textContent = "Copied"; setTimeout(()=>btn.textContent="Copy", 1400); };
+  try { navigator.clipboard.writeText(text).then(done, ()=>selectText(btn.parentElement)); } catch(e){ selectText(btn.parentElement); }
+});
+function selectText(el){ const r=document.createRange(); r.selectNodeContents(el.firstChild); const s=getSelection(); s.removeAllRanges(); s.addRange(r); }
+
+/* theme */
+function setTheme(mode){
+  if(mode === "system") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", mode);
+  document.querySelectorAll("[data-theme-set]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.themeSet === mode));
+  try { localStorage.setItem("lore-theme", mode); } catch(e){}
+}
+const isDark = () => { const t = document.documentElement.getAttribute("data-theme"); return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
+document.querySelectorAll("[data-theme-set]").forEach(b=>b.onclick=()=>setTheme(b.dataset.themeSet));
+$("#theme-btn").onclick = () => setTheme(isDark() ? "light" : "dark");
+try { const saved = localStorage.getItem("lore-theme"); if(saved) setTheme(saved); } catch(e){}
+
+/* upload */
+let picked = null;
+const showUpload = on => { $("#upload").hidden = !on; if(on){ picked=null; $("#upload-go").disabled=true; $("#upload-msg").textContent="LORE splits the book into passages, then extracts characters, places and relationships. You can follow progress in the library."; } };
+$("#upload-btn").onclick = () => showUpload(true);
+$("#upload-cancel").onclick = () => showUpload(false);
+$("#upload").onclick = e => { if(e.target.id === "upload") showUpload(false); };
+const pick = f => { if(!f) return; if(!/\.(epub|pdf)$/i.test(f.name)){ $("#upload-msg").textContent = `${f.name} is not an EPUB or PDF. Choose a .epub or .pdf file.`; return; } picked = f; $("#upload-go").disabled = false; $("#upload-msg").textContent = `${f.name} · ${(f.size/1048576).toFixed(1)} MB, ready to add.`; };
+$("#file-input").onchange = e => pick(e.target.files[0]);
+const drop = $("#drop");
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); pick(e.dataTransfer.files[0]); };
+$("#upload-go").onclick = () => { $("#upload-msg").textContent = `Mock: in the app, ${picked.name} is added to the library and processing starts. That part is Phase 5b.`; $("#upload-go").disabled = true; };
+booksChanged();
+renderHistory();
+run(1, true);
+</script>
