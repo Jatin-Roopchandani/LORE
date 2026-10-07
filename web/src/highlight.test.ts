@@ -38,3 +38,9 @@ test("matches whole words only", () => {
   expect(spans.filter((s) => s.mark)).toEqual([{ text: "he said hello there", mark: true }]);
   expect(spans[0].text).toBe("she said hello. ");
 });
+
+test("a quote does not match inside a longer word", () => {
+  const spans = highlightQuote("she said hello. he said hello there", "he said hello");
+  expect(spans[0]).toEqual({ text: "she said hello. ", mark: false });
+  expect(spans[1]).toEqual({ text: "he said hello", mark: true });
+});
