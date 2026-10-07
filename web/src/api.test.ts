@@ -31,7 +31,13 @@ test("a 400 becomes an error event", async () => {
 });
 
 test("a dropped connection ends with an interrupted error", async () => {
-  const stream = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(frame("parts", { t: 0, sub_questions: [] }))); c.error(new TypeError("network")); } });
+  let sent = false;
+  const stream = new ReadableStream({
+    pull(c) {
+      if (!sent) { sent = true; c.enqueue(new TextEncoder().encode(frame("parts", { t: 0, sub_questions: [] }))); }
+      else c.error(new TypeError("network"));
+    },
+  });
   vi.stubGlobal("fetch", vi.fn(async () => new Response(stream, { status: 200 })));
   const out = [];
   for await (const e of streamAsk("q", new AbortController().signal)) out.push(e.type === "error" ? e.error.code : e.type);
