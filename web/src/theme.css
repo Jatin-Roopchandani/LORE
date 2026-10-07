@@ -72,6 +72,7 @@ header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:12p
 .drop strong{color:var(--ink)}
 .row-end{display:flex;justify-content:flex-end;gap:8px}
 .quota{font:12px var(--f-mono);color:var(--muted)}
+.quota.warn{color:var(--warn)} .quota.danger{color:var(--danger);font-weight:600}
 .panes{display:grid;grid-template-columns:minmax(340px,440px) 1fr;gap:12px;min-height:0}
 .pane{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:hidden}
 /* chat */
