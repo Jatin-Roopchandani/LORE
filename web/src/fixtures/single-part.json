@@ -1,0 +1,2188 @@
+[
+ {
+  "type": "step",
+  "t": 1.49,
+  "name": "split",
+  "state": "start",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "parts",
+  "t": 4.35,
+  "sub_questions": [
+   "How is Jefferson Hope connected to John Ferrier?"
+  ]
+ },
+ {
+  "type": "step",
+  "t": 4.35,
+  "name": "split",
+  "state": "done",
+  "part": null,
+  "detail": "1 part"
+ },
+ {
+  "type": "step",
+  "t": 4.35,
+  "name": "seeds",
+  "state": "start",
+  "part": 0,
+  "detail": null
+ },
+ {
+  "type": "seeds",
+  "t": 4.35,
+  "part": 0,
+  "entities": [
+   {
+    "id": "e0ea2c86ec4bc",
+    "name": "Mr. Jefferson Hope",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.0
+   },
+   {
+    "id": "e70f295474096",
+    "name": "John Ferrier",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.0
+   },
+   {
+    "id": "e2d213a77eb7e",
+    "name": "Indians",
+    "kind": "Faction",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.4696643352508545
+   },
+   {
+    "id": "e96f8a6b54220",
+    "name": "Salt Lake City",
+    "kind": "Place",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.4696643352508545
+   },
+   {
+    "id": "efff1974a2e19",
+    "name": "Lucy Ferrier",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.4696643352508545
+   },
+   {
+    "id": "e004e7b450f32",
+    "name": "Mormon",
+    "kind": "Faction",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.5223371386528015
+   },
+   {
+    "id": "e0a971f05fbdb",
+    "name": "son of Elder Drebber",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.5223371386528015
+   },
+   {
+    "id": "e0feb66ed5bd2",
+    "name": "Cowper",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.5223371386528015
+   },
+   {
+    "id": "efcf5f8ad06d4",
+    "name": "The Holy Four",
+    "kind": "Faction",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.5223371386528015
+   },
+   {
+    "id": "e83783bf768ca",
+    "name": "California",
+    "kind": "Place",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.5566421151161194
+   }
+  ]
+ },
+ {
+  "type": "step",
+  "t": 4.35,
+  "name": "seeds",
+  "state": "done",
+  "part": 0,
+  "detail": "10 found"
+ },
+ {
+  "type": "step",
+  "t": 4.35,
+  "name": "search",
+  "state": "start",
+  "part": 0,
+  "detail": null
+ },
+ {
+  "type": "edges",
+  "t": 8.67,
+  "part": 0,
+  "template": "path_between",
+  "total": 72,
+  "edges": [
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Mr. Jefferson Hope, the murderer of ... Joseph Stangerson.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:15",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "son of Elder Drebber",
+    "evidence": "Mr. Jefferson Hope, the murderer of Enoch Drebber",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:15",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "POSSESSES",
+    "predicate_raw": "POSSESSES",
+    "object": "Lucy Ferrier",
+    "evidence": "she’s mine ’cause I saved her. No man will take her from me. She’s Lucy Ferrier from this day on.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 12,
+    "chunk_id": "05ab674df048d13f:12:12",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "“Take him, Brother Stangerson,” he said, “give him food and drink, and the child likewise.”",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 12,
+    "chunk_id": "05ab674df048d13f:12:14",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Lucy Ferrier",
+    "predicate": "LOVES",
+    "predicate_raw": "LOVES",
+    "object": "Mr. Jefferson Hope",
+    "evidence": "her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own.",
+    "confidence": 0.8,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:10",
+    "subject_id": "efff1974a2e19",
+    "object_id": "e0ea2c86ec4bc"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOVES",
+    "predicate_raw": "LOVES",
+    "object": "Lucy Ferrier",
+    "evidence": "I will come and claim you then, my darling.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:10",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Salt Lake City",
+    "evidence": "in twelve there were not half a dozen men in the whole of Salt Lake City who could compare with him.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:2",
+    "subject_id": "e70f295474096",
+    "object_id": "e96f8a6b54220"
+   },
+   {
+    "subject": "Lucy Ferrier",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "John Ferrier",
+    "evidence": "Lucy Ferrier grew up within the log-house, and assisted her adopted father in all his undertakings.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:3",
+    "subject_id": "efff1974a2e19",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Lucy Ferrier",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "She had a commission from her father in the City",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:5",
+    "subject_id": "efff1974a2e19",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Lucy Ferrier",
+    "evidence": "The young hunter’s dark face grew so gloomy over this remark that Lucy Ferrier laughed aloud.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:8",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOVES",
+    "predicate_raw": "LOVES",
+    "object": "Lucy Ferrier",
+    "evidence": "The sight of the fair young girl, as frank and wholesome as the Sierra breezes, had stirred his volcanic, untamed heart to its very depths.",
+    "confidence": 0.8,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:8",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "UNCATEGORIZED",
+    "predicate_raw": "TRAVELS_TO",
+    "object": "Salt Lake City",
+    "evidence": "were returning to Salt Lake City in the hope of raising capital enough to work some lodes which they had discovered.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:8",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e96f8a6b54220"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Jefferson Hope",
+    "evidence": "He soon became a favourite with the old farmer, who spoke eloquently of his virtues.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:9",
+    "subject_id": "e70f295474096",
+    "object_id": "e0ea2c86ec4bc"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "He called on John Ferrier that night, and many times again, until his face was a familiar one at the farm-house.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Lucy Ferrier",
+    "evidence": "All this Jefferson Hope was able to tell him, and in a style which interested Lucy as well as her father.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOVES",
+    "predicate_raw": "LOVES",
+    "object": "Lucy Ferrier",
+    "evidence": "The love which had sprung up in his heart was not the sudden, changeable fancy of a boy, but rather the wild, fierce passion of a man of strong will and imperious temper.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "POSSESSES",
+    "predicate_raw": "POSSESSES",
+    "object": "Lucy Ferrier",
+    "evidence": "interested Lucy as well as her father",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:9",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Salt Lake City",
+    "evidence": "Three weeks had passed since Jefferson Hope and his comrades had departed from Salt Lake City.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 14,
+    "chunk_id": "05ab674df048d13f:14:0",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e96f8a6b54220"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "LOVES",
+    "predicate_raw": "LOVES",
+    "object": "Lucy Ferrier",
+    "evidence": "drawing her to him, and passing his broad, rough hand caressingly over her chestnut hair.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 14,
+    "chunk_id": "05ab674df048d13f:14:6",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Lucy Ferrier",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "John Ferrier",
+    "evidence": "Oh, father, father, what shall we do?",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 14,
+    "chunk_id": "05ab674df048d13f:14:6",
+    "subject_id": "efff1974a2e19",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Lucy Ferrier",
+    "evidence": "John Ferrier uttered these consoling remarks in a very confident tone",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 14,
+    "chunk_id": "05ab674df048d13f:14:7",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Lucy Ferrier",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "her father answered",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 14,
+    "chunk_id": "05ab674df048d13f:14:7",
+    "subject_id": "efff1974a2e19",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Jefferson Hope",
+    "evidence": "he entrusted him with his message to Jefferson Hope.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:0",
+    "subject_id": "e70f295474096",
+    "object_id": "e0ea2c86ec4bc"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "Both of them nodded to Ferrier as he entered",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:0",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "son of Elder Drebber",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "Both of them nodded to Ferrier as he entered",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:0",
+    "subject_id": "e0a971f05fbdb",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "“We have come,” continued Stangerson, “at the advice of our fathers to solicit the hand of your daughter for whichever of us may seem good to you and to her.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:1",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "John Ferrier had stood fuming in the doorway, hardly able to keep his riding-whip from the backs of his two visitors.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:1",
+    "subject_id": "e70f295474096",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "the young man seized his two companions and dragged them down into the shadow",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:10",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Lucy Ferrier",
+    "evidence": "the young man seized his two companions and dragged them down into the shadow",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:10",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "LOVES",
+    "predicate_raw": "LOVES",
+    "object": "Lucy Ferrier",
+    "evidence": "the thought of the honour and happiness of his daughter outweighed any regret at his ruined fortunes",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:10",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "old Ferrier upon one of the horses, with his money-bag, while Jefferson Hope led the other",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:12",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "ALLEGIANCE_TO",
+    "predicate_raw": "ALLEGIANCE_TO",
+    "object": "The Holy Four",
+    "evidence": "“The Holy Four,” answered Ferrier. His Mormon experiences had taught him that that was the highest authority to which he could refer.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:13",
+    "subject_id": "e70f295474096",
+    "object_id": "efcf5f8ad06d4"
+   },
+   {
+    "subject": "Lucy Ferrier",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "Lucy seized him by the arm and restrained him.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:2",
+    "subject_id": "efff1974a2e19",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "John Ferrier",
+    "evidence": "You have defied the Prophet and the Council of Four. You shall rue it to the end of your days.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:2",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "son of Elder Drebber",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "John Ferrier",
+    "evidence": "“The hand of the Lord shall be heavy upon you,” cried young Drebber; “He will arise and smite you!”",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:2",
+    "subject_id": "e0a971f05fbdb",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "POSSESSES",
+    "predicate_raw": "POSSESSES",
+    "object": "Lucy Ferrier",
+    "evidence": "the sturdy old farmer and his adopted daughter.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:2",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Lucy Ferrier",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "John Ferrier",
+    "evidence": "said nothing to his daughter",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:4",
+    "subject_id": "efff1974a2e19",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Jefferson Hope",
+    "evidence": "revealed to the astonished farmer the fierce face and resolute expression of Jefferson Hope.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:7",
+    "subject_id": "e70f295474096",
+    "object_id": "e0ea2c86ec4bc"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "“Good God!” gasped John Ferrier. “How you scared me! Whatever made you come in like that.”",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:7",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Lucy Ferrier",
+    "predicate": "UNCATEGORIZED",
+    "predicate_raw": "IS_DAUGHTER_OF",
+    "object": "John Ferrier",
+    "evidence": "“Does Lucy bear up well?” he asked, when he had satisfied his hunger. “Yes. She does not know the danger,” her father answered.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:7",
+    "subject_id": "efff1974a2e19",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "He seized the young man’s leathery hand and wrung it cordially.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:8",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOVES",
+    "predicate_raw": "LOVES",
+    "object": "Lucy Ferrier",
+    "evidence": "It’s Lucy that brings me here",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:8",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "POSSESSES",
+    "predicate_raw": "POSSESSES",
+    "object": "Lucy Ferrier",
+    "evidence": "preparing his daughter for the approaching journey",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:8",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "The greeting between the lovers was warm, but brief, for minutes were precious, and there was much to be done.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Lucy Ferrier",
+    "evidence": "You had best wake Lucy.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Carson City",
+    "evidence": "We must push for Carson City through the mountains.",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:9",
+    "subject_id": "e70f295474096",
+    "object_id": "ef5c41afa17ee"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOVES",
+    "predicate_raw": "LOVES",
+    "object": "Lucy Ferrier",
+    "evidence": "The greeting between the lovers was warm",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "POSSESSES",
+    "predicate_raw": "POSSESSES",
+    "object": "Lucy Ferrier",
+    "evidence": "preparing his daughter",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:9",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Lucy Ferrier",
+    "evidence": "Lucy and her father would fain have rested longer, but Jefferson Hope was inexorable.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:0",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "UNCATEGORIZED",
+    "predicate_raw": "INTENDS_TO_TRAVEL_TO",
+    "object": "Carson City",
+    "evidence": "Once safe in Carson we may rest for the remainder of our lives.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:0",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "ef5c41afa17ee"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Lucy Ferrier",
+    "evidence": "Having tethered the horses, and bade Lucy adieu",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:1",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "UNCATEGORIZED",
+    "predicate_raw": "PARENT_OF",
+    "object": "Lucy Ferrier",
+    "evidence": "Whether it was the terrible death of her father",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:10",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:11",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "son of Elder Drebber",
+    "evidence": "On another occasion, as Drebber passed under a cliff a great boulder crashed down on him",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:11",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Salt Lake City",
+    "evidence": "he returned to Salt Lake City",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:13",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e96f8a6b54220"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "he travelled from town to town through the United States in quest of his enemies... Cleveland in Ohio possessed the men whom he was in pursuit of.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:13",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "son of Elder Drebber",
+    "evidence": "he travelled from town to town through the United States in quest of his enemies... Cleveland in Ohio possessed the men whom he was in pursuit of.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:13",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "tracked his enemies from city to city",
+    "confidence": 0.8,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:14",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "son of Elder Drebber",
+    "evidence": "his concentrated hatred urged him to continue the pursuit",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:14",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "The Holy Four",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Jefferson Hope",
+    "evidence": "There is a warrant against you from the Holy Four for assisting the Ferriers away.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:8",
+    "subject_id": "efcf5f8ad06d4",
+    "object_id": "e0ea2c86ec4bc"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Lucy Ferrier",
+    "evidence": "old John Ferrier and sweet Lucy looking at me out of the darkness",
+    "confidence": 0.8,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:11",
+    "subject_id": "e70f295474096",
+    "object_id": "efff1974a2e19"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "son of Elder Drebber",
+    "evidence": "It don’t much matter to you why I hated these men,” he said; “it’s enough that they were guilty of the death of two human beings—a father and a daughter",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:3",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "son of Elder Drebber",
+    "evidence": "They have perished, and by my hand.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:4",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "son of Elder Drebber",
+    "evidence": "I have carried it about with me, and have followed him and his accomplice over two continents until I caught them.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:4",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOVES",
+    "predicate_raw": "LOVES",
+    "object": "son of Elder Drebber",
+    "evidence": "Drebber had already applied for the protection of the law against an old rival in love, named Jefferson Hope",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:5",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "son of Elder Drebber",
+    "evidence": "Drebber had already applied for the protection of the law against an old rival in love, named Jefferson Hope",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:5",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Salt Lake City",
+    "evidence": "Hope, the deceased prisoner, hails also from Salt Lake City.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:8",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e96f8a6b54220"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "the man Hope, who was suspected of the murder of ... Mr. Joseph Stangerson",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:8",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "son of Elder Drebber",
+    "evidence": "the man Hope, who was suspected of the murder of Mr. Enoch Drebber",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:8",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "the man Hope, who was suspected of the murder of... Mr. Joseph Stangerson",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "son of Elder Drebber",
+    "evidence": "the man Hope, who was suspected of the murder of Mr. Enoch Drebber",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Salt Lake City",
+    "evidence": "Hope, the deceased prisoner, hails also from Salt Lake City.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e96f8a6b54220"
+   }
+  ]
+ },
+ {
+  "type": "step",
+  "t": 8.67,
+  "name": "search",
+  "state": "done",
+  "part": 0,
+  "detail": "path between · 72 relationships"
+ },
+ {
+  "type": "step",
+  "t": 8.67,
+  "name": "rank",
+  "state": "start",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "evidence",
+  "t": 8.67,
+  "chunk_ids": [
+   "05ab674df048d13f:11:15",
+   "05ab674df048d13f:13:10",
+   "05ab674df048d13f:13:2",
+   "05ab674df048d13f:13:3",
+   "05ab674df048d13f:13:8",
+   "05ab674df048d13f:13:9",
+   "05ab674df048d13f:14:0",
+   "05ab674df048d13f:14:6",
+   "05ab674df048d13f:14:7",
+   "05ab674df048d13f:15:0",
+   "05ab674df048d13f:15:1",
+   "05ab674df048d13f:15:10",
+   "05ab674df048d13f:15:12",
+   "05ab674df048d13f:15:13",
+   "05ab674df048d13f:15:2",
+   "05ab674df048d13f:15:7",
+   "05ab674df048d13f:15:8",
+   "05ab674df048d13f:15:9",
+   "05ab674df048d13f:16:1",
+   "05ab674df048d13f:16:14",
+   "05ab674df048d13f:16:6",
+   "05ab674df048d13f:16:8",
+   "05ab674df048d13f:17:3"
+  ],
+  "edge_keys": [
+   "efcf5f8ad06d4|OPPOSES|e0ea2c86ec4bc|05ab674df048d13f:16:8",
+   "e70f295474096|INTERACTS_WITH|e0ea2c86ec4bc|05ab674df048d13f:13:9",
+   "e0ea2c86ec4bc|INTERACTS_WITH|e70f295474096|05ab674df048d13f:13:9",
+   "e0ea2c86ec4bc|INTERACTS_WITH|efff1974a2e19|05ab674df048d13f:13:9",
+   "e0ea2c86ec4bc|LOVES|efff1974a2e19|05ab674df048d13f:13:9",
+   "e70f295474096|POSSESSES|efff1974a2e19|05ab674df048d13f:13:9",
+   "e0ea2c86ec4bc|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:9",
+   "e0ea2c86ec4bc|INTERACTS_WITH|efff1974a2e19|05ab674df048d13f:15:9",
+   "e70f295474096|LOCATED_IN|ef5c41afa17ee|05ab674df048d13f:15:9",
+   "e0ea2c86ec4bc|LOVES|efff1974a2e19|05ab674df048d13f:15:9",
+   "e70f295474096|POSSESSES|efff1974a2e19|05ab674df048d13f:15:9",
+   "e70f295474096|INTERACTS_WITH|e0ea2c86ec4bc|05ab674df048d13f:15:0",
+   "e79c717b9c360|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:0",
+   "e0a971f05fbdb|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:0",
+   "e0ea2c86ec4bc|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:10",
+   "e0ea2c86ec4bc|INTERACTS_WITH|efff1974a2e19|05ab674df048d13f:15:10",
+   "e70f295474096|LOVES|efff1974a2e19|05ab674df048d13f:15:10",
+   "e0ea2c86ec4bc|LOCATED_IN|e96f8a6b54220|05ab674df048d13f:14:0",
+   "e0ea2c86ec4bc|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:8",
+   "e0ea2c86ec4bc|LOVES|efff1974a2e19|05ab674df048d13f:15:8",
+   "e70f295474096|POSSESSES|efff1974a2e19|05ab674df048d13f:15:8",
+   "e0ea2c86ec4bc|INTERACTS_WITH|efff1974a2e19|05ab674df048d13f:13:8",
+   "e0ea2c86ec4bc|LOVES|efff1974a2e19|05ab674df048d13f:13:8",
+   "e0ea2c86ec4bc|UNCATEGORIZED|e96f8a6b54220|05ab674df048d13f:13:8",
+   "e70f295474096|INTERACTS_WITH|e0ea2c86ec4bc|05ab674df048d13f:15:7",
+   "e0ea2c86ec4bc|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:7",
+   "efff1974a2e19|UNCATEGORIZED|e70f295474096|05ab674df048d13f:15:7",
+   "e0ea2c86ec4bc|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:12",
+   "e70f295474096|LOCATED_IN|e96f8a6b54220|05ab674df048d13f:13:2",
+   "e0ea2c86ec4bc|INTERACTS_WITH|efff1974a2e19|05ab674df048d13f:16:1",
+   "e0ea2c86ec4bc|OPPOSES|e79c717b9c360|05ab674df048d13f:16:14",
+   "e0ea2c86ec4bc|OPPOSES|e0a971f05fbdb|05ab674df048d13f:16:14",
+   "efff1974a2e19|MEMBER_OF|e70f295474096|05ab674df048d13f:13:3",
+   "efff1974a2e19|LOVES|e0ea2c86ec4bc|05ab674df048d13f:13:10",
+   "e0ea2c86ec4bc|LOVES|efff1974a2e19|05ab674df048d13f:13:10",
+   "e0ea2c86ec4bc|KILLS|e79c717b9c360|05ab674df048d13f:11:15",
+   "e0ea2c86ec4bc|KILLS|e0a971f05fbdb|05ab674df048d13f:11:15",
+   "efff1974a2e19|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:2",
+   "e79c717b9c360|OPPOSES|e70f295474096|05ab674df048d13f:15:2",
+   "e0a971f05fbdb|OPPOSES|e70f295474096|05ab674df048d13f:15:2",
+   "e70f295474096|POSSESSES|efff1974a2e19|05ab674df048d13f:15:2",
+   "e0ea2c86ec4bc|OPPOSES|e0a971f05fbdb|05ab674df048d13f:17:3",
+   "e70f295474096|INTERACTS_WITH|efff1974a2e19|05ab674df048d13f:14:7",
+   "efff1974a2e19|INTERACTS_WITH|e70f295474096|05ab674df048d13f:14:7",
+   "e79c717b9c360|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:1",
+   "e70f295474096|OPPOSES|e79c717b9c360|05ab674df048d13f:15:1",
+   "e70f295474096|ALLEGIANCE_TO|efcf5f8ad06d4|05ab674df048d13f:15:13",
+   "e70f295474096|LOVES|efff1974a2e19|05ab674df048d13f:14:6",
+   "efff1974a2e19|MEMBER_OF|e70f295474096|05ab674df048d13f:14:6"
+  ]
+ },
+ {
+  "type": "step",
+  "t": 8.67,
+  "name": "rank",
+  "state": "done",
+  "part": null,
+  "detail": "23 passages"
+ },
+ {
+  "type": "step",
+  "t": 8.67,
+  "name": "write",
+  "state": "start",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "step",
+  "t": 14.06,
+  "name": "write",
+  "state": "done",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "step",
+  "t": 14.06,
+  "name": "check",
+  "state": "start",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "step",
+  "t": 17.22,
+  "name": "check",
+  "state": "done",
+  "part": null,
+  "detail": "1 not supported"
+ },
+ {
+  "type": "answer",
+  "t": 17.22,
+  "result": {
+   "answer": "Jefferson Hope became a favourite of John Ferrier, who spoke eloquently of his virtues. [2] John Ferrier sent a message to Jefferson Hope to inform him of the imminent danger threatening them. [10] Jefferson Hope helped John Ferrier and Lucy escape from Salt Lake City into the mountains. [17] A warrant was issued against Jefferson Hope by the Holy Four for assisting the Ferriers away. [22] Jefferson Hope held Drebber and Stangerson responsible for the deaths of both John Ferrier and Lucy Ferrier. [23]",
+   "mode": "graph",
+   "template": "path_between",
+   "note": null,
+   "model": "gemini-3.5-flash-lite",
+   "selection_model": "gemini-3.5-flash-lite",
+   "sub_questions": [
+    "How is Jefferson Hope connected to John Ferrier?"
+   ],
+   "claims": [
+    {
+     "text": "Jefferson Hope became a favourite of John Ferrier, who spoke eloquently of his virtues.",
+     "passage": 2,
+     "quote": "He soon became a favourite with the old farmer, who spoke eloquently of his virtues."
+    },
+    {
+     "text": "John Ferrier sent a message to Jefferson Hope to inform him of the imminent danger threatening them.",
+     "passage": 10,
+     "quote": "In it he told the young man of the imminent danger which threatened them, and how necessary it was that he should return."
+    },
+    {
+     "text": "Jefferson Hope helped John Ferrier and Lucy escape from Salt Lake City into the mountains.",
+     "passage": 17,
+     "quote": "We must push for Carson City through the mountains."
+    },
+    {
+     "text": "A warrant was issued against Jefferson Hope by the Holy Four for assisting the Ferriers away.",
+     "passage": 22,
+     "quote": "There is a warrant against you from the Holy Four for assisting the Ferriers away."
+    },
+    {
+     "text": "Jefferson Hope held Drebber and Stangerson responsible for the deaths of both John Ferrier and Lucy Ferrier.",
+     "passage": 23,
+     "quote": "It’s enough that they were guilty of the death of two human beings—a father and a daughter—and that they had, therefore, forfeited their own lives."
+    }
+   ],
+   "passages": [
+    {
+     "n": 1,
+     "chunk_id": "05ab674df048d13f:11:15",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 11,
+     "text": "The fellow came forward with a somewhat sullen, defiant air, and put down his hands to assist. At that instant there was a sharp click, the jangling of metal, and Sherlock Holmes sprang to his feet again. “Gentlemen,” he cried, with flashing eyes, “let me introduce you to Mr. Jefferson Hope, the murderer of Enoch Drebber and of Joseph Stangerson.” The whole thing occurred in a moment—so quickly that I had no time to realize it. I have a vivid recollection of that instant, of Holmes’ triumphant expression and the ring of his voice, of the cabman’s dazed, savage face, as he glared at the glittering handcuffs, which had appeared as if by magic upon his wrists. For a second or two we might have been a group of statues. Then, with an inarticulate roar of fury, the prisoner wrenched himself free from Holmes’s grasp, and hurled himself through the window. Woodwork and glass gave way before him; but before he got quite through, Gregson, Lestrade, and Holmes sprang upon him like so many staghounds. He was dragged back into the room, and then commenced a terrific conflict. So powerful and so fierce was he, that the four of us were shaken off again and again. He appeared to have the convulsive strength of a man in an epileptic fit. His face and hands were terribly mangled by his passage through the glass, but loss of blood had no effect in diminishing his resistance."
+    },
+    {
+     "n": 2,
+     "chunk_id": "05ab674df048d13f:13:10",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 13,
+     "text": "Wherever stirring adventures were to be had, Jefferson Hope had been there in search of them. He soon became a favourite with the old farmer, who spoke eloquently of his virtues. On such occasions, Lucy was silent, but her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own. Her honest father may not have observed these symptoms, but they were assuredly not thrown away upon the man who had won her affections. It was a summer evening when he came galloping down the road and pulled up at the gate. She was at the doorway, and came down to meet him. He threw the bridle over the fence and strode up the pathway. “I am off, Lucy,” he said, taking her two hands in his, and gazing tenderly down into her face; “I won’t ask you to come with me now, but will you be ready to come when I am here again?” “And when will that be?” she asked, blushing and laughing. “A couple of months at the outside. I will come and claim you then, my darling. There’s no one who can stand between us.” “And how about father?” she asked. “He has given his consent, provided we get these mines working all right. I have no fear on that head.” “Oh, well; of course, if you and father have arranged it all, there’s no more to be said,” she whispered, with her cheek against his broad breast. “Thank God!” he said, hoarsely, stooping and kissing her. “It is settled, then. The longer I stay, the harder it will be to go. They are waiting for me at the cañon. Good-bye, my own darling—good-bye. In two months you shall see me.”"
+    },
+    {
+     "n": 3,
+     "chunk_id": "05ab674df048d13f:13:2",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 13,
+     "text": "In the meantime Ferrier having recovered from his privations, distinguished himself as a useful guide and an indefatigable hunter. So rapidly did he gain the esteem of his new companions, that when they reached the end of their wanderings, it was unanimously agreed that he should be provided with as large and as fertile a tract of land as any of the settlers, with the exception of Young himself, and of Stangerson, Kemball, Johnston, and Drebber, who were the four principal Elders. On the farm thus acquired John Ferrier built himself a substantial log-house, which received so many additions in succeeding years that it grew into a roomy villa. He was a man of a practical turn of mind, keen in his dealings and skilful with his hands. His iron constitution enabled him to work morning and evening at improving and tilling his lands. Hence it came about that his farm and all that belonged to him prospered exceedingly. In three years he was better off than his neighbours, in six he was well-to-do, in nine he was rich, and in twelve there were not half a dozen men in the whole of Salt Lake City who could compare with him. From the great inland sea to the distant Wahsatch Mountains there was no name better known than that of John Ferrier. There was one way and only one in which he offended the susceptibilities of his co-religionists. No argument or persuasion could ever induce him to set up a female establishment after the manner of his companions. He never gave reasons for this persistent refusal, but contented himself by resolutely and inflexibly adhering to his determination."
+    },
+    {
+     "n": 4,
+     "chunk_id": "05ab674df048d13f:13:3",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 13,
+     "text": "No argument or persuasion could ever induce him to set up a female establishment after the manner of his companions. He never gave reasons for this persistent refusal, but contented himself by resolutely and inflexibly adhering to his determination. There were some who accused him of lukewarmness in his adopted religion, and others who put it down to greed of wealth and reluctance to incur expense. Others, again, spoke of some early love affair, and of a fair-haired girl who had pined away on the shores of the Atlantic. Whatever the reason, Ferrier remained strictly celibate. In every other respect he conformed to the religion of the young settlement, and gained the name of being an orthodox and straight-walking man. Lucy Ferrier grew up within the log-house, and assisted her adopted father in all his undertakings. The keen air of the mountains and the balsamic odour of the pine trees took the place of nurse and mother to the young girl. As year succeeded to year she grew taller and stronger, her cheek more ruddy, and her step more elastic. Many a wayfarer upon the high road which ran by Ferrier’s farm felt long-forgotten thoughts revive in their mind as they watched her lithe girlish figure tripping through the wheatfields, or met her mounted upon her father’s mustang, and managing it with all the ease and grace of a true child of the West. So the bud blossomed into a flower, and the year which saw her father the richest of the farmers left her as fair a specimen of American girlhood as could be found in the whole Pacific slope."
+    },
+    {
+     "n": 5,
+     "chunk_id": "05ab674df048d13f:13:8",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 13,
+     "text": "“He has a good deal to thank you for, and so have I,” she answered, “he’s awful fond of me. If those cows had jumped on me he’d have never got over it.” “Neither would I,” said her companion. “You! Well, I don’t see that it would make much matter to you, anyhow. You ain’t even a friend of ours.” The young hunter’s dark face grew so gloomy over this remark that Lucy Ferrier laughed aloud. “There, I didn’t mean that,” she said; “of course, you are a friend now. You must come and see us. Now I must push along, or father won’t trust me with his business any more. Good-bye!” “Good-bye,” he answered, raising his broad sombrero, and bending over her little hand. She wheeled her mustang round, gave it a cut with her riding-whip, and darted away down the broad road in a rolling cloud of dust. Young Jefferson Hope rode on with his companions, gloomy and taciturn. He and they had been among the Nevada Mountains prospecting for silver, and were returning to Salt Lake City in the hope of raising capital enough to work some lodes which they had discovered. He had been as keen as any of them upon the business until this sudden incident had drawn his thoughts into another channel. The sight of the fair young girl, as frank and wholesome as the Sierra breezes, had stirred his volcanic, untamed heart to its very depths. When she had vanished from his sight, he realized that a crisis had come in his life, and that neither silver speculations nor any other questions could ever be of such importance to him as this new and all-absorbing one."
+    },
+    {
+     "n": 6,
+     "chunk_id": "05ab674df048d13f:13:9",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 13,
+     "text": "The sight of the fair young girl, as frank and wholesome as the Sierra breezes, had stirred his volcanic, untamed heart to its very depths. When she had vanished from his sight, he realized that a crisis had come in his life, and that neither silver speculations nor any other questions could ever be of such importance to him as this new and all-absorbing one. The love which had sprung up in his heart was not the sudden, changeable fancy of a boy, but rather the wild, fierce passion of a man of strong will and imperious temper. He had been accustomed to succeed in all that he undertook. He swore in his heart that he would not fail in this if human effort and human perseverance could render him successful. He called on John Ferrier that night, and many times again, until his face was a familiar one at the farm-house. John, cooped up in the valley, and absorbed in his work, had had little chance of learning the news of the outside world during the last twelve years. All this Jefferson Hope was able to tell him, and in a style which interested Lucy as well as her father. He had been a pioneer in California, and could narrate many a strange tale of fortunes made and fortunes lost in those wild, halcyon days. He had been a scout too, and a trapper, a silver explorer, and a ranchman. Wherever stirring adventures were to be had, Jefferson Hope had been there in search of them. He soon became a favourite with the old farmer, who spoke eloquently of his virtues."
+    },
+    {
+     "n": 7,
+     "chunk_id": "05ab674df048d13f:14:0",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 14,
+     "text": "Three weeks had passed since Jefferson Hope and his comrades had departed from Salt Lake City. John Ferrier’s heart was sore within him when he thought of the young man’s return, and of the impending loss of his adopted child. Yet her bright and happy face reconciled him to the arrangement more than any argument could have done. He had always determined, deep down in his resolute heart, that nothing would ever induce him to allow his daughter to wed a Mormon. Such a marriage he regarded as no marriage at all, but as a shame and a disgrace. Whatever he might think of the Mormon doctrines, upon that one point he was inflexible. He had to seal his mouth on the subject, however, for to express an unorthodox opinion was a dangerous matter in those days in the Land of the Saints. Yes, a dangerous matter—so dangerous that even the most saintly dared only whisper their religious opinions with bated breath, lest something which fell from their lips might be misconstrued, and bring down a swift retribution upon them. The victims of persecution had now turned persecutors on their own account, and persecutors of the most terrible description. Not the Inquisition of Seville, nor the German Vehmgericht, nor the Secret Societies of Italy, were ever able to put a more formidable machinery in motion than that which cast a cloud over the State of Utah. Its invisibility, and the mystery which was attached to it, made this organization doubly terrible. It appeared to be omniscient and omnipotent, and yet was neither seen nor heard."
+    },
+    {
+     "n": 8,
+     "chunk_id": "05ab674df048d13f:14:6",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 14,
+     "text": "With a threatening gesture of his hand, he turned from the door, and Ferrier heard his heavy step scrunching along the shingly path. He was still sitting with his elbows upon his knees, considering how he should broach the matter to his daughter when a soft hand was laid upon his, and looking up, he saw her standing beside him. One glance at her pale, frightened face showed him that she had heard what had passed. “I could not help it,” she said, in answer to his look. “His voice rang through the house. Oh, father, father, what shall we do?” “Don’t you scare yourself,” he answered, drawing her to him, and passing his broad, rough hand caressingly over her chestnut hair. “We’ll fix it up somehow or another. You don’t find your fancy kind o’ lessening for this chap, do you?” A sob and a squeeze of his hand was her only answer. “No; of course not. I shouldn’t care to hear you say you did. He’s a likely lad, and he’s a Christian, which is more than these folk here, in spite o’ all their praying and preaching. There’s a party starting for Nevada to-morrow, and I’ll manage to send him a message letting him know the hole we are in. If I know anything o’ that young man, he’ll be back here with a speed that would whip electro-telegraphs.” Lucy laughed through her tears at her father’s description. “When he comes, he will advise us for the best. But it is for you that I am frightened, dear. One hears—one hears such dreadful stories about those who oppose the Prophet: something terrible always happens to them.” “But we haven’t opposed him yet,” her father answered."
+    },
+    {
+     "n": 9,
+     "chunk_id": "05ab674df048d13f:14:7",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 14,
+     "text": "“When he comes, he will advise us for the best. But it is for you that I am frightened, dear. One hears—one hears such dreadful stories about those who oppose the Prophet: something terrible always happens to them.” “But we haven’t opposed him yet,” her father answered. “It will be time to look out for squalls when we do. We have a clear month before us; at the end of that, I guess we had best shin out of Utah.” “Leave Utah!” “That’s about the size of it.” “But the farm?” “We will raise as much as we can in money, and let the rest go. To tell the truth, Lucy, it isn’t the first time I have thought of doing it. I don’t care about knuckling under to any man, as these folk do to their darned prophet. I’m a free-born American, and it’s all new to me. Guess I’m too old to learn. If he comes browsing about this farm, he might chance to run up against a charge of buckshot travelling in the opposite direction.” “But they won’t let us leave,” his daughter objected. “Wait till Jefferson comes, and we’ll soon manage that. In the meantime, don’t you fret yourself, my dearie, and don’t get your eyes swelled up, else he’ll be walking into me when he sees you. There’s nothing to be afeared about, and there’s no danger at all.” John Ferrier uttered these consoling remarks in a very confident tone, but she could not help observing that he paid unusual care to the fastening of the doors that night, and that he carefully cleaned and loaded the rusty old shotgun which hung upon the wall of his bedroom."
+    },
+    {
+     "n": 10,
+     "chunk_id": "05ab674df048d13f:15:0",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "On the morning which followed his interview with the Mormon Prophet, John Ferrier went in to Salt Lake City, and having found his acquaintance, who was bound for the Nevada Mountains, he entrusted him with his message to Jefferson Hope. In it he told the young man of the imminent danger which threatened them, and how necessary it was that he should return. Having done thus he felt easier in his mind, and returned home with a lighter heart. As he approached his farm, he was surprised to see a horse hitched to each of the posts of the gate. Still more surprised was he on entering to find two young men in possession of his sitting-room. One, with a long pale face, was leaning back in the rocking-chair, with his feet cocked up upon the stove. The other, a bull-necked youth with coarse bloated features, was standing in front of the window with his hands in his pocket, whistling a popular hymn. Both of them nodded to Ferrier as he entered, and the one in the rocking-chair commenced the conversation. “Maybe you don’t know us,” he said. “This here is the son of Elder Drebber, and I’m Joseph Stangerson, who travelled with you in the desert when the Lord stretched out His hand and gathered you into the true fold.” “As He will all the nations in His own good time,” said the other in a nasal voice; “He grindeth slowly but exceeding small.” John Ferrier bowed coldly. He had guessed who his visitors were."
+    },
+    {
+     "n": 11,
+     "chunk_id": "05ab674df048d13f:15:1",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "John Ferrier bowed coldly. He had guessed who his visitors were. “We have come,” continued Stangerson, “at the advice of our fathers to solicit the hand of your daughter for whichever of us may seem good to you and to her. As I have but four wives and Brother Drebber here has seven, it appears to me that my claim is the stronger one.” “Nay, nay, Brother Stangerson,” cried the other; “the question is not how many wives we have, but how many we can keep. My father has now given over his mills to me, and I am the richer man.” “But my prospects are better,” said the other, warmly. “When the Lord removes my father, I shall have his tanning yard and his leather factory. Then I am your elder, and am higher in the Church.” “It will be for the maiden to decide,” rejoined young Drebber, smirking at his own reflection in the glass. “We will leave it all to her decision.” During this dialogue, John Ferrier had stood fuming in the doorway, hardly able to keep his riding-whip from the backs of his two visitors. “Look here,” he said at last, striding up to them, “when my daughter summons you, you can come, but until then I don’t want to see your faces again.” The two young Mormons stared at him in amazement. In their eyes this competition between them for the maiden’s hand was the highest of honours both to her and her father. “There are two ways out of the room,” cried Ferrier; “there is the door, and there is the window. Which do you care to use?” His brown face looked so savage, and his gaunt hands so threatening, that his visitors sprang to their feet and beat a hurried retreat."
+    },
+    {
+     "n": 12,
+     "chunk_id": "05ab674df048d13f:15:10",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "“If they are too many for us we shall take two or three of them with us,” he said with a sinister smile. The lights inside the house had all been extinguished, and from the darkened window Ferrier peered over the fields which had been his own, and which he was now about to abandon for ever. He had long nerved himself to the sacrifice, however, and the thought of the honour and happiness of his daughter outweighed any regret at his ruined fortunes. All looked so peaceful and happy, the rustling trees and the broad silent stretch of grain-land, that it was difficult to realize that the spirit of murder lurked through it all. Yet the white face and set expression of the young hunter showed that in his approach to the house he had seen enough to satisfy him upon that head. Ferrier carried the bag of gold and notes, Jefferson Hope had the scanty provisions and water, while Lucy had a small bundle containing a few of her more valued possessions. Opening the window very slowly and carefully, they waited until a dark cloud had somewhat obscured the night, and then one by one passed through into the little garden. With bated breath and crouching figures they stumbled across it, and gained the shelter of the hedge, which they skirted until they came to the gap which opened into the cornfields. They had just reached this point when the young man seized his two companions and dragged them down into the shadow, where they lay silent and trembling. It was as well that his prairie training had given Jefferson Hope the ears of a lynx."
+    },
+    {
+     "n": 13,
+     "chunk_id": "05ab674df048d13f:15:12",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "“We are through the line of sentinels. Everything depends on speed. Hurry on!” Once on the high road they made rapid progress. Only once did they meet anyone, and then they managed to slip into a field, and so avoid recognition. Before reaching the town the hunter branched away into a rugged and narrow footpath which led to the mountains. Two dark jagged peaks loomed above them through the darkness, and the defile which led between them was the Eagle Cañon in which the horses were awaiting them. With unerring instinct Jefferson Hope picked his way among the great boulders and along the bed of a dried-up watercourse, until he came to the retired corner, screened with rocks, where the faithful animals had been picketed. The girl was placed upon the mule, and old Ferrier upon one of the horses, with his money-bag, while Jefferson Hope led the other along the precipitous and dangerous path. It was a bewildering route for anyone who was not accustomed to face Nature in her wildest moods. On the one side a great crag towered up a thousand feet or more, black, stern, and menacing, with long basaltic columns upon its rugged surface like the ribs of some petrified monster. On the other hand a wild chaos of boulders and debris made all advance impossible. Between the two ran the irregular track, so narrow in places that they had to travel in Indian file, and so rough that only practised riders could have traversed it at all."
+    },
+    {
+     "n": 14,
+     "chunk_id": "05ab674df048d13f:15:13",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "On the other hand a wild chaos of boulders and debris made all advance impossible. Between the two ran the irregular track, so narrow in places that they had to travel in Indian file, and so rough that only practised riders could have traversed it at all. Yet in spite of all dangers and difficulties, the hearts of the fugitives were light within them, for every step increased the distance between them and the terrible despotism from which they were flying. They soon had a proof, however, that they were still within the jurisdiction of the Saints. They had reached the very wildest and most desolate portion of the pass when the girl gave a startled cry, and pointed upwards. On a rock which overlooked the track, showing out dark and plain against the sky, there stood a solitary sentinel. He saw them as soon as they perceived him, and his military challenge of “Who goes there?” rang through the silent ravine. “Travellers for Nevada,” said Jefferson Hope, with his hand upon the rifle which hung by his saddle. They could see the lonely watcher fingering his gun, and peering down at them as if dissatisfied at their reply. “By whose permission?” he asked. “The Holy Four,” answered Ferrier. His Mormon experiences had taught him that that was the highest authority to which he could refer. “Nine from seven,” cried the sentinel. “Seven from five,” returned Jefferson Hope promptly, remembering the countersign which he had heard in the garden. “Pass, and the Lord go with you,” said the voice from above."
+    },
+    {
+     "n": 15,
+     "chunk_id": "05ab674df048d13f:15:2",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "“There are two ways out of the room,” cried Ferrier; “there is the door, and there is the window. Which do you care to use?” His brown face looked so savage, and his gaunt hands so threatening, that his visitors sprang to their feet and beat a hurried retreat. The old farmer followed them to the door. “Let me know when you have settled which it is to be,” he said, sardonically. “You shall smart for this!” Stangerson cried, white with rage. “You have defied the Prophet and the Council of Four. You shall rue it to the end of your days.” “The hand of the Lord shall be heavy upon you,” cried young Drebber; “He will arise and smite you!” “Then I’ll start the smiting,” exclaimed Ferrier furiously, and would have rushed upstairs for his gun had not Lucy seized him by the arm and restrained him. Before he could escape from her, the clatter of horses’ hoofs told him that they were beyond his reach. “The young canting rascals!” he exclaimed, wiping the perspiration from his forehead; “I would sooner see you in your grave, my girl, than the wife of either of them.” “And so should I, father,” she answered, with spirit; “but Jefferson will soon be here.” “Yes. It will not be long before he comes. The sooner the better, for we do not know what their next move may be.” It was, indeed, high time that someone capable of giving advice and help should come to the aid of the sturdy old farmer and his adopted daughter. In the whole history of the settlement there had never been such a case of rank disobedience to the authority of the Elders."
+    },
+    {
+     "n": 16,
+     "chunk_id": "05ab674df048d13f:15:7",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "Outside all was calm and quiet. The night was fine, and the stars were twinkling brightly overhead. The little front garden lay before the farmer’s eyes bounded by the fence and gate, but neither there nor on the road was any human being to be seen. With a sigh of relief, Ferrier looked to right and to left, until happening to glance straight down at his own feet he saw to his astonishment a man lying flat upon his face upon the ground, with arms and legs all asprawl. So unnerved was he at the sight that he leaned up against the wall with his hand to his throat to stifle his inclination to call out. His first thought was that the prostrate figure was that of some wounded or dying man, but as he watched it he saw it writhe along the ground and into the hall with the rapidity and noiselessness of a serpent. Once within the house the man sprang to his feet, closed the door, and revealed to the astonished farmer the fierce face and resolute expression of Jefferson Hope. “Good God!” gasped John Ferrier. “How you scared me! Whatever made you come in like that.” “Give me food,” the other said, hoarsely. “I have had no time for bite or sup for eight-and-forty hours.” He flung himself upon the cold meat and bread which were still lying upon the table from his host’s supper, and devoured it voraciously. “Does Lucy bear up well?” he asked, when he had satisfied his hunger. “Yes. She does not know the danger,” her father answered."
+    },
+    {
+     "n": 17,
+     "chunk_id": "05ab674df048d13f:15:8",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "“Does Lucy bear up well?” he asked, when he had satisfied his hunger. “Yes. She does not know the danger,” her father answered. “That is well. The house is watched on every side. That is why I crawled my way up to it. They may be darned sharp, but they’re not quite sharp enough to catch a Washoe hunter.” John Ferrier felt a different man now that he realized that he had a devoted ally. He seized the young man’s leathery hand and wrung it cordially. “You’re a man to be proud of,” he said. “There are not many who would come to share our danger and our troubles.” “You’ve hit it there, pard,” the young hunter answered. “I have a respect for you, but if you were alone in this business I’d think twice before I put my head into such a hornet’s nest. It’s Lucy that brings me here, and before harm comes on her I guess there will be one less o’ the Hope family in Utah.” “What are we to do?” “To-morrow is your last day, and unless you act to-night you are lost. I have a mule and two horses waiting in the Eagle Ravine. How much money have you?” “Two thousand dollars in gold, and five in notes.” “That will do. I have as much more to add to it. We must push for Carson City through the mountains. You had best wake Lucy. It is as well that the servants do not sleep in the house.” While Ferrier was absent, preparing his daughter for the approaching journey, Jefferson Hope packed all the eatables that he could find into a small parcel, and filled a stoneware jar with water, for he knew by experience that the mountain wells were few and far between."
+    },
+    {
+     "n": 18,
+     "chunk_id": "05ab674df048d13f:15:9",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "“That will do. I have as much more to add to it. We must push for Carson City through the mountains. You had best wake Lucy. It is as well that the servants do not sleep in the house.” While Ferrier was absent, preparing his daughter for the approaching journey, Jefferson Hope packed all the eatables that he could find into a small parcel, and filled a stoneware jar with water, for he knew by experience that the mountain wells were few and far between. He had hardly completed his arrangements before the farmer returned with his daughter all dressed and ready for a start. The greeting between the lovers was warm, but brief, for minutes were precious, and there was much to be done. “We must make our start at once,” said Jefferson Hope, speaking in a low but resolute voice, like one who realizes the greatness of the peril, but has steeled his heart to meet it. “The front and back entrances are watched, but with caution we may get away through the side window and across the fields. Once on the road we are only two miles from the Ravine where the horses are waiting. By daybreak we should be half-way through the mountains.” “What if we are stopped,” asked Ferrier. Hope slapped the revolver butt which protruded from the front of his tunic. “If they are too many for us we shall take two or three of them with us,” he said with a sinister smile. The lights inside the house had all been extinguished, and from the darkened window Ferrier peered over the fields which had been his own, and which he was now about to abandon for ever."
+    },
+    {
+     "n": 19,
+     "chunk_id": "05ab674df048d13f:16:1",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 16,
+     "text": "“They will be upon our track by this time,” he said. “Everything depends upon our speed. Once safe in Carson we may rest for the remainder of our lives.” During the whole of that day they struggled on through the defiles, and by evening they calculated that they were more than thirty miles from their enemies. At night-time they chose the base of a beetling crag, where the rocks offered some protection from the chill wind, and there huddled together for warmth, they enjoyed a few hours’ sleep. Before daybreak, however, they were up and on their way once more. They had seen no signs of any pursuers, and Jefferson Hope began to think that they were fairly out of the reach of the terrible organization whose enmity they had incurred. He little knew how far that iron grasp could reach, or how soon it was to close upon them and crush them. About the middle of the second day of their flight their scanty store of provisions began to run out. This gave the hunter little uneasiness, however, for there was game to be had among the mountains, and he had frequently before had to depend upon his rifle for the needs of life. Choosing a sheltered nook, he piled together a few dried branches and made a blazing fire, at which his companions might warm themselves, for they were now nearly five thousand feet above the sea level, and the air was bitter and keen. Having tethered the horses, and bade Lucy adieu, he threw his gun over his shoulder, and set out in search of whatever chance might throw in his way."
+    },
+    {
+     "n": 20,
+     "chunk_id": "05ab674df048d13f:16:14",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 16,
+     "text": "It was but a glance of a face in a window, but that one glance told him that Cleveland in Ohio possessed the men whom he was in pursuit of. He returned to his miserable lodgings with his plan of vengeance all arranged. It chanced, however, that Drebber, looking from his window, had recognized the vagrant in the street, and had read murder in his eyes. He hurried before a justice of the peace, accompanied by Stangerson, who had become his private secretary, and represented to him that they were in danger of their lives from the jealousy and hatred of an old rival. That evening Jefferson Hope was taken into custody, and not being able to find sureties, was detained for some weeks. When at last he was liberated, it was only to find that Drebber’s house was deserted, and that he and his secretary had departed for Europe. Again the avenger had been foiled, and again his concentrated hatred urged him to continue the pursuit. Funds were wanting, however, and for some time he had to return to work, saving every dollar for his approaching journey. At last, having collected enough to keep life in him, he departed for Europe, and tracked his enemies from city to city, working his way in any menial capacity, but never overtaking the fugitives. When he reached St. Petersburg they had departed for Paris; and when he followed them there he learned that they had just set off for Copenhagen. At the Danish capital he was again a few days late, for they had journeyed on to London, where he at last succeeded in running them to earth."
+    },
+    {
+     "n": 21,
+     "chunk_id": "05ab674df048d13f:16:6",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 16,
+     "text": "A little way on one side of the camp was a low-lying heap of reddish soil, which had assuredly not been there before. There was no mistaking it for anything but a newly-dug grave. As the young hunter approached it, he perceived that a stick had been planted on it, with a sheet of paper stuck in the cleft fork of it. The inscription upon the paper was brief, but to the point: JOHN FERRIER, Formerly of Salt Lake City, Died August 4th, 1860. The sturdy old man, whom he had left so short a time before, was gone, then, and this was all his epitaph. Jefferson Hope looked wildly round to see if there was a second grave, but there was no sign of one. Lucy had been carried back by their terrible pursuers to fulfil her original destiny, by becoming one of the harem of the Elder’s son. As the young fellow realized the certainty of her fate, and his own powerlessness to prevent it, he wished that he, too, was lying with the old farmer in his last silent resting-place. Again, however, his active spirit shook off the lethargy which springs from despair. If there was nothing else left to him, he could at least devote his life to revenge. With indomitable patience and perseverance, Jefferson Hope possessed also a power of sustained vindictiveness, which he may have learned from the Indians amongst whom he had lived. As he stood by the desolate fire, he felt that the only one thing which could assuage his grief would be thorough and complete retribution, brought by his own hand upon his enemies. His strong will and untiring energy should, he determined, be devoted to that one end."
+    },
+    {
+     "n": 22,
+     "chunk_id": "05ab674df048d13f:16:8",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 16,
+     "text": "As he approached, he recognized him as a Mormon named Cowper, to whom he had rendered services at different times. He therefore accosted him when he got up to him, with the object of finding out what Lucy Ferrier’s fate had been. “I am Jefferson Hope,” he said. “You remember me.” The Mormon looked at him with undisguised astonishment—indeed, it was difficult to recognize in this tattered, unkempt wanderer, with ghastly white face and fierce, wild eyes, the spruce young hunter of former days. Having, however, at last, satisfied himself as to his identity, the man’s surprise changed to consternation. “You are mad to come here,” he cried. “It is as much as my own life is worth to be seen talking with you. There is a warrant against you from the Holy Four for assisting the Ferriers away.” “I don’t fear them, or their warrant,” Hope said, earnestly. “You must know something of this matter, Cowper. I conjure you by everything you hold dear to answer a few questions. We have always been friends. For God’s sake, don’t refuse to answer me.” “What is it?” the Mormon asked uneasily. “Be quick. The very rocks have ears and the trees eyes.” “What has become of Lucy Ferrier?” “She was married yesterday to young Drebber. Hold up, man, hold up, you have no life left in you.” “Don’t mind me,” said Hope faintly. He was white to the very lips, and had sunk down on the stone against which he had been leaning. “Married, you say?”"
+    },
+    {
+     "n": 23,
+     "chunk_id": "05ab674df048d13f:17:3",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 17,
+     "text": "“You are at liberty, sir, to give your account, which I again warn you will be taken down.” “I’ll sit down, with your leave,” the prisoner said, suiting the action to the word. “This aneurism of mine makes me easily tired, and the tussle we had half an hour ago has not mended matters. I’m on the brink of the grave, and I am not likely to lie to you. Every word I say is the absolute truth, and how you use it is a matter of no consequence to me.” With these words, Jefferson Hope leaned back in his chair and began the following remarkable statement. He spoke in a calm and methodical manner, as though the events which he narrated were commonplace enough. I can vouch for the accuracy of the subjoined account, for I have had access to Lestrade’s note-book, in which the prisoner’s words were taken down exactly as they were uttered. “It don’t much matter to you why I hated these men,” he said; “it’s enough that they were guilty of the death of two human beings—a father and a daughter—and that they had, therefore, forfeited their own lives. After the lapse of time that has passed since their crime, it was impossible for me to secure a conviction against them in any court. I knew of their guilt though, and I determined that I should be judge, jury, and executioner all rolled into one. You’d have done the same, if you have any manhood in you, if you had been in my place. “That girl that I spoke of was to have married me twenty years ago. She was forced into marrying that same Drebber, and broke her heart over it."
+    }
+   ],
+   "edges": [
+    {
+     "subject": "The Holy Four",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Jefferson Hope",
+     "evidence": "There is a warrant against you from the Holy Four for assisting the Ferriers away.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:8",
+     "subject_id": "efcf5f8ad06d4",
+     "object_id": "e0ea2c86ec4bc"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Jefferson Hope",
+     "evidence": "He soon became a favourite with the old farmer, who spoke eloquently of his virtues.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:9",
+     "subject_id": "e70f295474096",
+     "object_id": "e0ea2c86ec4bc"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "He called on John Ferrier that night, and many times again, until his face was a familiar one at the farm-house.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:9",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Lucy Ferrier",
+     "evidence": "All this Jefferson Hope was able to tell him, and in a style which interested Lucy as well as her father.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:9",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "LOVES",
+     "predicate_raw": "LOVES",
+     "object": "Lucy Ferrier",
+     "evidence": "The love which had sprung up in his heart was not the sudden, changeable fancy of a boy, but rather the wild, fierce passion of a man of strong will and imperious temper.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:9",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "POSSESSES",
+     "predicate_raw": "POSSESSES",
+     "object": "Lucy Ferrier",
+     "evidence": "interested Lucy as well as her father",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:9",
+     "subject_id": "e70f295474096",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "The greeting between the lovers was warm, but brief, for minutes were precious, and there was much to be done.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:9",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Lucy Ferrier",
+     "evidence": "You had best wake Lucy.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:9",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Carson City",
+     "evidence": "We must push for Carson City through the mountains.",
+     "confidence": 0.7,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:9",
+     "subject_id": "e70f295474096",
+     "object_id": "ef5c41afa17ee"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "LOVES",
+     "predicate_raw": "LOVES",
+     "object": "Lucy Ferrier",
+     "evidence": "The greeting between the lovers was warm",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:9",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "POSSESSES",
+     "predicate_raw": "POSSESSES",
+     "object": "Lucy Ferrier",
+     "evidence": "preparing his daughter",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:9",
+     "subject_id": "e70f295474096",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Jefferson Hope",
+     "evidence": "he entrusted him with his message to Jefferson Hope.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:0",
+     "subject_id": "e70f295474096",
+     "object_id": "e0ea2c86ec4bc"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "Both of them nodded to Ferrier as he entered",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:0",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "son of Elder Drebber",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "Both of them nodded to Ferrier as he entered",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:0",
+     "subject_id": "e0a971f05fbdb",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "the young man seized his two companions and dragged them down into the shadow",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:10",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Lucy Ferrier",
+     "evidence": "the young man seized his two companions and dragged them down into the shadow",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:10",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "LOVES",
+     "predicate_raw": "LOVES",
+     "object": "Lucy Ferrier",
+     "evidence": "the thought of the honour and happiness of his daughter outweighed any regret at his ruined fortunes",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:10",
+     "subject_id": "e70f295474096",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Salt Lake City",
+     "evidence": "Three weeks had passed since Jefferson Hope and his comrades had departed from Salt Lake City.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 14,
+     "chunk_id": "05ab674df048d13f:14:0",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e96f8a6b54220"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "He seized the young man’s leathery hand and wrung it cordially.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:8",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "LOVES",
+     "predicate_raw": "LOVES",
+     "object": "Lucy Ferrier",
+     "evidence": "It’s Lucy that brings me here",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:8",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "POSSESSES",
+     "predicate_raw": "POSSESSES",
+     "object": "Lucy Ferrier",
+     "evidence": "preparing his daughter for the approaching journey",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:8",
+     "subject_id": "e70f295474096",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Lucy Ferrier",
+     "evidence": "The young hunter’s dark face grew so gloomy over this remark that Lucy Ferrier laughed aloud.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:8",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "LOVES",
+     "predicate_raw": "LOVES",
+     "object": "Lucy Ferrier",
+     "evidence": "The sight of the fair young girl, as frank and wholesome as the Sierra breezes, had stirred his volcanic, untamed heart to its very depths.",
+     "confidence": 0.8,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:8",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "UNCATEGORIZED",
+     "predicate_raw": "TRAVELS_TO",
+     "object": "Salt Lake City",
+     "evidence": "were returning to Salt Lake City in the hope of raising capital enough to work some lodes which they had discovered.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:8",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e96f8a6b54220"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Jefferson Hope",
+     "evidence": "revealed to the astonished farmer the fierce face and resolute expression of Jefferson Hope.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:7",
+     "subject_id": "e70f295474096",
+     "object_id": "e0ea2c86ec4bc"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "“Good God!” gasped John Ferrier. “How you scared me! Whatever made you come in like that.”",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:7",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Lucy Ferrier",
+     "predicate": "UNCATEGORIZED",
+     "predicate_raw": "IS_DAUGHTER_OF",
+     "object": "John Ferrier",
+     "evidence": "“Does Lucy bear up well?” he asked, when he had satisfied his hunger. “Yes. She does not know the danger,” her father answered.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:7",
+     "subject_id": "efff1974a2e19",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "old Ferrier upon one of the horses, with his money-bag, while Jefferson Hope led the other",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:12",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Salt Lake City",
+     "evidence": "in twelve there were not half a dozen men in the whole of Salt Lake City who could compare with him.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:2",
+     "subject_id": "e70f295474096",
+     "object_id": "e96f8a6b54220"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Lucy Ferrier",
+     "evidence": "Having tethered the horses, and bade Lucy adieu",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:1",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "tracked his enemies from city to city",
+     "confidence": 0.8,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:14",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "son of Elder Drebber",
+     "evidence": "his concentrated hatred urged him to continue the pursuit",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:14",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e0a971f05fbdb"
+    },
+    {
+     "subject": "Lucy Ferrier",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "John Ferrier",
+     "evidence": "Lucy Ferrier grew up within the log-house, and assisted her adopted father in all his undertakings.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:3",
+     "subject_id": "efff1974a2e19",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Lucy Ferrier",
+     "predicate": "LOVES",
+     "predicate_raw": "LOVES",
+     "object": "Mr. Jefferson Hope",
+     "evidence": "her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own.",
+     "confidence": 0.8,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:10",
+     "subject_id": "efff1974a2e19",
+     "object_id": "e0ea2c86ec4bc"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "LOVES",
+     "predicate_raw": "LOVES",
+     "object": "Lucy Ferrier",
+     "evidence": "I will come and claim you then, my darling.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 13,
+     "chunk_id": "05ab674df048d13f:13:10",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "KILLS",
+     "predicate_raw": "KILLS",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "Mr. Jefferson Hope, the murderer of ... Joseph Stangerson.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:15",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "KILLS",
+     "predicate_raw": "KILLS",
+     "object": "son of Elder Drebber",
+     "evidence": "Mr. Jefferson Hope, the murderer of Enoch Drebber",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:15",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e0a971f05fbdb"
+    },
+    {
+     "subject": "Lucy Ferrier",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "Lucy seized him by the arm and restrained him.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:2",
+     "subject_id": "efff1974a2e19",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "John Ferrier",
+     "evidence": "You have defied the Prophet and the Council of Four. You shall rue it to the end of your days.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:2",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "son of Elder Drebber",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "John Ferrier",
+     "evidence": "“The hand of the Lord shall be heavy upon you,” cried young Drebber; “He will arise and smite you!”",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:2",
+     "subject_id": "e0a971f05fbdb",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "POSSESSES",
+     "predicate_raw": "POSSESSES",
+     "object": "Lucy Ferrier",
+     "evidence": "the sturdy old farmer and his adopted daughter.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:2",
+     "subject_id": "e70f295474096",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "son of Elder Drebber",
+     "evidence": "It don’t much matter to you why I hated these men,” he said; “it’s enough that they were guilty of the death of two human beings—a father and a daughter",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 17,
+     "chunk_id": "05ab674df048d13f:17:3",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e0a971f05fbdb"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Lucy Ferrier",
+     "evidence": "John Ferrier uttered these consoling remarks in a very confident tone",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 14,
+     "chunk_id": "05ab674df048d13f:14:7",
+     "subject_id": "e70f295474096",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Lucy Ferrier",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "her father answered",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 14,
+     "chunk_id": "05ab674df048d13f:14:7",
+     "subject_id": "efff1974a2e19",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "“We have come,” continued Stangerson, “at the advice of our fathers to solicit the hand of your daughter for whichever of us may seem good to you and to her.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:1",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "John Ferrier had stood fuming in the doorway, hardly able to keep his riding-whip from the backs of his two visitors.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:1",
+     "subject_id": "e70f295474096",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "ALLEGIANCE_TO",
+     "predicate_raw": "ALLEGIANCE_TO",
+     "object": "The Holy Four",
+     "evidence": "“The Holy Four,” answered Ferrier. His Mormon experiences had taught him that that was the highest authority to which he could refer.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:13",
+     "subject_id": "e70f295474096",
+     "object_id": "efcf5f8ad06d4"
+    },
+    {
+     "subject": "John Ferrier",
+     "predicate": "LOVES",
+     "predicate_raw": "LOVES",
+     "object": "Lucy Ferrier",
+     "evidence": "drawing her to him, and passing his broad, rough hand caressingly over her chestnut hair.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 14,
+     "chunk_id": "05ab674df048d13f:14:6",
+     "subject_id": "e70f295474096",
+     "object_id": "efff1974a2e19"
+    },
+    {
+     "subject": "Lucy Ferrier",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "John Ferrier",
+     "evidence": "Oh, father, father, what shall we do?",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 14,
+     "chunk_id": "05ab674df048d13f:14:6",
+     "subject_id": "efff1974a2e19",
+     "object_id": "e70f295474096"
+    }
+   ],
+   "seeds": [
+    {
+     "id": "e0ea2c86ec4bc",
+     "name": "Mr. Jefferson Hope",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.0
+    },
+    {
+     "id": "e70f295474096",
+     "name": "John Ferrier",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.0
+    },
+    {
+     "id": "e2d213a77eb7e",
+     "name": "Indians",
+     "kind": "Faction",
+     "books": [
+      "05ab674df048d13f",
+      "0ee225a9a3b5fbc2"
+     ],
+     "score": 0.4696643352508545
+    },
+    {
+     "id": "e96f8a6b54220",
+     "name": "Salt Lake City",
+     "kind": "Place",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.4696643352508545
+    },
+    {
+     "id": "efff1974a2e19",
+     "name": "Lucy Ferrier",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.4696643352508545
+    },
+    {
+     "id": "e004e7b450f32",
+     "name": "Mormon",
+     "kind": "Faction",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.5223371386528015
+    },
+    {
+     "id": "e0a971f05fbdb",
+     "name": "son of Elder Drebber",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.5223371386528015
+    },
+    {
+     "id": "e0feb66ed5bd2",
+     "name": "Cowper",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.5223371386528015
+    },
+    {
+     "id": "efcf5f8ad06d4",
+     "name": "The Holy Four",
+     "kind": "Faction",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.5223371386528015
+    },
+    {
+     "id": "e83783bf768ca",
+     "name": "California",
+     "kind": "Place",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.5566421151161194
+    }
+   ]
+  }
+ }
+]

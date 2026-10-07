@@ -1,0 +1,2085 @@
+[
+ {
+  "type": "step",
+  "t": 0.38,
+  "name": "split",
+  "state": "start",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "parts",
+  "t": 3.35,
+  "sub_questions": [
+   "Where was Joseph Stangerson's body found?",
+   "How did Joseph Stangerson come to be killed?"
+  ]
+ },
+ {
+  "type": "step",
+  "t": 3.35,
+  "name": "split",
+  "state": "done",
+  "part": null,
+  "detail": "2 parts"
+ },
+ {
+  "type": "step",
+  "t": 3.35,
+  "name": "seeds",
+  "state": "start",
+  "part": 0,
+  "detail": null
+ },
+ {
+  "type": "seeds",
+  "t": 3.35,
+  "part": 0,
+  "entities": [
+   {
+    "id": "e79c717b9c360",
+    "name": "Mr. Joseph Stangerson",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.0
+   },
+   {
+    "id": "e0a971f05fbdb",
+    "name": "son of Elder Drebber",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.5318726897239685
+   },
+   {
+    "id": "e0ab5b9537ff1",
+    "name": "129, Camberwell Road",
+    "kind": "Place",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.5318726897239685
+   },
+   {
+    "id": "e169b9cadd3df",
+    "name": "Mr. Lestrade",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.5318726897239685
+   },
+   {
+    "id": "e6bf1b8507ba0",
+    "name": "Scotland Yard",
+    "kind": "Faction",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.5318726897239685
+   },
+   {
+    "id": "e7378aa7e8047",
+    "name": "Tobias Gregson",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.5318726897239685
+   },
+   {
+    "id": "e790a0161f198",
+    "name": "Torquay Terrace",
+    "kind": "Place",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.5318726897239685
+   },
+   {
+    "id": "e79c4b46e255b",
+    "name": "Brixton Road",
+    "kind": "Place",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.5318726897239685
+   },
+   {
+    "id": "eaff3c36f621a",
+    "name": "Madame Charpentier",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.5318726897239685
+   }
+  ]
+ },
+ {
+  "type": "step",
+  "t": 3.35,
+  "name": "seeds",
+  "state": "done",
+  "part": 0,
+  "detail": "9 found"
+ },
+ {
+  "type": "step",
+  "t": 3.35,
+  "name": "search",
+  "state": "start",
+  "part": 0,
+  "detail": null
+ },
+ {
+  "type": "edges",
+  "t": 6.98,
+  "part": 0,
+  "template": "neighbours",
+  "total": 57,
+  "edges": [
+   {
+    "subject": "Guion Steamship Company",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Two letters—one addressed to E. J. Drebber and one to Joseph Stangerson... They are both from the Guion Steamship Company",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 7,
+    "chunk_id": "05ab674df048d13f:7:10",
+    "subject_id": "ec679ea080721",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "POSSESSES",
+    "predicate_raw": "POSSESSES",
+    "object": "Boccaccio’s Decameron",
+    "evidence": "Pocket edition of Boccaccio’s Decameron, with name of Joseph Stangerson upon the fly-leaf.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 7,
+    "chunk_id": "05ab674df048d13f:7:10",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e836f7c6858da"
+   },
+   {
+    "subject": "Tobias Gregson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "“I asked about Stangerson.”",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 7,
+    "chunk_id": "05ab674df048d13f:7:11",
+    "subject_id": "e7378aa7e8047",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "son of Elder Drebber",
+    "evidence": "He was accompanied in his travels by his private secretary, Mr. Joseph Stangerson.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 10,
+    "chunk_id": "05ab674df048d13f:10:1",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Tobias Gregson",
+    "predicate": "POSSESSES",
+    "predicate_raw": "POSSESSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Have you managed to find the Secretary, Mr. Joseph Stangerson?",
+    "confidence": 0.5,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 10,
+    "chunk_id": "05ab674df048d13f:10:12",
+    "subject_id": "e7378aa7e8047",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Halliday’s Private Hotel",
+    "evidence": "was murdered at Halliday’s Private Hotel",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 10,
+    "chunk_id": "05ab674df048d13f:10:13",
+    "subject_id": "e79c717b9c360",
+    "object_id": "edb67779b7084"
+   },
+   {
+    "subject": "Mr. Lestrade",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "He is after the secretary Stangerson, who had no more to do with the crime than the babe unborn.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 10,
+    "chunk_id": "05ab674df048d13f:10:5",
+    "subject_id": "e169b9cadd3df",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "POSSESSES",
+    "predicate_raw": "POSSESSES",
+    "object": "Mr. Enoch J. Drebber",
+    "evidence": "His secretary, Mr. Stangerson",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 10,
+    "chunk_id": "05ab674df048d13f:10:6",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e6b8613b8e5b8"
+   },
+   {
+    "subject": "son of Elder Drebber",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "He and his secretary, Mr. Stangerson, had been travelling on the Continent.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 10,
+    "chunk_id": "05ab674df048d13f:10:8",
+    "subject_id": "e0a971f05fbdb",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "son of Elder Drebber",
+    "evidence": "He and his secretary, Mr. Stangerson",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 10,
+    "chunk_id": "05ab674df048d13f:10:8",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "son of Elder Drebber",
+    "evidence": "an outrage which caused his own secretary to reproach him for his unmanly conduct.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 10,
+    "chunk_id": "05ab674df048d13f:10:8",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Sherlock Holmes",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "“Stangerson too!” he muttered.",
+    "confidence": 0.8,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:0",
+    "subject_id": "ef6f545e6de2b",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "son of Elder Drebber",
+    "evidence": "They had been seen together at Euston Station about half-past eight on the evening of the third.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:1",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Halliday’s Private Hotel",
+    "evidence": "On my enquiry as to whether a Mr. Stangerson was living there, they at once answered me in the affirmative.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:1",
+    "subject_id": "e79c717b9c360",
+    "object_id": "edb67779b7084"
+   },
+   {
+    "subject": "Mr. Lestrade",
+    "predicate": "UNCATEGORIZED",
+    "predicate_raw": "INVESTIGATED",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "The question which confronted me was to find out how Stangerson had been employed between 8.30 and the time of the crime",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:1",
+    "subject_id": "e169b9cadd3df",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Lestrade",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Lestrade went after his man, Stangerson, and it appears that he was wrong too.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:11",
+    "subject_id": "e169b9cadd3df",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Mr. Jefferson Hope, the murderer of ... Joseph Stangerson.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:15",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Lestrade",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "I will go up and see him at once",
+    "confidence": 0.8,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:2",
+    "subject_id": "e169b9cadd3df",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "Halliday’s Private Hotel",
+    "evidence": "On my enquiry as to whether a Mr. Stangerson was living there, they at once answered me in the affirmative.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:2",
+    "subject_id": "e79c717b9c360",
+    "object_id": "edb67779b7084"
+   },
+   {
+    "subject": "The Boots",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "the Boots recognized him at once as being the same gentleman who had engaged the room under the name of Joseph Stangerson",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:3",
+    "subject_id": "e154414a1590b",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "son of Elder Drebber",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Drebber parted from Stangerson at the station",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:5",
+    "subject_id": "e0a971f05fbdb",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "POSSESSES",
+    "predicate_raw": "POSSESSES",
+    "object": "Drebber’s purse",
+    "evidence": "Stangerson had Drebber’s purse in his pocket",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:5",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e26a4dfe6e73e"
+   },
+   {
+    "subject": "son of Elder Drebber",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "from the time that Drebber parted from Stangerson at the station",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:6",
+    "subject_id": "e0a971f05fbdb",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Lestrade",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "I cannot see, however, what it has to do with the death of Mr. Joseph Stangerson.",
+    "confidence": 0.5,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:7",
+    "subject_id": "e169b9cadd3df",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "“Take him, Brother Stangerson,” he said, “give him food and drink, and the child likewise.”",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 12,
+    "chunk_id": "05ab674df048d13f:12:14",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "Mormons",
+    "evidence": "“Take him, Brother Stangerson,” he said",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 12,
+    "chunk_id": "05ab674df048d13f:12:14",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e3ac09cd19158"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "Mormons",
+    "evidence": "Brother Stangerson... cried the crowd of Mormons",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 12,
+    "chunk_id": "05ab674df048d13f:12:15",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e3ac09cd19158"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "Elders",
+    "evidence": "Young himself, and of Stangerson, Kemball, Johnston, and Drebber, who were the four principal Elders.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 13,
+    "chunk_id": "05ab674df048d13f:13:2",
+    "subject_id": "e79c717b9c360",
+    "object_id": "ed549d00750b7"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "Sacred Council of Four",
+    "evidence": "so it has been decided in the Sacred Council of Four. Stangerson has a son",
+    "confidence": 0.6,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 14,
+    "chunk_id": "05ab674df048d13f:14:5",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e413acc506514"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "Both of them nodded to Ferrier as he entered",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:0",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "John Ferrier",
+    "evidence": "“We have come,” continued Stangerson, “at the advice of our fathers to solicit the hand of your daughter for whichever of us may seem good to you and to her.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:1",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "the Church",
+    "evidence": "Then I am your elder, and am higher in the Church.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:1",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e9973cc463cc9"
+   },
+   {
+    "subject": "John Ferrier",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "John Ferrier had stood fuming in the doorway, hardly able to keep his riding-whip from the backs of his two visitors.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:1",
+    "subject_id": "e70f295474096",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "Council of Four",
+    "evidence": "You have defied the Prophet and the Council of Four.",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:2",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e4740f58bde0c"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "John Ferrier",
+    "evidence": "You have defied the Prophet and the Council of Four. You shall rue it to the end of your days.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 15,
+    "chunk_id": "05ab674df048d13f:15:2",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e70f295474096"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "Mormons",
+    "evidence": "The two young Mormons were not long in discovering the reason of these attempts upon their lives",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:11",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e3ac09cd19158"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:11",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "son of Elder Drebber",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "his companion, Stangerson",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:13",
+    "subject_id": "e0a971f05fbdb",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Cleveland",
+    "evidence": "Cleveland in Ohio possessed the men whom he was in pursuit of.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:13",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e852062bae09c"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "he travelled from town to town through the United States in quest of his enemies... Cleveland in Ohio possessed the men whom he was in pursuit of.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:13",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Europe",
+    "evidence": "he and his secretary had departed for Europe",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:14",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e421f8822b57e"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "son of Elder Drebber",
+    "evidence": "Stangerson, who had become his private secretary",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:14",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "tracked his enemies from city to city",
+    "confidence": 0.8,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 16,
+    "chunk_id": "05ab674df048d13f:16:14",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Halliday’s Private Hotel",
+    "evidence": "I knew that he was staying at Halliday’s Private Hotel",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:14",
+    "subject_id": "e79c717b9c360",
+    "object_id": "edb67779b7084"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Halliday’s Private Hotel",
+    "evidence": "I knew that he was staying at Halliday’s Private Hotel",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:15",
+    "subject_id": "e79c717b9c360",
+    "object_id": "edb67779b7084"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "London",
+    "evidence": "Go where they would about London, I was always at their heels.",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:5",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e364cd4ec2805"
+   },
+   {
+    "subject": "son of Elder Drebber",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Drebber and Stangerson followed it, and drove off.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:6",
+    "subject_id": "e0a971f05fbdb",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Euston Station",
+    "evidence": "At Euston Station they got out",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:6",
+    "subject_id": "e79c717b9c360",
+    "object_id": "ee57093b53b65"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "LOCATED_IN",
+    "predicate_raw": "LOCATED_IN",
+    "object": "Torquay Terrace",
+    "evidence": "Torquay Terrace, as the street was called in which they boarded",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:6",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e790a0161f198"
+   },
+   {
+    "subject": "son of Elder Drebber",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "His companion remonstrated with him, and reminded him that they had resolved to stick together. Drebber answered that the matter was a delicate one, and that he must go alone.",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:6",
+    "subject_id": "e0a971f05fbdb",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "INTERACTS_WITH",
+    "predicate_raw": "INTERACTS_WITH",
+    "object": "son of Elder Drebber",
+    "evidence": "His companion remonstrated with him",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:7",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "son of Elder Drebber",
+    "evidence": "reminded him that he was nothing more than his paid servant",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 17,
+    "chunk_id": "05ab674df048d13f:17:7",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e0a971f05fbdb"
+   },
+   {
+    "subject": "Mr. Sherlock Holmes",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "The murder of Stangerson was an incident which was entirely unexpected",
+    "confidence": 0.5,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:6",
+    "subject_id": "ef6f545e6de2b",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "Latter Day Saints",
+    "evidence": "It seems that both the victims belonged, in their younger days, to the Latter Day Saints",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:8",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e66d691c7b8b1"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "OPPOSES",
+    "predicate_raw": "OPPOSES",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "the man Hope, who was suspected of the murder of ... Mr. Joseph Stangerson",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:8",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "the man Hope, who was suspected of the murder of... Mr. Joseph Stangerson",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Joseph Stangerson",
+    "predicate": "MEMBER_OF",
+    "predicate_raw": "MEMBER_OF",
+    "object": "Latter Day Saints",
+    "evidence": "It seems that both the victims belonged, in their younger days, to the Latter Day Saints",
+    "confidence": 0.9,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:9",
+    "subject_id": "e79c717b9c360",
+    "object_id": "e66d691c7b8b1"
+   }
+  ]
+ },
+ {
+  "type": "step",
+  "t": 6.98,
+  "name": "search",
+  "state": "done",
+  "part": 0,
+  "detail": "neighbours · 57 relationships"
+ },
+ {
+  "type": "step",
+  "t": 6.98,
+  "name": "seeds",
+  "state": "start",
+  "part": 1,
+  "detail": null
+ },
+ {
+  "type": "seeds",
+  "t": 6.98,
+  "part": 1,
+  "entities": [
+   {
+    "id": "e79c717b9c360",
+    "name": "Mr. Joseph Stangerson",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.0
+   },
+   {
+    "id": "e169b9cadd3df",
+    "name": "Mr. Lestrade",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.5100105404853821
+   },
+   {
+    "id": "e7378aa7e8047",
+    "name": "Tobias Gregson",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.5100105404853821
+   },
+   {
+    "id": "edb67779b7084",
+    "name": "Halliday’s Private Hotel",
+    "kind": "Place",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.5100105404853821
+   },
+   {
+    "id": "e0a971f05fbdb",
+    "name": "son of Elder Drebber",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.6001134514808655
+   },
+   {
+    "id": "e70f295474096",
+    "name": "John Ferrier",
+    "kind": "Character",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.6001134514808655
+   },
+   {
+    "id": "e0ab5b9537ff1",
+    "name": "129, Camberwell Road",
+    "kind": "Place",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.607791006565094
+   },
+   {
+    "id": "e6bf1b8507ba0",
+    "name": "Scotland Yard",
+    "kind": "Faction",
+    "books": [
+     "05ab674df048d13f",
+     "0ee225a9a3b5fbc2"
+    ],
+    "score": 0.607791006565094
+   },
+   {
+    "id": "e790a0161f198",
+    "name": "Torquay Terrace",
+    "kind": "Place",
+    "books": [
+     "05ab674df048d13f"
+    ],
+    "score": 0.607791006565094
+   }
+  ]
+ },
+ {
+  "type": "step",
+  "t": 6.98,
+  "name": "seeds",
+  "state": "done",
+  "part": 1,
+  "detail": "9 found"
+ },
+ {
+  "type": "step",
+  "t": 6.98,
+  "name": "search",
+  "state": "start",
+  "part": 1,
+  "detail": null
+ },
+ {
+  "type": "edges",
+  "t": 11.6,
+  "part": 1,
+  "template": "by_predicate",
+  "total": 3,
+  "edges": [
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "Mr. Jefferson Hope, the murderer of ... Joseph Stangerson.",
+    "confidence": 1.0,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 11,
+    "chunk_id": "05ab674df048d13f:11:15",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Sherlock Holmes",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "The murder of Stangerson was an incident which was entirely unexpected",
+    "confidence": 0.5,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:6",
+    "subject_id": "ef6f545e6de2b",
+    "object_id": "e79c717b9c360"
+   },
+   {
+    "subject": "Mr. Jefferson Hope",
+    "predicate": "KILLS",
+    "predicate_raw": "KILLS",
+    "object": "Mr. Joseph Stangerson",
+    "evidence": "the man Hope, who was suspected of the murder of... Mr. Joseph Stangerson",
+    "confidence": 0.7,
+    "book_id": "05ab674df048d13f",
+    "chapter_seq": 18,
+    "chunk_id": "05ab674df048d13f:18:9",
+    "subject_id": "e0ea2c86ec4bc",
+    "object_id": "e79c717b9c360"
+   }
+  ]
+ },
+ {
+  "type": "step",
+  "t": 11.6,
+  "name": "search",
+  "state": "done",
+  "part": 1,
+  "detail": "by predicate · 3 relationships"
+ },
+ {
+  "type": "step",
+  "t": 11.6,
+  "name": "rank",
+  "state": "start",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "evidence",
+  "t": 11.6,
+  "chunk_ids": [
+   "05ab674df048d13f:7:10",
+   "05ab674df048d13f:7:11",
+   "05ab674df048d13f:10:1",
+   "05ab674df048d13f:10:13",
+   "05ab674df048d13f:10:5",
+   "05ab674df048d13f:11:1",
+   "05ab674df048d13f:11:11",
+   "05ab674df048d13f:11:15",
+   "05ab674df048d13f:11:2",
+   "05ab674df048d13f:11:3",
+   "05ab674df048d13f:11:5",
+   "05ab674df048d13f:11:7",
+   "05ab674df048d13f:12:15",
+   "05ab674df048d13f:15:0",
+   "05ab674df048d13f:15:2",
+   "05ab674df048d13f:16:11",
+   "05ab674df048d13f:16:13",
+   "05ab674df048d13f:16:14",
+   "05ab674df048d13f:17:14",
+   "05ab674df048d13f:17:15",
+   "05ab674df048d13f:17:6",
+   "05ab674df048d13f:17:7",
+   "05ab674df048d13f:18:6",
+   "05ab674df048d13f:18:8",
+   "05ab674df048d13f:18:9"
+  ],
+  "edge_keys": [
+   "e79c717b9c360|LOCATED_IN|edb67779b7084|05ab674df048d13f:10:13",
+   "e79c717b9c360|INTERACTS_WITH|e0a971f05fbdb|05ab674df048d13f:10:1",
+   "e79c717b9c360|LOCATED_IN|edb67779b7084|05ab674df048d13f:17:15",
+   "e154414a1590b|INTERACTS_WITH|e79c717b9c360|05ab674df048d13f:11:3",
+   "e0ea2c86ec4bc|KILLS|e79c717b9c360|05ab674df048d13f:18:9",
+   "e79c717b9c360|MEMBER_OF|e66d691c7b8b1|05ab674df048d13f:18:9",
+   "e0a971f05fbdb|INTERACTS_WITH|e79c717b9c360|05ab674df048d13f:16:13",
+   "e79c717b9c360|LOCATED_IN|e852062bae09c|05ab674df048d13f:16:13",
+   "e0ea2c86ec4bc|OPPOSES|e79c717b9c360|05ab674df048d13f:16:13",
+   "e79c717b9c360|MEMBER_OF|e66d691c7b8b1|05ab674df048d13f:18:8",
+   "e0ea2c86ec4bc|OPPOSES|e79c717b9c360|05ab674df048d13f:18:8",
+   "e79c717b9c360|INTERACTS_WITH|e0a971f05fbdb|05ab674df048d13f:11:1",
+   "e79c717b9c360|LOCATED_IN|edb67779b7084|05ab674df048d13f:11:1",
+   "e169b9cadd3df|UNCATEGORIZED|e79c717b9c360|05ab674df048d13f:11:1",
+   "ef6f545e6de2b|KILLS|e79c717b9c360|05ab674df048d13f:18:6",
+   "e79c717b9c360|MEMBER_OF|e3ac09cd19158|05ab674df048d13f:16:11",
+   "e0ea2c86ec4bc|OPPOSES|e79c717b9c360|05ab674df048d13f:16:11",
+   "e79c717b9c360|LOCATED_IN|e421f8822b57e|05ab674df048d13f:16:14",
+   "e79c717b9c360|MEMBER_OF|e0a971f05fbdb|05ab674df048d13f:16:14",
+   "e0ea2c86ec4bc|OPPOSES|e79c717b9c360|05ab674df048d13f:16:14",
+   "e0ea2c86ec4bc|KILLS|e79c717b9c360|05ab674df048d13f:11:15",
+   "e169b9cadd3df|OPPOSES|e79c717b9c360|05ab674df048d13f:11:7",
+   "e79c717b9c360|INTERACTS_WITH|e70f295474096|05ab674df048d13f:15:0",
+   "e79c717b9c360|MEMBER_OF|e3ac09cd19158|05ab674df048d13f:12:15",
+   "e79c717b9c360|INTERACTS_WITH|e0a971f05fbdb|05ab674df048d13f:17:7",
+   "e79c717b9c360|MEMBER_OF|e0a971f05fbdb|05ab674df048d13f:17:7",
+   "e169b9cadd3df|OPPOSES|e79c717b9c360|05ab674df048d13f:11:11",
+   "e79c717b9c360|MEMBER_OF|e4740f58bde0c|05ab674df048d13f:15:2",
+   "e79c717b9c360|OPPOSES|e70f295474096|05ab674df048d13f:15:2",
+   "e0a971f05fbdb|INTERACTS_WITH|e79c717b9c360|05ab674df048d13f:11:5",
+   "e79c717b9c360|POSSESSES|e26a4dfe6e73e|05ab674df048d13f:11:5",
+   "e79c717b9c360|LOCATED_IN|edb67779b7084|05ab674df048d13f:17:14",
+   "e169b9cadd3df|OPPOSES|e79c717b9c360|05ab674df048d13f:10:5",
+   "e169b9cadd3df|INTERACTS_WITH|e79c717b9c360|05ab674df048d13f:11:2",
+   "e79c717b9c360|MEMBER_OF|edb67779b7084|05ab674df048d13f:11:2",
+   "e7378aa7e8047|INTERACTS_WITH|e79c717b9c360|05ab674df048d13f:7:11",
+   "e0a971f05fbdb|INTERACTS_WITH|e79c717b9c360|05ab674df048d13f:17:6",
+   "e79c717b9c360|LOCATED_IN|ee57093b53b65|05ab674df048d13f:17:6",
+   "e79c717b9c360|LOCATED_IN|e790a0161f198|05ab674df048d13f:17:6",
+   "e0a971f05fbdb|OPPOSES|e79c717b9c360|05ab674df048d13f:17:6",
+   "ec679ea080721|INTERACTS_WITH|e79c717b9c360|05ab674df048d13f:7:10",
+   "e79c717b9c360|POSSESSES|e836f7c6858da|05ab674df048d13f:7:10"
+  ]
+ },
+ {
+  "type": "step",
+  "t": 11.6,
+  "name": "rank",
+  "state": "done",
+  "part": null,
+  "detail": "25 passages"
+ },
+ {
+  "type": "step",
+  "t": 11.6,
+  "name": "write",
+  "state": "start",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "step",
+  "t": 20.36,
+  "name": "write",
+  "state": "done",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "step",
+  "t": 20.36,
+  "name": "check",
+  "state": "start",
+  "part": null,
+  "detail": null
+ },
+ {
+  "type": "step",
+  "t": 23.46,
+  "name": "check",
+  "state": "done",
+  "part": null,
+  "detail": "1 not supported"
+ },
+ {
+  "type": "answer",
+  "t": 23.46,
+  "result": {
+   "answer": "Jefferson Hope woke Stangerson and told him he must answer for a past life he had taken. [20] Jefferson Hope described Drebber's death and offered Stangerson the same choice of poisoned pills. [20] In self-defence, Jefferson Hope stabbed Stangerson to the heart. [20]",
+   "mode": "graph",
+   "template": "neighbours+by_predicate",
+   "note": "the passages only partly answer the question; not found: Where was Joseph Stangerson's body found?",
+   "model": "gemini-3.5-flash-lite",
+   "selection_model": "gemini-3.5-flash-lite",
+   "sub_questions": [
+    "Where was Joseph Stangerson's body found?",
+    "How did Joseph Stangerson come to be killed?"
+   ],
+   "claims": [
+    {
+     "text": "Jefferson Hope woke Stangerson and told him he must answer for a past life he had taken.",
+     "passage": 20,
+     "quote": "I woke him up and told him that the hour had come when he was to answer for the life he had taken so long before."
+    },
+    {
+     "text": "Jefferson Hope described Drebber's death and offered Stangerson the same choice of poisoned pills.",
+     "passage": 20,
+     "quote": "I described Drebber’s death to him, and I gave him the same choice of the poisoned pills."
+    },
+    {
+     "text": "In self-defence, Jefferson Hope stabbed Stangerson to the heart.",
+     "passage": 20,
+     "quote": "In self-defence I stabbed him to the heart."
+    }
+   ],
+   "passages": [
+    {
+     "n": 1,
+     "chunk_id": "05ab674df048d13f:7:10",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 7,
+     "text": "“There’s been a woman here,” he cried. “It’s a woman’s wedding-ring.” He held it out, as he spoke, upon the palm of his hand. We all gathered round him and gazed at it. There could be no doubt that that circlet of plain gold had once adorned the finger of a bride. “This complicates matters,” said Gregson. “Heaven knows, they were complicated enough before.” “You’re sure it doesn’t simplify them?” observed Holmes. “There’s nothing to be learned by staring at it. What did you find in his pockets?” “We have it all here,” said Gregson, pointing to a litter of objects upon one of the bottom steps of the stairs. “A gold watch, No. 97163, by Barraud, of London. Gold Albert chain, very heavy and solid. Gold ring, with masonic device. Gold pin—bull-dog’s head, with rubies as eyes. Russian leather card-case, with cards of Enoch J. Drebber of Cleveland, corresponding with the E. J. D. upon the linen. No purse, but loose money to the extent of seven pounds thirteen. Pocket edition of Boccaccio’s Decameron, with name of Joseph Stangerson upon the fly-leaf. Two letters—one addressed to E. J. Drebber and one to Joseph Stangerson.” “At what address?” “American Exchange, Strand—to be left till called for. They are both from the Guion Steamship Company, and refer to the sailing of their boats from Liverpool. It is clear that this unfortunate man was about to return to New York.” “Have you made any inquiries as to this man, Stangerson?” “I did it at once, sir,” said Gregson."
+    },
+    {
+     "n": 2,
+     "chunk_id": "05ab674df048d13f:7:11",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 7,
+     "text": "“Have you made any inquiries as to this man, Stangerson?” “I did it at once, sir,” said Gregson. “I have had advertisements sent to all the newspapers, and one of my men has gone to the American Exchange, but he has not returned yet.” “Have you sent to Cleveland?” “We telegraphed this morning.” “How did you word your inquiries?” “We simply detailed the circumstances, and said that we should be glad of any information which could help us.” “You did not ask for particulars on any point which appeared to you to be crucial?” “I asked about Stangerson.” “Nothing else? Is there no circumstance on which this whole case appears to hinge? Will you not telegraph again?” “I have said all I have to say,” said Gregson, in an offended voice. Sherlock Holmes chuckled to himself, and appeared to be about to make some remark, when Lestrade, who had been in the front room while we were holding this conversation in the hall, reappeared upon the scene, rubbing his hands in a pompous and self-satisfied manner. “Mr. Gregson,” he said, “I have just made a discovery of the highest importance, and one which would have been overlooked had I not made a careful examination of the walls.” The little man’s eyes sparkled as he spoke, and he was evidently in a state of suppressed exultation at having scored a point against his colleague. “Come here,” he said, bustling back into the room, the atmosphere of which felt clearer since the removal of its ghastly inmate. “Now, stand there!” He struck a match on his boot and held it up against the wall. “Look at that!” he said, triumphantly."
+    },
+    {
+     "n": 3,
+     "chunk_id": "05ab674df048d13f:10:1",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 10,
+     "text": "He had stayed at the boarding-house of Madame Charpentier, in Torquay Terrace, Camberwell. He was accompanied in his travels by his private secretary, Mr. Joseph Stangerson. The two bade adieu to their landlady upon Tuesday, the 4th inst. , and departed to Euston Station with the avowed intention of catching the Liverpool express. They were afterwards seen together upon the platform. Nothing more is known of them until Mr. Drebber’s body was, as recorded, discovered in an empty house in the Brixton Road, many miles from Euston. How he came there, or how he met his fate, are questions which are still involved in mystery. Nothing is known of the whereabouts of Stangerson. We are glad to learn that Mr. Lestrade and Mr. Gregson, of Scotland Yard, are both engaged upon the case, and it is confidently anticipated that these well-known officers will speedily throw light upon the matter. The Daily News observed that there was no doubt as to the crime being a political one. The despotism and hatred of Liberalism which animated the Continental Governments had had the effect of driving to our shores a number of men who might have made excellent citizens were they not soured by the recollection of all that they had undergone. Among these men there was a stringent code of honour, any infringement of which was punished by death. Every effort should be made to find the secretary, Stangerson, and to ascertain some particulars of the habits of the deceased."
+    },
+    {
+     "n": 4,
+     "chunk_id": "05ab674df048d13f:10:13",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 10,
+     "text": "“Ah, you find it so, Mr. Lestrade!” cried Gregson, triumphantly. “I thought you would come to that conclusion. Have you managed to find the Secretary, Mr. Joseph Stangerson?” “The Secretary, Mr. Joseph Stangerson,” said Lestrade gravely, “was murdered at Halliday’s Private Hotel about six o’clock this morning.”"
+    },
+    {
+     "n": 5,
+     "chunk_id": "05ab674df048d13f:10:5",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 10,
+     "text": "“You do me too much honour,” said Holmes, gravely. “Let us hear how you arrived at this most gratifying result.” The detective seated himself in the arm-chair, and puffed complacently at his cigar. Then suddenly he slapped his thigh in a paroxysm of amusement. “The fun of it is,” he cried, “that that fool Lestrade, who thinks himself so smart, has gone off upon the wrong track altogether. He is after the secretary Stangerson, who had no more to do with the crime than the babe unborn. I have no doubt that he has caught him by this time.” The idea tickled Gregson so much that he laughed until he choked. “And how did you get your clue?” “Ah, I’ll tell you all about it. Of course, Doctor Watson, this is strictly between ourselves. The first difficulty which we had to contend with was the finding of this American’s antecedents. Some people would have waited until their advertisements were answered, or until parties came forward and volunteered information. That is not Tobias Gregson’s way of going to work. You remember the hat beside the dead man?” “Yes,” said Holmes; “by John Underwood and Sons, 129, Camberwell Road.” Gregson looked quite crest-fallen. “I had no idea that you noticed that,” he said. “Have you been there?” “No.” “Ha!” cried Gregson, in a relieved voice; “you should never neglect a chance, however small it may seem.” “To a great mind, nothing is little,” remarked Holmes, sententiously."
+    },
+    {
+     "n": 6,
+     "chunk_id": "05ab674df048d13f:11:1",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 11,
+     "text": "“Would you mind letting us know what you have seen and done?” “I have no objection,” Lestrade answered, seating himself. “I freely confess that I was of the opinion that Stangerson was concerned in the death of Drebber. This fresh development has shown me that I was completely mistaken. Full of the one idea, I set myself to find out what had become of the Secretary. They had been seen together at Euston Station about half-past eight on the evening of the third. At two in the morning Drebber had been found in the Brixton Road. The question which confronted me was to find out how Stangerson had been employed between 8.30 and the time of the crime, and what had become of him afterwards. I telegraphed to Liverpool, giving a description of the man, and warning them to keep a watch upon the American boats. I then set to work calling upon all the hotels and lodging-houses in the vicinity of Euston. You see, I argued that if Drebber and his companion had become separated, the natural course for the latter would be to put up somewhere in the vicinity for the night, and then to hang about the station again next morning.” “They would be likely to agree on some meeting-place beforehand,” remarked Holmes. “So it proved. I spent the whole of yesterday evening in making enquiries entirely without avail. This morning I began very early, and at eight o’clock I reached Halliday’s Private Hotel, in Little George Street. On my enquiry as to whether a Mr. Stangerson was living there, they at once answered me in the affirmative."
+    },
+    {
+     "n": 7,
+     "chunk_id": "05ab674df048d13f:11:11",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 11,
+     "text": "Mr. Gregson, who had listened to this address with considerable impatience, could contain himself no longer. “Look here, Mr. Sherlock Holmes,” he said, “we are all ready to acknowledge that you are a smart man, and that you have your own methods of working. We want something more than mere theory and preaching now, though. It is a case of taking the man. I have made my case out, and it seems I was wrong. Young Charpentier could not have been engaged in this second affair. Lestrade went after his man, Stangerson, and it appears that he was wrong too. You have thrown out hints here, and hints there, and seem to know more than we do, but the time has come when we feel that we have a right to ask you straight how much you do know of the business. Can you name the man who did it?” “I cannot help feeling that Gregson is right, sir,” remarked Lestrade. “We have both tried, and we have both failed. You have remarked more than once since I have been in the room that you had all the evidence which you require. Surely you will not withhold it any longer.” “Any delay in arresting the assassin,” I observed, “might give him time to perpetrate some fresh atrocity.” Thus pressed by us all, Holmes showed signs of irresolution. He continued to walk up and down the room with his head sunk on his chest and his brows drawn down, as was his habit when lost in thought. “There will be no more murders,” he said at last, stopping abruptly and facing us."
+    },
+    {
+     "n": 8,
+     "chunk_id": "05ab674df048d13f:11:15",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 11,
+     "text": "The fellow came forward with a somewhat sullen, defiant air, and put down his hands to assist. At that instant there was a sharp click, the jangling of metal, and Sherlock Holmes sprang to his feet again. “Gentlemen,” he cried, with flashing eyes, “let me introduce you to Mr. Jefferson Hope, the murderer of Enoch Drebber and of Joseph Stangerson.” The whole thing occurred in a moment—so quickly that I had no time to realize it. I have a vivid recollection of that instant, of Holmes’ triumphant expression and the ring of his voice, of the cabman’s dazed, savage face, as he glared at the glittering handcuffs, which had appeared as if by magic upon his wrists. For a second or two we might have been a group of statues. Then, with an inarticulate roar of fury, the prisoner wrenched himself free from Holmes’s grasp, and hurled himself through the window. Woodwork and glass gave way before him; but before he got quite through, Gregson, Lestrade, and Holmes sprang upon him like so many staghounds. He was dragged back into the room, and then commenced a terrific conflict. So powerful and so fierce was he, that the four of us were shaken off again and again. He appeared to have the convulsive strength of a man in an epileptic fit. His face and hands were terribly mangled by his passage through the glass, but loss of blood had no effect in diminishing his resistance."
+    },
+    {
+     "n": 9,
+     "chunk_id": "05ab674df048d13f:11:2",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 11,
+     "text": "This morning I began very early, and at eight o’clock I reached Halliday’s Private Hotel, in Little George Street. On my enquiry as to whether a Mr. Stangerson was living there, they at once answered me in the affirmative. “‘No doubt you are the gentleman whom he was expecting,’ they said. ‘He has been waiting for a gentleman for two days.’ “‘Where is he now? ’ I asked. “‘He is upstairs in bed. He wished to be called at nine. ’ “‘I will go up and see him at once,’ I said."
+    },
+    {
+     "n": 10,
+     "chunk_id": "05ab674df048d13f:11:3",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 11,
+     "text": "’ “‘I will go up and see him at once,’ I said. “It seemed to me that my sudden appearance might shake his nerves and lead him to say something unguarded. The Boots volunteered to show me the room: it was on the second floor, and there was a small corridor leading up to it. The Boots pointed out the door to me, and was about to go downstairs again when I saw something that made me feel sickish, in spite of my twenty years’ experience. From under the door there curled a little red ribbon of blood, which had meandered across the passage and formed a little pool along the skirting at the other side. I gave a cry, which brought the Boots back. He nearly fainted when he saw it. The door was locked on the inside, but we put our shoulders to it, and knocked it in. The window of the room was open, and beside the window, all huddled up, lay the body of a man in his nightdress. He was quite dead, and had been for some time, for his limbs were rigid and cold. When we turned him over, the Boots recognized him at once as being the same gentleman who had engaged the room under the name of Joseph Stangerson. The cause of death was a deep stab in the left side, which must have penetrated the heart. And now comes the strangest part of the affair. What do you suppose was above the murdered man?” I felt a creeping of the flesh, and a presentiment of coming horror, even before Sherlock Holmes answered. “The word RACHE, written in letters of blood,” he said. “That was it,” said Lestrade, in an awe-struck voice; and we were all silent for a while."
+    },
+    {
+     "n": 11,
+     "chunk_id": "05ab674df048d13f:11:5",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 11,
+     "text": "There was, however, no trace of exultation or satisfaction upon his face. “Did you find nothing in the room which could furnish a clue to the murderer?” he asked. “Nothing. Stangerson had Drebber’s purse in his pocket, but it seems that this was usual, as he did all the paying. There was eighty odd pounds in it, but nothing had been taken. Whatever the motives of these extraordinary crimes, robbery is certainly not one of them. There were no papers or memoranda in the murdered man’s pocket, except a single telegram, dated from Cleveland about a month ago, and containing the words, ‘J. H. is in Europe.’ There was no name appended to this message.” “And there was nothing else?” Holmes asked. “Nothing of any importance. The man’s novel, with which he had read himself to sleep was lying upon the bed, and his pipe was on a chair beside him. There was a glass of water on the table, and on the window-sill a small chip ointment box containing a couple of pills.” Sherlock Holmes sprang from his chair with an exclamation of delight. “The last link,” he cried, exultantly. “My case is complete.” The two detectives stared at him in amazement. “I have now in my hands,” my companion said, confidently, “all the threads which have formed such a tangle. There are, of course, details to be filled in, but I am as certain of all the main facts, from the time that Drebber parted from Stangerson at the station, up to the discovery of the body of the latter, as if I had seen them with my own eyes. I will give you a proof of my knowledge. Could you lay your hand upon those pills?”"
+    },
+    {
+     "n": 12,
+     "chunk_id": "05ab674df048d13f:11:7",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 11,
+     "text": "Indeed, its snow-white muzzle proclaimed that it had already exceeded the usual term of canine existence. I placed it upon a cushion on the rug. “I will now cut one of these pills in two,” said Holmes, and drawing his penknife he suited the action to the word. “One half we return into the box for future purposes. The other half I will place in this wine glass, in which is a teaspoonful of water. You perceive that our friend, the Doctor, is right, and that it readily dissolves.” “This may be very interesting,” said Lestrade, in the injured tone of one who suspects that he is being laughed at, “I cannot see, however, what it has to do with the death of Mr. Joseph Stangerson.” “Patience, my friend, patience! You will find in time that it has everything to do with it. I shall now add a little milk to make the mixture palatable, and on presenting it to the dog we find that he laps it up readily enough.” As he spoke he turned the contents of the wine glass into a saucer and placed it in front of the terrier, who speedily licked it dry. Sherlock Holmes’ earnest demeanour had so far convinced us that we all sat in silence, watching the animal intently, and expecting some startling effect. None such appeared, however. The dog continued to lie stretched upon the cushion, breathing in a laboured way, but apparently neither the better nor the worse for its draught. Holmes had taken out his watch, and as minute followed minute without result, an expression of the utmost chagrin and disappointment appeared upon his features."
+    },
+    {
+     "n": 13,
+     "chunk_id": "05ab674df048d13f:12:15",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 12,
+     "text": "“Take him, Brother Stangerson,” he said, “give him food and drink, and the child likewise. Let it be your task also to teach him our holy creed. We have delayed long enough. Forward! On, on to Zion!” “On, on to Zion!” cried the crowd of Mormons, and the words rippled down the long caravan, passing from mouth to mouth until they died away in a dull murmur in the far distance. With a cracking of whips and a creaking of wheels the great waggons got into motion, and soon the whole caravan was winding along once more. The Elder to whose care the two waifs had been committed, led them to his waggon, where a meal was already awaiting them. “You shall remain here,” he said. “In a few days you will have recovered from your fatigues. In the meantime, remember that now and for ever you are of our religion. Brigham Young has said it, and he has spoken with the voice of Joseph Smith, which is the voice of God.”"
+    },
+    {
+     "n": 14,
+     "chunk_id": "05ab674df048d13f:15:0",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "On the morning which followed his interview with the Mormon Prophet, John Ferrier went in to Salt Lake City, and having found his acquaintance, who was bound for the Nevada Mountains, he entrusted him with his message to Jefferson Hope. In it he told the young man of the imminent danger which threatened them, and how necessary it was that he should return. Having done thus he felt easier in his mind, and returned home with a lighter heart. As he approached his farm, he was surprised to see a horse hitched to each of the posts of the gate. Still more surprised was he on entering to find two young men in possession of his sitting-room. One, with a long pale face, was leaning back in the rocking-chair, with his feet cocked up upon the stove. The other, a bull-necked youth with coarse bloated features, was standing in front of the window with his hands in his pocket, whistling a popular hymn. Both of them nodded to Ferrier as he entered, and the one in the rocking-chair commenced the conversation. “Maybe you don’t know us,” he said. “This here is the son of Elder Drebber, and I’m Joseph Stangerson, who travelled with you in the desert when the Lord stretched out His hand and gathered you into the true fold.” “As He will all the nations in His own good time,” said the other in a nasal voice; “He grindeth slowly but exceeding small.” John Ferrier bowed coldly. He had guessed who his visitors were."
+    },
+    {
+     "n": 15,
+     "chunk_id": "05ab674df048d13f:15:2",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 15,
+     "text": "“There are two ways out of the room,” cried Ferrier; “there is the door, and there is the window. Which do you care to use?” His brown face looked so savage, and his gaunt hands so threatening, that his visitors sprang to their feet and beat a hurried retreat. The old farmer followed them to the door. “Let me know when you have settled which it is to be,” he said, sardonically. “You shall smart for this!” Stangerson cried, white with rage. “You have defied the Prophet and the Council of Four. You shall rue it to the end of your days.” “The hand of the Lord shall be heavy upon you,” cried young Drebber; “He will arise and smite you!” “Then I’ll start the smiting,” exclaimed Ferrier furiously, and would have rushed upstairs for his gun had not Lucy seized him by the arm and restrained him. Before he could escape from her, the clatter of horses’ hoofs told him that they were beyond his reach. “The young canting rascals!” he exclaimed, wiping the perspiration from his forehead; “I would sooner see you in your grave, my girl, than the wife of either of them.” “And so should I, father,” she answered, with spirit; “but Jefferson will soon be here.” “Yes. It will not be long before he comes. The sooner the better, for we do not know what their next move may be.” It was, indeed, high time that someone capable of giving advice and help should come to the aid of the sturdy old farmer and his adopted daughter. In the whole history of the settlement there had never been such a case of rank disobedience to the authority of the Elders."
+    },
+    {
+     "n": 16,
+     "chunk_id": "05ab674df048d13f:16:11",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 16,
+     "text": "“She shall not be buried in that,” he cried with a fierce snarl, and before an alarm could be raised sprang down the stairs and was gone. So strange and so brief was the episode, that the watchers might have found it hard to believe it themselves or persuade other people of it, had it not been for the undeniable fact that the circlet of gold which marked her as having been a bride had disappeared. For some months Jefferson Hope lingered among the mountains, leading a strange wild life, and nursing in his heart the fierce desire for vengeance which possessed him. Tales were told in the City of the weird figure which was seen prowling about the suburbs, and which haunted the lonely mountain gorges. Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him. On another occasion, as Drebber passed under a cliff a great boulder crashed down on him, and he only escaped a terrible death by throwing himself upon his face. The two young Mormons were not long in discovering the reason of these attempts upon their lives, and led repeated expeditions into the mountains in the hope of capturing or killing their enemy, but always without success. Then they adopted the precaution of never going out alone or after nightfall, and of having their houses guarded. After a time they were able to relax these measures, for nothing was either heard or seen of their opponent, and they hoped that time had cooled his vindictiveness. Far from doing so, it had, if anything, augmented it."
+    },
+    {
+     "n": 17,
+     "chunk_id": "05ab674df048d13f:16:13",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 16,
+     "text": "Disguised, and under an assumed name, he returned to Salt Lake City, careless what became of his own life, as long as he obtained what he knew to be justice. There he found evil tidings awaiting him. There had been a schism among the Chosen People a few months before, some of the younger members of the Church having rebelled against the authority of the Elders, and the result had been the secession of a certain number of the malcontents, who had left Utah and become Gentiles. Among these had been Drebber and Stangerson; and no one knew whither they had gone. Rumour reported that Drebber had managed to convert a large part of his property into money, and that he had departed a wealthy man, while his companion, Stangerson, was comparatively poor. There was no clue at all, however, as to their whereabouts. Many a man, however vindictive, would have abandoned all thought of revenge in the face of such a difficulty, but Jefferson Hope never faltered for a moment. With the small competence he possessed, eked out by such employment as he could pick up, he travelled from town to town through the United States in quest of his enemies. Year passed into year, his black hair turned grizzled, but still he wandered on, a human bloodhound, with his mind wholly set upon the one object upon which he had devoted his life. At last his perseverance was rewarded. It was but a glance of a face in a window, but that one glance told him that Cleveland in Ohio possessed the men whom he was in pursuit of. He returned to his miserable lodgings with his plan of vengeance all arranged."
+    },
+    {
+     "n": 18,
+     "chunk_id": "05ab674df048d13f:16:14",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 16,
+     "text": "It was but a glance of a face in a window, but that one glance told him that Cleveland in Ohio possessed the men whom he was in pursuit of. He returned to his miserable lodgings with his plan of vengeance all arranged. It chanced, however, that Drebber, looking from his window, had recognized the vagrant in the street, and had read murder in his eyes. He hurried before a justice of the peace, accompanied by Stangerson, who had become his private secretary, and represented to him that they were in danger of their lives from the jealousy and hatred of an old rival. That evening Jefferson Hope was taken into custody, and not being able to find sureties, was detained for some weeks. When at last he was liberated, it was only to find that Drebber’s house was deserted, and that he and his secretary had departed for Europe. Again the avenger had been foiled, and again his concentrated hatred urged him to continue the pursuit. Funds were wanting, however, and for some time he had to return to work, saving every dollar for his approaching journey. At last, having collected enough to keep life in him, he departed for Europe, and tracked his enemies from city to city, working his way in any menial capacity, but never overtaking the fugitives. When he reached St. Petersburg they had departed for Paris; and when he followed them there he learned that they had just set off for Copenhagen. At the Danish capital he was again a few days late, for they had journeyed on to London, where he at last succeeded in running them to earth."
+    },
+    {
+     "n": 19,
+     "chunk_id": "05ab674df048d13f:17:14",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 17,
+     "text": "“The blood had been streaming from my nose, but I had taken no notice of it. I don’t know what it was that put it into my head to write upon the wall with it. Perhaps it was some mischievous idea of setting the police upon a wrong track, for I felt light-hearted and cheerful. I remembered a German being found in New York with RACHE written up above him, and it was argued at the time in the newspapers that the secret societies must have done it. I guessed that what puzzled the New Yorkers would puzzle the Londoners, so I dipped my finger in my own blood and printed it on a convenient place on the wall. Then I walked down to my cab and found that there was nobody about, and that the night was still very wild. I had driven some distance when I put my hand into the pocket in which I usually kept Lucy’s ring, and found that it was not there. I was thunderstruck at this, for it was the only memento that I had of her. Thinking that I might have dropped it when I stooped over Drebber’s body, I drove back, and leaving my cab in a side street, I went boldly up to the house—for I was ready to dare anything rather than lose the ring. When I arrived there, I walked right into the arms of a police-officer who was coming out, and only managed to disarm his suspicions by pretending to be hopelessly drunk. “That was how Enoch Drebber came to his end. All I had to do then was to do as much for Stangerson, and so pay off John Ferrier’s debt. I knew that he was staying at Halliday’s Private Hotel, and I hung about all day, but he never came out."
+    },
+    {
+     "n": 20,
+     "chunk_id": "05ab674df048d13f:17:15",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 17,
+     "text": "All I had to do then was to do as much for Stangerson, and so pay off John Ferrier’s debt. I knew that he was staying at Halliday’s Private Hotel, and I hung about all day, but he never came out. I fancy that he suspected something when Drebber failed to put in an appearance. He was cunning, was Stangerson, and always on his guard. If he thought he could keep me off by staying indoors he was very much mistaken. I soon found out which was the window of his bedroom, and early next morning I took advantage of some ladders which were lying in the lane behind the hotel, and so made my way into his room in the grey of the dawn. I woke him up and told him that the hour had come when he was to answer for the life he had taken so long before. I described Drebber’s death to him, and I gave him the same choice of the poisoned pills. Instead of grasping at the chance of safety which that offered him, he sprang from his bed and flew at my throat. In self-defence I stabbed him to the heart. It would have been the same in any case, for Providence would never have allowed his guilty hand to pick out anything but the poison."
+    },
+    {
+     "n": 21,
+     "chunk_id": "05ab674df048d13f:17:6",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 17,
+     "text": "Drebber himself was drunk half the time, but Stangerson was not to be caught napping. I watched them late and early, but never saw the ghost of a chance; but I was not discouraged, for something told me that the hour had almost come. My only fear was that this thing in my chest might burst a little too soon and leave my work undone. “At last, one evening I was driving up and down Torquay Terrace, as the street was called in which they boarded, when I saw a cab drive up to their door. Presently some luggage was brought out, and after a time Drebber and Stangerson followed it, and drove off. I whipped up my horse and kept within sight of them, feeling very ill at ease, for I feared that they were going to shift their quarters. At Euston Station they got out, and I left a boy to hold my horse, and followed them on to the platform. I heard them ask for the Liverpool train, and the guard answer that one had just gone and there would not be another for some hours. Stangerson seemed to be put out at that, but Drebber was rather pleased than otherwise. I got so close to them in the bustle that I could hear every word that passed between them. Drebber said that he had a little business of his own to do, and that if the other would wait for him he would soon rejoin him. His companion remonstrated with him, and reminded him that they had resolved to stick together. Drebber answered that the matter was a delicate one, and that he must go alone."
+    },
+    {
+     "n": 22,
+     "chunk_id": "05ab674df048d13f:17:7",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 17,
+     "text": "His companion remonstrated with him, and reminded him that they had resolved to stick together. Drebber answered that the matter was a delicate one, and that he must go alone. I could not catch what Stangerson said to that, but the other burst out swearing, and reminded him that he was nothing more than his paid servant, and that he must not presume to dictate to him. On that the Secretary gave it up as a bad job, and simply bargained with him that if he missed the last train he should rejoin him at Halliday’s Private Hotel; to which Drebber answered that he would be back on the platform before eleven, and made his way out of the station. “The moment for which I had waited so long had at last come. I had my enemies within my power. Together they could protect each other, but singly they were at my mercy. I did not act, however, with undue precipitation. My plans were already formed. There is no satisfaction in vengeance unless the offender has time to realize who it is that strikes him, and why retribution has come upon him. I had my plans arranged by which I should have the opportunity of making the man who had wronged me understand that his old sin had found him out. It chanced that some days before a gentleman who had been engaged in looking over some houses in the Brixton Road had dropped the key of one of them in my carriage. It was claimed that same evening, and returned; but in the interval I had taken a moulding of it, and had a duplicate constructed."
+    },
+    {
+     "n": 23,
+     "chunk_id": "05ab674df048d13f:18:6",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 18,
+     "text": "Where, then, could the driver be, unless he were inside the house? Again, it is absurd to suppose that any sane man would carry out a deliberate crime under the very eyes, as it were, of a third person, who was sure to betray him. Lastly, supposing one man wished to dog another through London, what better means could he adopt than to turn cabdriver. All these considerations led me to the irresistible conclusion that Jefferson Hope was to be found among the jarveys of the Metropolis. “If he had been one there was no reason to believe that he had ceased to be. On the contrary, from his point of view, any sudden change would be likely to draw attention to himself. He would, probably, for a time at least, continue to perform his duties. There was no reason to suppose that he was going under an assumed name. Why should he change his name in a country where no one knew his original one? I therefore organized my Street Arab detective corps, and sent them systematically to every cab proprietor in London until they ferreted out the man that I wanted. How well they succeeded, and how quickly I took advantage of it, are still fresh in your recollection. The murder of Stangerson was an incident which was entirely unexpected, but which could hardly in any case have been prevented. Through it, as you know, I came into possession of the pills, the existence of which I had already surmised. You see the whole thing is a chain of logical sequences without a break or flaw.” “It is wonderful!” I cried."
+    },
+    {
+     "n": 24,
+     "chunk_id": "05ab674df048d13f:18:8",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 18,
+     "text": "“See here!” he continued, handing a paper over to me, “look at this!” It was the Echo for the day, and the paragraph to which he pointed was devoted to the case in question. “The public,” it said, “have lost a sensational treat through the sudden death of the man Hope, who was suspected of the murder of Mr. Enoch Drebber and of Mr. Joseph Stangerson. The details of the case will probably be never known now, though we are informed upon good authority that the crime was the result of an old standing and romantic feud, in which love and Mormonism bore a part. It seems that both the victims belonged, in their younger days, to the Latter Day Saints, and Hope, the deceased prisoner, hails also from Salt Lake City. If the case has had no other effect, it, at least, brings out in the most striking manner the efficiency of our detective police force, and will serve as a lesson to all foreigners that they will do wisely to settle their feuds at home, and not to carry them on to British soil. It is an open secret that the credit of this smart capture belongs entirely to the well-known Scotland Yard officials, Messrs. Lestrade and Gregson. The man was apprehended, it appears, in the rooms of a certain Mr. Sherlock Holmes, who has himself, as an amateur, shown some talent in the detective line, and who, with such instructors, may hope in time to attain to some degree of their skill. It is expected that a testimonial of some sort will be presented to the two officers as a fitting recognition of their services.” “Didn’t I tell you so when we started?” cried Sherlock Holmes with a laugh."
+    },
+    {
+     "n": 25,
+     "chunk_id": "05ab674df048d13f:18:9",
+     "book_id": "05ab674df048d13f",
+     "book_title": "A Study in Scarlet",
+     "chapter_seq": 18,
+     "text": "“The public,” it said, “have lost a sensational treat through the sudden death of the man Hope, who was suspected of the murder of Mr. Enoch Drebber and of Mr. Joseph Stangerson. The details of the case will probably be never known now, though we are informed upon good authority that the crime was the result of an old standing and romantic feud, in which love and Mormonism bore a part. It seems that both the victims belonged, in their younger days, to the Latter Day Saints, and Hope, the deceased prisoner, hails also from Salt Lake City. If the case has had no other effect, it, at least, brings out in the most striking manner the efficiency of our detective police force, and will serve as a lesson to all foreigners that they will do wisely to settle their feuds at home, and not to carry them on to British soil. It is an open secret that the credit of this smart capture belongs entirely to the well-known Scotland Yard officials, Messrs. Lestrade and Gregson. The man was apprehended, it appears, in the rooms of a certain Mr. Sherlock Holmes, who has himself, as an amateur, shown some talent in the detective line, and who, with such instructors, may hope in time to attain to some degree of their skill. It is expected that a testimonial of some sort will be presented to the two officers as a fitting recognition of their services.” “Didn’t I tell you so when we started?” cried Sherlock Holmes with a laugh. “That’s the result of all our Study in Scarlet: to get them a testimonial!” “Never mind,” I answered, “I have all the facts in my journal, and the public shall know them."
+    }
+   ],
+   "edges": [
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Halliday’s Private Hotel",
+     "evidence": "was murdered at Halliday’s Private Hotel",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 10,
+     "chunk_id": "05ab674df048d13f:10:13",
+     "subject_id": "e79c717b9c360",
+     "object_id": "edb67779b7084"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "son of Elder Drebber",
+     "evidence": "He was accompanied in his travels by his private secretary, Mr. Joseph Stangerson.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 10,
+     "chunk_id": "05ab674df048d13f:10:1",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e0a971f05fbdb"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Halliday’s Private Hotel",
+     "evidence": "I knew that he was staying at Halliday’s Private Hotel",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 17,
+     "chunk_id": "05ab674df048d13f:17:15",
+     "subject_id": "e79c717b9c360",
+     "object_id": "edb67779b7084"
+    },
+    {
+     "subject": "The Boots",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "the Boots recognized him at once as being the same gentleman who had engaged the room under the name of Joseph Stangerson",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:3",
+     "subject_id": "e154414a1590b",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "KILLS",
+     "predicate_raw": "KILLS",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "the man Hope, who was suspected of the murder of... Mr. Joseph Stangerson",
+     "confidence": 0.7,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 18,
+     "chunk_id": "05ab674df048d13f:18:9",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "Latter Day Saints",
+     "evidence": "It seems that both the victims belonged, in their younger days, to the Latter Day Saints",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 18,
+     "chunk_id": "05ab674df048d13f:18:9",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e66d691c7b8b1"
+    },
+    {
+     "subject": "son of Elder Drebber",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "his companion, Stangerson",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:13",
+     "subject_id": "e0a971f05fbdb",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Cleveland",
+     "evidence": "Cleveland in Ohio possessed the men whom he was in pursuit of.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:13",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e852062bae09c"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "he travelled from town to town through the United States in quest of his enemies... Cleveland in Ohio possessed the men whom he was in pursuit of.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:13",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "Latter Day Saints",
+     "evidence": "It seems that both the victims belonged, in their younger days, to the Latter Day Saints",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 18,
+     "chunk_id": "05ab674df048d13f:18:8",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e66d691c7b8b1"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "the man Hope, who was suspected of the murder of ... Mr. Joseph Stangerson",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 18,
+     "chunk_id": "05ab674df048d13f:18:8",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "son of Elder Drebber",
+     "evidence": "They had been seen together at Euston Station about half-past eight on the evening of the third.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:1",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e0a971f05fbdb"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Halliday’s Private Hotel",
+     "evidence": "On my enquiry as to whether a Mr. Stangerson was living there, they at once answered me in the affirmative.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:1",
+     "subject_id": "e79c717b9c360",
+     "object_id": "edb67779b7084"
+    },
+    {
+     "subject": "Mr. Lestrade",
+     "predicate": "UNCATEGORIZED",
+     "predicate_raw": "INVESTIGATED",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "The question which confronted me was to find out how Stangerson had been employed between 8.30 and the time of the crime",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:1",
+     "subject_id": "e169b9cadd3df",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Sherlock Holmes",
+     "predicate": "KILLS",
+     "predicate_raw": "KILLS",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "The murder of Stangerson was an incident which was entirely unexpected",
+     "confidence": 0.5,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 18,
+     "chunk_id": "05ab674df048d13f:18:6",
+     "subject_id": "ef6f545e6de2b",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "Mormons",
+     "evidence": "The two young Mormons were not long in discovering the reason of these attempts upon their lives",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:11",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e3ac09cd19158"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:11",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Europe",
+     "evidence": "he and his secretary had departed for Europe",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:14",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e421f8822b57e"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "son of Elder Drebber",
+     "evidence": "Stangerson, who had become his private secretary",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:14",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e0a971f05fbdb"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "tracked his enemies from city to city",
+     "confidence": 0.8,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 16,
+     "chunk_id": "05ab674df048d13f:16:14",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Jefferson Hope",
+     "predicate": "KILLS",
+     "predicate_raw": "KILLS",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "Mr. Jefferson Hope, the murderer of ... Joseph Stangerson.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:15",
+     "subject_id": "e0ea2c86ec4bc",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Lestrade",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "I cannot see, however, what it has to do with the death of Mr. Joseph Stangerson.",
+     "confidence": 0.5,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:7",
+     "subject_id": "e169b9cadd3df",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "John Ferrier",
+     "evidence": "Both of them nodded to Ferrier as he entered",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:0",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "Mormons",
+     "evidence": "Brother Stangerson... cried the crowd of Mormons",
+     "confidence": 0.7,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 12,
+     "chunk_id": "05ab674df048d13f:12:15",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e3ac09cd19158"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "son of Elder Drebber",
+     "evidence": "His companion remonstrated with him",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 17,
+     "chunk_id": "05ab674df048d13f:17:7",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e0a971f05fbdb"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "son of Elder Drebber",
+     "evidence": "reminded him that he was nothing more than his paid servant",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 17,
+     "chunk_id": "05ab674df048d13f:17:7",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e0a971f05fbdb"
+    },
+    {
+     "subject": "Mr. Lestrade",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "Lestrade went after his man, Stangerson, and it appears that he was wrong too.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:11",
+     "subject_id": "e169b9cadd3df",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "Council of Four",
+     "evidence": "You have defied the Prophet and the Council of Four.",
+     "confidence": 0.7,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:2",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e4740f58bde0c"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "John Ferrier",
+     "evidence": "You have defied the Prophet and the Council of Four. You shall rue it to the end of your days.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 15,
+     "chunk_id": "05ab674df048d13f:15:2",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e70f295474096"
+    },
+    {
+     "subject": "son of Elder Drebber",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "Drebber parted from Stangerson at the station",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:5",
+     "subject_id": "e0a971f05fbdb",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "POSSESSES",
+     "predicate_raw": "POSSESSES",
+     "object": "Drebber’s purse",
+     "evidence": "Stangerson had Drebber’s purse in his pocket",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:5",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e26a4dfe6e73e"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Halliday’s Private Hotel",
+     "evidence": "I knew that he was staying at Halliday’s Private Hotel",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 17,
+     "chunk_id": "05ab674df048d13f:17:14",
+     "subject_id": "e79c717b9c360",
+     "object_id": "edb67779b7084"
+    },
+    {
+     "subject": "Mr. Lestrade",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "He is after the secretary Stangerson, who had no more to do with the crime than the babe unborn.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 10,
+     "chunk_id": "05ab674df048d13f:10:5",
+     "subject_id": "e169b9cadd3df",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Lestrade",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "I will go up and see him at once",
+     "confidence": 0.8,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:2",
+     "subject_id": "e169b9cadd3df",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "MEMBER_OF",
+     "predicate_raw": "MEMBER_OF",
+     "object": "Halliday’s Private Hotel",
+     "evidence": "On my enquiry as to whether a Mr. Stangerson was living there, they at once answered me in the affirmative.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 11,
+     "chunk_id": "05ab674df048d13f:11:2",
+     "subject_id": "e79c717b9c360",
+     "object_id": "edb67779b7084"
+    },
+    {
+     "subject": "Tobias Gregson",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "“I asked about Stangerson.”",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 7,
+     "chunk_id": "05ab674df048d13f:7:11",
+     "subject_id": "e7378aa7e8047",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "son of Elder Drebber",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "Drebber and Stangerson followed it, and drove off.",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 17,
+     "chunk_id": "05ab674df048d13f:17:6",
+     "subject_id": "e0a971f05fbdb",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Euston Station",
+     "evidence": "At Euston Station they got out",
+     "confidence": 1.0,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 17,
+     "chunk_id": "05ab674df048d13f:17:6",
+     "subject_id": "e79c717b9c360",
+     "object_id": "ee57093b53b65"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "LOCATED_IN",
+     "predicate_raw": "LOCATED_IN",
+     "object": "Torquay Terrace",
+     "evidence": "Torquay Terrace, as the street was called in which they boarded",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 17,
+     "chunk_id": "05ab674df048d13f:17:6",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e790a0161f198"
+    },
+    {
+     "subject": "son of Elder Drebber",
+     "predicate": "OPPOSES",
+     "predicate_raw": "OPPOSES",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "His companion remonstrated with him, and reminded him that they had resolved to stick together. Drebber answered that the matter was a delicate one, and that he must go alone.",
+     "confidence": 0.7,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 17,
+     "chunk_id": "05ab674df048d13f:17:6",
+     "subject_id": "e0a971f05fbdb",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Guion Steamship Company",
+     "predicate": "INTERACTS_WITH",
+     "predicate_raw": "INTERACTS_WITH",
+     "object": "Mr. Joseph Stangerson",
+     "evidence": "Two letters—one addressed to E. J. Drebber and one to Joseph Stangerson... They are both from the Guion Steamship Company",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 7,
+     "chunk_id": "05ab674df048d13f:7:10",
+     "subject_id": "ec679ea080721",
+     "object_id": "e79c717b9c360"
+    },
+    {
+     "subject": "Mr. Joseph Stangerson",
+     "predicate": "POSSESSES",
+     "predicate_raw": "POSSESSES",
+     "object": "Boccaccio’s Decameron",
+     "evidence": "Pocket edition of Boccaccio’s Decameron, with name of Joseph Stangerson upon the fly-leaf.",
+     "confidence": 0.9,
+     "book_id": "05ab674df048d13f",
+     "chapter_seq": 7,
+     "chunk_id": "05ab674df048d13f:7:10",
+     "subject_id": "e79c717b9c360",
+     "object_id": "e836f7c6858da"
+    }
+   ],
+   "seeds": [
+    {
+     "id": "e79c717b9c360",
+     "name": "Mr. Joseph Stangerson",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.0
+    },
+    {
+     "id": "e0a971f05fbdb",
+     "name": "son of Elder Drebber",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.5318726897239685
+    },
+    {
+     "id": "e0ab5b9537ff1",
+     "name": "129, Camberwell Road",
+     "kind": "Place",
+     "books": [
+      "05ab674df048d13f",
+      "0ee225a9a3b5fbc2"
+     ],
+     "score": 0.5318726897239685
+    },
+    {
+     "id": "e169b9cadd3df",
+     "name": "Mr. Lestrade",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f",
+      "0ee225a9a3b5fbc2"
+     ],
+     "score": 0.5318726897239685
+    },
+    {
+     "id": "e6bf1b8507ba0",
+     "name": "Scotland Yard",
+     "kind": "Faction",
+     "books": [
+      "05ab674df048d13f",
+      "0ee225a9a3b5fbc2"
+     ],
+     "score": 0.5318726897239685
+    },
+    {
+     "id": "e7378aa7e8047",
+     "name": "Tobias Gregson",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f",
+      "0ee225a9a3b5fbc2"
+     ],
+     "score": 0.5318726897239685
+    },
+    {
+     "id": "e790a0161f198",
+     "name": "Torquay Terrace",
+     "kind": "Place",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.5318726897239685
+    },
+    {
+     "id": "e79c4b46e255b",
+     "name": "Brixton Road",
+     "kind": "Place",
+     "books": [
+      "05ab674df048d13f",
+      "0ee225a9a3b5fbc2"
+     ],
+     "score": 0.5318726897239685
+    },
+    {
+     "id": "eaff3c36f621a",
+     "name": "Madame Charpentier",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.5318726897239685
+    },
+    {
+     "id": "edb67779b7084",
+     "name": "Halliday’s Private Hotel",
+     "kind": "Place",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.5100105404853821
+    },
+    {
+     "id": "e70f295474096",
+     "name": "John Ferrier",
+     "kind": "Character",
+     "books": [
+      "05ab674df048d13f"
+     ],
+     "score": 0.6001134514808655
+    }
+   ]
+  }
+ }
+]
