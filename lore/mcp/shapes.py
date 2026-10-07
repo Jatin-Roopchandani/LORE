@@ -68,7 +68,7 @@ class EdgeOut(BaseModel):
     chunk_id: str
     # subject/object are NAMES everywhere (as in the query agent's EdgeRow).
     # Names are not unique, so graph tools also fill the ids, which a UI
-    # joins to `nodes`; "" for producers that do not know them (search).
+    # joins to `nodes`; "" only for producers that have none.
     subject_id: str = ""
     object_id: str = ""
 
@@ -237,7 +237,8 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
                        predicate_raw=e.predicate_raw, object=e.object,
                        evidence=e.evidence, confidence=e.confidence,
                        book_id=e.book_id, chapter_seq=e.chapter_seq,
-                       chunk_id=e.chunk_id)
+                       chunk_id=e.chunk_id,
+                       subject_id=e.subject_id, object_id=e.object_id)
                for e in answer.edges],
         seeds=[SeedOut(id=s.id, name=s.name, kind=s.kind, books=list(s.books),
                        score=s.score if math.isfinite(s.score) else None)

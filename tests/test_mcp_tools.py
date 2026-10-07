@@ -1020,3 +1020,15 @@ async def test_vector_search_closes_the_embedder_when_ollama_errors(
     assert result["error"]["code"] == "upstream_unavailable"
     assert "Ollama" in result["error"]["message"]
     assert closed == [True]
+
+
+def test_search_result_edges_carry_ids():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, EdgeRow
+
+    edge = EdgeRow("Holmes", "INTERACTS_WITH", "met", "Watson", "ev", 0.9,
+                   "b1", 1, "b1:1:0", subject_id="e1", object_id="e2")
+    answer = Answer(text="x", passages=(), mode="graph", template="neighbours",
+                    note=None, edges=(edge,))
+    out = to_search_result(answer, {}).model_dump()
+    assert (out["edges"][0]["subject_id"], out["edges"][0]["object_id"]) == ("e1", "e2")

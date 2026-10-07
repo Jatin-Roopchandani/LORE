@@ -41,7 +41,7 @@ TEXT = ("Holmes spoke to Watson about the case while they waited in the "
 QUOTE = "spoke to Watson about the case"
 SEED_ROW = {"chunk_id": "b1:1:0", "entity_ids": ["e1"], "_distance": 0.1,
             "book_id": "b1", "chapter_seq": 1, "text": TEXT}
-EDGE = [["Holmes", "OPPOSES", "distrusts", "Moriarty", "ev", 0.9, "b1", 1, "b1:1:0"]]
+EDGE = [["Holmes", "OPPOSES", "distrusts", "Moriarty", "ev", 0.9, "b1", 1, "b1:1:0", "e1", "x1"]]
 
 
 class FakeLance:
@@ -629,7 +629,7 @@ async def test_graph_evidence_keeps_the_relevant_late_passage_over_early_ones(
                      " VALUES (?, 'b1', ?, 0, 0, ?)",
                      (chunk_id, ch, f"MARK{ch} " + "x" * 5000))
         edges.append(["Holmes", "OPPOSES", "distrusts", "Moriarty", "ev", 0.9,
-                      "b1", ch, chunk_id])
+                      "b1", ch, chunk_id, "e1", "x1"])
         vectors[chunk_id] = direction
     conn.commit()
     ollama, models = _local(synthesis=Synthesis(claims=[], can_answer=False))
@@ -746,7 +746,8 @@ class EntityKuzu:
 
 
 def _edge_row(chunk_id, chapter, subject):
-    return [subject, "UNCATEGORIZED", "met", "X", "ev", 0.9, "b1", chapter, chunk_id]
+    return [subject, "UNCATEGORIZED", "met", "X", "ev", 0.9, "b1", chapter, chunk_id,
+            "e1", "x1"]
 
 
 def _scripted(vectors_by_text, sub_questions, choices, synthesis=None, *,
@@ -1062,7 +1063,7 @@ def _two_book_setup(tmp_path: Path):
     lance = VectorLance({tuple(Q): [_row("b1:2:0", ["e1"], 0.1, 2)]},
                         {"b1:2:0": near, "b1:3:0": less, "b2:2:0": [0.1, 0.0, 0.0]})
     rows = [[*_edge_row("b1:2:0", 2, "H")], [*_edge_row("b1:3:0", 3, "H")],
-            ["H", "UNCATEGORIZED", "met", "X", "ev", 0.9, "b2", 2, "b2:2:0"]]
+            ["H", "UNCATEGORIZED", "met", "X", "ev", 0.9, "b2", 2, "b2:2:0", "e1", "x1"]]
     return conn, lance, EntityKuzu({"e1": rows})
 
 

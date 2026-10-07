@@ -21,6 +21,7 @@ def run_template(kuzu, call: TemplateCall) -> list[EdgeRow]:
             subject=str(row[0]), predicate=str(row[1]), predicate_raw=str(row[2]),
             object=str(row[3]), evidence=str(row[4]), confidence=float(row[5]),
             book_id=str(row[6]), chapter_seq=int(row[7]), chunk_id=str(row[8]),
+            subject_id=str(row[9]), object_id=str(row[10]),
         )
         for row in rows
     ]

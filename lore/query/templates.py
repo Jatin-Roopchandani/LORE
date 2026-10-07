@@ -15,6 +15,7 @@ MAX_EVIDENCE_CHARS = 12000
 ROW_FIELDS: tuple[str, ...] = (
     "subject", "predicate", "predicate_raw", "object", "evidence",
     "confidence", "book_id", "chapter_seq", "chunk_id",
+    "subject_id", "object_id",
 )
 
 # Every template binds the edge as a DIRECTED (a)-[r:REL]->(b), so subject
@@ -27,7 +28,7 @@ _RETURN = (
     "r.predicate_raw AS predicate_raw, b.name AS object, "
     "r.evidence AS evidence, r.confidence AS confidence, "
     "r.book_id AS book_id, r.chapter_seq AS chapter_seq, "
-    "r.chunk_id AS chunk_id "
+    "r.chunk_id AS chunk_id, a.id AS subject_id, b.id AS object_id "
 )
 
 
@@ -39,13 +40,13 @@ _RETURN = (
 # different facts each run. Every field appears, so no two distinct rows tie.
 _ORDER = (
     "ORDER BY book_id, chapter_seq, chunk_id, predicate, predicate_raw, "
-    "subject, object, confidence, evidence "
+    "subject, object, confidence, evidence, subject_id, object_id "
 )
 
 # The same order, chapter first: this template exists to walk a chapter range.
 _ORDER_BY_CHAPTER = (
     "ORDER BY chapter_seq, book_id, chunk_id, predicate, predicate_raw, "
-    "subject, object, confidence, evidence "
+    "subject, object, confidence, evidence, subject_id, object_id "
 )
 
 
@@ -63,6 +64,7 @@ _FACT_KEY = " + ".join([
     _sized("chunk_id"), _sized("predicate"), _sized("predicate_raw"),
     _sized("subject"), _sized("object"),
     _sized("cast(confidence AS STRING)"), _sized("evidence"),
+    _sized("subject_id"), _sized("object_id"),
 ])
 
 # across_books: every book the entity appears in contributes up to $limit
@@ -94,11 +96,12 @@ _ACROSS_BOOKS = (
     "r.predicate_raw AS predicate_raw, b.name AS object, "
     "r.evidence AS evidence, r.confidence AS confidence, "
     "r.book_id AS book_id, r.chapter_seq AS chapter_seq, "
-    "r.chunk_id AS chunk_id "
+    "r.chunk_id AS chunk_id, a.id AS subject_id, b.id AS object_id "
     "WITH book_id, struct_pack(subject := subject, predicate := predicate, "
     "predicate_raw := predicate_raw, object := object, evidence := evidence, "
     "confidence := confidence, chapter_seq := chapter_seq, "
-    "chunk_id := chunk_id, k := " + _FACT_KEY + ") AS fact "
+    "chunk_id := chunk_id, subject_id := subject_id, "
+    "object_id := object_id, k := " + _FACT_KEY + ") AS fact "
     "WITH book_id, collect(fact) AS facts, "
     "list_sort(collect(fact.k))[1:$limit] AS kept "
     "UNWIND facts AS fact "
@@ -107,9 +110,10 @@ _ACROSS_BOOKS = (
     "fact.predicate_raw AS predicate_raw, fact.object AS object, "
     "fact.evidence AS evidence, fact.confidence AS confidence, "
     "book_id AS book_id, fact.chapter_seq AS chapter_seq, "
-    "fact.chunk_id AS chunk_id "
+    "fact.chunk_id AS chunk_id, fact.subject_id AS subject_id, "
+    "fact.object_id AS object_id "
     "ORDER BY book_id, chapter_seq, chunk_id, predicate, predicate_raw, "
-    "subject, object, confidence, evidence"
+    "subject, object, confidence, evidence, subject_id, object_id"
 )
 
 TEMPLATES: dict[str, Template] = {

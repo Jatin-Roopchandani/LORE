@@ -19,7 +19,7 @@ class FakeKuzu:
 
 def _row(chunk_id: str = "b1:1:0", subject: str = "Holmes") -> list:
     return [subject, "OPPOSES", "distrusts", "Moriarty", "ev", 0.9,
-            "b1", 1, chunk_id]
+            "b1", 1, chunk_id, "e1", "x1"]
 
 
 def _seed(conn, chunk_id: str, text: str, book: str = "b1",
@@ -49,7 +49,7 @@ def test_run_template_maps_rows_onto_edge_row() -> None:
                         TemplateCall(template="neighbours",
                                      slots={"entity_id": "e1", "limit": 40}))
     assert rows == [EdgeRow("Holmes", "OPPOSES", "distrusts", "Moriarty", "ev",
-                            0.9, "b1", 1, "b1:1:0")]
+                            0.9, "b1", 1, "b1:1:0", "e1", "x1")]
 
 
 def test_an_unknown_template_raises_rather_than_guessing() -> None:

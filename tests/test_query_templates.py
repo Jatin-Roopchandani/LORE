@@ -399,3 +399,32 @@ def test_rows_differing_only_in_evidence_come_back_in_a_fixed_order(
     assert tied, f"{name} has no ties to break"
     for evidences in tied:
         assert evidences == sorted(evidences)
+
+
+from tests.mcp_fixtures import build_store_triple  # noqa: E402
+
+
+def test_every_template_returns_entity_ids(tmp_path) -> None:
+    # Names are not unique; the UI must open the entity actually traversed.
+    config = build_store_triple(
+        tmp_path,
+        books=[("b1", "A Study in Scarlet")],
+        chunks=[("b1:1:0", "b1", 1)],
+        entities=[("e1", "Holmes", "Character", ["b1"], []),
+                  ("e2", "Watson", "Character", ["b1"], []),
+                  ("e3", "Lestrade", "Character", ["b1"], [])],
+        edges=[("e1", "e2", "INTERACTS_WITH", "b1:1:0", "b1", 1),
+               ("e2", "e3", "INTERACTS_WITH", "b1:1:0", "b1", 1)],
+    )
+    kuzu = KuzuStore(config.kuzu_dir / "graph", read_only=True)
+    slots = {"entity_id": "e1", "a_id": "e1", "b_id": "e2", "limit": 10,
+             "predicate": "INTERACTS_WITH", "lo": 0, "hi": 99}
+    for name, template in TEMPLATES.items():
+        call = TemplateCall(template=name, slots={s: slots[s] for s in template.slots})
+        rows = run_template(kuzu, call)
+        assert rows, f"{name} returned nothing"
+        got = {(r.subject_id, r.object_id) for r in rows}
+        # two_hop excludes edges touching e1, so it returns the Watson-Lestrade
+        # edge; every other template returns the edge it traversed from e1.
+        want = {("e2", "e3")} if name == "two_hop" else {("e1", "e2")}
+        assert want <= got <= {("e1", "e2"), ("e2", "e3")}, name

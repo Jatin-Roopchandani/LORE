@@ -52,6 +52,10 @@ class EdgeRow:
     book_id: str
     chapter_seq: int
     chunk_id: str
+    # Filled by every template (Phase 5a): names are not unique, and the UI
+    # opens the entity that was traversed. "" where a producer has no ids.
+    subject_id: str = ""
+    object_id: str = ""
 
 
 @dataclass(frozen=True)
