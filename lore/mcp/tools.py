@@ -432,6 +432,35 @@ def subgraph(config: LoreConfig, entity_name: str, depth: int = 1) -> dict:
                            depth=clamped, note=note).model_dump()
 
 
+def _exists(kuzu, entity_id: str) -> bool:
+    return bool(list(kuzu.execute(
+        "MATCH (e:Entity) WHERE e.id = $id RETURN e.id", {"id": entity_id})))
+
+
+@_guarded
+def entity_by_id(config: LoreConfig, entity_id: str) -> dict:
+    """`entity`, for a caller that already holds the id (the web UI, from
+    a search's edges). No name resolution, so no ambiguity."""
+    with open_stores(config) as stores:
+        if not _exists(stores.kuzu, entity_id):
+            return error("not_found", f"no entity with id {entity_id!r}")
+        canonical = canonical_ids(stores.kuzu, [entity_id])[0]
+        return _entity_card(stores.kuzu, canonical, CARD_EDGE_CAP).model_dump()
+
+
+@_guarded
+def subgraph_by_id(config: LoreConfig, entity_id: str, depth: int = 1) -> dict:
+    with open_stores(config) as stores:
+        if not _exists(stores.kuzu, entity_id):
+            return error("not_found", f"no entity with id {entity_id!r}")
+        root = canonical_ids(stores.kuzu, [entity_id])[0]
+        clamped = max(1, min(depth, MAX_DEPTH))
+        nodes, edges, truncated = _expand(stores.kuzu, root, clamped,
+                                          SUBGRAPH_NODE_CAP, SUBGRAPH_EDGE_CAP)
+        return SubgraphOut(nodes=nodes, edges=edges, truncated=truncated,
+                           depth=clamped, note=None).model_dump()
+
+
 # --- vector_search and cypher_query ---------------------------------------------
 
 # A client may ask for any `limit`; it is clamped to this range so nobody can

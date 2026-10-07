@@ -1032,3 +1032,25 @@ def test_search_result_edges_carry_ids():
                     note=None, edges=(edge,))
     out = to_search_result(answer, {}).model_dump()
     assert (out["edges"][0]["subject_id"], out["edges"][0]["object_id"]) == ("e1", "e2")
+
+
+def test_entity_by_id_opens_that_entity_when_names_collide(tmp_path):
+    from lore.mcp.tools import entity, entity_by_id, subgraph_by_id
+    config = build_store_triple(
+        tmp_path,
+        books=[("b1", "A Study")],
+        chunks=[("c1", "b1", 1)],
+        entities=[("e1", "Stangerson", "Character", ["b1"], []),
+                  ("e2", "Stangerson", "Character", ["b1"], []),
+                  ("e3", "Hope", "Character", ["b1"], [])],
+        # Both Stangersons need an edge: an edgeless namesake is dropped as
+        # a candidate, which would make the name unambiguous.
+        edges=[("e3", "e2", "KILLS", "c1", "b1", 1),
+               ("e3", "e1", "MENTIONS", "c1", "b1", 1)],
+    )
+    assert entity(config, "Stangerson")["error"]["code"] == "not_found"  # ambiguous by name
+    card = entity_by_id(config, "e2")
+    assert card["id"] == "e2" and card["edges_in"][0]["subject_id"] == "e3"
+    assert entity_by_id(config, "nope")["error"]["code"] == "not_found"
+    sub = subgraph_by_id(config, "e2")
+    assert {n["id"] for n in sub["nodes"]} == {"e2", "e3"}
