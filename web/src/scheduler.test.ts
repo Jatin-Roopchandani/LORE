@@ -33,3 +33,36 @@ test("stop cancels pending pieces", async () => {
   expect(out.length).toBeLessThan(3);
   vi.useRealTimers();
 });
+
+test("reduced motion: stop() blocks later pushes", () => {
+  const out: AskEvent[] = [];
+  const s = createScheduler((e) => out.push(e), { reduceMotion: true });
+  s.push({ type: "parts", t: 0, sub_questions: [] }); s.stop(); s.push({ type: "parts", t: 0, sub_questions: [] });
+  expect(out).toHaveLength(1);
+});
+
+test("with motion: stop() after one piece halts the rest and later pushes", async () => {
+  vi.useFakeTimers();
+  const out: AskEvent[] = [];
+  const s = createScheduler((e) => out.push(e), { reduceMotion: false });
+  s.push(seeds);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(out).toHaveLength(1);
+  s.stop();
+  await vi.runAllTimersAsync();
+  s.push({ type: "parts", t: 0, sub_questions: [] });
+  await vi.runAllTimersAsync();
+  expect(out).toHaveLength(1);
+  vi.useRealTimers();
+});
+
+test("replay caps the wait between events at 600ms", async () => {
+  vi.useFakeTimers();
+  const times: number[] = [];
+  const s = createScheduler(() => times.push(Date.now()), { reduceMotion: false, replay: true });
+  s.push({ type: "parts", t: 0, sub_questions: [] }); s.push({ type: "parts", t: 5, sub_questions: [] });
+  await vi.runAllTimersAsync();
+  expect(times).toHaveLength(2);
+  expect(times[1] - times[0]).toBe(600);
+  vi.useRealTimers();
+});

@@ -6,6 +6,7 @@ const CX = 500, CY = 350;
 function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  h ^= h >>> 16; h = Math.imul(h, 2246822507); h ^= h >>> 13; h = Math.imul(h, 3266489909); h ^= h >>> 16;
   return (h >>> 0) / 4294967296;
 }
 
@@ -13,10 +14,12 @@ export function place(previous: Positions, view: GraphView, anchor: string | nul
   const pos: Positions = new Map(previous);
   const fresh = view.nodes.filter((n) => !pos.has(n.id));
   const seeds = fresh.filter((n) => n.seedPart !== null);
-  seeds.forEach((n, i) => {
-    const a = (n.seedPart ?? 0) * 0.6 + (2 * Math.PI * i) / Math.max(1, seeds.length);
-    pos.set(n.id, { x: CX + 220 * Math.cos(a), y: CY + 220 * Math.sin(a) });
-  });
+  const totalSeeds = view.nodes.filter((n) => n.seedPart !== null).length;
+  const radius = Math.max(220, 12 * totalSeeds);
+  for (const n of seeds) {
+    const a = (n.seedPart ?? 0) * 0.6 + 2 * Math.PI * hash(n.id);
+    pos.set(n.id, { x: CX + radius * Math.cos(a), y: CY + radius * Math.sin(a) });
+  }
   const neighbours = new Map<string, string[]>();
   for (const l of view.links) {
     neighbours.set(l.source, [...(neighbours.get(l.source) ?? []), l.target]);
@@ -29,7 +32,7 @@ export function place(previous: Positions, view: GraphView, anchor: string | nul
     const a = 2 * Math.PI * hash(n.id);
     pos.set(n.id, { x: c.x + 140 * Math.cos(a), y: c.y + 140 * Math.sin(a) });
   }
-  const movable = new Set(others.map((n) => n.id));
+  const movable = new Set(fresh.map((n) => n.id));
   const ids = [...pos.keys()];
   for (let it = 0; it < 60; it++) {
     for (const id of movable) {

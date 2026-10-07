@@ -18,9 +18,10 @@ export function splitForStagger(event: AskEvent, chunk: number): AskEvent[] {
 export interface Scheduler { push(event: AskEvent): void; stop(): void }
 
 export function createScheduler(dispatch: (e: AskEvent) => void, opts: { reduceMotion: boolean; replay?: boolean }): Scheduler {
-  if (opts.reduceMotion && !opts.replay) return { push: dispatch, stop: () => {} };
-  let chain: Promise<void> = Promise.resolve();
   let stopped = false;
+  if (opts.reduceMotion && !opts.replay)
+    return { push: (e) => { if (!stopped) dispatch(e); }, stop: () => { stopped = true; } };
+  let chain: Promise<void> = Promise.resolve();
   let lastT: number | null = null;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const sleep = (ms: number) => new Promise<void>((resolve) => {

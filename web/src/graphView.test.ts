@@ -59,3 +59,35 @@ test("a recorded answer derives without throwing", () => {
   expect(v.nodes.length).toBeGreaterThan(1);
   expect(v.links.some((l) => l.state === "cited")).toBe(true);
 });
+
+const sub = (root: string, others: string[]) => ({
+  nodes: [root, ...others].map((id) => ({ id, name: id, kind: "Character", books: ["b1"] })),
+  edges: others.map((o) => ({ subject: root, subject_id: root, object: o, object_id: o, count: 1, predicates: { KNOWS: 1 } })),
+  truncated: false, depth: 1, note: null,
+} as any);
+
+test("expansion marks root, adds part-null shown links, search link wins", () => {
+  const v = deriveGraph(stateWith(base), { ...opts, expansions: [sub("h", ["d", "z"])] });
+  expect(v.nodes.find((n) => n.id === "h")!.expanded).toBe(true);
+  expect(v.nodes.find((n) => n.id === "z")!.expanded).toBe(false);
+  expect(v.links.filter((l) => l.source === "h" && l.target === "d")).toHaveLength(1);
+  expect(v.links.find((l) => l.target === "d")!.part).toBe(0);
+  const hz = v.links.find((l) => l.target === "z")!;
+  expect(hz.part).toBeNull();
+  expect(hz.state).toBe("shown");
+});
+
+test("a node with every book hidden is dim", () => {
+  const v = deriveGraph(stateWith(base), { ...opts, hiddenBooks: new Set(["b2"]) });
+  expect(v.nodes.find((n) => n.id === "x")!.state).toBe("dim");
+  expect(v.nodes.find((n) => n.id === "d")!.state).toBe("shown");
+});
+
+test("hidden book forces faint even on a cited link", () => {
+  const result = { answer: "", mode: "graph", template: null, note: null, model: null, selection_model: null, sub_questions: ["a", "b"],
+    claims: [{ text: "t", passage: 1, quote: "q" }], passages: [{ n: 1, chunk_id: "c3", book_id: "b2", book_title: null, chapter_seq: 1, text: "" }],
+    edges: [], seeds: [] };
+  const s = stateWith([...base, { type: "answer", t: 1, result }]);
+  expect(deriveGraph(s, opts).links.find((l) => l.target === "x")!.state).toBe("cited");
+  expect(deriveGraph(s, { ...opts, hiddenBooks: new Set(["b2"]) }).links.find((l) => l.target === "x")!.state).toBe("faint");
+});

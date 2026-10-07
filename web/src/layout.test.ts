@@ -23,3 +23,28 @@ test("deterministic and spread out", () => {
   for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++)
     expect(Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y)).toBeGreaterThanOrEqual(60);
 });
+
+test("place never mutates or moves placed nodes", () => {
+  const v1: GraphView = { nodes: [node("a", 0), node("b")], links: [link("a", "b")], shownEdges: 1, totalEdges: 1 };
+  const p1 = place(new Map(), v1);
+  const before = structuredClone([...p1]);
+  const v2: GraphView = { ...v1, nodes: [...v1.nodes, node("c"), node("d", 1)], links: [...v1.links, link("b", "c")] };
+  const p2 = place(p1, v2);
+  expect([...p1]).toEqual(before);
+  for (const [id, pt] of before) expect(p2.get(id)).toEqual(pt);
+});
+
+test("seeds fed one at a time stay spread and never move", () => {
+  let pos = new Map<string, { x: number; y: number }>();
+  const nodes: ReturnType<typeof node>[] = [];
+  for (let i = 0; i < 8; i++) {
+    nodes.push(node(`s${i}`, 0));
+    const before = structuredClone([...pos]);
+    pos = place(pos, { nodes: [...nodes], links: [], shownEdges: 0, totalEdges: 0 });
+    for (const [id, pt] of before) expect(pos.get(id)).toEqual(pt);
+  }
+  const pts = [...pos.values()];
+  expect(pts).toHaveLength(8);
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++)
+    expect(Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y)).toBeGreaterThanOrEqual(60);
+});
