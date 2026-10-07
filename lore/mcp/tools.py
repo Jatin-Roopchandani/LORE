@@ -672,7 +672,7 @@ def _upstream(exc: GeminiError) -> dict:
 
 @_guarded
 async def lore_search(config: LoreConfig, query: str,
-                      models: QueryModels | None = None) -> dict:
+                      models: QueryModels | None = None, on_event=None) -> dict:
     """The full query agent: spends Gemini requests, so it is guarded.
 
     `budget_exhausted` means the shared ledger says every synthesis model is
@@ -698,7 +698,8 @@ async def lore_search(config: LoreConfig, query: str,
                                  f" {_KEY_HELP}.")
             titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
             answer = await answer_question(stores.conn, stores.kuzu,
-                                           stores.lance, query, models)
+                                           stores.lance, query, models,
+                                           on_event=on_event)
             return to_search_result(answer, titles).model_dump()
         except GeminiError as exc:
             return _upstream(exc)

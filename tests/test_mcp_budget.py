@@ -78,7 +78,7 @@ def _models(config, synthesize=None, closed=None) -> QueryModels:
 
 @pytest.fixture(autouse=True)
 def fake_answer():
-    async def answer(conn, kuzu, lance, question, models, *, baseline=False):
+    async def answer(conn, kuzu, lance, question, models, *, baseline=False, on_event=None):
         await models.synthesize("prompt", Synthesis)
         return ANSWER
 
@@ -341,7 +341,7 @@ async def test_ollama_down_is_upstream_unavailable_naming_ollama(live_config):
 
     models = dataclasses.replace(base, embed=embed)
 
-    async def answer(conn, kuzu, lance, question, models, *, baseline=False):
+    async def answer(conn, kuzu, lance, question, models, *, baseline=False, on_event=None):
         await models.embed([question])
         return ANSWER
 

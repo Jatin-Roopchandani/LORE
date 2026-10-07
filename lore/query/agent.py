@@ -16,6 +16,7 @@ from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import list_books
 from lore.query.decompose import split
+from lore.query.events import EDGES_PER_PART_CAP, OnEvent, edge_key, emit
 from lore.query.models import Answer, EdgeRow, Evidence, SeedEntity
 from lore.query.seed import (
     embed_question,
@@ -349,6 +350,33 @@ async def _parts(question, vector, models: QueryModels, kuzu):
     return [(part, vectors[part]) for part in parts], decomposed
 
 
+def _with_check_events(models: QueryModels, on_event: OnEvent,
+                       ran: list[bool]) -> QueryModels:
+    """`models` whose faithfulness check announces itself. Writing ends,
+    and checking begins, exactly when the check is called; `ran` records it
+    so the caller does not end the write step a second time."""
+    if models.check is None:
+        return models
+    check = models.check
+
+    async def announced(prompt, schema):
+        ran.append(True)
+        emit(on_event, "step", name="write", state="done", part=None, detail=None)
+        emit(on_event, "step", name="check", state="start", part=None, detail=None)
+        detail = "did not run"
+        try:
+            reply = await check(prompt, schema)
+            verdicts = [str(getattr(j, "verdict", "")).strip().lower().replace(" ", "_")
+                        for j in getattr(reply, "judgements", [])]
+            dropped = sum(v == "not_supported" for v in verdicts)
+            detail = "all supported" if not dropped else f"{dropped} not supported"
+            return reply
+        finally:
+            emit(on_event, "step", name="check", state="done", part=None, detail=detail)
+
+    return replace(models, check=announced)
+
+
 async def answer_question(
     conn: sqlite3.Connection,
     kuzu,
@@ -357,6 +385,7 @@ async def answer_question(
     models: QueryModels,
     *,
     baseline: bool = False,
+    on_event: OnEvent | None = None,
 ) -> Answer:
     titles = {book["id"]: book["title"] for book in list_books(conn)}
 
@@ -369,6 +398,10 @@ async def answer_question(
         return await _vector_answer(lance, question, vector, models, titles,
                                     mode="vector-baseline", note=None)
 
+    check_ran: list[bool] = []
+    if on_event is not None:
+        models = _with_check_events(models, on_event, check_ran)
+
     empty = Evidence(edges=(), passages=(), truncated=False)
     # The baseline's passages for the whole question, then each part's.
     nearest: dict[tuple, list[dict]] = {tuple(vector): lance.search_chunks(
@@ -379,8 +412,12 @@ async def answer_question(
         return await _synthesize(question, empty, models, mode="empty",
                                  book_titles=titles)
 
+    emit(on_event, "step", name="split", state="start", part=None, detail=None)
     parts, decomposed = await _parts(question, vector, models, kuzu)
     sub_questions = tuple(part for part, _ in parts)
+    emit(on_event, "parts", sub_questions=list(sub_questions))
+    emit(on_event, "step", name="split", state="done", part=None,
+         detail=f"{len(parts)} part" + ("s" if len(parts) != 1 else ""))
     for v in (v for _, v in parts):
         if tuple(v) not in nearest:
             nearest[tuple(v)] = lance.search_chunks(v, limit=VECTOR_K)
@@ -410,13 +447,17 @@ async def answer_question(
     all_seeds: list[SeedEntity] = []
     seen_seed_ids: set[str] = set()
     seeded = False
-    for part, part_vector in parts:
+    for index, (part, part_vector) in enumerate(parts):
         # A part's own names first, then the whole question's: a rewritten
         # part may have dropped a name the question gave.
+        emit(on_event, "step", name="seeds", state="start", part=index, detail=None)
         named = await named_seeds(kuzu, list(dict.fromkeys(
             named_entity_ids(part, names) + named_in_question)))
         seeds = await seed_entities(part, lance, kuzu, models.embed,
                                     vector=part_vector, named=named)
+        emit(on_event, "seeds", part=index, entities=list(seeds))
+        emit(on_event, "step", name="seeds", state="done", part=index,
+             detail=f"{len(seeds)} found")
         if not seeds:
             continue
         seeded = True
@@ -424,14 +465,23 @@ async def answer_question(
             if s.id not in seen_seed_ids:
                 seen_seed_ids.add(s.id)
                 all_seeds.append(s)
+        emit(on_event, "step", name="search", state="start", part=index, detail=None)
         call, model = await _select(part, seeds, models)
         if model and model not in chosen_by:
             chosen_by.append(model)
         if call is None:
+            emit(on_event, "edges", part=index, template=None, total=0, edges=[])
+            emit(on_event, "step", name="search", state="done", part=index,
+                 detail="no graph search fitted")
             continue
         if call.template not in templates:
             templates.append(call.template)
-        rows.extend(run_template(kuzu, call))
+        found = run_template(kuzu, call)
+        rows.extend(found)
+        emit(on_event, "edges", part=index, template=call.template, total=len(found),
+             edges=found[:EDGES_PER_PART_CAP])
+        emit(on_event, "step", name="search", state="done", part=index,
+             detail=f"{call.template.replace('_', ' ')} · {len(found)} relationships")
 
     if not seeded:
         # None of the nearest passages bridges to a live entity.
@@ -451,10 +501,16 @@ async def answer_question(
     # or one part was searched across books -- so Task 6's guarantee that a
     # cross-book answer keeps both books survives there.
     book_fair = len(parts) == 1 and (not decomposed or "across_books" in templates)
+    emit(on_event, "step", name="rank", state="start", part=None, detail=None)
     evidence = assemble_ranked(conn, rows, extra_chunks=extra,
                                max_chars=models.evidence_chars,
                                score_lists=[relevance(v, stored) for _, v in parts],
                                book_fair=book_fair)
+    emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in evidence.passages],
+         edge_keys=[edge_key(e) for e in evidence.edges])
+    emit(on_event, "step", name="rank", state="done", part=None,
+         detail=f"{len(evidence.passages)} passages")
+    emit(on_event, "step", name="write", state="start", part=None, detail=None)
     # One synthesis call per part, over its own share (synthesize_parts).
     if rows:
         answer = await _synthesize(question, evidence, models, mode="graph",
@@ -464,6 +520,9 @@ async def answer_question(
         answer = await _synthesize(question, evidence, models, mode="vector-fallback",
                                    note=GRAPH_EMPTY_NOTE, book_titles=titles,
                                    sub_questions=sub_questions)
+    if not check_ran:
+        emit(on_event, "step", name="write", state="done", part=None,
+             detail=f"{len(answer.claims)} claims")
     # The subgraph the UI draws: the evidence edges rows came from, and the
     # entities every part seeded from. Not populated on the empty/no-seed
     # early returns above -- there is no graph evidence or seed there, and

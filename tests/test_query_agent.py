@@ -1180,3 +1180,75 @@ async def test_seeds_are_deduplicated_by_id_not_by_full_value(tmp_path: Path) ->
     # it was ever vector-found (score 0.4) in the second.
     assert answer.seeds[0].score == 0.0
     conn.close()
+
+
+# --- Phase 5a: the event hook -------------------------------------------------
+
+
+async def _ask_with_events(tmp_path, on_event):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    conn = _conn(tmp_path)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]}, {"b1:1:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    models, calls = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"],
+                              [TemplateChoice(template="neighbours", entities=[1])],
+                              GOOD)
+    answer = await answer_question(conn, kuzu, lance, "who?", models, on_event=on_event)
+    conn.close()
+    return answer, calls
+
+
+async def test_events_arrive_in_stage_order(tmp_path: Path) -> None:
+    events = []
+    await _ask_with_events(tmp_path, events.append)
+    kinds = [(e["type"], e.get("name"), e.get("state")) for e in events]
+    assert kinds == [
+        ("step", "split", "start"), ("parts", None, None), ("step", "split", "done"),
+        ("step", "seeds", "start"), ("seeds", None, None), ("step", "seeds", "done"),
+        ("step", "search", "start"), ("edges", None, None), ("step", "search", "done"),
+        ("step", "rank", "start"), ("evidence", None, None), ("step", "rank", "done"),
+        ("step", "write", "start"), ("step", "write", "done"),
+    ]
+    seeds = next(e for e in events if e["type"] == "seeds")
+    assert seeds["part"] == 0 and seeds["entities"][0]["id"] == "e1"
+    edges = next(e for e in events if e["type"] == "edges")
+    assert edges["total"] == 1 and edges["edges"][0]["subject_id"] == "e1"
+    evidence = next(e for e in events if e["type"] == "evidence")
+    assert evidence["chunk_ids"] == ["b1:1:0"]
+    assert evidence["edge_keys"] == ["e1|UNCATEGORIZED|x1|b1:1:0"]
+
+
+async def test_the_hook_changes_nothing_about_the_answer(tmp_path: Path) -> None:
+    with_hook, calls_a = await _ask_with_events(tmp_path / "a", lambda e: None)
+    without, calls_b = await _ask_with_events(tmp_path / "b", None)
+    assert with_hook == without
+    assert calls_a == calls_b
+
+
+async def test_a_raising_hook_does_not_fail_the_answer(tmp_path: Path) -> None:
+    def broken(event):
+        raise RuntimeError("client went away")
+    answer, _ = await _ask_with_events(tmp_path, broken)
+    assert answer.mode == "graph"
+
+
+async def test_check_steps_wrap_the_faithfulness_call(tmp_path: Path) -> None:
+    from dataclasses import replace as dc_replace
+    from lore.query.synthesize import Faithfulness, Judgement
+
+    events = []
+    conn = _conn(tmp_path)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]}, {"b1:1:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    models, _ = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"],
+                          [TemplateChoice(template="neighbours", entities=[1])], GOOD)
+
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[Judgement(claim=1, verdict="supported",
+                                                  reason="ok")])
+
+    models = dc_replace(models, check=check)
+    await answer_question(conn, kuzu, lance, "who?", models, on_event=events.append)
+    conn.close()
+    tail = [(e["name"], e["state"]) for e in events if e["type"] == "step"][-4:]
+    assert tail == [("write", "start"), ("write", "done"), ("check", "start"), ("check", "done")]
