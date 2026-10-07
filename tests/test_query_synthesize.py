@@ -1064,7 +1064,25 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
 
     evals = Path(__file__).parents[1] / "evals/answer_quality"
     sets = [evals / "questions.json", evals / "heldout.json"]
-    prompt = grams(synthesize_module._PROMPT)
+    prompt = grams("\n".join((
+        synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
+        synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
+        synthesize_module._FULL_PART_CONTEXT)))
     for q in (q for path in sets for q in json.loads(path.read_text())):
         leaked = (grams(q["question"]) | grams(q["verified"])) & prompt
         assert not leaked, f"{q['id']} leaks into the prompt: {sorted(leaked)}"
+
+
+def test_full_answers_asks_for_circumstances_and_a_full_part(monkeypatch) -> None:
+    from lore.query import synthesize as synthesize_module
+    from lore.query.synthesize import _build_prompt
+    evidence = Evidence(edges=(), passages=(
+        Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text."),),
+        truncated=False)
+    plain = _build_prompt("why?", evidence, part_of="who and why?")
+    assert "List every distinct fact" in plain and "Answer only this part." in plain
+    monkeypatch.setattr(synthesize_module, "FULL_ANSWERS", True)
+    full = _build_prompt("why?", evidence, part_of="who and why?")
+    assert "circumstances, reasons, methods and consequences" in full
+    assert "Answer this part fully" in full and "Answer only this part." not in full
+    assert "List every distinct fact" not in full
