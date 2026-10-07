@@ -131,6 +131,15 @@ class AdjudicationConfig(BaseModel):
     models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
 
 
+class WebConfig(BaseModel):
+    """`lore ui` (Phase 5a). show_internals gates provider details (model
+    names, the Gemini quota, Ollama commands, the MCP panel): on for a
+    local install, off for a future deployed build."""
+
+    show_internals: bool = True
+    port: int = 8766
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
     # "kaggle": free T4 burst. "ollama": fully local, zero egress.
@@ -146,6 +155,7 @@ class LoreConfig(BaseModel):
     selection: SelectionConfig = Field(default_factory=SelectionConfig)
     synthesis: SynthesisConfig = Field(default_factory=SynthesisConfig)
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
