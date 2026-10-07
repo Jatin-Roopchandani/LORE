@@ -2,7 +2,8 @@ import type { ApiError, AskEvent, Book, EntityCardData, McpInfo, Quota, Subgraph
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   const events: AskEvent[] = [];
-  const blocks = buffer.split("\n\n");
+  const normalized = buffer.replace(/\r\n?/g, "\n");
+  const blocks = normalized.split("\n\n");
   const rest = blocks.pop() ?? "";
   for (const block of blocks) {
     let type = "message";

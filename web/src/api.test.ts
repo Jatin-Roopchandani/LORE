@@ -9,6 +9,12 @@ test("parses complete frames and keeps the partial tail", () => {
   expect(rest).toBe("event: step\ndata: {\"t\":");
 });
 
+test("handles CRLF line endings from SSE servers", () => {
+  const { events, rest } = parseSse("event: parts\r\ndata: {\"t\":0,\"sub_questions\":[\"a\"]}\r\n\r\n");
+  expect(events).toEqual([{ type: "parts", t: 0, sub_questions: ["a"] }]);
+  expect(rest).toBe("");
+});
+
 test("streamAsk yields events across chunk boundaries", async () => {
   const body = frame("parts", { t: 0, sub_questions: ["a"] }) + frame("answer", { t: 1, result: { answer: "x" } });
   const bytes = new TextEncoder().encode(body);
