@@ -1,0 +1,34 @@
+{
+  "name": "lore-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "postbuild": "node -e \"require('fs').writeFileSync('../lore/web/static/.gitkeep','')\"",
+    "test": "vitest run",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.1.0",
+    "@fontsource/newsreader": "^5.1.0",
+    "@fontsource/public-sans": "^5.1.0",
+    "graphology": "^0.25.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sigma": "^3.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.2",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9",
+    "vitest": "^2.1.3"
+  }
+}
