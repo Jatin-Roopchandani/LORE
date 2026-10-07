@@ -14,6 +14,8 @@ export const UI = {
   refusal: "The books don't contain enough to answer that. The graph shows where LORE looked.",
   partial: (parts: string[]) => `Not found in the books: ${parts.join("; ")}`,
   showingEdges: (shown: number, total: number) => `Showing ${shown} of ${total} relationships`,
+  graphIdle: "Evidence graph",
+  answeredIn: (seconds: number) => `Answered in ${seconds.toFixed(1)}s · cited relationships glow`,
   ingestHint: "Adding books from the browser comes next. For now, run this in a terminal:",
   mcpNotRunning: "HTTP server not running",
   mcpRunning: "HTTP server running",
