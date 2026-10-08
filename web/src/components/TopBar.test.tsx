@@ -41,3 +41,8 @@ test("settings reflects the theme toggled with the top bar button", async () => 
   await userEvent.keyboard("{Escape}");
   expect(screen.getByRole("button", { name: "Settings" })).toHaveFocus();
 });
+
+test("the add button uses a plain plus sign", () => {
+  bar();
+  expect(screen.getByRole("button", { name: /Add book/ }).textContent).toBe("+ Add book");
+});

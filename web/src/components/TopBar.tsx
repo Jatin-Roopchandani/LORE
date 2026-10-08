@@ -18,7 +18,7 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
       <span className="spacer" />
       <div className="tools">
         <BooksDropdown books={books} hiddenBooks={hiddenBooks} onChange={onBooksChange} />
-        <button className="tbtn primary" type="button" onClick={() => setAdding(true)}>＋ Add book</button>
+        <button className="tbtn primary" type="button" onClick={() => setAdding(true)}>+ Add book</button>
         <QuotaChip quota={quota} showInternals={showInternals} />
         <button className="tbtn icon" type="button" aria-label="Switch light or dark" onClick={() => applyTheme(isDark() ? "light" : "dark")}>◐</button>
         <SettingsMenu showInternals={showInternals} />

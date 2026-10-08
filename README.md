@@ -93,6 +93,11 @@ authentication. Asking spends Gemini requests, like `lore ask`.
 For frontend development, run `lore ui --dev` with `cd web && npm run dev`
 (http://localhost:5173). Tests: `npm test` (free). The end-to-end test
 spends Gemini requests, so it's opt-in: `LORE_E2E=1 npx playwright test`.
+`lore ui --dev` lets any page served from localhost:5173 call the API, so use
+it only while developing.
+
+Packaging a wheel needs `cd web && npm run build` first: the built app in
+`lore/web/static` is what ships.
 
 ## Ask LORE from an MCP client
 
