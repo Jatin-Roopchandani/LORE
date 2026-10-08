@@ -15,6 +15,9 @@ export function useAsk() {
   const [state, dispatch] = useReducer(reducer, initialState());
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
   const [current, setCurrent] = useState<string | null>(null);
+  const loaded = useRef(history);
+  // Saved outside the state updater (updaters must stay pure); the first render's list came from storage.
+  useEffect(() => { if (history !== loaded.current) saveHistory(history); }, [history]);
   const abort = useRef<AbortController | null>(null);
   const scheduler = useRef<Scheduler | null>(null);
   const last = useRef<string>("");
@@ -36,10 +39,8 @@ export function useAsk() {
       const events: AskEvent[] = [];
       for await (const event of streamAsk(question, controller.signal)) { events.push(event); sched.push(event); }
       if (controller.signal.aborted) return;
-      const answer = events.find((e) => e.type === "answer");
-      if (answer && answer.type === "answer") {
-        setHistory((h) => { const next = addToHistory(h, { id, question, events, answer: answer.result, askedAt: new Date().toISOString() }); saveHistory(next); return next; });
-      }
+      if (events.some((e) => e.type === "answer"))
+        setHistory((h) => addToHistory(h, { id, question, events, askedAt: new Date().toISOString() }));
     })();
   }, []);
 

@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { answerOf, HISTORY_KEY } from "./history";
 import single from "./fixtures/single-part.json";
 import type { AskEvent } from "./types";
 
@@ -42,7 +43,9 @@ test("ask streams to done and lands in history; replay redraws without a request
   await waitFor(() => expect(result.current.state.status).toBe("done"));
   expect(result.current.current).toBe(id);
   expect(streamAsk).toHaveBeenCalledTimes(1);
-  expect(result.current.state.result).toEqual(result.current.history[0].answer);
+  expect(result.current.state.result).toEqual(answerOf(result.current.history[0]));
+  expect(result.current.history[0]).not.toHaveProperty("answer");
+  expect(JSON.parse(localStorage.getItem(HISTORY_KEY)!)[0].events.length).toBeGreaterThan(0);
 });
 
 test("a second ask aborts the first stream and its later events are dropped", async () => {
