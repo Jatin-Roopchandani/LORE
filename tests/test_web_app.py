@@ -69,3 +69,33 @@ def test_settings_follow_config(config):
 def test_root_serves_a_page_even_before_the_frontend_is_built(client):
     r = client.get("/")
     assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+
+
+def test_building_while_running_serves_the_app_on_reload(config, tmp_path,
+                                                         monkeypatch):
+    from lore.web import app as app_module
+    static = tmp_path / "static"
+    static.mkdir()
+    monkeypatch.setattr(app_module, "STATIC", static)
+    client = TestClient(create_app(config), base_url="http://127.0.0.1:8766")
+    assert "not built yet" in client.get("/").text
+    (static / "index.html").write_text("<!doctype html><title>built</title>")
+    (static / "assets").mkdir()
+    (static / "assets" / "app.js").write_text("console.log(1)")
+    r = client.get("/")
+    assert r.status_code == 200 and "<title>built</title>" in r.text
+    assert client.get("/assets/app.js").text == "console.log(1)"
+
+
+def test_entities_by_ids_endpoint(client):
+    body = client.get("/api/entities", params={"ids": "e2,missing,e1"}).json()
+    assert [(e["id"], e["kind"]) for e in body["entities"]] == [
+        ("e1", "Character"), ("e2", "Character")]
+    assert client.get("/api/entities").json() == {"entities": []}
+
+
+def test_stdio_command_quotes_the_lore_path(client, monkeypatch):
+    from lore.web import app as app_module
+    monkeypatch.setattr(app_module, "_lore_executable", lambda: "/home/a b/lore")
+    body = client.get("/api/mcp").json()
+    assert body["stdio_command"] == "claude mcp add lore -- '/home/a b/lore' mcp"

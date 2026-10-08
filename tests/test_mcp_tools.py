@@ -1054,3 +1054,24 @@ def test_entity_by_id_opens_that_entity_when_names_collide(tmp_path):
     assert entity_by_id(config, "nope")["error"]["code"] == "not_found"
     sub = subgraph_by_id(config, "e2")
     assert {n["id"] for n in sub["nodes"]} == {"e2", "e3"}
+
+
+def test_entities_by_ids_returns_known_ids_and_skips_unknown(graph_config):
+    from lore.mcp.tools import entities_by_ids
+    result = entities_by_ids(graph_config, ["w", "nope", "h", "w"])
+    assert result == {"entities": [
+        {"id": "h", "name": HOLMES, "kind": "Character", "books": [BOOK_ID]},
+        {"id": "w", "name": "Dr. Watson", "kind": "Character", "books": [BOOK_ID]},
+    ]}
+    assert entities_by_ids(graph_config, []) == {"entities": []}
+
+
+def test_entities_by_ids_caps_the_lookup(graph_config, monkeypatch):
+    from lore.mcp import tools as t
+    monkeypatch.setattr(t, "ENTITIES_BY_IDS_CAP", 1)
+    assert [e["id"] for e in t.entities_by_ids(graph_config, ["w", "h"])["entities"]] == ["w"]
+
+
+def test_entities_by_ids_without_a_graph_is_no_graph(empty_config):
+    from lore.mcp.tools import entities_by_ids
+    assert entities_by_ids(empty_config, ["h"])["error"]["code"] == "no_graph"

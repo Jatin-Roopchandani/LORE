@@ -448,6 +448,28 @@ def entity_by_id(config: LoreConfig, entity_id: str) -> dict:
         return _entity_card(stores.kuzu, canonical, CARD_EDGE_CAP).model_dump()
 
 
+# The web UI asks for the kinds of every node a search drew; more than a
+# few hundred in one request is not a graph anyone reads.
+ENTITIES_BY_IDS_CAP = 300
+
+
+@_guarded
+def entities_by_ids(config: LoreConfig, ids: list[str]) -> dict:
+    """{id, name, kind, books} for each known id, read-only; unknown ids are
+    left out. At most ENTITIES_BY_IDS_CAP distinct ids are looked up."""
+    wanted = list(dict.fromkeys(i for i in ids if i))[:ENTITIES_BY_IDS_CAP]
+    if not wanted:
+        return {"entities": []}
+    with open_stores(config) as stores:
+        rows = stores.kuzu.execute(
+            "MATCH (e:Entity) WHERE e.id IN $ids"
+            " RETURN e.id, e.name, e.kind, e.books ORDER BY e.id",
+            {"ids": wanted})
+        return {"entities": [
+            {"id": r[0], "name": r[1] or "", "kind": r[2] or "",
+             "books": list(r[3] or [])} for r in rows]}
+
+
 @_guarded
 def subgraph_by_id(config: LoreConfig, entity_id: str, depth: int = 1) -> dict:
     with open_stores(config) as stores:

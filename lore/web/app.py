@@ -8,6 +8,7 @@ MCP; 4xx only for a malformed request to this API).
 from __future__ import annotations
 
 import asyncio
+import shlex
 import shutil
 import socket
 import sqlite3
@@ -16,7 +17,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
@@ -96,6 +97,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             return tools.entity(config, name)
         raise HTTPException(400, "give id or name")
 
+    @api.get("/api/entities")
+    def entities(ids: str = ""):
+        return tools.entities_by_ids(config, [i for i in ids.split(",") if i])
+
     @api.get("/api/subgraph")
     def subgraph(id: str | None = None, name: str | None = None,
                  depth: int = Query(1, ge=1, le=3)):
@@ -112,7 +117,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     @api.get("/api/mcp")
     def mcp():
         return {
-            "stdio_command": f"claude mcp add lore -- {_lore_executable()} mcp",
+            "stdio_command": f"claude mcp add lore -- {shlex.quote(_lore_executable())} mcp",
             "http_command": f"lore mcp --http --port {MCP_PORT}",
             "http_url": f"http://127.0.0.1:{MCP_PORT}/mcp",
             "http_running": _port_open(MCP_PORT),
@@ -137,11 +142,16 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
-    if (STATIC / "index.html").exists():
-        api.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
-    else:
-        @api.get("/", response_class=HTMLResponse)
-        def not_built():
-            return _NOT_BUILT
+    # Decided per request, not once here: building the frontend while the
+    # server runs and reloading must serve it, as the not-built page says.
+    @api.get("/", include_in_schema=False)
+    def root():
+        index = STATIC / "index.html"
+        if index.exists():
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
+        return HTMLResponse(_NOT_BUILT)
+
+    api.mount("/", StaticFiles(directory=STATIC, html=True, check_dir=False),
+              name="static")
 
     return OriginGuard(api, allowed_hosts(host, port), allowed_origins(host, port, dev))
