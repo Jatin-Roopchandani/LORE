@@ -1252,3 +1252,61 @@ async def test_check_steps_wrap_the_faithfulness_call(tmp_path: Path) -> None:
     conn.close()
     tail = [(e["name"], e["state"]) for e in events if e["type"] == "step"][-4:]
     assert tail == [("write", "start"), ("write", "done"), ("check", "start"), ("check", "done")]
+
+
+async def _check_detail(tmp_path: Path, check) -> tuple[str | None, list[dict]]:
+    from dataclasses import replace as dc_replace
+
+    events = []
+    conn = _conn(tmp_path)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]}, {"b1:1:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    models, _ = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"],
+                          [TemplateChoice(template="neighbours", entities=[1])], GOOD)
+    models = dc_replace(models, check=check)
+    answer = await answer_question(conn, kuzu, lance, "who?", models,
+                                   on_event=events.append)
+    conn.close()
+    done = [e for e in events if e["type"] == "step" and e["name"] == "check"]
+    assert [e["state"] for e in done] == ["start", "done"]
+    return done[-1]["detail"], answer
+
+
+async def test_a_check_that_raises_is_reported_as_unverified(tmp_path: Path) -> None:
+    async def check(prompt, schema):
+        raise RuntimeError("quota")
+
+    detail, answer = await _check_detail(tmp_path, check)
+    assert detail == "couldn't verify — claims kept"
+    assert len(answer.claims) == 1
+
+
+async def test_a_rejected_check_reply_is_reported_as_unverified(tmp_path: Path) -> None:
+    from lore.query.synthesize import Faithfulness, Judgement
+
+    async def check(prompt, schema):  # verdicts numbered wrong: rejected
+        return Faithfulness(judgements=[Judgement(claim=2, verdict="not_supported")])
+
+    detail, answer = await _check_detail(tmp_path, check)
+    assert detail == "couldn't verify — claims kept"
+    assert len(answer.claims) == 1
+
+
+async def test_a_check_that_drops_a_claim_says_how_many(tmp_path: Path) -> None:
+    from lore.query.synthesize import Faithfulness, Judgement
+
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[Judgement(claim=1, verdict="Not supported",
+                                                  reason="no")])
+
+    detail, answer = await _check_detail(tmp_path, check)
+    assert detail == "1 not supported"
+    assert answer.claims == ()
+
+
+async def test_an_applied_supported_check_says_all_supported(tmp_path: Path) -> None:
+    async def check(prompt, schema):
+        return all_supported(prompt)
+
+    detail, _ = await _check_detail(tmp_path, check)
+    assert detail == "all supported"

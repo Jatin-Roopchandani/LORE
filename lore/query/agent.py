@@ -32,7 +32,9 @@ from lore.query.subgraph import (
     relevance,
     run_template,
 )
-from lore.query.synthesize import synthesize, synthesize_parts
+from lore.query.synthesize import (
+    CHECK_SKIPPED_NOTE, synthesize, synthesize_parts, validated_verdicts,
+)
 from lore.query.templates import MAX_EVIDENCE_CHARS
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
@@ -350,31 +352,53 @@ async def _parts(question, vector, models: QueryModels, kuzu):
     return [(part, vectors[part]) for part in parts], decomposed
 
 
-def _with_check_events(models: QueryModels, on_event: OnEvent,
-                       ran: list[bool]) -> QueryModels:
-    """`models` whose faithfulness check announces itself. Writing ends,
-    and checking begins, exactly when the check is called; `ran` records it
-    so the caller does not end the write step a second time."""
-    if models.check is None:
-        return models
-    check = models.check
+# The check step's detail when its verdicts were not applied: the call
+# raised, or validated_verdicts rejected the reply. Either way synthesis
+# kept every claim and said so in the note.
+CHECK_UNVERIFIED = "couldn't verify \u2014 claims kept"
 
-    async def announced(prompt, schema):
-        ran.append(True)
-        emit(on_event, "step", name="write", state="done", part=None, detail=None)
-        emit(on_event, "step", name="check", state="start", part=None, detail=None)
-        detail = "did not run"
-        try:
-            reply = await check(prompt, schema)
-            verdicts = [str(getattr(j, "verdict", "")).strip().lower().replace(" ", "_")
-                        for j in getattr(reply, "judgements", [])]
-            dropped = sum(v == "not_supported" for v in verdicts)
+
+class _CheckSteps:
+    """Announces the faithfulness check as a step. Writing ends, and
+    checking begins, exactly when the check is called; the step closes once
+    synthesis returns, with a detail decided from the final outcome --
+    verdicts are reported only when synthesis actually applied them."""
+
+    def __init__(self, on_event: OnEvent) -> None:
+        self.on_event = on_event
+        self.ran = False
+        self.reply = None
+        self.closed = False
+
+    def wrap(self, models: QueryModels) -> QueryModels:
+        if models.check is None:
+            return models
+        check = models.check
+
+        async def announced(prompt, schema):
+            self.ran = True
+            emit(self.on_event, "step", name="write", state="done", part=None, detail=None)
+            emit(self.on_event, "step", name="check", state="start", part=None,
+                 detail=None)
+            self.reply = await check(prompt, schema)
+            return self.reply
+
+        return replace(models, check=announced)
+
+    def close(self, answer: Answer | None) -> None:
+        if not self.ran or self.closed:
+            return
+        self.closed = True
+        detail = CHECK_UNVERIFIED
+        applied = (answer is not None and self.reply is not None
+                   and CHECK_SKIPPED_NOTE not in (answer.note or ""))
+        items = getattr(self.reply, "judgements", None)
+        verdicts = (validated_verdicts(self.reply, len(items))
+                    if applied and isinstance(items, list) else None)
+        if verdicts is not None:
+            dropped = sum(not supported for supported, _ in verdicts)
             detail = "all supported" if not dropped else f"{dropped} not supported"
-            return reply
-        finally:
-            emit(on_event, "step", name="check", state="done", part=None, detail=detail)
-
-    return replace(models, check=announced)
+        emit(self.on_event, "step", name="check", state="done", part=None, detail=detail)
 
 
 async def answer_question(
@@ -398,9 +422,9 @@ async def answer_question(
         return await _vector_answer(lance, question, vector, models, titles,
                                     mode="vector-baseline", note=None)
 
-    check_ran: list[bool] = []
-    if on_event is not None:
-        models = _with_check_events(models, on_event, check_ran)
+    check_steps = _CheckSteps(on_event) if on_event is not None else None
+    if check_steps is not None:
+        models = check_steps.wrap(models)
 
     empty = Evidence(edges=(), passages=(), truncated=False)
     # The baseline's passages for the whole question, then each part's.
@@ -512,15 +536,20 @@ async def answer_question(
          detail=f"{len(evidence.passages)} passages")
     emit(on_event, "step", name="write", state="start", part=None, detail=None)
     # One synthesis call per part, over its own share (synthesize_parts).
-    if rows:
-        answer = await _synthesize(question, evidence, models, mode="graph",
-                                   template="+".join(templates), book_titles=titles,
-                                   sub_questions=sub_questions)
-    else:
-        answer = await _synthesize(question, evidence, models, mode="vector-fallback",
-                                   note=GRAPH_EMPTY_NOTE, book_titles=titles,
-                                   sub_questions=sub_questions)
-    if not check_ran:
+    answer = None
+    try:
+        if rows:
+            answer = await _synthesize(question, evidence, models, mode="graph",
+                                       template="+".join(templates), book_titles=titles,
+                                       sub_questions=sub_questions)
+        else:
+            answer = await _synthesize(question, evidence, models, mode="vector-fallback",
+                                       note=GRAPH_EMPTY_NOTE, book_titles=titles,
+                                       sub_questions=sub_questions)
+    finally:
+        if check_steps is not None:
+            check_steps.close(answer)
+    if check_steps is None or not check_steps.ran:
         emit(on_event, "step", name="write", state="done", part=None,
              detail=f"{len(answer.claims)} claims")
     # The subgraph the UI draws: the evidence edges rows came from, and the
