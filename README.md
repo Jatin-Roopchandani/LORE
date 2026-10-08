@@ -78,6 +78,22 @@ its seed entities and its evidence passages. The key comes from
 the key is never read from `lore.toml`. If either step is on Gemini and no key
 is found, `ask` exits. It never quietly uses the local model instead.
 
+## Web UI
+
+```bash
+cd web && npm install && npm run build   # once, and after frontend changes
+lore ui                                   # http://127.0.0.1:8766
+```
+
+Ask a question and watch LORE work: live steps in the chat, and the evidence
+graph lighting up as it searches. Click a citation to read the passage, click
+a node for its entity card, and expand its neighbours. Loopback only, with no
+authentication. Asking spends Gemini requests, like `lore ask`.
+
+For frontend development, run `lore ui --dev` with `cd web && npm run dev`
+(http://localhost:5173). Tests: `npm test` (free). The end-to-end test
+spends Gemini requests, so it's opt-in: `LORE_E2E=1 npx playwright test`.
+
 ## Ask LORE from an MCP client
 
 `lore mcp` serves the library to any MCP client. Register it in `.mcp.json`
