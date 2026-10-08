@@ -12,7 +12,8 @@ from lore.mcp import tools as tools_module
 from lore.mcp.stores import StoresUnavailable
 from lore.db.lance_store import EMBED_DIM, LanceStore
 from lore.mcp.tools import (
-    cypher_query, entity, ingest_status, library, subgraph, vector_search,
+    cypher_query, entity, ingest_status, library, overview, subgraph,
+    vector_search,
 )
 from tests.mcp_fixtures import build_store_triple
 from tests.mcp_fixtures import empty_config as _empty_config
@@ -1075,3 +1076,72 @@ def test_entities_by_ids_caps_the_lookup(graph_config, monkeypatch):
 def test_entities_by_ids_without_a_graph_is_no_graph(empty_config):
     from lore.mcp.tools import entities_by_ids
     assert entities_by_ids(empty_config, ["h"])["error"]["code"] == "no_graph"
+
+
+# --- overview ------------------------------------------------------------------
+# The web UI draws this before any question: the most-connected canonical
+# entities and the links among them only.
+
+@pytest.fixture
+def overview_config(tmp_path: Path) -> LoreConfig:
+    def row(i, name, kind="Character"):
+        return (i, name, kind, [BOOK_ID], [])
+
+    def edge(s, o, chunk, p="knows"):
+        return (s, o, p, chunk, BOOK_ID, 1)
+
+    return build_store_triple(
+        tmp_path,
+        books=[(BOOK_ID, "A Study")],
+        entities=[row("a", "Alpha"), row("b", "Beta"), row("c", "Gamma"),
+                  row("d", "Delta Place", "Place"), row("e", "Epsilon"),
+                  row("stub", "Mr. Alpha"), row("lonely", "Lonely")],
+        aliases=[("stub", "a")],
+        edges=[
+            # degrees: a 5, b 4, c 3, d 3, e 2; stub 3 (but an alias stub)
+            edge("a", "b", "c1"), edge("a", "b", "c2"), edge("b", "a", "c3"),
+            edge("a", "c", "c4"), edge("d", "a", "c5"),
+            edge("c", "d", "c6"), edge("e", "b", "c7"),
+            edge("stub", "e", "c8"), edge("stub", "c", "c9"),
+            edge("stub", "d", "c10"),
+        ],
+    )
+
+
+def test_overview_ranks_canonical_entities_by_degree(overview_config):
+    result = overview(overview_config)
+    assert [n["id"] for n in result["nodes"]] == ["a", "b", "c", "d", "e"]
+    assert result["depth"] == 0 and result["note"] is None
+    assert result["nodes"][3]["kind"] == "Place"
+
+
+def test_overview_skips_alias_stubs_and_edgeless_entities(overview_config):
+    ids = {n["id"] for n in overview(overview_config)["nodes"]}
+    assert "stub" not in ids and "lonely" not in ids
+
+
+def test_overview_links_only_among_the_top_entities(overview_config):
+    result = overview(overview_config, limit=3)
+    assert [n["id"] for n in result["nodes"]] == ["a", "b", "c"]
+    pairs = [(l["subject_id"], l["object_id"]) for l in result["edges"]]
+    # Strongest first: a->b backs two passages.
+    assert pairs == [("a", "b"), ("a", "c"), ("b", "a")]
+    assert result["edges"][0]["count"] == 2
+    assert result["edges"][0]["predicates"] == {"knows": 2}
+    assert result["truncated"] is True
+
+
+def test_overview_clamps_the_limit(overview_config):
+    assert [n["id"] for n in overview(overview_config, limit=0)["nodes"]] == ["a"]
+    assert len(overview(overview_config, limit=1000)["nodes"]) == 5
+    assert overview(overview_config, limit=1000)["truncated"] is False
+
+
+def test_overview_caps_links(overview_config, monkeypatch):
+    monkeypatch.setattr(tools_module, "OVERVIEW_LINK_CAP", 2)
+    result = overview(overview_config)
+    assert len(result["edges"]) == 2 and result["truncated"] is True
+
+
+def test_overview_without_a_graph_returns_no_graph(empty_config):
+    assert overview(empty_config)["error"]["code"] == "no_graph"

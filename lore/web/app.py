@@ -110,6 +110,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             return tools.subgraph(config, name, depth)
         raise HTTPException(400, "give id or name")
 
+    @api.get("/api/overview")
+    def overview(limit: int = 40):
+        return tools.overview(config, limit)
+
     @api.get("/api/quota")
     def quota():
         return _quota(config)

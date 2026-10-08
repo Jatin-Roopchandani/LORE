@@ -352,17 +352,33 @@ def _expand(kuzu, root: str, depth: int, node_cap: int,
                 books=list(info[i][3] or []))
         for i in order if i in info
     ]
+    names = {i: info[i][1] for i in info}
+    links, cut = _links_among(kuzu, order, names, edge_cap)
+    truncated = truncated or cut
+    # Keep the root and every node a kept link touches. Uncapped, this drops
+    # nothing (each discovered node has the link it was discovered by); capped,
+    # it drops nodes reachable only through cut links. Live graph: Holmes at
+    # depth 3 kept 100 links but listed 286 nodes (75 KB) before this.
+    touched = {root} | {l.subject_id for l in links} | {l.object_id for l in links}
+    nodes = [n for n in nodes if n.id in touched]
+    return nodes, links, truncated
+
+
+def _links_among(kuzu, ids: list[str], names: dict[str, str],
+                 edge_cap: int) -> tuple[list[LinkOut], bool]:
+    """Every REL edge between two of `ids`, one LinkOut per directed pair,
+    strongest first, at most `edge_cap`. Returns (links, truncated)."""
+    truncated = False
     # Raw rows over a TOTAL order, so grouping is deterministic: within a
     # pair, edges arrive in book/chapter/chunk order and the first are the
     # citations. Both ends are collected nodes, so no link dangles.
-    names = {i: info[i][1] for i in info}
     rows = list(kuzu.execute(
         f"MATCH (s:Entity)-[r:REL]->(o:Entity)"
         f" WHERE s.id IN $ids AND o.id IN $ids"
         f" RETURN {_EDGE_COLUMNS}, s.id, o.id"
         f" ORDER BY s.id, o.id, {_EDGE_ORDER}"
         f" LIMIT {SUBGRAPH_RAW_EDGE_LIMIT + 1}",
-        {"ids": order},
+        {"ids": ids},
     ))
     if len(rows) > SUBGRAPH_RAW_EDGE_LIMIT:
         truncated = True
@@ -379,13 +395,7 @@ def _expand(kuzu, root: str, depth: int, node_cap: int,
         truncated = True
         ranked = ranked[:edge_cap]
     links = [_link(names[s], s, names[o], o, group) for (s, o), group in ranked]
-    # Keep the root and every node a kept link touches. Uncapped, this drops
-    # nothing (each discovered node has the link it was discovered by); capped,
-    # it drops nodes reachable only through cut links. Live graph: Holmes at
-    # depth 3 kept 100 links but listed 286 nodes (75 KB) before this.
-    touched = {root} | {l.subject_id for l in links} | {l.object_id for l in links}
-    nodes = [n for n in nodes if n.id in touched]
-    return nodes, links, truncated
+    return links, truncated
 
 
 def _link(subject: str, subject_id: str, obj: str, object_id: str,
@@ -481,6 +491,58 @@ def subgraph_by_id(config: LoreConfig, entity_id: str, depth: int = 1) -> dict:
                                           SUBGRAPH_NODE_CAP, SUBGRAPH_EDGE_CAP)
         return SubgraphOut(nodes=nodes, edges=edges, truncated=truncated,
                            depth=clamped, note=None).model_dump()
+
+
+# The library overview: what the web UI draws before any question.
+OVERVIEW_LIMIT_MIN = 1
+OVERVIEW_LIMIT_MAX = 100
+OVERVIEW_LINK_CAP = 150
+
+
+@_guarded
+def overview(config: LoreConfig, limit: int = 40) -> dict:
+    """The `limit` most-connected canonical entities and the links among
+    them only, read-only, SubgraphOut-shaped (depth 0).
+
+    Degree is REL edges in both directions. Alias stubs (an outgoing
+    ALIAS_OF) and edgeless entities are left out. Nodes are ordered by
+    degree, then id; links strongest first, at most OVERVIEW_LINK_CAP.
+    `truncated` says entities or links were left out.
+    """
+    clamped = max(OVERVIEW_LIMIT_MIN, min(limit, OVERVIEW_LIMIT_MAX))
+    with open_stores(config) as stores:
+        kuzu = stores.kuzu
+        degree: dict[str, int] = {}
+        # Counted per direction, so a self-loop counts on both ends, as on
+        # the entity card. Ranking happens in Python over a total order.
+        for cypher in ("MATCH (e:Entity)-[r:REL]->(:Entity)"
+                       " RETURN e.id, count(r) ORDER BY e.id",
+                       "MATCH (:Entity)-[r:REL]->(e:Entity)"
+                       " RETURN e.id, count(r) ORDER BY e.id"):
+            for entity_id, n in kuzu.execute(cypher):
+                degree[entity_id] = degree.get(entity_id, 0) + int(n)
+        stubs = {row[0] for row in kuzu.execute(
+            "MATCH (a:Entity)-[:ALIAS_OF]->(:Entity) RETURN a.id ORDER BY a.id")}
+        ranked = sorted(((-d, i) for i, d in degree.items()
+                         if d > 0 and i not in stubs))
+        truncated = len(ranked) > clamped
+        top = [i for _d, i in ranked[:clamped]]
+        info = {
+            row[0]: row for row in kuzu.execute(
+                "MATCH (e:Entity) WHERE e.id IN $ids"
+                " RETURN e.id, e.name, e.kind, e.books ORDER BY e.id",
+                {"ids": top},
+            )
+        }
+        nodes = [
+            NodeOut(id=i, name=info[i][1] or "", kind=info[i][2] or "",
+                    books=list(info[i][3] or []))
+            for i in top if i in info
+        ]
+        names = {i: info[i][1] or "" for i in info}
+        links, cut = _links_among(kuzu, top, names, OVERVIEW_LINK_CAP)
+        return SubgraphOut(nodes=nodes, edges=links, truncated=truncated or cut,
+                           depth=0, note=None).model_dump()
 
 
 # --- vector_search and cypher_query ---------------------------------------------
