@@ -31,7 +31,7 @@ export function GraphPane({ state, hiddenBooks, hoverChunk, noBooks, bookTitles,
   const view = useMemo(() => deriveGraph(state, { hiddenBooks, hoverChunk, expansions: expansions.map((e) => e.data), kinds,
     overview: shownOverview }), [state, hiddenBooks, hoverChunk, expansions, kinds, shownOverview]);
   const pos = useMemo(() => {
-    positions.current = place(positions.current, view, expansions.at(-1)?.root ?? null);
+    positions.current = place(positions.current, view, expansions.at(-1)?.root ?? null, !!view.overview);
     return positions.current;
   }, [view, expansions]);
 

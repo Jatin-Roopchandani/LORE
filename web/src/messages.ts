@@ -36,7 +36,7 @@ export const UI = {
 export const EXAMPLES = {
   connected: (a: string, b: string) => `How is ${a} connected to ${b}?`,
   about: (a: string) => `Tell me about ${a}`,
-  place: (p: string) => `What happens at ${p}?`,
+  place: (p: string) => `What happens in ${p}?`,
   group: (g: string) => `Who belongs to ${g}?`,
 };
 

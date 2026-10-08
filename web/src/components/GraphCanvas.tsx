@@ -63,10 +63,13 @@ export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitR
       const color = l.hot || l.state === "cited" ? p.glow
         : l.state === "shown" ? (l.part !== null ? p.v(`--part-${l.part % 4}`) : p.edge) : p.faint;
       const attrs = { type: l.both ? "line" : "arrow", label: l.state === "faint" || l.state === "cut" ? "" : l.label, color,
-        size: l.hot ? 4 : l.state === "cited" ? 2.6 : 1.4, zIndex: l.hot ? 3 : l.state === "cited" ? 2 : l.state === "shown" ? 1 : 0 };
+        size: l.hot ? 4 : l.state === "cited" ? 2.6 : v.overview && l.state === "faint" ? 1 : 1.4, zIndex: l.hot ? 3 : l.state === "cited" ? 2 : l.state === "shown" ? 1 : 0 };
       if (g.hasEdge(l.id)) g.mergeEdgeAttributes(l.id, attrs);
       else if (!g.hasDirectedEdge(l.source, l.target)) g.addEdgeWithKey(l.id, l.source, l.target, attrs);
     }
+    // Sigma's label grid hides labels that share a cell; the overview names every node, so it lifts the cap.
+    sigma.current?.setSetting("labelDensity", v.overview ? 100 : 1);
+    sigma.current?.setSetting("labelGridCellSize", v.overview ? 30 : 100);
     sigma.current?.setSetting("labelColor", { color: p.ink });
     sigma.current?.setSetting("edgeLabelColor", { color: p.muted });
     sigma.current?.refresh();

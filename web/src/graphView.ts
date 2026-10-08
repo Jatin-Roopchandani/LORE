@@ -7,7 +7,8 @@ export interface ViewNode { id: string; label: string; kind: string; books: stri
 // `both`: the pair has relationships in each direction, merged into one link drawn without an arrowhead.
 export interface ViewLink { id: string; source: string; target: string; label: string; count: number; chunkIds: string[];
   part: number | null; state: LinkState; hot: boolean; books: string[]; both: boolean }
-export interface GraphView { nodes: ViewNode[]; links: ViewLink[]; shownEdges: number; totalEdges: number }
+// `overview`: the library overview is drawn (before any question); its own links are faint and unlabelled.
+export interface GraphView { nodes: ViewNode[]; links: ViewLink[]; shownEdges: number; totalEdges: number; overview?: boolean }
 export type KindMap = Record<string, { kind: string; books: string[] }>;
 export interface ViewOptions { hiddenBooks: Set<string>; hoverChunk: string | null; expansions: SubgraphData[]; kinds?: KindMap;
   // The library overview, drawn before any question: like an expansion, but it marks no node expanded.
@@ -86,7 +87,7 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
       hot: options.hoverChunk !== null && chunkIds.includes(options.hoverChunk), books, both: !!(fwd && back) });
   }
 
-  const extra = new Map<string, { source: string; target: string; fwd: Map<string, number>; back: Map<string, number>; nf: number; nb: number }>();
+  const extra = new Map<string, { source: string; target: string; fwd: Map<string, number>; back: Map<string, number>; nf: number; nb: number; quiet: boolean }>();
   const subs = options.overview ? [options.overview, ...options.expansions] : options.expansions;
   for (const sub of subs) {
     for (const n of sub.nodes) touch(n.id, n.name, n.kind, n.books);
@@ -95,7 +96,10 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
     for (const l of sub.edges) {
       const id = pairKey(l.subject_id, l.object_id);
       if (groups.has(id)) continue; // the search's link wins
-      const x = extra.get(id) ?? { source: l.subject_id, target: l.object_id, fwd: new Map(), back: new Map(), nf: 0, nb: 0 };
+      const x = extra.get(id) ?? { source: l.subject_id, target: l.object_id, fwd: new Map(), back: new Map(), nf: 0, nb: 0, quiet: true };
+      // Quiet only while no expansion has drawn this pair: an expansion's links keep labels and normal styling.
+      if (sub !== options.overview) x.quiet = false;
+      extra.set(id, x);
       const forward = l.subject_id === x.source;
       if (forward ? x.nf : x.nb) continue; // the same link from an earlier expansion
       const into = forward ? x.fwd : x.back;
@@ -107,8 +111,9 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
   for (const [id, x] of extra) {
     const fwd = x.nf ? { top: topOf(x.fwd), n: x.nf } : null;
     const back = x.nb ? { top: topOf(x.back), n: x.nb } : null;
-    links.push({ id, source: x.source, target: x.target, label: pairLabel((fwd ?? back)!, fwd && back),
-      count: x.nf + x.nb, chunkIds: [], part: null, state: "shown", hot: false, books: [], both: !!(fwd && back) });
+    const quiet = x.quiet && !!options.overview;
+    links.push({ id, source: x.source, target: x.target, label: quiet ? "" : pairLabel((fwd ?? back)!, fwd && back),
+      count: x.nf + x.nb, chunkIds: [], part: null, state: quiet ? "faint" : "shown", hot: false, books: [], both: !!(fwd && back) });
   }
 
   for (const [id, k] of Object.entries(options.kinds ?? {})) {
@@ -120,7 +125,7 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
 
   for (const n of nodes.values()) n.state = allHidden(n.books) ? "dim" : "shown";
   return {
-    nodes: [...nodes.values()], links,
+    nodes: [...nodes.values()], links, overview: !!options.overview,
     shownEdges: state.edges.reduce((a, pe) => a + (pe?.edges.length ?? 0), 0),
     totalEdges: state.edges.reduce((a, pe) => a + (pe?.total ?? 0), 0),
   };

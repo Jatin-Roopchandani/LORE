@@ -53,8 +53,8 @@ test("an overview of 40 entities spreads out, most-connected nearest the centre,
   const ids = Array.from({ length: 40 }, (_, i) => `e${i}`);
   const v: GraphView = { nodes: ids.map((id) => node(id)),
     links: ids.slice(1).map((id, i) => link(ids[i % 5], id)), shownEdges: 0, totalEdges: 0 };
-  const p = place(new Map(), v);
-  expect(place(new Map(), v)).toEqual(p);
+  const p = place(new Map(), v, null, true);
+  expect(place(new Map(), v, null, true)).toEqual(p);
   const pts = ids.map((id) => p.get(id)!);
   for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++)
     expect(Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y)).toBeGreaterThanOrEqual(60);
@@ -63,4 +63,24 @@ test("an overview of 40 entities spreads out, most-connected nearest the centre,
   const inner = pts.slice(0, 5).reduce((a, q) => a + r(q), 0) / 5;
   const outer = pts.slice(-5).reduce((a, q) => a + r(q), 0) / 5;
   expect(inner).toBeLessThan(outer);
+});
+
+test("only the overview uses the spiral; a seedless answer graph hangs nodes off their neighbours", () => {
+  const v: GraphView = { nodes: [node("a"), node("b"), node("c")], links: [link("a", "b"), link("a", "c")], shownEdges: 2, totalEdges: 2 };
+  const spiral = place(new Map(), v, null, true);
+  const plain = place(new Map(), v);
+  expect(plain).not.toEqual(spiral);
+  // The spiral puts the first node nearest the centre (500, 350); the plain path puts it 140 out on a hashed angle.
+  expect(Math.hypot(spiral.get("a")!.x - 500, spiral.get("a")!.y - 350)).toBeLessThan(60);
+  expect(Math.hypot(plain.get("a")!.x - 500, plain.get("a")!.y - 350)).toBeGreaterThan(100);
+});
+
+test("overview nodes on nearly the same row are kept a label's width apart", () => {
+  const ids = Array.from({ length: 40 }, (_, i) => `e${i}`);
+  const p = place(new Map(), { nodes: ids.map((id) => node(id)), links: [], shownEdges: 0, totalEdges: 0 }, null, true);
+  const pts = [...p.values()];
+  let clashes = 0;
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++)
+    if (Math.abs(pts[i].x - pts[j].x) < 140 && Math.abs(pts[i].y - pts[j].y) < 20) clashes++;
+  expect(clashes).toBe(0);
 });

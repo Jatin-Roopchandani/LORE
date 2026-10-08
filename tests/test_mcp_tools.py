@@ -1138,6 +1138,7 @@ def test_overview_clamps_the_limit(overview_config):
 
 
 def test_overview_caps_links(overview_config, monkeypatch):
+    assert tools_module.OVERVIEW_LINK_CAP == 60
     monkeypatch.setattr(tools_module, "OVERVIEW_LINK_CAP", 2)
     result = overview(overview_config)
     assert len(result["edges"]) == 2 and result["truncated"] is True

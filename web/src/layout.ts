@@ -2,6 +2,8 @@ import type { GraphView } from "./graphView";
 
 export type Positions = Map<string, { x: number; y: number }>;
 const CX = 500, CY = 350;
+// Label box in layout units, for the overview's label-collision pass.
+const LABEL_W = 150, LABEL_H = 24;
 const SPIRAL = 60, GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
 function hash(s: string): number {
@@ -11,7 +13,8 @@ function hash(s: string): number {
   return (h >>> 0) / 4294967296;
 }
 
-export function place(previous: Positions, view: GraphView, anchor: string | null = null): Positions {
+// `overview`: the library overview, placed on a spiral (only then; answer graphs hang off their seeds).
+export function place(previous: Positions, view: GraphView, anchor: string | null = null, overview = false): Positions {
   const pos: Positions = new Map(previous);
   const fresh = view.nodes.filter((n) => !pos.has(n.id));
   const seeds = fresh.filter((n) => n.seedPart !== null);
@@ -27,7 +30,7 @@ export function place(previous: Positions, view: GraphView, anchor: string | nul
     neighbours.set(l.target, [...(neighbours.get(l.target) ?? []), l.source]);
   }
   const others = fresh.filter((n) => n.seedPart === null);
-  if (pos.size === 0 && others.length > 0) {
+  if (overview && pos.size === 0 && others.length > 0) {
     // Nothing to hang them on (the library overview): a sunflower spiral in view order, so the
     // most-connected nodes, which come first, sit nearest the centre and the rest spread evenly.
     others.forEach((n, i) => {
@@ -54,6 +57,12 @@ export function place(previous: Positions, view: GraphView, anchor: string | nul
         let d = Math.hypot(dx, dy);
         if (d === 0) { dx = hash(id + other) - 0.5; dy = 0.5 - hash(other + id); d = Math.hypot(dx, dy) || 1; }
         if (d < 70) { const push = (70 - d) / 2 + 0.5; p.x += (dx / d) * push; p.y += (dy / d) * push; }
+        // The overview labels every node, and labels run to the right of their node: two nodes on
+        // nearly the same row closer than a label's width are pushed apart vertically.
+        if (overview && Math.abs(dx) < LABEL_W && Math.abs(dy) < LABEL_H) {
+          const push = (LABEL_H - Math.abs(dy)) / 2 + 0.5;
+          p.y += (dy >= 0 ? 1 : -1) * push;
+        }
       }
     }
   }

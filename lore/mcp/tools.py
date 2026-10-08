@@ -496,7 +496,8 @@ def subgraph_by_id(config: LoreConfig, entity_id: str, depth: int = 1) -> dict:
 # The library overview: what the web UI draws before any question.
 OVERVIEW_LIMIT_MIN = 1
 OVERVIEW_LIMIT_MAX = 100
-OVERVIEW_LINK_CAP = 150
+# 150 drew a hairball at 40 nodes; 60 keeps the strongest relationships legible.
+OVERVIEW_LINK_CAP = 60
 
 
 @_guarded

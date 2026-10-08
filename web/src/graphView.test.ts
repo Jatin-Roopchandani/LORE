@@ -160,7 +160,9 @@ test("an overview draws its nodes and links with their kinds and marks nothing e
   expect(v.nodes.some((n) => n.expanded)).toBe(false);
   expect(v.nodes.find((n) => n.id === "p")!.kind).toBe("Place");
   expect(v.links.map((l) => l.id).sort()).toEqual(["h<->p", "h<->w"]);
-  expect(v.links.find((l) => l.id === "h<->p")!.label).toBe("lives at ×3");
+  expect(v.overview).toBe(true);
+  // Overview links are faint and unlabelled: 40 hubs with labelled links are a hairball.
+  expect(v.links.every((l) => l.state === "faint" && l.label === "")).toBe(true);
   expect(unknownKinds(v)).toEqual([]);
   // An expansion on top of the overview still marks its own root.
   const more = deriveGraph(initialState(), { ...opts, overview, expansions: [{ truncated: false, depth: 1,
@@ -168,4 +170,13 @@ test("an overview draws its nodes and links with their kinds and marks nothing e
     edges: [{ subject: "Watson", subject_id: "w", object: "Mary", object_id: "m", count: 1, predicates: { MARRIES: 1 } }] }] });
   expect(more.nodes.filter((n) => n.expanded).map((n) => n.id)).toEqual(["w"]);
   expect(more.links).toHaveLength(3);
+  // The expansion's links keep their labels and normal styling, even a pair the overview also drew.
+  expect(more.links.find((l) => l.id === "m<->w")).toMatchObject({ state: "shown", label: "marries" });
+  expect(more.links.find((l) => l.id === "h<->p")).toMatchObject({ state: "faint", label: "" });
+  const again = deriveGraph(initialState(), { ...opts, overview, expansions: [{ truncated: false, depth: 1,
+    nodes: [{ id: "w", name: "Watson", kind: "Character", books: ["b1"] }, { id: "h", name: "Holmes", kind: "Character", books: ["b1"] }],
+    edges: [{ subject: "Watson", subject_id: "w", object: "Holmes", object_id: "h", count: 2, predicates: { KNOWS: 2 } }] }] });
+  expect(again.links.find((l) => l.id === "h<->w")).toMatchObject({ state: "shown", label: "knows ×2" });
+  // Without an overview nothing is quiet.
+  expect(deriveGraph(stateWith(base), opts).overview).toBe(false);
 });
