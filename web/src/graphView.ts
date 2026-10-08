@@ -9,7 +9,9 @@ export interface ViewLink { id: string; source: string; target: string; label: s
   part: number | null; state: LinkState; hot: boolean; books: string[]; both: boolean }
 export interface GraphView { nodes: ViewNode[]; links: ViewLink[]; shownEdges: number; totalEdges: number }
 export type KindMap = Record<string, { kind: string; books: string[] }>;
-export interface ViewOptions { hiddenBooks: Set<string>; hoverChunk: string | null; expansions: SubgraphData[]; kinds?: KindMap }
+export interface ViewOptions { hiddenBooks: Set<string>; hoverChunk: string | null; expansions: SubgraphData[]; kinds?: KindMap;
+  // The library overview, drawn before any question: like an expansion, but it marks no node expanded.
+  overview?: SubgraphData | null }
 
 const pretty = (p: string) => p.toLowerCase().replace(/_/g, " ");
 const pairKey = (a: string, b: string) => (a < b ? `${a}<->${b}` : `${b}<->${a}`);
@@ -85,10 +87,11 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
   }
 
   const extra = new Map<string, { source: string; target: string; fwd: Map<string, number>; back: Map<string, number>; nf: number; nb: number }>();
-  for (const sub of options.expansions) {
+  const subs = options.overview ? [options.overview, ...options.expansions] : options.expansions;
+  for (const sub of subs) {
     for (const n of sub.nodes) touch(n.id, n.name, n.kind, n.books);
     const root = sub.nodes[0]?.id;
-    if (root && nodes.has(root)) nodes.get(root)!.expanded = true;
+    if (sub !== options.overview && root && nodes.has(root)) nodes.get(root)!.expanded = true;
     for (const l of sub.edges) {
       const id = pairKey(l.subject_id, l.object_id);
       if (groups.has(id)) continue; // the search's link wins

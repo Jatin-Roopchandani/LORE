@@ -15,6 +15,10 @@ export const UI = {
   partial: (parts: string[]) => `Not found in the books: ${parts.join("; ")}`,
   showingEdges: (shown: number, total: number) => `Showing ${shown} of ${total} relationships`,
   graphIdle: "Evidence graph",
+  overviewStage: "Library overview · your most-connected characters, places and groups",
+  overviewHint: "Ask a question to see the part of the graph LORE searched.",
+  emptyIntro: "Ask a question about your books. LORE answers with quotes from the text and shows the graph it searched.",
+  examplesLabel: "Try one of these",
   legendStart: "Starting entity",
   legendPart: (n: number) => `Part ${n}`,
   legendKinds: [["--k-character", "Character"], ["--k-place", "Place"], ["--k-faction", "Group"], ["--k-object", "Object"],
@@ -26,6 +30,14 @@ export const UI = {
   mcpNotRunning: "HTTP server not running",
   mcpRunning: "HTTP server running",
   wrongFileType: (name: string) => `${name} is not an EPUB or PDF. Choose a .epub or .pdf file.`,
+};
+
+// Example questions for the empty chat, filled with the library's most-connected entities (see examples.ts).
+export const EXAMPLES = {
+  connected: (a: string, b: string) => `How is ${a} connected to ${b}?`,
+  about: (a: string) => `Tell me about ${a}`,
+  place: (p: string) => `What happens at ${p}?`,
+  group: (g: string) => `Who belongs to ${g}?`,
 };
 
 function until(resetsAt: string | undefined, now: Date): string {

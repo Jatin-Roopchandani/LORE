@@ -48,3 +48,19 @@ test("seeds fed one at a time stay spread and never move", () => {
   for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++)
     expect(Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y)).toBeGreaterThanOrEqual(60);
 });
+
+test("an overview of 40 entities spreads out, most-connected nearest the centre, deterministically", () => {
+  const ids = Array.from({ length: 40 }, (_, i) => `e${i}`);
+  const v: GraphView = { nodes: ids.map((id) => node(id)),
+    links: ids.slice(1).map((id, i) => link(ids[i % 5], id)), shownEdges: 0, totalEdges: 0 };
+  const p = place(new Map(), v);
+  expect(place(new Map(), v)).toEqual(p);
+  const pts = ids.map((id) => p.get(id)!);
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++)
+    expect(Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y)).toBeGreaterThanOrEqual(60);
+  const cx = pts.reduce((a, q) => a + q.x, 0) / pts.length, cy = pts.reduce((a, q) => a + q.y, 0) / pts.length;
+  const r = (q: { x: number; y: number }) => Math.hypot(q.x - cx, q.y - cy);
+  const inner = pts.slice(0, 5).reduce((a, q) => a + r(q), 0) / 5;
+  const outer = pts.slice(-5).reduce((a, q) => a + r(q), 0) / 5;
+  expect(inner).toBeLessThan(outer);
+});

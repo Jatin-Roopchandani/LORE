@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import App from "./App";
 
 const quota = vi.fn(() => Promise.resolve({ provider: "gemini", models: [], resets_at: "2026-10-08T07:00:00Z" }));
+const overview = vi.fn(() => Promise.resolve({ nodes: [{ id: "h", name: "Holmes", kind: "Character", books: [] }], edges: [], truncated: false, depth: 0 }));
 vi.mock("./components/GraphCanvas", () => ({ GraphCanvas: () => <div data-testid="graph" /> }));
 vi.mock("./api", () => ({
   api: {
@@ -11,6 +12,7 @@ vi.mock("./api", () => ({
     quota: () => quota(),
     mcp: () => Promise.resolve({ error: { code: "x", message: "x" } }),
     entities: () => Promise.resolve({ entities: [] }),
+    overview: () => overview(),
   },
   isError: (x: unknown) => typeof x === "object" && x !== null && "error" in x,
   // The stream drops before any answer.
@@ -32,4 +34,12 @@ test("an interrupted stream refreshes the quota", async () => {
   await userEvent.type(await screen.findByPlaceholderText("Ask about your books…"), "who?{Enter}");
   expect(await screen.findByText(/connection dropped/)).toBeInTheDocument();
   await waitFor(() => expect(quota.mock.calls.length).toBeGreaterThanOrEqual(before + 2));
+});
+
+test("the overview is fetched once and offers example questions in the empty chat", async () => {
+  overview.mockClear();
+  render(<App />);
+  expect(await screen.findByRole("button", { name: "Tell me about Holmes" })).toBeInTheDocument();
+  expect(screen.getByText("Library overview · your most-connected characters, places and groups")).toBeInTheDocument();
+  expect(overview).toHaveBeenCalledTimes(1);
 });

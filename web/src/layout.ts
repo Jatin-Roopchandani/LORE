@@ -2,6 +2,7 @@ import type { GraphView } from "./graphView";
 
 export type Positions = Map<string, { x: number; y: number }>;
 const CX = 500, CY = 350;
+const SPIRAL = 60, GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
 function hash(s: string): number {
   let h = 2166136261;
@@ -26,7 +27,16 @@ export function place(previous: Positions, view: GraphView, anchor: string | nul
     neighbours.set(l.target, [...(neighbours.get(l.target) ?? []), l.source]);
   }
   const others = fresh.filter((n) => n.seedPart === null);
+  if (pos.size === 0 && others.length > 0) {
+    // Nothing to hang them on (the library overview): a sunflower spiral in view order, so the
+    // most-connected nodes, which come first, sit nearest the centre and the rest spread evenly.
+    others.forEach((n, i) => {
+      const r = SPIRAL * Math.sqrt(i + 0.5), a = i * GOLDEN;
+      pos.set(n.id, { x: CX + r * Math.cos(a), y: CY + r * Math.sin(a) });
+    });
+  }
   for (const n of others) {
+    if (pos.has(n.id)) continue;
     const near = (neighbours.get(n.id) ?? []).find((m) => pos.has(m)) ?? anchor ?? null;
     const c = (near && pos.get(near)) || { x: CX, y: CY };
     const a = 2 * Math.PI * hash(n.id);

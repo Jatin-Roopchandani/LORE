@@ -3,6 +3,7 @@ import { askReducer, initialState } from "../askReducer";
 import type { GraphView } from "../graphView";
 import type { AskEvent, Edge } from "../types";
 import { GraphPane } from "./GraphPane";
+import { UI } from "../messages";
 
 const views: GraphView[] = [];
 const entities = vi.fn((ids: string[]) => Promise.resolve({ entities: ids.filter((i) => i === "x").map((id) => ({ id, name: "X", kind: "Place", books: ["b1"] })) }));
@@ -30,4 +31,24 @@ test("node kinds the search did not carry are fetched once, in one batch, and ap
   expect(entities).toHaveBeenCalledTimes(1);
   expect(entities.mock.calls[0][0].sort()).toEqual(["x", "y"]);
   expect(views.at(-1)!.nodes.find((n) => n.id === "y")!.kind).toBe("Other"); // unknown to the graph: stays Other
+});
+
+test("before any question the overview is drawn under the overview stage text", () => {
+  const overview = { truncated: false, depth: 0, nodes: [{ id: "h", name: "Holmes", kind: "Character", books: ["b1"] },
+    { id: "w", name: "Watson", kind: "Character", books: ["b1"] }],
+    edges: [{ subject: "Holmes", subject_id: "h", object: "Watson", object_id: "w", count: 1, predicates: { KNOWS: 1 } }] };
+  const props = { hiddenBooks: new Set<string>(), hoverChunk: null, noBooks: false };
+  const { getByText, unmount } = render(<GraphPane state={initialState()} overview={overview} {...props} />);
+  expect(getByText(UI.overviewStage)).toBeInTheDocument();
+  expect(views.at(-1)!.nodes.map((n) => n.id)).toEqual(["h", "w"]);
+  unmount();
+  // A question replaces it.
+  render(<GraphPane state={events.reduce(askReducer, initialState("q"))} overview={overview} {...props} />);
+  expect(views.at(-1)!.nodes.some((n) => n.id === "w")).toBe(false);
+});
+
+test("with no overview the idle text and a hint show, never an error", () => {
+  const { getByText } = render(<GraphPane state={initialState()} overview={null} hiddenBooks={new Set()} hoverChunk={null} noBooks={false} />);
+  expect(getByText(UI.graphIdle)).toBeInTheDocument();
+  expect(getByText(UI.overviewHint)).toBeInTheDocument();
 });

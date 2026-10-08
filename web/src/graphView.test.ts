@@ -1,7 +1,7 @@
 import { deriveGraph, unknownKinds } from "./graphView";
 import { askReducer, initialState } from "./askReducer";
 import two from "./fixtures/two-part.json";
-import type { AskEvent, Edge } from "./types";
+import type { AskEvent, Edge, SubgraphData } from "./types";
 
 const opts = { hiddenBooks: new Set<string>(), hoverChunk: null, expansions: [] };
 const edge = (s: string, o: string, chunk: string, book = "b1", p = "KILLS"): Edge => ({ subject: s.toUpperCase(), predicate: p,
@@ -147,4 +147,25 @@ test("a kinds map gives search-edge endpoints their kind and books", () => {
   expect(x.books).toEqual(["b2", "b3"]);
   expect(v.nodes.find((n) => n.id === "h")!.kind).toBe("Character"); // a seed's own kind stands
   expect(unknownKinds(v)).toEqual([]);
+});
+
+test("an overview draws its nodes and links with their kinds and marks nothing expanded", () => {
+  const overview: SubgraphData = { truncated: false, depth: 0, nodes: [
+    { id: "h", name: "Holmes", kind: "Character", books: ["b1"] }, { id: "p", name: "Baker Street", kind: "Place", books: ["b1"] },
+    { id: "w", name: "Watson", kind: "Character", books: ["b1"] }],
+  edges: [{ subject: "Holmes", subject_id: "h", object: "Baker Street", object_id: "p", count: 3, predicates: { LIVES_AT: 3 } },
+    { subject: "Watson", subject_id: "w", object: "Holmes", object_id: "h", count: 2, predicates: { KNOWS: 2 } }] };
+  const v = deriveGraph(initialState(), { ...opts, overview });
+  expect(v.nodes.map((n) => n.id)).toEqual(["h", "p", "w"]);
+  expect(v.nodes.some((n) => n.expanded)).toBe(false);
+  expect(v.nodes.find((n) => n.id === "p")!.kind).toBe("Place");
+  expect(v.links.map((l) => l.id).sort()).toEqual(["h<->p", "h<->w"]);
+  expect(v.links.find((l) => l.id === "h<->p")!.label).toBe("lives at ×3");
+  expect(unknownKinds(v)).toEqual([]);
+  // An expansion on top of the overview still marks its own root.
+  const more = deriveGraph(initialState(), { ...opts, overview, expansions: [{ truncated: false, depth: 1,
+    nodes: [{ id: "w", name: "Watson", kind: "Character", books: ["b1"] }, { id: "m", name: "Mary", kind: "Character", books: ["b1"] }],
+    edges: [{ subject: "Watson", subject_id: "w", object: "Mary", object_id: "m", count: 1, predicates: { MARRIES: 1 } }] }] });
+  expect(more.nodes.filter((n) => n.expanded).map((n) => n.id)).toEqual(["w"]);
+  expect(more.links).toHaveLength(3);
 });

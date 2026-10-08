@@ -75,6 +75,7 @@ export const api = {
   entity: (id: string) => getJson<EntityCardData>(`/api/entity?id=${encodeURIComponent(id)}`),
   entities: (ids: string[]) => getJson<{ entities: EntityKind[] }>(`/api/entities?ids=${encodeURIComponent(ids.join(","))}`),
   subgraph: (id: string) => getJson<SubgraphData>(`/api/subgraph?id=${encodeURIComponent(id)}&depth=1`),
+  overview: () => getJson<SubgraphData>("/api/overview?limit=40"),
   quota: () => getJson<Quota>("/api/quota"),
   mcp: () => getJson<McpInfo>("/api/mcp"),
   settings: () => getJson<{ show_internals: boolean }>("/api/settings"),
