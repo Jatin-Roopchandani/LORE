@@ -34,7 +34,7 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunk }:
               </div>
             )}
             {r && r.claims.length === 0 && <p className="note">{UI.refusal}</p>}
-            {r && r.claims.length > 0 && <Claims result={r} onHoverChunk={onHoverChunk} />}
+            {r && r.claims.length > 0 && <Claims key={ask.run} result={r} onHoverChunk={onHoverChunk} />}
             {notFound.length > 0 && <p className="note">{UI.partial(notFound)}</p>}
             <HowPanel state={state} showInternals={showInternals} />
           </div>

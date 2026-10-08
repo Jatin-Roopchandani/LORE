@@ -26,3 +26,16 @@ test("shows books, the relationships in this answer with counts, and chapters", 
   expect(screen.getByText("Chapters: 3, 17")).toBeInTheDocument();
   expect(screen.getByText("42 relationships in the graph")).toBeInTheDocument();
 });
+
+test("an expand result that lands after the card moved on is dropped", async () => {
+  const { api } = await import("../api");
+  let land: (v: unknown) => void = () => {};
+  (api.subgraph as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise((r) => { land = r; }));
+  const onExpand = vi.fn();
+  const { rerender } = render(<EntityCard id="e1" onClose={() => {}} onExpand={onExpand} />);
+  (await screen.findByRole("button", { name: "Expand neighbours" })).click();
+  rerender(<EntityCard id="e2" onClose={() => {}} onExpand={onExpand} />);
+  land({ nodes: [], edges: [], truncated: false, depth: 1 });
+  await new Promise((r) => setTimeout(r, 20));
+  expect(onExpand).not.toHaveBeenCalled();
+});

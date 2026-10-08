@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, isError } from "../api";
 import { errorMessage } from "../messages";
 import type { ApiError, Edge, EntityCardData, SubgraphData } from "../types";
@@ -16,15 +16,20 @@ export function EntityCard({ id, onClose, onExpand, answerEdges = [], seed = fal
   const [card, setCard] = useState<EntityCardData | null>(null);
   const [problem, setProblem] = useState("");
   const [expanding, setExpanding] = useState(false);
+  // The id an expand result must still match when it lands; null once the card is gone.
+  const current = useRef<string | null>(id);
+  useEffect(() => { current.current = id; return () => { current.current = null; }; }, [id]);
   useEffect(() => {
     let live = true;
-    setCard(null); setProblem("");
+    setCard(null); setProblem(""); setExpanding(false);
     api.entity(id).then((r) => { if (!live) return; if (isError(r)) setProblem(say(r.error)); else setCard(r); });
     return () => { live = false; };
   }, [id]);
   const expand = async () => {
+    const asked = id;
     setExpanding(true);
-    const r = await api.subgraph(id);
+    const r = await api.subgraph(asked);
+    if (current.current !== asked) return; // closed, moved to another entity, or a new ask
     setExpanding(false);
     if (isError(r)) setProblem(say(r.error)); else onExpand(r);
   };

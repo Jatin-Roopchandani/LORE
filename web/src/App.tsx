@@ -21,7 +21,8 @@ export default function App() {
     api.library().then((l) => { if (!isError(l)) setBooks(l.books); });
   }, []);
   useEffect(() => {
-    if (ask.state.status !== "done" && ask.state.status !== "error") return;
+    // "interrupted" too: a dropped stream may still have spent requests.
+    if (ask.state.status !== "done" && ask.state.status !== "error" && ask.state.status !== "interrupted") return;
     setRefreshKey((k) => k + 1);
     api.quota().then((q) => { if (!isError(q)) setResetsAt(q.resets_at); });
   }, [ask.state.status]);
@@ -33,7 +34,7 @@ export default function App() {
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey} />
       <div className="panes">
         <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunk={setHoverChunk} />
-        <GraphPane state={ask.state} hiddenBooks={hiddenBooks} hoverChunk={hoverChunk} noBooks={noBooks} bookTitles={bookTitles} />
+        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunk={hoverChunk} noBooks={noBooks} bookTitles={bookTitles} />
       </div>
     </div>
   );

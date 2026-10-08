@@ -15,6 +15,8 @@ export function useAsk() {
   const [state, dispatch] = useReducer(reducer, initialState());
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
   const [current, setCurrent] = useState<string | null>(null);
+  // Bumped by every ask, retry and replay: views key on it so each run starts fresh.
+  const [run, setRun] = useState(0);
   const loaded = useRef(history);
   // Saved outside the state updater (updaters must stay pure); the first render's list came from storage.
   useEffect(() => { if (history !== loaded.current) saveHistory(history); }, [history]);
@@ -35,6 +37,7 @@ export function useAsk() {
     scheduler.current = sched;
     const id = `${Date.now()}`;
     setCurrent(id);
+    setRun((n) => n + 1);
     (async () => {
       const events: AskEvent[] = [];
       for await (const event of streamAsk(question, controller.signal)) { events.push(event); sched.push(event); }
@@ -49,6 +52,7 @@ export function useAsk() {
     if (!item) return;
     stop();
     setCurrent(id);
+    setRun((n) => n + 1);
     dispatch({ kind: "reset", question: item.question });
     const sched = createScheduler((event) => dispatch({ kind: "event", event }), { reduceMotion: reduceMotion(), replay: !reduceMotion() });
     scheduler.current = sched;
@@ -56,5 +60,5 @@ export function useAsk() {
   }, [history]);
 
   const retry = useCallback(() => { if (last.current) ask(last.current); }, [ask]);
-  return { state, history, current, ask, replay, retry, busy: state.status === "running" };
+  return { state, history, current, run, ask, replay, retry, busy: state.status === "running" };
 }

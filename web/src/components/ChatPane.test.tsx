@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import single from "../fixtures/single-part.json";
 import { budget } from "../fixtures/synthetic";
 import { askReducer, initialState } from "../askReducer";
@@ -6,7 +6,7 @@ import { ChatPane } from "./ChatPane";
 import type { AskEvent } from "../types";
 
 const askWith = (events: AskEvent[], extra = {}) => ({
-  state: events.reduce(askReducer, initialState("q")), history: [], current: null,
+  state: events.reduce(askReducer, initialState("q")), history: [], current: null, run: 1,
   ask: vi.fn(), replay: vi.fn(), retry: vi.fn(), busy: false, ...extra });
 
 test("renders steps, claims and the how panel for a recorded answer", () => {
@@ -30,4 +30,14 @@ test("the budget message has no retry", () => {
 test("models are hidden without internals", () => {
   render(<ChatPane ask={askWith(single as AskEvent[])} showInternals={false} onHoverChunk={() => {}} />);
   expect(screen.queryByText(/gemini/i)).toBeNull();
+});
+
+test("re-asking the same question resets the open claim passage", () => {
+  const events = single as AskEvent[];
+  const { rerender } = render(<ChatPane ask={askWith(events, { run: 1 })} showInternals onHoverChunk={() => {}} />);
+  const cite = screen.getAllByRole("button", { name: /ch\.\d+/ })[0];
+  fireEvent.click(cite);
+  expect(cite).toHaveAttribute("aria-expanded", "true");
+  rerender(<ChatPane ask={askWith(events, { run: 2 })} showInternals onHoverChunk={() => {}} />);
+  expect(screen.getAllByRole("button", { name: /ch\.\d+/ })[0]).toHaveAttribute("aria-expanded", "false");
 });
