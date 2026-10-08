@@ -1,4 +1,4 @@
-import { deriveGraph } from "./graphView";
+import { deriveGraph, unknownKinds } from "./graphView";
 import { askReducer, initialState } from "./askReducer";
 import two from "./fixtures/two-part.json";
 import type { AskEvent, Edge } from "./types";
@@ -90,4 +90,61 @@ test("hidden book forces faint even on a cited link", () => {
   const s = stateWith([...base, { type: "answer", t: 1, result }]);
   expect(deriveGraph(s, opts).links.find((l) => l.target === "x")!.state).toBe("cited");
   expect(deriveGraph(s, { ...opts, hiddenBooks: new Set(["b2"]) }).links.find((l) => l.target === "x")!.state).toBe("faint");
+});
+
+const answerFor = (chunk: string) => ({ answer: "", mode: "graph", template: null, note: null, model: null, selection_model: null,
+  sub_questions: ["a"], claims: [{ text: "t", passage: 1, quote: "q" }],
+  passages: [{ n: 1, chunk_id: chunk, book_id: "b1", book_title: null, chapter_seq: 1, text: "" }], edges: [], seeds: [] });
+const pair: AskEvent[] = [
+  { type: "parts", t: 0, sub_questions: ["a"] },
+  { type: "edges", t: 0, part: 0, template: "neighbours", total: 5, edges: [
+    edge("h", "f", "c1", "b1", "INTERACTS_WITH"), edge("h", "f", "c2", "b1", "INTERACTS_WITH"),
+    edge("f", "h", "c3", "b2", "INTERACTS_WITH"), edge("h", "l", "c4", "b1", "LOVES"), edge("l", "h", "c5", "b1", "LOVED_BY")] },
+];
+
+test("a reciprocal pair merges into one undirected link with a combined label", () => {
+  const v = deriveGraph(stateWith(pair), opts);
+  const hf = v.links.filter((l) => [l.source, l.target].sort().join() === "f,h");
+  expect(hf).toHaveLength(1);
+  expect(hf[0].both).toBe(true);
+  expect(hf[0].count).toBe(3);
+  expect(hf[0].label).toBe("interacts with ×2 · ×1");
+  expect(hf[0].chunkIds.sort()).toEqual(["c1", "c2", "c3"]);
+  expect(hf[0].books.sort()).toEqual(["b1", "b2"]);
+  expect(v.links.find((l) => l.source === "h" && l.target === "l")!.label).toBe("loves / loved by");
+  expect(v.links).toHaveLength(2);
+});
+
+test("a merged pair is cited when either direction is cited", () => {
+  const v = deriveGraph(stateWith([...pair, { type: "answer", t: 1, result: answerFor("c3") }]), opts);
+  const hf = v.links.find((l) => [l.source, l.target].sort().join() === "f,h")!;
+  expect(hf.state).toBe("cited");
+  expect(v.links.find((l) => l.target === "l")!.state).toBe("faint");
+});
+
+test("a single-direction link keeps its arrow", () => {
+  const v = deriveGraph(stateWith(base), opts);
+  expect(v.links.every((l) => !l.both)).toBe(true);
+});
+
+test("expansion links in both directions merge too", () => {
+  const s = { ...sub("h", ["z"]), edges: [
+    { subject: "h", subject_id: "h", object: "z", object_id: "z", count: 2, predicates: { KNOWS: 2 } },
+    { subject: "z", subject_id: "z", object: "h", object_id: "h", count: 1, predicates: { KNOWS: 1 } }] };
+  const v = deriveGraph(stateWith(base), { ...opts, expansions: [s] });
+  const hz = v.links.filter((l) => [l.source, l.target].sort().join() === "h,z");
+  expect(hz).toHaveLength(1);
+  expect(hz[0]).toMatchObject({ both: true, count: 3, label: "knows ×2 · ×1", state: "shown" });
+});
+
+test("a kinds map gives search-edge endpoints their kind and books", () => {
+  const before = deriveGraph(stateWith(base), opts);
+  expect(before.nodes.find((n) => n.id === "x")!.kind).toBe("Other");
+  expect(unknownKinds(before)).toEqual(["x"]);
+  const v = deriveGraph(stateWith(base), { ...opts, kinds: { x: { kind: "Place", books: ["b3"] }, h: { kind: "Object", books: [] } } });
+  const x = v.nodes.find((n) => n.id === "x")!;
+  expect(x.kind).toBe("Place");
+  expect(x.books).toEqual(["b2", "b3"]);
+  expect(v.nodes.find((n) => n.id === "h")!.kind).toBe("Character"); // a seed's own kind stands
+  expect(unknownKinds(v)).toEqual([]);
 });

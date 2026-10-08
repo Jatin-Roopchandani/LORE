@@ -1,4 +1,4 @@
-import type { ApiError, AskEvent, Book, EntityCardData, McpInfo, Quota, SubgraphData } from "./types";
+import type { ApiError, AskEvent, Book, EntityCardData, EntityKind, McpInfo, Quota, SubgraphData } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   const events: AskEvent[] = [];
@@ -73,6 +73,7 @@ export const isError = (x: unknown): x is { error: ApiError } =>
 export const api = {
   library: () => getJson<{ books: Book[]; note: string | null }>("/api/library"),
   entity: (id: string) => getJson<EntityCardData>(`/api/entity?id=${encodeURIComponent(id)}`),
+  entities: (ids: string[]) => getJson<{ entities: EntityKind[] }>(`/api/entities?ids=${encodeURIComponent(ids.join(","))}`),
   subgraph: (id: string) => getJson<SubgraphData>(`/api/subgraph?id=${encodeURIComponent(id)}&depth=1`),
   quota: () => getJson<Quota>("/api/quota"),
   mcp: () => getJson<McpInfo>("/api/mcp"),

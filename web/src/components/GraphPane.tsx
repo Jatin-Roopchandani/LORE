@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { api, isError } from "../api";
 import type { AskState } from "../askReducer";
-import { deriveGraph } from "../graphView";
+import { deriveGraph, unknownKinds, type KindMap } from "../graphView";
 import { place, type Positions } from "../layout";
 import { STEP_LABEL, UI } from "../messages";
 import type { SubgraphData } from "../types";
@@ -8,22 +9,48 @@ import { EntityCard } from "./EntityCard";
 import { GraphCanvas } from "./GraphCanvas";
 
 interface Expansion { root: string; data: SubgraphData }
+// Ids per /api/entities request: keeps the URL well under the server's request-line limit.
+const KIND_BATCH = 100;
+const KIND_DELAY_MS = 150;
 
+// Keyed on the ask by its parent, so a new ask (even of the same text) starts with no expansions,
+// no camera pin, no positions and no kinds, and late results for the old ask land nowhere.
 export function GraphPane({ state, hiddenBooks, hoverChunk, noBooks, bookTitles }:
   { state: AskState; hiddenBooks: Set<string>; hoverChunk: string | null; noBooks: boolean; bookTitles?: Map<string, string> }) {
   const [expansions, setExpansions] = useState<Expansion[]>([]);
   const [fitRequest, setFitRequest] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [kinds, setKinds] = useState<KindMap>({});
+  const asked = useRef(new Set<string>());
   const positions = useRef<Positions>(new Map());
-  const lastQuestion = useRef(state.question);
-  if (lastQuestion.current !== state.question) { lastQuestion.current = state.question; positions.current = new Map(); }
-  useEffect(() => { setExpansions([]); setSelected(null); }, [state.question]);
-  const view = useMemo(() => deriveGraph(state, { hiddenBooks, hoverChunk, expansions: expansions.map((e) => e.data) }),
-    [state, hiddenBooks, hoverChunk, expansions]);
+  const view = useMemo(() => deriveGraph(state, { hiddenBooks, hoverChunk, expansions: expansions.map((e) => e.data), kinds }),
+    [state, hiddenBooks, hoverChunk, expansions, kinds]);
   const pos = useMemo(() => {
     positions.current = place(positions.current, view, expansions.at(-1)?.root ?? null);
     return positions.current;
   }, [view, expansions]);
+
+  // Search edges name their ends but not their kinds: look those up, once per id per ask.
+  const missing = unknownKinds(view).filter((id) => !asked.current.has(id) && !id.includes(","));
+  const missingKey = missing.join(",");
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => {
+    if (!missingKey) return;
+    // Waits for staging to settle, so a burst of edge events makes one request, not one each.
+    const timer = setTimeout(() => {
+      const ids = missingKey.split(",");
+      ids.forEach((id) => asked.current.add(id));
+      for (let i = 0; i < ids.length; i += KIND_BATCH) {
+        api.entities(ids.slice(i, i + KIND_BATCH)).then((r) => {
+          if (!mounted.current || isError(r) || !r.entities.length) return;
+          setKinds((k) => ({ ...k, ...Object.fromEntries(r.entities.map((e) => [e.id, { kind: e.kind, books: e.books }])) }));
+        });
+      }
+    }, KIND_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [missingKey]);
+
   const running = state.steps.find((s) => s.state === "running");
   const stage = running ? `${STEP_LABEL[running.name]}…` : state.status === "done" ? UI.answeredIn(state.elapsed) : UI.graphIdle;
   // subgraph_by_id canonicalises the id, so the expansion's first node is the real root.
@@ -37,19 +64,16 @@ export function GraphPane({ state, hiddenBooks, hoverChunk, noBooks, bookTitles 
         {view.shownEdges < view.totalEdges && <span>{UI.showingEdges(view.shownEdges, view.totalEdges)}</span>}
         <div className="legend">
           {state.subQuestions.length > 1
-            ? state.subQuestions.map((q, i) => <span key={i} title={q}><i style={{ background: `var(--part-${i % 4})` }} />{`Part ${i + 1}`}</span>)
-            : <span><i style={{ background: "var(--part-0)" }} />Starting entity</span>}
-          <span><i style={{ background: "var(--k-character)" }} />Character</span>
-          <span><i style={{ background: "var(--k-place)" }} />Place</span>
-          <span><i style={{ background: "var(--k-faction)" }} />Group</span>
-          <span><i style={{ background: "var(--k-object)" }} />Object</span>
-          <span><i style={{ background: "var(--glow)", borderRadius: 2, height: 3, width: 14 }} />Cited</span>
+            ? state.subQuestions.map((q, i) => <span key={i} title={q}><i className="ring" style={{ borderColor: `var(--part-${i % 4})` }} />{UI.legendPart(i + 1)}</span>)
+            : <span><i className="ring" />{UI.legendStart}</span>}
+          {UI.legendKinds.map(([token, label]) => <span key={token}><i style={{ background: `var(${token})` }} />{label}</span>)}
+          <span><i style={{ background: "var(--glow)", borderRadius: 2, height: 3, width: 14 }} />{UI.legendCited}</span>
         </div>
       </div>
       <div className="gwrap">
         {noBooks ? <p className="hint" style={{ padding: 16 }}>{UI.noBooks}</p>
           : <GraphCanvas view={view} positions={pos} onNodeClick={setSelected} pinned={expansions.length > 0} fitRequest={fitRequest} />}
-        {selected && <EntityCard id={selected} onClose={() => setSelected(null)} onExpand={expand(selected)}
+        {selected && <EntityCard key={selected} id={selected} onClose={() => setSelected(null)} onExpand={expand(selected)}
           answerEdges={state.edges.flatMap((pe) => pe?.edges ?? []).filter((e) => e.subject_id === selected || e.object_id === selected)}
           seed={state.seeds.some((list) => list?.some((s) => s.id === selected))} bookTitles={bookTitles} />}
       </div>

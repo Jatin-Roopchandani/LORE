@@ -26,6 +26,7 @@ export interface Quota { provider: "gemini" | "local"; models: QuotaModel[]; res
 export interface McpInfo { stdio_command: string; http_command: string; http_url: string; http_running: boolean }
 export interface EntityCardData { id: string; name: string; kind: string; aliases: string[]; books: string[];
   edges_out: Edge[]; edges_in: Edge[]; edges_out_total: number; edges_in_total: number; truncated: boolean }
+export interface EntityKind { id: string; name: string; kind: string; books: string[] }
 export interface SubgraphNode { id: string; name: string; kind: string; books: string[] }
 export interface SubgraphLink { subject: string; subject_id: string; object: string; object_id: string;
   count: number; predicates: Record<string, number> }

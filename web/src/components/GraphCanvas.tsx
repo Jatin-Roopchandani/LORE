@@ -1,18 +1,29 @@
 import { useEffect, useRef } from "react";
 import Graph from "graphology";
 import Sigma from "sigma";
+import { createNodeBorderProgram } from "@sigma/node-border";
 import type { GraphView } from "../graphView";
 import type { Positions } from "../layout";
 
-const KIND_VAR: Record<string, string> = { Character: "--k-character", Place: "--k-place", Faction: "--k-faction", Object: "--k-object" };
+const KIND_VAR: Record<string, string> = { Character: "--k-character", Place: "--k-place", Faction: "--k-faction", Object: "--k-object",
+  Concept: "--k-concept", Event: "--k-event" };
+
+// Every node is filled by its kind. A seed also gets a ring in its part colour, set off from the fill by a
+// thin gap in the panel colour (sizes are fractions of the radius; 0 draws nothing).
+const RingedNode = createNodeBorderProgram({
+  borders: [
+    { size: { attribute: "ring", defaultValue: 0 }, color: { attribute: "ringColor" } },
+    { size: { attribute: "gap", defaultValue: 0 }, color: { attribute: "gapColor" } },
+    { size: { fill: true }, color: { attribute: "color" } },
+  ],
+});
 
 function palette() {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => css.getPropertyValue(name).trim();
-  return { v, ink: v("--ink"), muted: v("--muted"), edge: v("--edge"), faint: v("--edge-faint"), glow: v("--glow") };
+  return { v, ink: v("--ink"), muted: v("--muted"), edge: v("--edge"), faint: v("--edge-faint"), glow: v("--glow"), panel: v("--panel") };
 }
 
-// Sigma's default node program (circle) has no border, so a seed is marked by a larger disc in its part colour.
 // While `pinned` is false the camera fits the whole layout on every change (staging and the answer).
 // Once it turns true (an expansion) the current framing is frozen before new nodes land, so nodes
 // already on screen stay put. Bumping `fitRequest` refits once and re-pins if still pinned.
@@ -37,10 +48,12 @@ export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitR
     g.forEachNode((id) => { if (!keepNodes.has(id)) g.dropNode(id); });
     for (const n of v.nodes) {
       const at = pos.get(n.id) ?? { x: 500, y: 350 };
-      const color = n.state === "dim" ? p.faint
-        : n.seedPart !== null ? p.v(`--part-${n.seedPart % 4}`) : p.v(KIND_VAR[n.kind] ?? "--k-other");
-      const attrs = { x: at.x, y: -at.y, size: n.seedPart !== null ? 10 : 7, label: n.label.replace(/^Mr\. /, ""), color,
-        zIndex: n.state === "dim" ? 0 : 1 };
+      const dim = n.state === "dim";
+      const seed = n.seedPart !== null;
+      const color = dim ? p.faint : p.v(KIND_VAR[n.kind] ?? "--k-other");
+      const attrs = { x: at.x, y: -at.y, size: seed ? 11 : 7, label: n.label.replace(/^Mr\. /, ""), color,
+        ring: seed ? 0.3 : 0, gap: seed ? 0.12 : 0, gapColor: p.panel,
+        ringColor: seed && !dim ? p.v(`--part-${n.seedPart! % 4}`) : p.faint, zIndex: dim ? 0 : 1 };
       if (g.hasNode(n.id)) g.mergeNodeAttributes(n.id, attrs); else g.addNode(n.id, attrs);
     }
     const keepEdges = new Set(v.links.map((l) => l.id));
@@ -49,7 +62,7 @@ export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitR
       if (!g.hasNode(l.source) || !g.hasNode(l.target)) continue;
       const color = l.hot || l.state === "cited" ? p.glow
         : l.state === "shown" ? (l.part !== null ? p.v(`--part-${l.part % 4}`) : p.edge) : p.faint;
-      const attrs = { type: "arrow", label: l.state === "faint" || l.state === "cut" ? "" : l.label, color,
+      const attrs = { type: l.both ? "line" : "arrow", label: l.state === "faint" || l.state === "cut" ? "" : l.label, color,
         size: l.hot ? 4 : l.state === "cited" ? 2.6 : 1.4, zIndex: l.hot ? 3 : l.state === "cited" ? 2 : l.state === "shown" ? 1 : 0 };
       if (g.hasEdge(l.id)) g.mergeEdgeAttributes(l.id, attrs);
       else if (!g.hasDirectedEdge(l.source, l.target)) g.addEdgeWithKey(l.id, l.source, l.target, attrs);
@@ -62,7 +75,7 @@ export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitR
   useEffect(() => {
     const p = palette();
     sigma.current = new Sigma(graph.current, box.current!, {
-      renderEdgeLabels: true, defaultEdgeType: "arrow", labelFont: "Public Sans", labelSize: 12, edgeLabelSize: 10,
+      renderEdgeLabels: true, defaultEdgeType: "arrow", defaultNodeType: "ringed", nodeProgramClasses: { ringed: RingedNode }, labelFont: "Public Sans", labelSize: 12, edgeLabelSize: 10,
       labelRenderedSizeThreshold: 0, labelColor: { color: p.ink }, edgeLabelColor: { color: p.muted }, zIndex: true,
       allowInvalidContainer: true,
     });
