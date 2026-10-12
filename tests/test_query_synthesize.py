@@ -588,7 +588,7 @@ def test_the_claim_cap_is_eight() -> None:
 @pytest.mark.asyncio
 async def test_the_prompt_asks_for_every_distinct_fact_as_its_own_claim() -> None:
     prompt = await _prompt(EV)
-    assert "every distinct fact" in prompt
+    assert "its own claim with its own quote" in prompt
     assert "its own claim with its own quote" in prompt
     assert "not one claim that summarises several" in prompt
     assert f"at most {MAX_CLAIMS} claims" in prompt
@@ -615,7 +615,7 @@ async def test_a_part_prompt_asks_for_completeness_too() -> None:
         _per_part([Synthesis(claims=[WHY_D], can_answer=True),
                    Synthesis(claims=[WHY_S], can_answer=True)], prompts), mode="graph")
     for prompt in prompts:
-        assert "every distinct fact" in prompt
+        assert "its own claim with its own quote" in prompt
         assert f"at most {MAX_CLAIMS} claims" in prompt
 
 
@@ -1028,3 +1028,81 @@ def test_claim_is_importable_from_both_modules():
     from lore.query.synthesize import Claim as FromSynthesize
 
     assert FromModels is FromSynthesize
+
+
+def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
+    """No distinctive 3-word phrase of a dev or held-out question or verified
+    answer may appear in the synthesis prompt. An early round-1 draft used
+    "221B Baker Street" (eval Q8's answer) as an example, which would have
+    inflated exactly the question being scored.
+
+    A phrase counts when at least two of its three words are not common
+    function words, so answer terms ("221b baker street") are caught and
+    shared grammar ("the passage gives") is not. It does NOT catch a
+    paraphrase built from common words -- leakage review of every prompt
+    change stays a manual step (evals/answer_quality/GRADING.md).
+    """
+    import json
+    import re
+    from pathlib import Path
+
+    from lore.query import synthesize as synthesize_module
+
+    common = set(
+        "a an the and or but nor of to in on at by for from with as into is"
+        " are was were be been being has have had do does did this that these"
+        " those it its he him his she her they them their i me my we us our"
+        " you your not no so than then there here which who whom whose what"
+        " when where why how each every one other own all any some only also"
+        " just more most such very can could would should may might will"
+        " shall must said say says".split())
+
+    def grams(text: str) -> set[str]:
+        words = re.findall(r"[a-z0-9']+", text.lower())
+        return {" ".join(words[i:i + 3]) for i in range(len(words) - 2)
+                if sum(w not in common for w in words[i:i + 3]) >= 2}
+
+    evals = Path(__file__).parents[1] / "evals/answer_quality"
+    sets = [evals / "questions.json", evals / "heldout.json"]
+    prompt = grams("\n".join((
+        synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
+        synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
+        synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE)))
+    for q in (q for path in sets for q in json.loads(path.read_text())):
+        leaked = (grams(q["question"]) | grams(q["verified"])) & prompt
+        assert not leaked, f"{q['id']} leaks into the prompt: {sorted(leaked)}"
+
+
+def test_full_answers_asks_for_circumstances_and_a_full_part(monkeypatch) -> None:
+    from lore.query import synthesize as synthesize_module
+    from lore.query.synthesize import _build_prompt
+    evidence = Evidence(edges=(), passages=(
+        Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text."),),
+        truncated=False)
+    monkeypatch.setattr(synthesize_module, "FULL_ANSWERS", False)
+    plain = _build_prompt("why?", evidence, part_of="who and why?")
+    assert "List every distinct fact" in plain and "Answer only this part." in plain
+    monkeypatch.setattr(synthesize_module, "FULL_ANSWERS", True)
+    full = _build_prompt("why?", evidence, part_of="who and why?")
+    assert "circumstances, reasons, methods and consequences" in full
+    assert "Answer this part fully" in full and "Answer only this part." not in full
+    assert "List every distinct fact" not in full
+
+
+def test_no_restate_adds_its_rule_only_when_on(monkeypatch) -> None:
+    from lore.query import synthesize as synthesize_module
+    from lore.query.synthesize import _build_prompt
+    evidence = Evidence(edges=(), passages=(
+        Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text."),),
+        truncated=False)
+    monkeypatch.setattr(synthesize_module, "NO_RESTATE", False)
+    assert "must add a fact" not in _build_prompt("why?", evidence)
+    monkeypatch.setattr(synthesize_module, "NO_RESTATE", True)
+    assert "must add a fact the earlier claims do not already state" in _build_prompt("why?", evidence)
+
+
+def test_full_answers_and_no_restate_are_the_default() -> None:
+    # Adopted after rounds 4-5 (GRADING.md, "Decisions").
+    from lore.query import synthesize as synthesize_module
+    assert synthesize_module.FULL_ANSWERS is True
+    assert synthesize_module.NO_RESTATE is True

@@ -63,10 +63,7 @@ Answer as a list of claims. Each claim has:
 - passage: the number of the passage the claim comes from
 - quote: at least {min_words} words copied word for word from that passage
 
-List every distinct fact in the passages that helps answer the question,
-each as its own claim with its own quote,
-not one claim that summarises several.
-Give at most {max_claims} claims; any past that are ignored.
+{facts_rule}Give at most {max_claims} claims; any past that are ignored.
 Prefer passages that state the answer directly
 over passages that only mention its subject.
 
@@ -87,6 +84,40 @@ Question: {question}
 Passages:
 {passages}
 {truncation}"""
+
+# How much to say. Traced on the dev set (evals/answer_quality, trace_report.py),
+# Flash Lite proposed 1.8 claims per call and code dropped almost none: the
+# model gives the shortest reply to each part and stops, leaving the
+# circumstances, reasons and consequences its passages hold unsaid.
+# FULL_ANSWERS asks for those. Adopted 2026-10-12 together with NO_RESTATE:
+# paired rounds 4 and 5 (run_pair.py, blind-graded) raised key-fact coverage
+# on both sets in both rounds (dev +11% / +9%, held-out +11% / +15%); no
+# single set reached p < 0.05, but pooled the four came out better on 40
+# questions and worse on 22 (sign test p = 0.03). See GRADING.md.
+FULL_ANSWERS = True
+_FACTS_RULE = """List every distinct fact in the passages that helps answer the question,
+each as its own claim with its own quote,
+not one claim that summarises several.
+"""
+_FULL_FACTS_RULE = """A good answer is complete, not just the shortest reply. Give every fact in
+the passages that a reader asking this would want: the direct answer, then
+the circumstances, reasons, methods and consequences the passages give for
+it -- who, what, how and why. Read every passage, not only the first one
+that answers. Each fact is its own claim with its own quote,
+not one claim that summarises several.
+"""
+# NO_RESTATE: round 4 found FULL_ANSWERS roughly doubled restated claims
+# (graded duplicates 15 -> 29 on the dev set) -- asked for circumstances and
+# reasons, the model says one fact twice from two passages. With it (round
+# 5) held-out duplicates stayed flat (7 -> 7) and dev rose less (9 -> 16).
+NO_RESTATE = True
+_NO_RESTATE_RULE = """Every claim must add a fact the earlier claims do not already state. Do not
+say the same thing twice, even in other words or from a different passage;
+if two passages state one fact, make one claim and quote the clearer one.
+"""
+_PART_CONTEXT = "This is one part of the larger question: {part_of}\nAnswer only this part.\n"
+_FULL_PART_CONTEXT = ("This is one part of the larger question: {part_of}\n"
+                      "Answer this part fully; the other parts are answered separately.\n")
 
 _RELATIONS = """
 Leads: relationships extracted automatically from the passages. They can be
@@ -322,10 +353,12 @@ def _build_prompt(
         if len(checklist) > 1 else ""
     )
     context = (
-        f"This is one part of the larger question: {part_of}\n"
-        "Answer only this part.\n" if part_of else ""
+        (_FULL_PART_CONTEXT if FULL_ANSWERS else _PART_CONTEXT).format(part_of=part_of)
+        if part_of else ""
     )
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
+                          facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
+                          + (_NO_RESTATE_RULE if NO_RESTATE else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations, passages=passages,
