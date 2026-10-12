@@ -103,6 +103,15 @@ it -- who, what, how and why. Read every passage, not only the first one
 that answers. Each fact is its own claim with its own quote,
 not one claim that summarises several.
 """
+# NO_RESTATE: round 4 found FULL_ANSWERS roughly doubled restated claims
+# (graded duplicates 15 -> 29 on the dev set) -- asked for circumstances and
+# reasons, the model says one fact twice from two passages. An experiment,
+# off until a paired run shows it helps.
+NO_RESTATE = False
+_NO_RESTATE_RULE = """Every claim must add a fact the earlier claims do not already state. Do not
+say the same thing twice, even in other words or from a different passage;
+if two passages state one fact, make one claim and quote the clearer one.
+"""
 _PART_CONTEXT = "This is one part of the larger question: {part_of}\nAnswer only this part.\n"
 _FULL_PART_CONTEXT = ("This is one part of the larger question: {part_of}\n"
                       "Answer this part fully; the other parts are answered separately.\n")
@@ -345,7 +354,8 @@ def _build_prompt(
         if part_of else ""
     )
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
-                          facts_rule=_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE,
+                          facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
+                          + (_NO_RESTATE_RULE if NO_RESTATE else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations, passages=passages,

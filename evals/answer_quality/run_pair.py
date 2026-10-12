@@ -41,6 +41,8 @@ ARM_SETTINGS = {
     "keyword_k": ("lore.query.agent", "KEYWORD_K", int),
     "evidence_chars": ("lore.query.agent", "GEMINI_EVIDENCE_CHARS", int),
     "max_claims": ("lore.query.synthesize", "MAX_CLAIMS", int),
+    "no_restate": ("lore.query.synthesize", "NO_RESTATE",
+                   lambda v: v.lower() in ("1", "true", "yes", "on")),
     "full_answers": ("lore.query.synthesize", "FULL_ANSWERS",
                      lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
