@@ -1,0 +1,676 @@
+[
+ {
+  "id": "X1",
+  "question": "In A Study in Scarlet, who first told Watson about Sherlock Holmes, where did the two of them run into each other, and why did he think Watson and Holmes might suit each other?",
+  "verified": "It was young Stamford, who had been a dresser under Watson at Barts. Watson ran into him at the Criterion Bar and took him to lunch at the Holborn. When Watson said he was looking for lodgings, Stamford told him about a man working at the chemical laboratory at the hospital who wanted someone to go halves with him in rooms that were too much for his purse. That man was Sherlock Holmes, and Stamford took Watson to the laboratory and introduced them.\n\nEvidence (verbatim):\n- [05ab674df048d13f:5:2] \"I was standing at the Criterion Bar, when some one tapped me on the shoulder, and turning round I recognized young Stamford, who had been a dresser under me at Barts.\"\n- [05ab674df048d13f:5:2] \"I asked him to lunch with me at the Holborn\"\n- [05ab674df048d13f:5:3] \"A fellow who is working at the chemical laboratory up at the hospital.\"\n- [05ab674df048d13f:5:4] \"If you like, we shall drive round together after luncheon.\"\n- [05ab674df048d13f:5:3] \"he could not get someone to go halves with him in some nice rooms which he had found, and which were too much for his purse.\"\n- [05ab674df048d13f:5:6] \"Dr. Watson, Mr. Sherlock Holmes,” said Stamford, introducing us.\"",
+  "key_facts": [
+   "Stamford told Watson about Holmes",
+   "Stamford had been a dresser under Watson at Barts",
+   "they met at the Criterion Bar",
+   "Holmes wanted someone to go halves with him in rooms too expensive for him alone",
+   "Stamford introduced Watson to Holmes at the hospital laboratory"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:5:2",
+    "quote": "I was standing at the Criterion Bar, when some one tapped me on the shoulder, and turning round I recognized young Stamford, who had been a dresser under me at Barts."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:2",
+    "quote": "I asked him to lunch with me at the Holborn"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:3",
+    "quote": "A fellow who is working at the chemical laboratory up at the hospital."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:4",
+    "quote": "If you like, we shall drive round together after luncheon."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:3",
+    "quote": "he could not get someone to go halves with him in some nice rooms which he had found, and which were too much for his purse."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:6",
+    "quote": "Dr. Watson, Mr. Sherlock Holmes,” said Stamford, introducing us."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X2",
+  "question": "At the scene of the first murder in each novel, Holmes describes the wanted man to the police before anyone has caught him. What does he say about the murderer in A Study in Scarlet, and whom does he name and describe in The Sign of the Four?",
+  "verified": "In A Study in Scarlet, at Lauriston Gardens, Holmes tells Gregson and Lestrade that the murderer was a man more than six feet high, in the prime of life, with small feet for his height. He wore coarse, square-toed boots and smoked a Trichinopoly cigar. He came with his victim in a four-wheeled cab drawn by a horse with three old shoes and one new one on its off fore leg. He probably had a florid face, and the finger-nails of his right hand were remarkably long. In The Sign of the Four, at Pondicherry Lodge, Holmes gives Athelney Jones the name Jonathan Small. He describes him as poorly educated, small and active, with his right leg off and a wooden stump worn away on the inner side. His left boot has a coarse, square-toed sole with an iron band round the heel. He is middle-aged, much sunburned and a former convict, and a good deal of skin is missing from the palm of his hand.\n\nEvidence (verbatim):\n- [05ab674df048d13f:7:15] \"He was more than six feet high, was in the prime of life, had small feet for his height, wore coarse, square-toed boots and smoked a Trichinopoly cigar.\"\n- [05ab674df048d13f:7:15] \"He came here with his victim in a four-wheeled cab, which was drawn by a horse with three old shoes and one new one on his off fore leg.\"\n- [05ab674df048d13f:7:15] \"In all probability the murderer had a florid face, and the finger-nails of his right hand were remarkably long.\"\n- [0ee225a9a3b5fbc2:9:11] \"His name, I have every reason to believe, is Jonathan Small. He is a poorly-educated man, small, active, with his right leg off, and wearing a wooden stump which is worn away upon the inner side.\"\n- [0ee225a9a3b5fbc2:9:11] \"His left boot has a coarse, square-toed sole, with an iron band round the heel. He is a middle-aged man, much sunburned, and has been a convict.\"\n- [0ee225a9a3b5fbc2:9:11] \"there is a good deal of skin missing from the palm of his hand.\"",
+  "key_facts": [
+   "SiS: more than six feet high, in the prime of life, small feet for his height",
+   "SiS: coarse square-toed boots and a Trichinopoly cigar",
+   "SiS: came in a four-wheeled cab whose horse had three old shoes and one new one",
+   "SiS: probably a florid face and long finger-nails on the right hand",
+   "SoF: names Jonathan Small",
+   "SoF: right leg off, wooden stump worn on the inner side",
+   "SoF: left boot square-toed with an iron band round the heel",
+   "SoF: middle-aged, sunburned, a former convict, skin missing from his palm"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:7:15",
+    "quote": "He was more than six feet high, was in the prime of life, had small feet for his height, wore coarse, square-toed boots and smoked a Trichinopoly cigar."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:15",
+    "quote": "He came here with his victim in a four-wheeled cab, which was drawn by a horse with three old shoes and one new one on his off fore leg."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:15",
+    "quote": "In all probability the murderer had a florid face, and the finger-nails of his right hand were remarkably long."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:11",
+    "quote": "His name, I have every reason to believe, is Jonathan Small. He is a poorly-educated man, small, active, with his right leg off, and wearing a wooden stump which is worn away upon the inner side."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:11",
+    "quote": "His left boot has a coarse, square-toed sole, with an iron band round the heel. He is a middle-aged man, much sunburned, and has been a convict."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:11",
+    "quote": "there is a good deal of skin missing from the palm of his hand."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X3",
+  "question": "In each novel a feeble-looking old person turns up at Baker Street who is really someone in disguise. Who was in disguise in each book, what did they pretend to be, and how was the disguise found out?",
+  "verified": "In A Study in Scarlet a very old, wrinkled woman calling herself Mrs. Sawyer answers Holmes's advertisement for the found ring. She claims it belongs to her daughter, whose married name is Dennis (she married Tom Dennis), and gives her address as 13, Duncan Street, Houndsditch. Holmes rides behind her four-wheeler, but when it arrives the cab is empty. No. 13 belongs to a paperhanger named Keswick, and nobody there has heard of Sawyer or Dennis. Holmes concludes it must have been a young, active man and an incomparable actor. Jefferson Hope later says only that his friend volunteered to go, and never names him. In The Sign of the Four the disguised man is Holmes himself, dressed as an aged man in seafaring garb with an old pea-jacket. He claims to know where Mordecai Smith's boat, the men and the treasure are. He fools both Watson and Athelney Jones, then reveals himself by holding out the wig, whiskers and eyebrows. He explains that the criminal classes are beginning to know him, so he can only work under a disguise.\n\nEvidence (verbatim):\n- [05ab674df048d13f:9:5] \"a very old and wrinkled woman hobbled into the apartment.\"\n- [05ab674df048d13f:9:6] \"13, Duncan Street, Houndsditch. A weary way from here.\"\n- [05ab674df048d13f:9:6] \"Sally will be a glad woman this night. That’s the ring.\"\n- [05ab674df048d13f:9:6] \"My name is Sawyer—hers is Dennis, which Tom Dennis married her\"\n- [05ab674df048d13f:9:9] \"having seen her safely inside, I perched myself behind.\"\n- [05ab674df048d13f:9:9] \"Nothing came out though.\"\n- [05ab674df048d13f:9:9] \"On inquiring at Number 13 we found that the house belonged to a respectable paperhanger, named Keswick, and that no one of the name either of Sawyer or Dennis had ever been heard of there.\"\n- [05ab674df048d13f:9:11] \"It must have been a young man, and an active one, too, besides being an incomparable actor.\"\n- [05ab674df048d13f:17:17] \"My friend volunteered to go and see. I think you’ll own he did it smartly.\"\n- [0ee225a9a3b5fbc2:12:10] \"He was an aged man, clad in seafaring garb, with an old pea-jacket buttoned up to his throat.\"\n- [0ee225a9a3b5fbc2:12:11] \"Was it about Mordecai Smith’s boat?” “Yes. I knows well where it is. An’ I knows where the men he is after are.\"\n- [0ee225a9a3b5fbc2:12:12] \"Here is the old man,” said he, holding out a heap of white hair. “Here he is,—wig, whiskers, eyebrows, and all.\"\n- [0ee225a9a3b5fbc2:12:12] \"a good many of the criminal classes begin to know me,—especially since our friend here took to publishing some of my cases: so I can only go on the war-path under some simple disguise like this.\"",
+  "key_facts": [
+   "SiS: an old woman calling herself Mrs. Sawyer came to claim the advertised ring",
+   "SiS: she said it was her daughter's (Sally, married to Tom Dennis) and gave 13 Duncan Street, Houndsditch",
+   "SiS: Holmes followed her cab, but it arrived empty and the address was false (paperhanger Keswick lived there)",
+   "SiS: Holmes concluded she was a young, active man and a fine actor, Hope's unnamed friend",
+   "SoF: the disguised man was Holmes himself, as an old seaman",
+   "SoF: he claimed to know where Mordecai Smith's boat, the men and the treasure were",
+   "SoF: he fooled Watson and Athelney Jones and revealed himself by holding out his wig and whiskers",
+   "SoF: he used disguise because the criminal classes had begun to know him"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:9:5",
+    "quote": "a very old and wrinkled woman hobbled into the apartment."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:6",
+    "quote": "13, Duncan Street, Houndsditch. A weary way from here."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:6",
+    "quote": "Sally will be a glad woman this night. That’s the ring."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:6",
+    "quote": "My name is Sawyer—hers is Dennis, which Tom Dennis married her"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:9",
+    "quote": "having seen her safely inside, I perched myself behind."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:9",
+    "quote": "Nothing came out though."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:9",
+    "quote": "On inquiring at Number 13 we found that the house belonged to a respectable paperhanger, named Keswick, and that no one of the name either of Sawyer or Dennis had ever been heard of there."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:11",
+    "quote": "It must have been a young man, and an active one, too, besides being an incomparable actor."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:17",
+    "quote": "My friend volunteered to go and see. I think you’ll own he did it smartly."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:10",
+    "quote": "He was an aged man, clad in seafaring garb, with an old pea-jacket buttoned up to his throat."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:11",
+    "quote": "Was it about Mordecai Smith’s boat?” “Yes. I knows well where it is. An’ I knows where the men he is after are."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:12",
+    "quote": "Here is the old man,” said he, holding out a heap of white hair. “Here he is,—wig, whiskers, eyebrows, and all."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:12",
+    "quote": "a good many of the criminal classes begin to know me,—especially since our friend here took to publishing some of my cases: so I can only go on the war-path under some simple disguise like this."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X4",
+  "question": "In A Study in Scarlet, who were the four principal Elders of the Mormon settlement after the journey to Utah?",
+  "verified": "Stangerson, Kemball, Johnston and Drebber. When the Mormons reached the end of their wanderings, John Ferrier was given as large and fertile a tract of land as any settler except Young himself and these four principal Elders.\n\nEvidence (verbatim):\n- [05ab674df048d13f:13:1] \"with the exception of Young himself, and of Stangerson, Kemball, Johnston, and Drebber, who were the four principal Elders.\"",
+  "key_facts": [
+   "Stangerson",
+   "Kemball",
+   "Johnston",
+   "Drebber"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:13:1",
+    "quote": "with the exception of Young himself, and of Stangerson, Kemball, Johnston, and Drebber, who were the four principal Elders."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X5",
+  "question": "After Brigham Young gave Lucy Ferrier a month to choose a husband, how was John Ferrier reminded each day of how much time he had left?",
+  "verified": "Each morning his unseen enemies marked up how many days of the month of grace were left. First he found a small square of paper pinned to the coverlet of his bed, just over his chest, reading \"Twenty-nine days are given you for amendment, and then——\". The next morning the number 28 was scrawled on the ceiling, apparently with a burned stick. The morning after that, a great 27 was painted on the outside of his door. After that the numbers kept appearing on the walls, on the floors, and on small placards stuck on the garden gate or the railings. Ferrier never found out where they came from.\n\nEvidence (verbatim):\n- [05ab674df048d13f:14:5] \"She shall have a month to choose,” said Young, rising from his seat.\"\n- [05ab674df048d13f:15:3] \"a small square of paper pinned on to the coverlet of his bed just over his chest.\"\n- [05ab674df048d13f:15:3] \"Twenty-nine days are given you for amendment, and then——\"\n- [05ab674df048d13f:15:4] \"In the centre of the ceiling was scrawled, with a burned stick apparently, the number 28.\"\n- [05ab674df048d13f:15:4] \"in the morning a great 27 had been painted upon the outside of his door.\"\n- [05ab674df048d13f:15:5] \"Sometimes the fatal numbers appeared upon the walls, sometimes upon the floors, occasionally they were on small placards stuck upon the garden gate or the railings.\"\n- [05ab674df048d13f:15:5] \"With all his vigilance John Ferrier could not discover whence these daily warnings proceeded.\"",
+  "key_facts": [
+   "the countdown marked the days left of the month Young had given",
+   "first warning: a paper pinned to his bed-coverlet saying 'Twenty-nine days are given you for amendment'",
+   "then 28 scrawled on the ceiling with a burned stick",
+   "then 27 painted on the outside of his door",
+   "later numbers appeared on walls, floors, and placards on the gate or railings",
+   "Ferrier never discovered who put them there"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:14:5",
+    "quote": "She shall have a month to choose,” said Young, rising from his seat."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:3",
+    "quote": "a small square of paper pinned on to the coverlet of his bed just over his chest."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:3",
+    "quote": "Twenty-nine days are given you for amendment, and then——"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:4",
+    "quote": "In the centre of the ceiling was scrawled, with a burned stick apparently, the number 28."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:4",
+    "quote": "in the morning a great 27 had been painted upon the outside of his door."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:5",
+    "quote": "Sometimes the fatal numbers appeared upon the walls, sometimes upon the floors, occasionally they were on small placards stuck upon the garden gate or the railings."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:5",
+    "quote": "With all his vigilance John Ferrier could not discover whence these daily warnings proceeded."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X6",
+  "question": "When Jefferson Hope led the Ferriers out of Salt Lake City, how did they get past the sentinel in the mountain pass, and how had Hope learned what to say?",
+  "verified": "Challenged with \"Who goes there?\", Hope answered \"Travellers for Nevada\". Asked by whose permission, Ferrier said \"The Holy Four\". The sentinel then cried \"Nine from seven\", and Hope answered \"Seven from five\", so the sentinel let them pass. Hope knew the countersign because earlier that night, while the three of them lay hidden by the gap into the cornfields, he had overheard two Mormon watchers arrange a meeting and part with a sign and countersign (\"Nine to seven!\" / \"Seven to five!\").\n\nEvidence (verbatim):\n- [05ab674df048d13f:15:11] \"Pass it on to him, and from him to the others. Nine to seven!” “Seven to five!” repeated the other\"\n- [05ab674df048d13f:15:11] \"Their concluding words had evidently been some form of sign and countersign.\"\n- [05ab674df048d13f:15:10] \"the young man seized his two companions and dragged them down into the shadow, where they lay silent and trembling.\"\n- [05ab674df048d13f:15:13] \"his military challenge of “Who goes there?” rang through the silent ravine.\"\n- [05ab674df048d13f:15:13] \"“Travellers for Nevada,” said Jefferson Hope, with his hand upon the rifle which hung by his saddle.\"\n- [05ab674df048d13f:15:13] \"“By whose permission?” he asked. “The Holy Four,” answered Ferrier.\"\n- [05ab674df048d13f:15:13] \"“Nine from seven,” cried the sentinel. “Seven from five,” returned Jefferson Hope promptly, remembering the countersign which he had heard in the garden.\"",
+  "key_facts": [
+   "Hope said they were travellers for Nevada",
+   "Ferrier said they had the permission of the Holy Four",
+   "the sentinel gave 'Nine from seven' and Hope answered 'Seven from five'",
+   "Hope had overheard the sign and countersign from two Mormon watchers while hiding near the garden/cornfield gap earlier that night"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:15:11",
+    "quote": "Pass it on to him, and from him to the others. Nine to seven!” “Seven to five!” repeated the other"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:11",
+    "quote": "Their concluding words had evidently been some form of sign and countersign."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:10",
+    "quote": "the young man seized his two companions and dragged them down into the shadow, where they lay silent and trembling."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:13",
+    "quote": "his military challenge of “Who goes there?” rang through the silent ravine."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:13",
+    "quote": "“Travellers for Nevada,” said Jefferson Hope, with his hand upon the rifle which hung by his saddle."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:13",
+    "quote": "“By whose permission?” he asked. “The Holy Four,” answered Ferrier."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:13",
+    "quote": "“Nine from seven,” cried the sentinel. “Seven from five,” returned Jefferson Hope promptly, remembering the countersign which he had heard in the garden."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X7",
+  "question": "Trace Jefferson Hope's pursuit of Drebber and Stangerson after they left Utah. Why had they left, where in America did he find them and what happened to him there, and which European cities did he follow them through?",
+  "verified": "Drebber and Stangerson had left Utah in a schism, when some younger members rebelled against the Elders and left. Hope travelled from town to town in the United States for years until he glimpsed a face in a window and knew they were in Cleveland, Ohio. Drebber recognised him in the street and went with Stangerson, now his private secretary, to a justice of the peace, claiming they were in danger of their lives from an old rival. Hope was taken into custody and, unable to find sureties, was held for some weeks. By the time he was released they had left for Europe. He followed them to St. Petersburg, but they had left for Paris. In Paris he learned they had gone to Copenhagen, and there he was again a few days late because they had gone on to London, where he finally caught up with them.\n\nEvidence (verbatim):\n- [05ab674df048d13f:16:13] \"the result had been the secession of a certain number of the malcontents, who had left Utah and become Gentiles. Among these had been Drebber and Stangerson\"\n- [05ab674df048d13f:16:13] \"that one glance told him that Cleveland in Ohio possessed the men whom he was in pursuit of.\"\n- [05ab674df048d13f:16:13] \"some of the younger members of the Church having rebelled against the authority of the Elders\"\n- [05ab674df048d13f:16:14] \"He hurried before a justice of the peace, accompanied by Stangerson, who had become his private secretary, and represented to him that they were in danger of their lives from the jealousy and hatred of an old rival.\"\n- [05ab674df048d13f:16:14] \"That evening Jefferson Hope was taken into custody, and not being able to find sureties, was detained for some weeks.\"\n- [05ab674df048d13f:16:14] \"Drebber’s house was deserted, and that he and his secretary had departed for Europe.\"\n- [05ab674df048d13f:16:14] \"When he reached St. Petersburg they had departed for Paris; and when he followed them there he learned that they had just set off for Copenhagen.\"\n- [05ab674df048d13f:16:14] \"At the Danish capital he was again a few days late, for they had journeyed on to London, where he at last succeeded in running them to earth.\"",
+  "key_facts": [
+   "they left Utah in a schism among the Mormons, as seceders",
+   "Hope found them in Cleveland, Ohio",
+   "Drebber and Stangerson went to a justice of the peace saying an old rival threatened their lives",
+   "Hope was taken into custody and held for some weeks for lack of sureties",
+   "they left for Europe in the meantime",
+   "European route: St. Petersburg, then Paris, then Copenhagen, then London"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:16:13",
+    "quote": "the result had been the secession of a certain number of the malcontents, who had left Utah and become Gentiles. Among these had been Drebber and Stangerson"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:13",
+    "quote": "that one glance told him that Cleveland in Ohio possessed the men whom he was in pursuit of."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:13",
+    "quote": "some of the younger members of the Church having rebelled against the authority of the Elders"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:14",
+    "quote": "He hurried before a justice of the peace, accompanied by Stangerson, who had become his private secretary, and represented to him that they were in danger of their lives from the jealousy and hatred of an old rival."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:14",
+    "quote": "That evening Jefferson Hope was taken into custody, and not being able to find sureties, was detained for some weeks."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:14",
+    "quote": "Drebber’s house was deserted, and that he and his secretary had departed for Europe."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:14",
+    "quote": "When he reached St. Petersburg they had departed for Paris; and when he followed them there he learned that they had just set off for Copenhagen."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:14",
+    "quote": "At the Danish capital he was again a few days late, for they had journeyed on to London, where he at last succeeded in running them to earth."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X8",
+  "question": "How did Jefferson Hope get into the empty house in the Brixton Road where he killed Drebber?",
+  "verified": "He had a duplicate key. Some days earlier, a gentleman who had been looking over some houses in the Brixton Road dropped the key of one of them in Hope's cab. It was claimed and returned that same evening, but in the meantime Hope took a moulding of it and had a duplicate made. That gave him at least one place in London where he could count on not being interrupted.\n\nEvidence (verbatim):\n- [05ab674df048d13f:17:7] \"a gentleman who had been engaged in looking over some houses in the Brixton Road had dropped the key of one of them in my carriage.\"\n- [05ab674df048d13f:17:7] \"It was claimed that same evening, and returned; but in the interval I had taken a moulding of it, and had a duplicate constructed.\"\n- [05ab674df048d13f:17:8] \"By means of this I had access to at least one spot in this great city where I could rely upon being free from interruption.\"",
+  "key_facts": [
+   "a gentleman looking over houses in the Brixton Road dropped a house key in Hope's cab",
+   "the key was claimed and returned that same evening",
+   "before returning it Hope took a moulding and had a duplicate made",
+   "the house gave him a place free from interruption"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:17:7",
+    "quote": "a gentleman who had been engaged in looking over some houses in the Brixton Road had dropped the key of one of them in my carriage."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:7",
+    "quote": "It was claimed that same evening, and returned; but in the interval I had taken a moulding of it, and had a duplicate constructed."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:8",
+    "quote": "By means of this I had access to at least one spot in this great city where I could rely upon being free from interruption."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X9",
+  "question": "In A Study in Scarlet, how did Holmes learn the name of the man who killed Drebber, and what had Gregson failed to ask?",
+  "verified": "Holmes telegraphed the head of the police at Cleveland and asked only about the circumstances of Enoch Drebber's marriage. The ring found at the scene had convinced him the murderer was reminding his victim of some dead or absent woman. The reply said that Drebber had already applied for the protection of the law against an old rival in love named Jefferson Hope, and that Hope was at present in Europe. Gregson had also telegraphed Cleveland, but he only described the circumstances and asked about Stangerson. He did not ask about any particular point in Drebber's former career.\n\nEvidence (verbatim):\n- [05ab674df048d13f:18:4] \"Clearly the murderer had used it to remind his victim of some dead or absent woman.\"\n- [05ab674df048d13f:18:5] \"I telegraphed to the head of the police at Cleveland, limiting my enquiry to the circumstances connected with the marriage of Enoch Drebber.\"\n- [05ab674df048d13f:18:5] \"It told me that Drebber had already applied for the protection of the law against an old rival in love, named Jefferson Hope, and that this same Hope was at present in Europe.\"\n- [05ab674df048d13f:7:11] \"We simply detailed the circumstances, and said that we should be glad of any information which could help us.\"\n- [05ab674df048d13f:7:11] \"“I asked about Stangerson.”\"\n- [05ab674df048d13f:7:11] \"“Have you sent to Cleveland?” “We telegraphed this morning.”\"\n- [05ab674df048d13f:18:4] \"I asked Gregson whether he had enquired in his telegram to Cleveland as to any particular point in Mr. Drebber’s former career. He answered, you remember, in the negative.\"",
+  "key_facts": [
+   "Holmes telegraphed the head of police in Cleveland",
+   "he asked specifically about Drebber's marriage, because the ring pointed to a woman",
+   "the answer: Drebber had sought legal protection against an old rival in love, Jefferson Hope",
+   "Hope was then in Europe",
+   "Gregson had asked only about Stangerson, not Drebber's past"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:18:4",
+    "quote": "Clearly the murderer had used it to remind his victim of some dead or absent woman."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:5",
+    "quote": "I telegraphed to the head of the police at Cleveland, limiting my enquiry to the circumstances connected with the marriage of Enoch Drebber."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:5",
+    "quote": "It told me that Drebber had already applied for the protection of the law against an old rival in love, named Jefferson Hope, and that this same Hope was at present in Europe."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:11",
+    "quote": "We simply detailed the circumstances, and said that we should be glad of any information which could help us."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:11",
+    "quote": "“I asked about Stangerson.”"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:11",
+    "quote": "“Have you sent to Cleveland?” “We telegraphed this morning.”"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:4",
+    "quote": "I asked Gregson whether he had enquired in his telegram to Cleveland as to any particular point in Mr. Drebber’s former career. He answered, you remember, in the negative."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X10",
+  "question": "In The Sign of the Four, how did Mary Morstan come to receive a pearl every year, who was sending them, and where did the pearls come from?",
+  "verified": "On 4 May 1882 an advertisement in the Times asked for Miss Mary Morstan's address. On her employer's advice she published it in the advertisement column. The same day a small card-board box arrived by post containing a large, lustrous pearl, with no letter, and a similar box came every year on the same date. She showed Holmes and Watson six of them. Thaddeus Sholto later explains that the pearls were taken from a chaplet of pearls from the Agra treasure that his father, Major Sholto, had got out intending to send to her. Thaddeus persuaded his brother Bartholomew to let him find Miss Morstan's address and send her a detached pearl at fixed intervals, so that she might never feel destitute.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:5:3] \"upon the 4th of May, 1882—an advertisement appeared in the Times asking for the address of Miss Mary Morstan\"\n- [0ee225a9a3b5fbc2:5:3] \"By her advice I published my address in the advertisement column.\"\n- [0ee225a9a3b5fbc2:5:3] \"The same day there arrived through the post a small card-board box addressed to me, which I found to contain a very large and lustrous pearl.\"\n- [0ee225a9a3b5fbc2:5:3] \"Since then every year upon the same date there has always appeared a similar box, containing a similar pearl, without any clue as to the sender.\"\n- [0ee225a9a3b5fbc2:5:4] \"showed me six of the finest pearls that I had ever seen.\"\n- [0ee225a9a3b5fbc2:7:13] \"We could judge the splendour of the missing riches by the chaplet which he had taken out.\"\n- [0ee225a9a3b5fbc2:7:7] \"See that chaplet dipped with pearls beside the quinine-bottle. Even that I could not bear to part with, although I had got it out with the design of sending it to her.\"\n- [0ee225a9a3b5fbc2:7:13] \"It was all that I could do to persuade him to let me find out Miss Morstan’s address and send her a detached pearl at fixed intervals, so that at least she might never feel destitute.\"",
+  "key_facts": [
+   "a Times advertisement of 4 May 1882 asked for her address",
+   "she published her address, and a pearl arrived by post the same day",
+   "a similar pearl came every year on the same date (six so far)",
+   "Thaddeus Sholto sent them, after persuading Bartholomew",
+   "they were detached from the pearl chaplet Major Sholto had taken out of the treasure for her",
+   "the aim was that she would never feel destitute"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:3",
+    "quote": "upon the 4th of May, 1882—an advertisement appeared in the Times asking for the address of Miss Mary Morstan"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:3",
+    "quote": "By her advice I published my address in the advertisement column."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:3",
+    "quote": "The same day there arrived through the post a small card-board box addressed to me, which I found to contain a very large and lustrous pearl."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:3",
+    "quote": "Since then every year upon the same date there has always appeared a similar box, containing a similar pearl, without any clue as to the sender."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:4",
+    "quote": "showed me six of the finest pearls that I had ever seen."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:13",
+    "quote": "We could judge the splendour of the missing riches by the chaplet which he had taken out."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:7",
+    "quote": "See that chaplet dipped with pearls beside the quinine-bottle. Even that I could not bear to part with, although I had got it out with the design of sending it to her."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:13",
+    "quote": "It was all that I could do to persuade him to let me find out Miss Morstan’s address and send her a detached pearl at fixed intervals, so that at least she might never feel destitute."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X11",
+  "question": "In The Sign of the Four, what did the anonymous letter tell Mary Morstan to do, and who was the man who met her party at the rendezvous?",
+  "verified": "The letter told her to be at the third pillar from the left outside the Lyceum Theatre at seven o'clock that night. She could bring two friends if she was distrustful, but must not bring the police. At the third pillar a small, dark, brisk man dressed as a coachman accosted them. He made her give her word that neither of her companions was a police-officer, then mounted the box of a four-wheeler and drove them off. Thaddeus Sholto later identifies him: Williams, one of the two prize-fighters his father employed as porters at Pondicherry Lodge, once light-weight champion of England.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:5:5] \"Be at the third pillar from the left outside the Lyceum Theatre to-night at seven o’clock. If you are distrustful, bring two friends.\"\n- [0ee225a9a3b5fbc2:5:5] \"Do not bring police.\"\n- [0ee225a9a3b5fbc2:6:5] \"a small, dark, brisk man in the dress of a coachman accosted us.\"\n- [0ee225a9a3b5fbc2:6:5] \"I was to ask you to give me your word that neither of your companions is a police-officer.\"\n- [0ee225a9a3b5fbc2:6:5] \"He gave a shrill whistle, on which a street Arab led across a four-wheeler and opened the door.\"\n- [0ee225a9a3b5fbc2:6:5] \"The man who had addressed us mounted to the box, while we took our places inside.\"\n- [0ee225a9a3b5fbc2:7:6] \"he always employed two prize-fighters to act as porters at Pondicherry Lodge. Williams, who drove you to-night, was one of them. He was once light-weight champion of England.\"",
+  "key_facts": [
+   "be at the third pillar from the left outside the Lyceum Theatre at seven that night",
+   "she might bring two friends but no police",
+   "they were met by a small, dark man dressed as a coachman",
+   "he made her promise neither companion was a police-officer, then drove them",
+   "he was Williams, one of Major Sholto's prize-fighter porters",
+   "Williams was once light-weight champion of England"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:5",
+    "quote": "Be at the third pillar from the left outside the Lyceum Theatre to-night at seven o’clock. If you are distrustful, bring two friends."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:5",
+    "quote": "Do not bring police."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:6:5",
+    "quote": "a small, dark, brisk man in the dress of a coachman accosted us."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:6:5",
+    "quote": "I was to ask you to give me your word that neither of your companions is a police-officer."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:6:5",
+    "quote": "He gave a shrill whistle, on which a street Arab led across a four-wheeler and opened the door."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:6:5",
+    "quote": "The man who had addressed us mounted to the box, while we took our places inside."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:6",
+    "quote": "he always employed two prize-fighters to act as porters at Pondicherry Lodge. Williams, who drove you to-night, was one of them. He was once light-weight champion of England."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X12",
+  "question": "What incident showed Major Sholto's fear of men with wooden legs, and how did Holmes use it to conclude that the wooden-legged intruder at Pondicherry Lodge was Jonathan Small?",
+  "verified": "According to Thaddeus Sholto, his father had a marked aversion to men with wooden legs and once actually fired his revolver at a wooden-legged man who turned out to be a harmless tradesman canvassing for orders. The family had to pay a large sum to hush it up. Holmes reasoned that because Sholto mistook a white tradesman for the man he feared, the man he was guarding against was white. Only one white man's name was on the chart; the others were Hindoos or Mohammedans. So the wooden-legged man must be Jonathan Small.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:7:6] \"Our father would never tell us what it was he feared, but he had a most marked aversion to men with wooden legs.\"\n- [0ee225a9a3b5fbc2:7:6] \"On one occasion he actually fired his revolver at a wooden-legged man, who proved to be a harmless tradesman canvassing for orders. We had to pay a large sum to hush the matter up.\"\n- [0ee225a9a3b5fbc2:10:13] \"He guards himself against a wooden-legged man,—a white man, mark you, for he mistakes a white tradesman for him, and actually fires a pistol at him.\"\n- [0ee225a9a3b5fbc2:10:13] \"Now, only one white man’s name is on the chart. The others are Hindoos or Mohammedans.\"\n- [0ee225a9a3b5fbc2:10:13] \"Therefore we may say with confidence that the wooden-legged man is identical with Jonathan Small.\"",
+  "key_facts": [
+   "Major Sholto fired his revolver at a wooden-legged man",
+   "the man was a harmless tradesman canvassing for orders, and the family paid to hush it up",
+   "Holmes reasoned the feared man was white, since Sholto mistook a white tradesman for him",
+   "only one white man's name, Jonathan Small, was on the chart",
+   "so the wooden-legged man was Jonathan Small"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:6",
+    "quote": "Our father would never tell us what it was he feared, but he had a most marked aversion to men with wooden legs."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:6",
+    "quote": "On one occasion he actually fired his revolver at a wooden-legged man, who proved to be a harmless tradesman canvassing for orders. We had to pay a large sum to hush the matter up."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:13",
+    "quote": "He guards himself against a wooden-legged man,—a white man, mark you, for he mistakes a white tradesman for him, and actually fires a pistol at him."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:13",
+    "quote": "Now, only one white man’s name is on the chart. The others are Hindoos or Mohammedans."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:13",
+    "quote": "Therefore we may say with confidence that the wooden-legged man is identical with Jonathan Small."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X13",
+  "question": "When Thaddeus Sholto brought Holmes, Watson and Miss Morstan to Pondicherry Lodge, the porter refused to let his friends in. Who was the porter, and why did he change his mind?",
+  "verified": "The porter was McMurdo, a prize-fighter. He said he had no orders about Thaddeus's friends and would let only Thaddeus in. Holmes asked whether he remembered the amateur who had fought three rounds with him at Alison's rooms on the night of his benefit four years earlier. McMurdo recognised Sherlock Holmes and let them all in.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:8:0] \"I can let you in, but your friends must just stop where they are.\"\n- [0ee225a9a3b5fbc2:8:1] \"Don’t you remember the amateur who fought three rounds with you at Alison’s rooms on the night of your benefit four years back?\"\n- [0ee225a9a3b5fbc2:8:1] \"“Not Mr. Sherlock Holmes!” roared the prize-fighter.\"\n- [0ee225a9a3b5fbc2:8:1] \"“In you come, sir, in you come,—you and your friends,” he answered.\"",
+  "key_facts": [
+   "the porter was McMurdo, a prize-fighter",
+   "he would admit Thaddeus but not his friends, having no orders",
+   "Holmes had fought three rounds with him as an amateur at Alison's rooms on the night of McMurdo's benefit four years before",
+   "McMurdo recognised Holmes and let the whole party in"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:8:0",
+    "quote": "I can let you in, but your friends must just stop where they are."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:8:1",
+    "quote": "Don’t you remember the amateur who fought three rounds with you at Alison’s rooms on the night of your benefit four years back?"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:8:1",
+    "quote": "“Not Mr. Sherlock Holmes!” roared the prize-fighter."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:8:1",
+    "quote": "“In you come, sir, in you come,—you and your friends,” he answered."
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X14",
+  "question": "In The Sign of the Four, from what earlier case does Athelney Jones remember Holmes, and how does Jones describe Holmes's part in it?",
+  "verified": "Jones remembers Holmes from the Bishopgate jewel case. He calls him \"the theorist\" and recalls how Holmes lectured them all on causes, inferences and effects. Jones grants that Holmes set them on the right track, but says it was more by good luck than good guidance. Holmes replies that it was a piece of very simple reasoning.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:9:8] \"It’s Mr. Sherlock Holmes, the theorist.\"\n- [0ee225a9a3b5fbc2:9:8] \"I’ll never forget how you lectured us all on causes and inferences and effects in the Bishopgate jewel case.\"\n- [0ee225a9a3b5fbc2:9:8] \"It’s true you set us on the right track; but you’ll own now that it was more by good luck than good guidance.\"\n- [0ee225a9a3b5fbc2:9:8] \"“It was a piece of very simple reasoning.”\"",
+  "key_facts": [
+   "the Bishopgate jewel case",
+   "Jones calls Holmes 'the theorist' and recalls him lecturing on causes, inferences and effects",
+   "Jones admits Holmes set them on the right track but credits luck rather than guidance",
+   "Holmes says it was very simple reasoning"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:8",
+    "quote": "It’s Mr. Sherlock Holmes, the theorist."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:8",
+    "quote": "I’ll never forget how you lectured us all on causes and inferences and effects in the Bishopgate jewel case."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:8",
+    "quote": "It’s true you set us on the right track; but you’ll own now that it was more by good luck than good guidance."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:8",
+    "quote": "“It was a piece of very simple reasoning.”"
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X15",
+  "question": "In Jonathan Small's story, who was the merchant Achmet and why was he going to the fort at Agra, how was he killed, and how was the murder discovered?",
+  "verified": "Achmet was a trusty servant of a rajah in the northern provinces, travelling under the guise of a merchant. The rajah wanted to be safe whichever side won the Mutiny. He kept his gold and silver in his palace vaults and sent his most precious stones and choicest pearls in an iron box to lie in the fort at Agra. When Achmet ran from his escort inside the fort, Small threw his firelock between his legs and tripped him, and a Sikh stabbed him twice in the side. They buried him under loose bricks in a crumbling hall. But the rajah had set a second, even more trusty servant to spy on Achmet. This man saw him enter the fort and later found no trace of him. He told a sergeant of guides, who told the commandant. A search found the body, and all four men were tried for murder.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:15] \"the most precious stones and the choicest pearls that he had he put in an iron box, and sent it by a trusty servant who, under the guise of a merchant, should take it to the fort at Agra\"\n- [0ee225a9a3b5fbc2:15:15] \"Thus, if the rebels won he would have his money, but if the Company conquered his jewels would be saved to him.\"\n- [0ee225a9a3b5fbc2:15:14] \"There is a rajah in the northern provinces who has much wealth, though his lands are small.\"\n- [0ee225a9a3b5fbc2:15:15] \"That which was in gold and silver he kept by him in the vaults of his palace\"\n- [0ee225a9a3b5fbc2:15:15] \"This pretended merchant, who travels under the name of Achmet, is now in the city of Agra, and desires to gain his way into the fort.\"\n- [0ee225a9a3b5fbc2:15:20] \"I cast my firelock between his legs as he raced past, and he rolled twice over like a shot rabbit.\"\n- [0ee225a9a3b5fbc2:15:20] \"Ere he could stagger to his feet the Sikh was upon him, and buried his knife twice in his side.\"\n- [0ee225a9a3b5fbc2:15:23] \"so we left Achmet the merchant there, having first covered him over with loose bricks.\"\n- [0ee225a9a3b5fbc2:15:22] \"a great empty hall, the brick walls of which were all crumbling to pieces.\"\n- [0ee225a9a3b5fbc2:15:25] \"He went after him that night and saw him pass through the doorway.\"\n- [0ee225a9a3b5fbc2:15:25] \"what does this rajah do but take a second even more trusty servant and set him to play the spy upon the first?\"\n- [0ee225a9a3b5fbc2:15:26] \"he spoke about it to a sergeant of guides, who brought it to the ears of the commandant. A thorough search was quickly made, and the body was discovered.\"\n- [0ee225a9a3b5fbc2:15:26] \"we were all four seized and brought to trial on a charge of murder\"",
+  "key_facts": [
+   "Achmet was a rajah's trusted servant disguised as a merchant",
+   "he carried the rajah's jewels in an iron box to keep them safe in Agra fort, as a hedge whichever side won",
+   "Small tripped him with his firelock and a Sikh stabbed him twice",
+   "his body was hidden under loose bricks",
+   "a second servant, set by the rajah to spy on Achmet, reported his disappearance to a sergeant of guides and then the commandant",
+   "a search found the body and the four were tried for murder"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:15",
+    "quote": "the most precious stones and the choicest pearls that he had he put in an iron box, and sent it by a trusty servant who, under the guise of a merchant, should take it to the fort at Agra"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:15",
+    "quote": "Thus, if the rebels won he would have his money, but if the Company conquered his jewels would be saved to him."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:14",
+    "quote": "There is a rajah in the northern provinces who has much wealth, though his lands are small."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:15",
+    "quote": "That which was in gold and silver he kept by him in the vaults of his palace"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:15",
+    "quote": "This pretended merchant, who travels under the name of Achmet, is now in the city of Agra, and desires to gain his way into the fort."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:20",
+    "quote": "I cast my firelock between his legs as he raced past, and he rolled twice over like a shot rabbit."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:20",
+    "quote": "Ere he could stagger to his feet the Sikh was upon him, and buried his knife twice in his side."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:23",
+    "quote": "so we left Achmet the merchant there, having first covered him over with loose bricks."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:22",
+    "quote": "a great empty hall, the brick walls of which were all crumbling to pieces."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:25",
+    "quote": "He went after him that night and saw him pass through the doorway."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:25",
+    "quote": "what does this rajah do but take a second even more trusty servant and set him to play the spy upon the first?"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:26",
+    "quote": "he spoke about it to a sergeant of guides, who brought it to the ears of the commandant. A thorough search was quickly made, and the body was discovered."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:26",
+    "quote": "we were all four seized and brought to trial on a charge of murder"
+   }
+  ],
+  "source": "heldout"
+ },
+ {
+  "id": "X16",
+  "question": "How did Jonathan Small win Tonga's loyalty, what part did Tonga play in Small's escape from the Andaman Islands, and how did the two of them earn a living once they reached England?",
+  "verified": "Tonga was a little Andaman Islander whom a convict-gang found sick to death in the woods. Small, who had picked up some medicine, took him in hand while Dr. Somerton was down with a fever. After a couple of months he had Tonga well and able to walk, and Tonga took a fancy to him and was always hanging about his hut. Tonga was a fine boatman with a big, roomy canoe of his own. He brought it round at night to an old, unguarded wharf to pick Small up, and they escaped to sea in it. In England, Small earned their living by exhibiting Tonga at fairs and similar places as \"the black cannibal\". Tonga would eat raw meat and dance his war-dance, and they always collected a hatful of pennies.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:34] \"One day when Dr. Somerton was down with a fever a little Andaman Islander was picked up by a convict-gang in the woods. He was sick to death, and had gone to a lonely place to die.\"\n- [0ee225a9a3b5fbc2:15:34] \"I took him in hand, though he was as venomous as a young snake, and after a couple of months I got him all right and able to walk.\"\n- [0ee225a9a3b5fbc2:15:35] \"Tonga—for that was his name—was a fine boatman, and owned a big, roomy canoe of his own.\"\n- [0ee225a9a3b5fbc2:15:35] \"He was to bring his boat round on a certain night to an old wharf which was never guarded, and there he was to pick me up.\"\n- [0ee225a9a3b5fbc2:15:36] \"I made for the boat, and in an hour we were well out at sea.\"\n- [0ee225a9a3b5fbc2:15:37] \"some three or four years ago, we found ourselves in England.\"\n- [0ee225a9a3b5fbc2:15:38] \"We earned a living at this time by my exhibiting poor Tonga at fairs and other such places as the black cannibal.\"\n- [0ee225a9a3b5fbc2:15:38] \"He would eat raw meat and dance his war-dance: so we always had a hatful of pennies after a day’s work.\"",
+  "key_facts": [
+   "Tonga was found sick to death in the woods, and Small nursed him back to health over a couple of months",
+   "Tonga became devoted to Small afterwards",
+   "Tonga owned a canoe and brought it to an unguarded wharf at night to carry Small away",
+   "in England Small exhibited Tonga at fairs as 'the black cannibal'",
+   "Tonga ate raw meat and danced his war-dance for pennies"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "One day when Dr. Somerton was down with a fever a little Andaman Islander was picked up by a convict-gang in the woods. He was sick to death, and had gone to a lonely place to die."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "I took him in hand, though he was as venomous as a young snake, and after a couple of months I got him all right and able to walk."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:35",
+    "quote": "Tonga—for that was his name—was a fine boatman, and owned a big, roomy canoe of his own."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:35",
+    "quote": "He was to bring his boat round on a certain night to an old wharf which was never guarded, and there he was to pick me up."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:36",
+    "quote": "I made for the boat, and in an hour we were well out at sea."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:37",
+    "quote": "some three or four years ago, we found ourselves in England."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "We earned a living at this time by my exhibiting poor Tonga at fairs and other such places as the black cannibal."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "He would eat raw meat and dance his war-dance: so we always had a hatful of pennies after a day’s work."
+   }
+  ],
+  "source": "heldout"
+ }
+]

@@ -28,3 +28,5 @@ lore/web/static/*
 web/node_modules/
 web/test-results/
 web/playwright-report/
+# Answer-quality eval outputs (raw answers per run)
+evals/answer_quality/runs/
