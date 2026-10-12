@@ -588,7 +588,7 @@ def test_the_claim_cap_is_eight() -> None:
 @pytest.mark.asyncio
 async def test_the_prompt_asks_for_every_distinct_fact_as_its_own_claim() -> None:
     prompt = await _prompt(EV)
-    assert "every distinct fact" in prompt
+    assert "its own claim with its own quote" in prompt
     assert "its own claim with its own quote" in prompt
     assert "not one claim that summarises several" in prompt
     assert f"at most {MAX_CLAIMS} claims" in prompt
@@ -615,7 +615,7 @@ async def test_a_part_prompt_asks_for_completeness_too() -> None:
         _per_part([Synthesis(claims=[WHY_D], can_answer=True),
                    Synthesis(claims=[WHY_S], can_answer=True)], prompts), mode="graph")
     for prompt in prompts:
-        assert "every distinct fact" in prompt
+        assert "its own claim with its own quote" in prompt
         assert f"at most {MAX_CLAIMS} claims" in prompt
 
 
@@ -1079,6 +1079,7 @@ def test_full_answers_asks_for_circumstances_and_a_full_part(monkeypatch) -> Non
     evidence = Evidence(edges=(), passages=(
         Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text."),),
         truncated=False)
+    monkeypatch.setattr(synthesize_module, "FULL_ANSWERS", False)
     plain = _build_prompt("why?", evidence, part_of="who and why?")
     assert "List every distinct fact" in plain and "Answer only this part." in plain
     monkeypatch.setattr(synthesize_module, "FULL_ANSWERS", True)
@@ -1094,6 +1095,14 @@ def test_no_restate_adds_its_rule_only_when_on(monkeypatch) -> None:
     evidence = Evidence(edges=(), passages=(
         Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text."),),
         truncated=False)
+    monkeypatch.setattr(synthesize_module, "NO_RESTATE", False)
     assert "must add a fact" not in _build_prompt("why?", evidence)
     monkeypatch.setattr(synthesize_module, "NO_RESTATE", True)
     assert "must add a fact the earlier claims do not already state" in _build_prompt("why?", evidence)
+
+
+def test_full_answers_and_no_restate_are_the_default() -> None:
+    # Adopted after rounds 4-5 (GRADING.md, "Decisions").
+    from lore.query import synthesize as synthesize_module
+    assert synthesize_module.FULL_ANSWERS is True
+    assert synthesize_module.NO_RESTATE is True
