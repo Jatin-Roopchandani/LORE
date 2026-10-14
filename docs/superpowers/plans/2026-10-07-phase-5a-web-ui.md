@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Work happens in the worktree `/home/jatin/LORE-ui` on branch `phase-5a-web-ui`. Never switch branches in `/home/jatin/LORE` (answer-quality evals run there).
-- Git identity must be `jatinroopchandani3007@gmail.com` (check `git config user.email` before every commit); push to `origin` (github-personal). Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Git identity must be `jatinroopchandani3007@gmail.com` (check `git config user.email` before every commit); push to `origin` (github-personal).
 - Python: run tests with `.venv/bin/python -m pytest` from the worktree root. If the worktree has no `.venv`, create it with `uv sync` first.
 - Ollama, if a step needs it, runs CPU-only: `CUDA_VISIBLE_DEVICES=-1 OLLAMA_VULKAN=0 ~/.local/ollama/bin/ollama serve`. Stop it with `pkill -x ollama` only. Never `pkill -f`.
 - Never print, log or commit the Gemini key (`~/.config/lore/gemini.env`) or the Kaggle token.
@@ -227,9 +227,7 @@ git commit -m "feat: template rows and search edges carry entity ids
 
 Names are not unique, and the web UI opens the entity a search actually
 traversed. Ids also join the row order, so two same-name entities never
-tie.
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+tie."
 ```
 
 ---
@@ -562,9 +560,7 @@ git commit -m "feat: answer_question reports each real stage to an optional hook
 Split, seeds and search per part, ranking, writing and checking, with
 the per-part seeds and edges (capped at 150, true total sent) and what
 made the evidence cut. Without a hook nothing changes; a raising hook is
-logged, never fatal.
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+logged, never fatal."
 ```
 
 ---
@@ -755,9 +751,7 @@ Expected: PASS. If `tests/test_config.py` does not exist, run only the first fil
 ```bash
 git config user.email
 git add pyproject.toml uv.lock lore/config.py lore/web/ tests/test_web_security.py
-git commit -m "feat: web config and the loopback, Host and Origin guard for lore ui
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat: web config and the loopback, Host and Origin guard for lore ui"
 ```
 
 ---
@@ -1074,9 +1068,7 @@ git commit -m "feat: lore ui read endpoints over the MCP tool functions
 
 Library, entity and subgraph (by id as well as by name, so a search's
 edges open the entity actually traversed), quota with its reset time,
-MCP connection details, and the show_internals setting.
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+MCP connection details, and the show_internals setting."
 ```
 
 ---
@@ -1399,9 +1391,7 @@ git commit -m "feat: POST /api/ask streams live events, one question at a time
 
 Each agent event goes out as an SSE event stamped with elapsed seconds,
 then the full lore_search result. A second question while one runs gets
-busy; closing the stream cancels the run so it stops spending Gemini.
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+busy; closing the stream cancels the run so it stops spending Gemini."
 ```
 
 ---
@@ -1505,9 +1495,7 @@ Run `.venv/bin/lore ui` and open http://127.0.0.1:8766. Expected: the "not built
 ```bash
 git config user.email
 git add lore/cli.py pyproject.toml tests/test_cli_ui.py
-git commit -m "feat: lore ui serves the web app on 127.0.0.1:8766
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat: lore ui serves the web app on 127.0.0.1:8766"
 git push -q origin phase-5a-web-ui
 ```
 
@@ -1686,9 +1674,7 @@ Expected: a page titled "LORE Reader" with the LORE mark, and fonts loading from
 ```bash
 git config user.email
 git add web/package.json web/package-lock.json web/tsconfig.json web/vite.config.ts web/index.html web/src/
-git commit -m "feat: web app scaffold (React, TypeScript, Vite) building into lore/web/static
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat: web app scaffold (React, TypeScript, Vite) building into lore/web/static"
 ```
 
 ---
@@ -1890,9 +1876,7 @@ export const api = {
 ```bash
 git config user.email
 git add web/src/types.ts web/src/api.ts web/src/api.test.ts
-git commit -m "feat: web types, API client and a streaming SSE reader for POST /api/ask
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat: web types, API client and a streaming SSE reader for POST /api/ask"
 ```
 
 ---
@@ -2183,9 +2167,7 @@ git add web/src/askReducer.ts web/src/askReducer.test.ts web/src/history.ts web/
 git commit -m "feat: one reducer turns the ask event stream into state; history in browser storage
 
 Fixtures are event streams recorded from real runs (single- and
-two-part), plus synthetic interrupted, budget and empty streams.
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+two-part), plus synthetic interrupted, budget and empty streams."
 ```
 
 ---
@@ -2595,9 +2577,7 @@ git commit -m "feat: graph view derived purely from ask state, stable layout, st
 
 Cited, cut, faint and per-part colours are computed, never set by hand.
 Placed nodes never move. The stagger only delays when real events reach
-the reducer, and reduced motion turns it off.
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+the reducer, and reduced motion turns it off."
 ```
 
 ---
@@ -2889,9 +2869,7 @@ export function useAsk() {
 ```bash
 git config user.email
 git add web/src/messages.ts web/src/messages.test.ts web/src/highlight.ts web/src/highlight.test.ts web/src/useAsk.ts web/src/useAsk.test.tsx
-git commit -m "feat: one message table (internals switchable), quote highlighting, and the useAsk hook
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat: one message table (internals switchable), quote highlighting, and the useAsk hook"
 ```
 
 ---
@@ -3246,9 +3224,7 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
 ```bash
 git config user.email
 git add web/src/components/ web/src/theme.ts web/src/theme.test.ts web/src/theme.css
-git commit -m "feat: top bar with books dropdown, add-book dialog, quota, theme and settings menu
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat: top bar with books dropdown, add-book dialog, quota, theme and settings menu"
 ```
 
 ---
@@ -3735,9 +3711,7 @@ Stop the server.
 ```bash
 git config user.email
 git add web/src/ lore/web/static/.gitkeep
-git commit -m "feat: chat and graph panes: live steps, cited claims, staged Sigma graph, entity cards
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "feat: chat and graph panes: live steps, cited claims, staged Sigma graph, entity cards"
 git push -q origin phase-5a-web-ui
 ```
 
@@ -3829,9 +3803,7 @@ Run: `.venv/bin/python -m pytest -q tests` (all PASS), then `cd web && npm test 
 ```bash
 git config user.email
 git add web/playwright.config.ts web/e2e/ README.md
-git commit -m "test: opt-in end-to-end check of the web UI; docs for lore ui
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git commit -m "test: opt-in end-to-end check of the web UI; docs for lore ui"
 git push -q origin phase-5a-web-ui
 ```
 

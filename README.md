@@ -454,3 +454,7 @@ four live cases originally, then a 12-case eval across the model cascade.
 against the real API; every test in this repo stubs the transport. Gemini
 extraction and adjudication were each smoke-tested live on a handful of
 requests (Task R1), not on a whole book.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -14,11 +14,6 @@
 
 - Python 3.12 via uv. Always `uv run`; never bare `pip`.
 - Before every commit: `git config user.email` must print exactly `jatinroopchandani3007@gmail.com`. Anything else → STOP and report BLOCKED.
-- Every commit message ends with these two lines:
-  ```
-  Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-  Claude-Session: https://claude.ai/code/session_01GDnBNbkNU43K9BTSeydsrf
-  ```
 - `git push` after every task. `main` is pushed continuously.
 - TDD: write the failing test, watch it fail, implement, watch it pass.
 - Full suite `uv run pytest -m 'not live' -v` green AND pristine — zero warnings — before every commit. Baseline entering this plan: **243 passed, 1 deselected**.
@@ -267,10 +262,7 @@ git commit -m "docs: freeze the Phase 3 acceptance question set
 
 Chosen from the real loaded graph so each question is answerable, and
 frozen before implementation so none can be retuned to whatever the
-agent turns out to do well.
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01GDnBNbkNU43K9BTSeydsrf"
+agent turns out to do well."
 git push
 ```
 
@@ -612,10 +604,7 @@ uv run pytest tests/test_query_templates.py -v      # expect 8 passed
 uv run pytest -m 'not live' -v                      # expect 251 passed, 1 deselected
 git config user.email   # HARD GATE
 git add lore/query/ tests/test_query_templates.py
-git commit -m "feat: query models and the read-only Cypher template library
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01GDnBNbkNU43K9BTSeydsrf"
+git commit -m "feat: query models and the read-only Cypher template library"
 git push
 ```
 
@@ -901,10 +890,7 @@ uv run pytest tests/test_query_seed.py -v     # expect 6 passed
 uv run pytest -m 'not live' -v                # expect 257 passed, 1 deselected
 git config user.email   # HARD GATE
 git add lore/query/seed.py lore/ingest/registry.py tests/test_query_seed.py
-git commit -m "feat: seed canonical entities from the question's vector neighbourhood
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01GDnBNbkNU43K9BTSeydsrf"
+git commit -m "feat: seed canonical entities from the question's vector neighbourhood"
 git push
 ```
 
@@ -1151,10 +1137,7 @@ uv run pytest tests/test_query_select.py -v   # expect 8 passed
 uv run pytest -m 'not live' -v                # expect 265 passed, 1 deselected
 git config user.email   # HARD GATE
 git add lore/query/select.py tests/test_query_select.py
-git commit -m "feat: schema-constrained template selection
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01GDnBNbkNU43K9BTSeydsrf"
+git commit -m "feat: schema-constrained template selection"
 git push
 ```
 
@@ -1385,10 +1368,7 @@ uv run pytest tests/test_query_subgraph.py -v   # expect 9 passed
 uv run pytest -m 'not live' -v                  # expect 274 passed, 1 deselected
 git config user.email   # HARD GATE
 git add lore/query/subgraph.py tests/test_query_subgraph.py
-git commit -m "feat: run a template and assemble capped, citable evidence
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01GDnBNbkNU43K9BTSeydsrf"
+git commit -m "feat: run a template and assemble capped, citable evidence"
 git push
 ```
 
@@ -1606,10 +1586,7 @@ uv run pytest tests/test_query_synthesize.py -v   # expect 7 passed
 uv run pytest -m 'not live' -v                    # expect 281 passed, 1 deselected
 git config user.email   # HARD GATE
 git add lore/query/synthesize.py tests/test_query_synthesize.py
-git commit -m "feat: cited synthesis that refuses rather than guesses
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01GDnBNbkNU43K9BTSeydsrf"
+git commit -m "feat: cited synthesis that refuses rather than guesses"
 git push
 ```
 
@@ -2077,10 +2054,7 @@ uv run pytest -m 'not live' -v                  # expect 290 passed, 1 deselecte
 git config user.email   # HARD GATE
 git add lore/query/agent.py lore/cli.py lore/graph/loader.py \
         tests/test_query_agent.py tests/test_cli_ask.py
-git commit -m "feat: lore ask, the query agent, and two Phase 2B carry-ins
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01GDnBNbkNU43K9BTSeydsrf"
+git commit -m "feat: lore ask, the query agent, and two Phase 2B carry-ins"
 git push
 ```
 
@@ -2169,10 +2143,7 @@ If the agent does not clear the bar, say so plainly with the numbers. Phase 2B c
 uv run pytest -m 'not live' -v          # still green, zero warnings
 git config user.email   # HARD GATE
 git add README.md
-git commit -m "docs: quickstart covers lore ask and --baseline
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01GDnBNbkNU43K9BTSeydsrf"
+git commit -m "docs: quickstart covers lore ask and --baseline"
 git push
 ```
 

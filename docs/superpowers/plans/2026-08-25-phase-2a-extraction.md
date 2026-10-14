@@ -141,10 +141,7 @@ Expected: ~66 chapters, chunk count in the 700–800 range, **max length ≤ 160
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/ingest/chunker.py tests/test_chunker.py
-git commit -m "fix: bound every chunk to the budget while preserving overlap
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "fix: bound every chunk to the budget while preserving overlap"
 git push
 ```
 
@@ -384,10 +381,7 @@ Expected: 11 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/extract/ tests/test_extract_schemas.py tests/test_extract_prompts.py
-git commit -m "feat: extraction schemas and prompt as the single source of truth
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: extraction schemas and prompt as the single source of truth"
 git push
 ```
 
@@ -601,10 +595,7 @@ Expected: 5 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/extract/runner.py tests/test_extract_runner.py
-git commit -m "feat: provider-agnostic extraction runner with retry and dead-letter
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: provider-agnostic extraction runner with retry and dead-letter"
 git push
 ```
 
@@ -994,10 +985,7 @@ Expected: all pass. `test_write_unit_ships_the_lore_package` proves the kernel w
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/config.py lore.toml lore/ingest/registry.py lore/orchestrator/ tests/test_workunit.py tests/test_registry.py
-git commit -m "feat: extraction config, chunk reader, and work unit packaging
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: extraction config, chunk reader, and work unit packaging"
 git push
 ```
 
@@ -1195,10 +1183,7 @@ Expected: 7 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/orchestrator/quota.py tests/test_quota.py
-git commit -m "feat: weekly gpu-hour quota ledger
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: weekly gpu-hour quota ledger"
 git push
 ```
 
@@ -1554,10 +1539,7 @@ Expected: 4 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add kaggle/extract/ kaggle/extract_data/ lore/orchestrator/templates.py tests/test_extract_templates.py
-git commit -m "feat: kaggle extraction kernel and run materializer
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: kaggle extraction kernel and run materializer"
 git push
 ```
 
@@ -1967,10 +1949,7 @@ Expected: 7 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/orchestrator/run.py tests/test_orchestrator_run.py
-git commit -m "feat: extraction run orchestrator with resumable work units
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: extraction run orchestrator with resumable work units"
 git push
 ```
 
@@ -2399,10 +2378,7 @@ Expected: 8 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/extract/embed.py lore/orchestrator/local.py lore/orchestrator/run.py lore/inference/ollama.py lore/cli.py tests/test_embed.py tests/test_local_tier.py tests/test_cli_extract.py
-git commit -m "feat: zero-egress local tier, embeddings, and extract/quota commands
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: zero-egress local tier, embeddings, and extract/quota commands"
 git push
 ```
 
@@ -2497,10 +2473,7 @@ uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git status --short      # data/ must NOT appear
 git add README.md lore.toml
-git commit -m "docs: quickstart covers extraction and quota commands
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "docs: quickstart covers extraction and quota commands"
 git push
 ```
 

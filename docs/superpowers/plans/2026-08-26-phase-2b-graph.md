@@ -136,10 +136,7 @@ Expected: 7 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/resolve/ tests/test_normalize.py
-git commit -m "feat: surface-name normalization and deterministic entity ids
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: surface-name normalization and deterministic entity ids"
 git push
 ```
 
@@ -318,10 +315,7 @@ Expected: 6 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/resolve/predicates.py tests/test_predicates.py
-git commit -m "feat: predicate normalization onto the curated vocabulary
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: predicate normalization onto the curated vocabulary"
 git push
 ```
 
@@ -666,10 +660,7 @@ Expected: 7 passed. If `test_exact_and_honorific_forms_collapse_without_embeddin
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/resolve/resolver.py tests/test_resolver.py
-git commit -m "feat: three-pass entity resolver with cross-book adjudication
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: three-pass entity resolver with cross-book adjudication"
 git push
 ```
 
@@ -808,10 +799,7 @@ Expected: all pass, including the pre-existing store tests unchanged.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/db/kuzu_store.py lore/db/lance_store.py tests/test_kuzu_store.py tests/test_lance_store.py
-git commit -m "feat: predicate_raw column and lancedb entity/book operations
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: predicate_raw column and lancedb entity/book operations"
 git push
 ```
 
@@ -972,10 +960,7 @@ Expected: 3 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/graph/ tests/test_artifacts.py
-git commit -m "feat: job-state-gated extraction artifact reader
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: job-state-gated extraction artifact reader"
 git push
 ```
 
@@ -1382,10 +1367,7 @@ Expected: 5 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/graph/loader.py tests/test_loader.py
-git commit -m "feat: transactional idempotent graph and vector loader
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: transactional idempotent graph and vector loader"
 git push
 ```
 
@@ -1628,10 +1610,7 @@ Expected: 4 passed.
 uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git add lore/cli.py lore/graph/adjudicate.py tests/test_cli_process.py
-git commit -m "feat: lore process and lore graph commands
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "feat: lore process and lore graph commands"
 git push
 ```
 
@@ -1749,10 +1728,7 @@ uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE
 git status --short      # data/ must NOT appear
 git add README.md lore.toml
-git commit -m "docs: quickstart covers process and graph commands
-
-Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01HrWjXfLuqeEWiwvbo3LgPz"
+git commit -m "docs: quickstart covers process and graph commands"
 git push
 ```
 
