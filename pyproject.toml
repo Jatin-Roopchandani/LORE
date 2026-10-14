@@ -1,6 +1,7 @@
 [project]
 name = "lore"
 version = "0.1.0"
+license = { text = "MIT" }
 description = "LORE - Local Orchestration & Relational Extraction: a local-first literary knowledge graph"
 requires-python = ">=3.12"
 dependencies = [
