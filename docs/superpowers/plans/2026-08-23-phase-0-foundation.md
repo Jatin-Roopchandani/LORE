@@ -18,7 +18,7 @@
 - No paid services. Kaggle free tier + local Ollama only.
 - **Git identity (HARD GATE, from user):** every commit in this repo must be authored as the PERSONAL account: `user.email = jatinroopchandani3007@gmail.com` set via **local** `git config` (not `--global`). Before every `git commit`, if `git config user.email` does not print exactly that address, STOP and fix — never commit with a work identity. The GitHub remote must use the `github-personal` SSH host alias, and the repo is created **private**. Never use the work account, no matter what.
 - Ollama default model: `qwen2.5:3b-instruct-q4_K_M`; Ollama host `http://localhost:11434`.
-- Commit messages: conventional commits (`feat:`, `test:`, `chore:`), each ending with the two Claude attribution lines used in Task 1 Step 6.
+- Commit messages: conventional commits (`feat:`, `test:`, `chore:`).
 
 ---
 
@@ -128,10 +128,7 @@ Expected: only `.gitignore`, `SPEC.md`, and files under `docs/` staged.
 - [ ] **Step 6: Commit**
 
 ```bash
-git commit -m "chore: initialize LORE repo with spec and phase 0 plan
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "chore: initialize LORE repo with spec and phase 0 plan"
 ```
 Then verify authorship: `git log -1 --format='%ae'` must print `jatinroopchandani3007@gmail.com`.
 
@@ -236,10 +233,7 @@ See `SPEC.md` for the full design. Phase 0 status: foundation scaffold.
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add pyproject.toml .python-version uv.lock README.md lore/ tests/
-git commit -m "feat: uv project scaffold with package and test harness
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: uv project scaffold with package and test harness"
 ```
 
 ---
@@ -401,10 +395,7 @@ poll_timeout_s = 1800
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/config.py lore.toml tests/test_config.py
-git commit -m "feat: config system with toml loading and env overrides
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: config system with toml loading and env overrides"
 ```
 
 ---
@@ -548,10 +539,7 @@ Expected: 3 passed.
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/db/ tests/test_sqlite.py
-git commit -m "feat: sqlite store with idempotent migration runner
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: sqlite store with idempotent migration runner"
 ```
 
 ---
@@ -675,10 +663,7 @@ Expected: 3 passed.
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/db/kuzu_store.py tests/test_kuzu_store.py
-git commit -m "feat: embedded kuzu graph store with idempotent spec schema
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: embedded kuzu graph store with idempotent spec schema"
 ```
 
 ---
@@ -793,10 +778,7 @@ Expected: 3 passed. (If `to_list()` returns `entity_ids` as a numpy array on thi
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/db/lance_store.py tests/test_lance_store.py
-git commit -m "feat: embedded lancedb vector store with 768-dim chunk/entity tables
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: embedded lancedb vector store with 768-dim chunk/entity tables"
 ```
 
 ---
@@ -955,10 +937,7 @@ Expected: 1 passed (Ollama is running from Task 0; a skip means it isn't — sta
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/inference/ tests/test_ollama_provider.py pyproject.toml uv.lock
-git commit -m "feat: InferenceProvider protocol and OllamaProvider with structured output
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: InferenceProvider protocol and OllamaProvider with structured output"
 ```
 
 ---
@@ -1152,10 +1131,7 @@ Expected: a table (or "No kernels found") — NOT a 401/credentials error. A 401
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/kaggle_api/ tests/test_kaggle_client.py pyproject.toml uv.lock
-git commit -m "feat: kaggle client wrapping official CLI with poll/pull round trip
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: kaggle client wrapping official CLI with poll/pull round trip"
 ```
 
 ---
@@ -1334,10 +1310,7 @@ Expected: 2 passed.
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add kaggle/ lore/kaggle_api/hello.py tests/test_hello_roundtrip.py
-git commit -m "feat: hello kernel, dataset templates, and round-trip runner
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: hello kernel, dataset templates, and round-trip runner"
 ```
 
 ---
@@ -1508,10 +1481,7 @@ Expected: `[ ok ] kaggle-roundtrip — sum=15.0 on Tesla T4` (may take several m
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/cli.py tests/test_cli.py lore.toml
-git commit -m "feat: lore doctor command proving all phase 0 subsystems
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: lore doctor command proving all phase 0 subsystems"
 ```
 
 ---

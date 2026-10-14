@@ -143,10 +143,7 @@ Expected: 3 passed.
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/ingest/ tests/test_ingest_models.py
-git commit -m "feat: ingest models and content-addressed book identity
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: ingest models and content-addressed book identity"
 ```
 
 ---
@@ -355,10 +352,7 @@ Expected: 7 passed. If `test_overlap_between_consecutive_chunks`'s crude suffix 
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/ingest/chunker.py tests/test_chunker.py pyproject.toml uv.lock
-git commit -m "feat: deterministic scene-aware sentence-packing chunker
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: deterministic scene-aware sentence-packing chunker"
 ```
 
 ---
@@ -609,10 +603,7 @@ Expected: 5 passed, no warnings.
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/ingest/epub.py tests/test_epub.py tests/fixtures.py pyproject.toml uv.lock
-git commit -m "feat: epub parser with stdlib html text extraction
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: epub parser with stdlib html text extraction"
 ```
 
 ---
@@ -863,10 +854,7 @@ Expected: 4 passed, no warnings.
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/ingest/pdf.py tests/test_pdf.py tests/fixtures.py pyproject.toml uv.lock
-git commit -m "feat: basic pdf parser with heading heuristic and edge stripping
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: basic pdf parser with heading heuristic and edge stripping"
 ```
 
 ---
@@ -1073,10 +1061,7 @@ Expected: all pass — including the existing Phase 0 sqlite tests, EXCEPT `test
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/ingest/registry.py lore/db/sqlite.py tests/test_registry.py tests/test_sqlite.py
-git commit -m "feat: chunks table migration and transactional book registry
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: chunks table migration and transactional book registry"
 ```
 
 ---
@@ -1238,10 +1223,7 @@ Expected: all green, no warnings, no regressions.
 ```bash
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git add lore/cli.py tests/test_cli_ingest.py
-git commit -m "feat: lore ingest and lore books commands
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "feat: lore ingest and lore books commands"
 ```
 
 ---
@@ -1318,10 +1300,7 @@ uv run pytest -m 'not live' -v
 git config user.email   # HARD GATE: must print jatinroopchandani3007@gmail.com
 git status --short      # data/ must NOT appear
 git add README.md
-git commit -m "docs: quickstart covers ingest and books commands
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_017yr9NkKfFPPU4kWXNRtrUU"
+git commit -m "docs: quickstart covers ingest and books commands"
 ```
 
 ---
