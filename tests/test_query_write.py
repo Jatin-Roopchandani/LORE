@@ -57,6 +57,14 @@ def test_fewer_than_half_surviving_falls_back():
                     claim_ok=[True, True], sentence_ok=[True, False], passage_of=[3, 5]) is None
 
 
+def test_misaligned_verdicts_fall_back():
+    # zip() would silently drop the second sentence; the guard refuses instead.
+    assert assemble([S("A.", [1]), S("B.", [2])], written=2,
+                    claim_ok=[True, True], sentence_ok=[True], passage_of=[3, 5]) is None
+    assert assemble([S("A.", [1])], written=1,
+                    claim_ok=[True, True], sentence_ok=[True], passage_of=[3]) is None
+
+
 def test_nothing_surviving_falls_back():
     assert assemble([S("A.", [1])], written=1, claim_ok=[False, True], sentence_ok=[True], passage_of=[3, 5]) is None
 

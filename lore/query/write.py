@@ -99,6 +99,8 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
     `claim_ok`/`passage_of`: per claim given to the writer (1-based order).
     `sentence_ok`: per sentence in `sentences`.
     """
+    if len(sentence_ok) != len(sentences) or len(claim_ok) != len(passage_of):
+        return None
     survivors_index = {}
     for k, ok in enumerate(claim_ok, start=1):
         if ok:
