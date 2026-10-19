@@ -68,6 +68,18 @@ class Passage:
 
 
 @dataclass(frozen=True)
+class ProseSentence:
+    """One sentence of a written answer. `claims` are 1-based indices into
+    Answer.claims (the checked survivors); `passages` are those claims'
+    passage numbers, sorted and unique, for the UI's citation chips."""
+
+    text: str
+    claims: tuple[int, ...]
+    passages: tuple[int, ...]
+    new_paragraph: bool = False
+
+
+@dataclass(frozen=True)
 class Evidence:
     edges: tuple[EdgeRow, ...]
     passages: tuple[Passage, ...]
