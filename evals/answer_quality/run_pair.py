@@ -55,6 +55,9 @@ ARM_SETTINGS = {
                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     "prose_answers": ("lore.query.write", "PROSE_ANSWERS",
                       lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Story order, own words and gaps in the writer and the check.
+    "story_order": ("lore.query.write", "STORY_ORDER",
+                    lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
 
 
