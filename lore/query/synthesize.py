@@ -130,7 +130,7 @@ if two passages state one fact, make one claim and quote the clearer one.
 ATTRIBUTE_SPEECH = True
 _ATTRIBUTE_SPEECH_RULE = """When the quote is a character speaking, or telling their own story in the
 first person, the claim is that character's account: say whose it is
-("Small says ...", "according to Hope ..."), never state it as plain fact.
+("<name> says ...", "according to <name> ..."), never state it as plain fact.
 """
 # STRICT_LINKS (2026-10-28): FULL_ANSWERS asks for reasons, and a claim joined
 # two facts from one passage with a cause it never gave -- "Hope targeted
@@ -145,6 +145,16 @@ Two facts from one passage stay two claims: never join them with "because",
 _STRICT_LINKS_CHECK = """Connecting words count: a "because", "so", "since", "in order to" or
 "which led to" in a claim that the cited passage does not state makes the
 claim "{not_supported}", even when both facts it joins are true.
+"""
+# ROLE_COVERAGE (2026-10-28): asked about a kind of character (a role such as
+# opponents, allies or victims), the claims named only the most prominent one
+# although the passages showed others in that role. General by design: no
+# genre, book or role is named. Off gives the earlier prompt byte for byte.
+ROLE_COVERAGE = True
+_ROLE_COVERAGE_RULE = """If the question asks about a kind of character or a role rather than a named
+person, make claims for every character the passages show in that role,
+not only the most prominent one, including anyone whose earlier actions
+set the events in motion.
 """
 _PART_CONTEXT = "This is one part of the larger question: {part_of}\nAnswer only this part.\n"
 _FULL_PART_CONTEXT = ("This is one part of the larger question: {part_of}\n"
@@ -391,7 +401,8 @@ def _build_prompt(
                           facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
                           + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else "")
-                          + (_STRICT_LINKS_RULE if STRICT_LINKS else ""),
+                          + (_STRICT_LINKS_RULE if STRICT_LINKS else "")
+                          + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations, passages=passages,

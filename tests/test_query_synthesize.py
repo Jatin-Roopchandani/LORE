@@ -1069,7 +1069,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
         synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
         synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
         synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE,
-        synthesize_module._ATTRIBUTE_SPEECH_RULE, synthesize_module._STRICT_LINKS_RULE,
+        synthesize_module._ATTRIBUTE_SPEECH_RULE, synthesize_module._STRICT_LINKS_RULE, synthesize_module._ROLE_COVERAGE_RULE,
         synthesize_module._STRICT_LINKS_CHECK, __import__('lore.query.decompose', fromlist=['x'])._THEMATIC_RULE,
         write_module.WRITER_PROMPT)))
     for q in (q for path in sets for q in json.loads(path.read_text())):
@@ -1372,3 +1372,30 @@ def test_thematic_parts_adds_its_rule_only_when_on(monkeypatch) -> None:
     assert "role or a theme" not in off and "{thematic}" not in off
     monkeypatch.setattr(decompose, "THEMATIC_PARTS", True)
     assert "every character it applies to" in decompose.decomposition_prompt("q?")
+
+
+def test_role_coverage_adds_its_rule_only_when_on(monkeypatch) -> None:
+    from lore.query import synthesize as synthesize_module
+    from lore.query.synthesize import _build_prompt
+    evidence = Evidence(edges=(), passages=(
+        Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text."),),
+        truncated=False)
+    monkeypatch.setattr(synthesize_module, "ROLE_COVERAGE", False)
+    assert "every character the passages show" not in _build_prompt("who?", evidence)
+    monkeypatch.setattr(synthesize_module, "ROLE_COVERAGE", True)
+    assert "every character the passages show in that role" in _build_prompt("who?", evidence)
+
+
+def test_prompt_rules_name_no_character_book_or_genre() -> None:
+    # Rules must hold for any book a user uploads: no names or genre words
+    # from the books the rules were tuned on.
+    import re
+    from lore.query import decompose, synthesize as s, write as w
+    text = "\n".join((s._PROMPT, s._FACTS_RULE, s._FULL_FACTS_RULE, s._NO_RESTATE_RULE,
+                      s._ATTRIBUTE_SPEECH_RULE, s._STRICT_LINKS_RULE, s._STRICT_LINKS_CHECK,
+                      s._ROLE_COVERAGE_RULE, s._CHECK_PROMPT, s._SENTENCES_BLOCK,
+                      w.WRITER_PROMPT, decompose._PROMPT, decompose._THEMATIC_RULE))
+    banned = r"\b(holmes|watson|sherlock|small|hope|drebber|stangerson|sholto|ferrier|tonga|" \
+             r"morstan|lestrade|baker street|mormon|agra|crime|crimes|murder|villain|villains|" \
+             r"detective|treasure|darcy|bennet)\b"
+    assert not re.findall(banned, text.lower())

@@ -30,8 +30,7 @@ THEMATIC_PARTS = True
 _THEMATIC_RULE = """- If the question asks about a role or a theme (a kind of character, a
   motive, a vice or a virtue) rather than a named person, make the parts
   find every character it applies to, not only the most prominent one:
-  for example, those who commit the crimes and also those whose earlier
-  wrongs set the events in motion.
+  including those whose earlier actions set the events in motion.
 """
 _PROMPT = """You are splitting a question about books into the parts a search must cover.
 {books}
