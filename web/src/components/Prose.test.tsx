@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Prose } from "./Prose";
+import { UI } from "../messages";
 import type { SearchResult } from "../types";
 
 const result = {
@@ -62,4 +63,36 @@ test("gaps alone show the same muted line", () => {
 test("an empty gaps list adds no line", () => {
   const { container } = render(<Prose result={{ ...result, gaps: [] }} onHoverChunks={() => {}} />);
   expect(container.querySelector(".unanswered")).toBeNull();
+});
+
+const withReading = {
+  ...result,
+  prose: [...result.prose!, { text: "This suggests he never forgave.", claims: [1, 2], passages: [3, 5], new_paragraph: false, kind: "reading" as const }],
+} as SearchResult;
+
+test("a reading is marked, with a tooltip and a hidden note for screen readers", () => {
+  const { container } = render(<Prose result={withReading} onHoverChunks={() => {}} />);
+  const readings = container.querySelectorAll(".sentence.reading");
+  expect(readings).toHaveLength(1);
+  expect(readings[0].textContent).toContain("This suggests he never forgave.");
+  expect(readings[0]).toHaveAttribute("title", UI.readingNote);
+  expect(readings[0].querySelector(".visually-hidden")?.textContent).toBe(UI.readingNote);
+});
+
+test("facts, and sentences with no kind, are not marked as readings", () => {
+  const { container } = render(<Prose result={result} onHoverChunks={() => {}} />);
+  expect(container.querySelectorAll(".sentence")).toHaveLength(2);
+  expect(container.querySelector(".reading")).toBeNull();
+  expect(container.querySelector("[title]")).toBeNull();
+  const explicit = { ...result, prose: result.prose!.map((s) => ({ ...s, kind: "fact" as const })) } as SearchResult;
+  const again = render(<Prose result={explicit} onHoverChunks={() => {}} />);
+  expect(again.container.querySelector(".reading")).toBeNull();
+});
+
+test("a reading still has its citation chips and hover", () => {
+  const onHover = vi.fn();
+  render(<Prose result={withReading} onHoverChunks={onHover} />);
+  fireEvent.mouseEnter(screen.getByText(/never forgave/));
+  expect(onHover).toHaveBeenCalledWith(["c3", "c5"]);
+  expect(screen.getAllByRole("button", { name: /\[5\]/ })).toHaveLength(2);
 });

@@ -158,4 +158,6 @@ svg.graph{width:100%;height:100%;display:block}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .unanswered{font-size:13px;color:var(--muted,#888);margin:0 0 .6em}
 .prose{font:17px/1.6 var(--f-book);margin:0 0 .6em} .prose .sentence:hover{background:var(--glow-soft)}
+.prose .sentence.reading{font-style:italic;color:var(--muted);text-decoration:underline dotted;text-decoration-color:var(--muted);text-underline-offset:4px;cursor:help}
+.prose .sentence.reading .cite{font-style:normal}
 details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px} details.evidence summary{cursor:pointer;color:var(--muted);font-size:13px}

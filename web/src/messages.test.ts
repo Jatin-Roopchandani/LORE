@@ -1,4 +1,4 @@
-import { errorMessage } from "./messages";
+import { errorMessage, UI } from "./messages";
 
 const now = new Date("2026-10-07T20:40:00-07:00");
 const resetsAt = "2026-10-08T00:00:00-07:00";
@@ -40,4 +40,8 @@ test("forbidden explains the address and offers no retry", () => {
   const m = errorMessage({ code: "forbidden", message: "" }, { showInternals: true });
   expect(m.text).toBe("This page isn't allowed to talk to LORE. Open it from the address lore ui printed.");
   expect(m.retry).toBeUndefined();
+});
+
+test("the reading note says it is an interpretation, not a statement from the book", () => {
+  expect(UI.readingNote).toBe("A reading of the cited facts, not a direct statement from the book.");
 });
