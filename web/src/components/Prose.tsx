@@ -12,6 +12,8 @@ export function Prose({ result, onHoverChunks }: { result: SearchResult; onHover
     if (s.new_paragraph && paragraphs[paragraphs.length - 1].length) paragraphs.push([]);
     paragraphs[paragraphs.length - 1].push({ s, i });
   });
+  // Whole parts the passages do not answer, then aspects within a part: one line.
+  const missing = [...(result.unanswered ?? []), ...(result.gaps ?? [])];
   return (
     <div className="prose-answer">
       {paragraphs.map((para, pi) => (
@@ -44,8 +46,8 @@ export function Prose({ result, onHoverChunks }: { result: SearchResult; onHover
           }))}
         </div>
       ))}
-      {(result.unanswered?.length ?? 0) > 0 && (
-        <p className="unanswered">{`${UI.unanswered} ${result.unanswered!.join("; ")}`}</p>
+      {missing.length > 0 && (
+        <p className="unanswered">{`${UI.unanswered} ${missing.join("; ")}`}</p>
       )}
     </div>
   );

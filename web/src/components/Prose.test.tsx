@@ -45,3 +45,21 @@ test("no unanswered line when the list is empty", () => {
   const { container } = render(<Prose result={{ ...result, unanswered: [] }} onHoverChunks={() => {}} />);
   expect(container.querySelector(".unanswered")).toBeNull();
 });
+
+test("gaps join the unanswered parts in the one muted line", () => {
+  const { container } = render(
+    <Prose result={{ ...result, unanswered: ["How did he lose it?"], gaps: ["whether he used it later"] }} onHoverChunks={() => {}} />);
+  const lines = container.querySelectorAll("p.unanswered");
+  expect(lines).toHaveLength(1);
+  expect(lines[0].textContent).toBe("The passages found don't answer: How did he lose it?; whether he used it later");
+});
+
+test("gaps alone show the same muted line", () => {
+  const { container } = render(<Prose result={{ ...result, gaps: ["whether he used it later"] }} onHoverChunks={() => {}} />);
+  expect(container.querySelector("p.unanswered")?.textContent).toBe("The passages found don't answer: whether he used it later");
+});
+
+test("an empty gaps list adds no line", () => {
+  const { container } = render(<Prose result={{ ...result, gaps: [] }} onHoverChunks={() => {}} />);
+  expect(container.querySelector(".unanswered")).toBeNull();
+});

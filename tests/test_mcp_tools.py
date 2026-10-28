@@ -1187,3 +1187,17 @@ def test_search_result_carries_unanswered():
     assert to_search_result(Answer(**base), {}).model_dump()["unanswered"] == []
     out = to_search_result(Answer(**base, unanswered=("How?",)), {}).model_dump()
     assert out["unanswered"] == ["How?"]
+
+
+def test_search_result_carries_gaps():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)),), answer_style="prose",
+                    gaps=("whether it was used later",))
+    out = to_search_result(answer, {}).model_dump()
+    assert out["gaps"] == ["whether it was used later"]
+    plain = to_search_result(Answer(text="x", passages=(), mode="graph", template=None, note=None),
+                             {}).model_dump()
+    assert plain["gaps"] == []
