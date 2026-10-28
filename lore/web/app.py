@@ -13,17 +13,23 @@ import shutil
 import socket
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+import threading
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
 from lore.config import LoreConfig
+from lore.db.sqlite import open_db
+from lore.ingest.registry import list_books
 from lore.mcp import tools
+from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE, day_report, today
+from lore.orchestrator.pipeline import JobRefused, processing_budget_left, run_book
 from lore.web.ask import ask_events
 from lore.web.security import OriginGuard, allowed_hosts, allowed_origins
 
@@ -81,9 +87,107 @@ def _quota(config: LoreConfig) -> dict:
     return {"provider": "gemini", "models": models, "resets_at": midnight.isoformat()}
 
 
+def _default_stages(config: LoreConfig) -> list:
+    # Imported here: lore.cli imports this module's create_app.
+    from lore.cli import default_stages
+    return default_stages(config, resume=True)
+
+
+def _job_out(job: jobs.BookJob | None, now: datetime) -> dict | None:
+    if job is None:
+        return None
+    ok, why = jobs.can_continue(job, now)
+    return {
+        "stage": job.stage, "state": job.state,
+        "done": job.done_items, "total": job.total_items,
+        "stopped_reason": job.stopped_reason,
+        "resumable_at": job.resumable_at.isoformat() if job.resumable_at else None,
+        "can_continue": ok, "continue_reason": why,
+    }
+
+
+def _gemini_use(conn: sqlite3.Connection, config: LoreConfig, now: datetime) -> dict:
+    """Today's requests across the extraction cascade, as processing counts them."""
+    from lore.inference.gemini import limits_for
+    models = dict.fromkeys(config.extraction.gemini_models)
+    limit = sum(limits_for(m).rpd for m in models)
+    left = processing_budget_left(conn, config, today(now))
+    return {"used_today": max(0, limit - left), "limit": limit,
+            "answer_reserve": config.processing.answer_reserve}
+
+
+def _api_error(status: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse({"error": {"code": code, "message": message}},
+                        status_code=status)
+
+
 def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
-               dev: bool = False):
+               dev: bool = False,
+               stages_factory: Callable[[LoreConfig], list] | None = None,
+               clock: Callable[[], datetime] | None = None):
+    """`stages_factory` and `clock` are test seams for book processing."""
     api = FastAPI(title="LORE", docs_url=None, redoc_url=None)
+    make_stages = stages_factory or _default_stages
+    now_utc = clock or (lambda: datetime.now(timezone.utc))
+    runner_slot = threading.Lock()  # held while a processing job runs
+
+    try:  # a job whose server died mid-run resumes from Continue, no reset wait
+        conn = open_db(config.sqlite_path)
+        try:
+            jobs.recover_stale(conn, now_utc())
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass
+
+    @api.get("/api/books")
+    def books():
+        now = now_utc()
+        conn = open_db(config.sqlite_path)
+        try:
+            by_book = {j.book_id: j for j in jobs.list_jobs(conn)}
+            rows = list_books(conn)
+            gemini = _gemini_use(conn, config, now)
+        finally:
+            conn.close()
+        return {"books": [
+            {"id": b["id"], "title": b["title"], "author": b["author"],
+             "status": b["status"], "series": b["series"],
+             "series_index": b["series_index"],
+             "job": _job_out(by_book.get(b["id"]), now)}
+            for b in rows], "gemini": gemini}
+
+    def _process(book_id: str) -> None:
+        conn = open_db(config.sqlite_path)  # its own connection: another thread
+        try:
+            run_book(conn, config, book_id, make_stages(config), now=now_utc())
+        except JobRefused:
+            pass  # raced a CLI run; its row stands
+        except Exception:  # noqa: BLE001 - a setup failure must not kill the thread
+            pass
+        finally:
+            conn.close()
+            runner_slot.release()
+
+    @api.post("/api/books/{book_id}/continue", status_code=202)
+    def continue_book(book_id: str):
+        conn = open_db(config.sqlite_path)
+        try:
+            if book_id not in {b["id"] for b in list_books(conn)}:
+                return _api_error(404, "not_found", f"no book with id {book_id!r}")
+            ok, why = jobs.can_continue(jobs.get_job(conn, book_id), now_utc())
+        finally:
+            conn.close()
+        if not ok:
+            return _api_error(409, "not_resumable", why)
+        if not runner_slot.acquire(blocking=False):
+            return _api_error(409, "busy", "another book is being processed")
+        try:
+            threading.Thread(target=_process, args=(book_id,), daemon=True).start()
+        except BaseException:
+            runner_slot.release()
+            raise
+        return {"started": True}
 
     @api.get("/api/library")
     def library():
