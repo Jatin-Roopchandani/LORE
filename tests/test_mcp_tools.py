@@ -1158,7 +1158,8 @@ def test_search_result_carries_prose():
                     prose=(ProseSentence("A.", (1,), (1,)),), answer_style="prose")
     out = to_search_result(answer, {}).model_dump()
     assert out["answer_style"] == "prose"
-    assert out["prose"] == [{"text": "A.", "claims": [1], "passages": [1], "new_paragraph": False}]
+    assert out["prose"] == [{"text": "A.", "claims": [1], "passages": [1], "new_paragraph": False,
+                                "kind": "fact"}]
 
 
 def test_search_result_maps_new_paragraph():

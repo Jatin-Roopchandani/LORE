@@ -13,7 +13,7 @@ import re
 from dataclasses import replace
 from typing import Awaitable, Callable, Iterable, Sequence
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, create_model
 
 from lore.query.models import BookInfo, Claim, Passage, ProseSentence
 from lore.query.position import order_passages
@@ -33,27 +33,61 @@ PROSE_ANSWERS = True
 # earlier prompts, schemas and numbering byte for byte.
 STORY_ORDER = True
 
+# READINGS (2026-10-28): a story mostly shows change through actions, which
+# no sentence "stated by its cited facts" can interpret. With this on, the
+# writer may add up to MAX_READINGS sentences of kind "reading": labelled,
+# worded as a reading, resting on at least MIN_READING_CLAIMS facts, judged by
+# their own test in the check, guarded by code (`limit_readings`), and shown
+# distinctly. It lives in the story writer and check, so it needs STORY_ORDER
+# (`readings_on`). Off gives every prompt, schema and output as before, byte
+# for byte.
+READINGS = True
+MAX_READINGS = 2
+MIN_READING_CLAIMS = 2
 
-class Sentence(BaseModel):
-    text: str
-    claims: list[int]
-    new_paragraph: bool = False
+
+def readings_on() -> bool:
+    return READINGS and STORY_ORDER
+
+
+# The sentence as the model was asked for it before READINGS (and still is
+# when it is off): the schema asked of the model is part of the request, so
+# the name stays "Sentence".
+_PlainSentence = create_model(
+    "Sentence", __module__=__name__,
+    text=(str, ...), claims=(list[int], ...), new_paragraph=(bool, False))
+
+
+class Sentence(_PlainSentence):
+    # "fact": stated by the cited facts. "reading": an interpretation of what
+    # they show together (see READINGS).
+    kind: str = "fact"
 
 
 class _PlainProse(BaseModel):
     """The writer's reply as it was before STORY_ORDER (and still is when it
     is off): the schema asked of the model is part of the request."""
 
-    sentences: list[Sentence]
+    sentences: list[_PlainSentence]
     # 1-based numbers of the question's parts the facts do not answer.
     unanswered: list[int] = []
 
 
-class Prose(_PlainProse):
+class _StoryProse(_PlainProse):
+    # The reply under STORY_ORDER without READINGS: what the schema was at
+    # e9471a1, shown to the model as "Prose". No docstring: it would become
+    # the schema's description.
+    model_config = ConfigDict(title="Prose")
+
     # Short phrases naming an aspect of the question the facts do not cover,
     # inside a part they do answer. Cleaned by `clean_gaps`, verified by the
     # check, and shown by code in the closing line, as `unanswered` is.
     gaps: list[str] = []
+
+
+class Prose(_StoryProse):
+    # The reply under STORY_ORDER with READINGS: sentences may carry a kind.
+    sentences: list[Sentence]
 
 # Rendered by code, never by the model.
 UNANSWERED_LEAD = "The passages found don't answer:"
@@ -164,13 +198,29 @@ Every sentence lists the numbers of the facts it uses, in `claims`.
   or multi-part question gets a detailed answer of up to four short
   paragraphs, about 400 words at most. Start a new paragraph for each part
   or theme: mark its first sentence with new_paragraph.
-
+{readings}
 Question: {question}
 Parts:
 {parts}
 Facts:
 {facts}
 """
+
+# The readings rule, added to the story writer prompt only when READINGS is on.
+_READINGS_RULE = """- Each sentence has a `kind`: "fact" (the default) or "reading". A fact says
+  only what its cited facts say, as above. When the question is about a
+  character, a relationship, change or development, motives or themes, you
+  may add up to {max_readings} sentences of kind "reading". A reading
+  interprets what the cited facts show taken together: what actions, choices
+  and behaviour reveal, not only what is said outright. A reading must:
+  - be worded visibly as a reading, with a word such as "suggests", "shows",
+    "seems", "appears", "reflects" or "indicates";
+  - list at least {min_claims} facts it rests on, in `claims`;
+  - never introduce an event, name, number or detail that the facts do not
+    contain;
+  - never state the interpretation as plain fact.
+  A reading is a single sentence. Every other sentence is a fact.
+""".format(max_readings=MAX_READINGS, min_claims=MIN_READING_CLAIMS)
 
 
 def _title(book_id: str, book_titles: dict[str, str] | None) -> str:
@@ -216,7 +266,8 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
             where = f" ({positions[i].label()})" if positions[i] else ""
             lines.append(f"{shown}. {claims[i].text.strip()}{where}\n   quote: {claims[i].quote.strip()}")
         return STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
-                                          order_note=note)
+                                          order_note=note,
+                                          readings=_READINGS_RULE if readings_on() else "")
     by_number = {p.n: p for p in passages}
     lines = []
     for number, claim in enumerate(claims, start=1):
@@ -224,6 +275,11 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
         where = f" ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})" if p else ""
         lines.append(f"{number}. {claim.text.strip()}{where}\n   quote: {claim.quote.strip()}")
     return WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines))
+
+
+def _kind(sentence) -> str:
+    """"reading" only when the writer said so; anything else is a fact."""
+    return "reading" if str(getattr(sentence, "kind", "")).strip().lower() == "reading" else "fact"
 
 
 async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequence[Claim],
@@ -242,18 +298,23 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     try:
         reply = await generate(
             writer_prompt(question, sub_questions, claims, passages, book_titles, books),
-            Prose if STORY_ORDER else _PlainProse)
+            (Prose if readings_on() else _StoryProse) if STORY_ORDER else _PlainProse)
     except Exception:  # noqa: BLE001 -- see the docstring
         return None
     if not (isinstance(reply, _PlainProse) and reply.sentences):
         return None
+    back = None
     if STORY_ORDER:
         indices = story_plan(claims, passages, book_titles, books)[0]
         back = {shown: i + 1 for shown, i in enumerate(indices, start=1)}
-        reply = reply.model_copy(update={"sentences": [
-            s.model_copy(update={"claims": [back.get(k, 0) for k in s.claims]})
-            for s in reply.sentences]})
-    return reply
+    # Every sentence leaves here as a `Sentence` with a kind; a reply asked
+    # for without readings (or a model that gave none) is all facts.
+    sentences = [
+        Sentence(text=s.text, new_paragraph=s.new_paragraph,
+                 claims=[back.get(k, 0) for k in s.claims] if back else list(s.claims),
+                 kind=_kind(s) if readings_on() else "fact")
+        for s in reply.sentences]
+    return Prose(sentences=sentences, unanswered=reply.unanswered, gaps=getattr(reply, "gaps", []))
 
 
 _REST = r"[^\s,()\[\]]*"
@@ -315,6 +376,12 @@ def split_items(prose: Prose, claim_texts: Sequence[str] | None = None) -> list[
         if _FLAG_IN_TEXT.match(text):
             text, flag = _FLAG_IN_TEXT.sub("", text), True
         pieces = [p.strip() for p in _SENTENCE_END.split(text.strip()) if p.strip()]
+        if readings_on() and getattr(item, "kind", "fact") == "reading":
+            # Never split a reading: its pieces would lose the hedge and the
+            # citations that make it one. `limit_readings` drops one that is
+            # more than a single sentence.
+            out.append(item.model_copy(update={"text": text.strip(), "new_paragraph": flag}))
+            continue
         narrow = claim_texts is not None and len(pieces) > 1 and all(
             1 <= k <= len(claim_texts) for k in item.claims)
         for i, piece in enumerate(pieces):
@@ -336,6 +403,31 @@ def verify_prose(prose: Prose, n_claims: int,
         text = strip_residue(s.text)
         if re.search(r"\w", text):
             out.append(s.model_copy(update={"text": text}))
+    return limit_readings(out) if readings_on() else out
+
+
+# A reading must be worded visibly as one. A small, general list of stems:
+# "suggests", "shows", "seems", "appears", "reflects", "indicates", "implies",
+# "reveals", "hints" -- as whole words, so "showroom" or "seemly" do not count.
+_HEDGE = re.compile(r"\b(?:suggest|show|seem|appear|reflect|reveal|hint)(?:s|ed|ing|n)?\b"
+                    r"|\bindicat(?:e|es|ed|ing)\b|\bimpl(?:y|ies|ied|ying)\b", re.I)
+
+
+def limit_readings(sentences: Sequence[Sentence]) -> list[Sentence]:
+    """The sentences with the readings that break a rule removed: one with no
+    hedge word, one citing fewer than MIN_READING_CLAIMS distinct claims, one
+    that is more than a single sentence, and any past the first MAX_READINGS.
+    Facts are never touched."""
+    out, kept = [], 0
+    for s in sentences:
+        if getattr(s, "kind", "fact") == "reading":
+            sound = (bool(_HEDGE.search(s.text))
+                     and len(set(s.claims)) >= MIN_READING_CLAIMS
+                     and len([p for p in _SENTENCE_END.split(s.text.strip()) if p.strip()]) == 1)
+            if not sound or kept >= MAX_READINGS:
+                continue
+            kept += 1
+        out.append(s)
     return out
 
 
@@ -390,11 +482,13 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
     kept = [s for s, ok in standing if ok]
     if not kept or 2 * len(kept) < written:
         return None
+    if all(getattr(s, "kind", "fact") == "reading" for s in kept):
+        return None  # prose of readings alone: the facts are what it rests on
     return tuple(
         ProseSentence(text=s.text.strip(),
                       claims=tuple(survivors_index[k] for k in s.claims),
                       passages=tuple(sorted({passage_of[k - 1] for k in s.claims})),
-                      new_paragraph=s.new_paragraph and i > 0)
+                      new_paragraph=s.new_paragraph and i > 0, kind=getattr(s, "kind", "fact"))
         for i, s in enumerate(kept))
 
 
@@ -423,7 +517,9 @@ def paragraphs_by_book(prose: Sequence[ProseSentence],
 def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = (),
                  gaps: Sequence[str] = ()) -> str:
     """The prose with its citations, then one closing line naming what the
-    passages do not answer: whole parts first, then gaps within a part."""
+    passages do not answer: whole parts first, then gaps within a part. A
+    reading is just its sentence: its own wording ("suggests", "seems") is
+    what marks it in plain text."""
     paragraphs: list[list[str]] = [[]]
     for s in prose:
         if s.new_paragraph and paragraphs[-1]:

@@ -58,6 +58,9 @@ ARM_SETTINGS = {
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Labelled, checked readings of what actions show (write.READINGS).
+    "readings": ("lore.query.write", "READINGS",
+                 lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
 
 

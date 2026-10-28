@@ -98,6 +98,7 @@ class ProseOut(BaseModel):
     claims: list[int]
     passages: list[int]
     new_paragraph: bool = False
+    kind: str = "fact"
 
 
 class SearchResult(BaseModel):
@@ -255,7 +256,7 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
                        score=s.score if math.isfinite(s.score) else None)
                for s in answer.seeds],
         prose=[ProseOut(text=s.text, claims=list(s.claims), passages=list(s.passages),
-                        new_paragraph=s.new_paragraph) for s in answer.prose],
+                        new_paragraph=s.new_paragraph, kind=s.kind) for s in answer.prose],
         answer_style=answer.answer_style,
         unanswered=list(answer.unanswered),
         gaps=list(answer.gaps),

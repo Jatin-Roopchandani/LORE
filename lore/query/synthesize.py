@@ -388,6 +388,13 @@ not only what is said outright.
 """
 
 
+# READINGS, claims step: a reading rests on facts about what characters do, so
+# the claims must include them, not only what is said outright.
+_ACTIONS_RULE = """Include claims about what characters do, choose and how they behave toward
+each other, not only what they say or what the narrator states.
+"""
+
+
 def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
                    books: dict[str, BookInfo] | None) -> str:
     if not write_module.STORY_ORDER:
@@ -428,7 +435,8 @@ def _build_prompt(
                           + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else "")
                           + (_STRICT_LINKS_RULE if STRICT_LINKS else "")
                           + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else "")
-                          + (_CHANGE_RULE if write_module.STORY_ORDER else ""),
+                          + (_CHANGE_RULE if write_module.STORY_ORDER else "")
+                          + (_ACTIONS_RULE if write_module.readings_on() else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations, passages=passages,
@@ -549,6 +557,21 @@ Return these in sentence_judgements, one per sentence, numbered 1 to
 {max_words} words.
 """
 
+# READINGS: a sentence marked "(reading)" interprets its claims instead of
+# restating them, so it gets this test in place of the one above.
+_READINGS_BLOCK = """
+A sentence marked "(reading)" interprets what its cited claims show
+together; it is not a direct statement of them. Judge a reading by this test
+instead of the one above, and give its verdict in the same
+sentence_judgements entry.
+"{supported}": a careful reader would agree that the cited claims, together,
+fairly support this reading; it is worded visibly as a reading ("suggests",
+"seems", "appears"); and it adds no event, name, number or detail beyond
+the claims.
+"{not_supported}": it overreaches beyond the claims, is stated as plain
+fact, or adds detail.
+"""
+
 # Gaps are statements that the facts leave something out; code shows them
 # only if the check agrees. "supported" means the statement is true.
 _GAPS_BLOCK = """
@@ -611,12 +634,23 @@ def faithfulness_prompt(
     if order and order.note():
         prompt += "\n" + order.note() + "\n"
     if sentences:
+        # Kinds are shown, and the reading test given, only when a reading is
+        # among the sentences: an answer of facts alone is checked as before.
+        readings = write_module.readings_on() and any(
+            getattr(s, "kind", "fact") == "reading" for s in sentences)
+
+        def label(s) -> str:
+            return f" ({getattr(s, 'kind', 'fact')})" if readings else ""
+
         lines = "\n".join(
-            f"{i}. sentence: {s.text.strip()}\n   uses claims {', '.join(str(k) for k in s.claims)}"
+            f"{i}. sentence{label(s)}: {s.text.strip()}\n"
+            f"   uses claims {', '.join(str(k) for k in s.claims)}"
             for i, s in enumerate(sentences, start=1))
         prompt += (_STORY_SENTENCES_BLOCK if story else _SENTENCES_BLOCK).format(
             sentences=lines, count=len(sentences), supported=SUPPORTED,
             not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+        if readings:
+            prompt += _READINGS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
         if story and gaps:
             prompt += _GAPS_BLOCK.format(
                 gaps="\n".join(f"{i}. gap: {g}" for i, g in enumerate(gaps, start=1)),

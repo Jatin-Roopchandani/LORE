@@ -88,6 +88,9 @@ class ProseSentence:
     claims: tuple[int, ...]
     passages: tuple[int, ...]
     new_paragraph: bool = False
+    # "fact", or "reading": an interpretation of what the cited claims show
+    # together, not a direct statement (write.READINGS).
+    kind: str = "fact"
 
 
 @dataclass(frozen=True)
