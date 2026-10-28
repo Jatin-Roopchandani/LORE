@@ -1071,7 +1071,8 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
         synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE,
         synthesize_module._ATTRIBUTE_SPEECH_RULE, synthesize_module._STRICT_LINKS_RULE, synthesize_module._ROLE_COVERAGE_RULE,
         synthesize_module._STRICT_LINKS_CHECK, __import__('lore.query.decompose', fromlist=['x'])._THEMATIC_RULE,
-        write_module.WRITER_PROMPT)))
+        write_module.WRITER_PROMPT, write_module.STORY_WRITER_PROMPT,
+        synthesize_module._STORY_SENTENCES_BLOCK, synthesize_module._GAPS_BLOCK)))
     for q in (q for path in sets for q in json.loads(path.read_text())):
         leaked = (grams(q["question"]) | grams(q["verified"])) & prompt
         assert not leaked, f"{q['id']} leaks into the prompt: {sorted(leaked)}"
@@ -1394,8 +1395,9 @@ def test_prompt_rules_name_no_character_book_or_genre() -> None:
     text = "\n".join((s._PROMPT, s._FACTS_RULE, s._FULL_FACTS_RULE, s._NO_RESTATE_RULE,
                       s._ATTRIBUTE_SPEECH_RULE, s._STRICT_LINKS_RULE, s._STRICT_LINKS_CHECK,
                       s._ROLE_COVERAGE_RULE, s._CHECK_PROMPT, s._SENTENCES_BLOCK,
-                      w.WRITER_PROMPT, decompose._PROMPT, decompose._THEMATIC_RULE))
+                      w.WRITER_PROMPT, w.STORY_WRITER_PROMPT, s._STORY_SENTENCES_BLOCK, s._GAPS_BLOCK,
+                      decompose._PROMPT, decompose._THEMATIC_RULE))
     banned = r"\b(holmes|watson|sherlock|small|hope|drebber|stangerson|sholto|ferrier|tonga|" \
              r"morstan|lestrade|baker street|mormon|agra|crime|crimes|murder|villain|villains|" \
-             r"detective|treasure|darcy|bennet)\b"
+             r"detective|treasure|darcy|bennet|wizard|dragon|magic|kingdom|elf|elves|quest|sword)\b"
     assert not re.findall(banned, text.lower())

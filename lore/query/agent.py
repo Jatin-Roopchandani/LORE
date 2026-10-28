@@ -14,7 +14,7 @@ from lore.config import LoreConfig
 from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
-from lore.ingest.registry import list_books
+from lore.ingest.registry import book_rows, list_books
 from lore.query.decompose import split
 from lore.query.events import EDGES_PER_PART_CAP, OnEvent, edge_key, emit
 from lore.query.keyword import KeywordIndex, fused
@@ -350,11 +350,11 @@ async def _synthesize(question, evidence, models: QueryModels, *,
 
 
 async def _vector_answer(lance, question, vector, models, titles, *, mode,
-                         note) -> Answer:
+                         note, books=None) -> Answer:
     passages = passages_from_chunks(search_chunks(lance, vector, VECTOR_K))
     evidence = Evidence(edges=(), passages=passages, truncated=False)
     return await _synthesize(question, evidence, models, mode=mode, note=note,
-                             book_titles=titles)
+                             book_titles=titles, books=books)
 
 
 def _keyword_hits(conn: sqlite3.Connection,
@@ -501,6 +501,8 @@ async def answer_question(
     on_event: OnEvent | None = None,
 ) -> Answer:
     titles = {book["id"]: book["title"] for book in list_books(conn)}
+    # Story position (series, index) per book, for the writer and the check.
+    books = book_rows(conn)
 
     # Embedded once: the question's vector finds the baseline's passages on
     # every path, and ranks the evidence when the question has one part.
@@ -509,7 +511,7 @@ async def answer_question(
     if baseline:
         # Unchanged by Task 10d: no decomposition, no union.
         return await _vector_answer(lance, question, vector, models, titles,
-                                    mode="vector-baseline", note=None)
+                                    mode="vector-baseline", note=None, books=books)
 
     check_steps = _AnswerSteps(on_event) if on_event is not None else None
     if check_steps is not None:
@@ -523,7 +525,7 @@ async def answer_question(
         # Vector search returns a nearest chunk whenever there is any chunk,
         # so no part could find one either: skip decomposition.
         return await _synthesize(question, empty, models, mode="empty",
-                                 book_titles=titles)
+                                 book_titles=titles, books=books)
 
     emit(on_event, "step", name="split", state="start", part=None, detail=None)
     parts, decomposed = await _parts(question, vector, models, kuzu)
@@ -540,7 +542,7 @@ async def answer_question(
         # A legitimate empty answer, not a failure: nothing in the library
         # is close enough to any part of the question to start from.
         return await _synthesize(question, empty, models, mode="empty",
-                                 book_titles=titles)
+                                 book_titles=titles, books=books)
 
     # Every name and alias in one read per question, not one per part.
     names = load_name_index(kuzu)
@@ -615,7 +617,7 @@ async def answer_question(
     if not seeded and not scoped:
         # None of the nearest passages bridges to a live entity.
         return await _synthesize(question, empty, models, mode="empty",
-                                 book_titles=titles)
+                                 book_titles=titles, books=books)
 
     # The graph decided what is connected and vector search what is near;
     # each part of the question decides what matters for it.
@@ -659,11 +661,11 @@ async def answer_question(
         if rows:
             answer = await _synthesize(question, evidence, models, mode="graph",
                                        template="+".join(templates), book_titles=titles,
-                                       sub_questions=sub_questions)
+                                       books=books, sub_questions=sub_questions)
         else:
             answer = await _synthesize(question, evidence, models, mode="vector-fallback",
                                        note=GRAPH_EMPTY_NOTE, book_titles=titles,
-                                       sub_questions=sub_questions)
+                                       books=books, sub_questions=sub_questions)
     finally:
         if check_steps is not None:
             check_steps.close(answer)

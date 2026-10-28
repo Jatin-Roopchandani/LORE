@@ -15,13 +15,23 @@ from typing import Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
 
-from lore.query.models import Claim, Passage, ProseSentence
+from lore.query.models import BookInfo, Claim, Passage, ProseSentence
+from lore.query.position import order_passages
 
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
 
 # On by default (spec 2026-10-12). Off gives today's claim-list answers,
 # byte-identical prompts and calls.
 PROSE_ANSWERS = True
+
+# STORY_ORDER (2026-10-28): answers read as a narrative. The writer is shown
+# the facts in story order with their positions, may use order words the
+# positions support, writes in its own words, and names the aspects of the
+# question the facts leave unanswered (`gaps`); the check judges meaning and
+# accepts order from positions (synthesize._STORY_SENTENCES_BLOCK). Story
+# position data itself (lore/query/position.py) has no switch. Off gives the
+# earlier prompts, schemas and numbering byte for byte.
+STORY_ORDER = True
 
 
 class Sentence(BaseModel):
@@ -30,10 +40,20 @@ class Sentence(BaseModel):
     new_paragraph: bool = False
 
 
-class Prose(BaseModel):
+class _PlainProse(BaseModel):
+    """The writer's reply as it was before STORY_ORDER (and still is when it
+    is off): the schema asked of the model is part of the request."""
+
     sentences: list[Sentence]
     # 1-based numbers of the question's parts the facts do not answer.
     unanswered: list[int] = []
+
+
+class Prose(_PlainProse):
+    # Short phrases naming an aspect of the question the facts do not cover,
+    # inside a part they do answer. Cleaned by `clean_gaps`, verified by the
+    # check, and shown by code in the closing line, as `unanswered` is.
+    gaps: list[str] = []
 
 # Rendered by code, never by the model.
 UNANSWERED_LEAD = "The passages found don't answer:"
@@ -86,8 +106,97 @@ Facts:
 """
 
 
+STORY_WRITER_PROMPT = """Write the answer to the question from the numbered facts below.
+
+Each fact was checked against the book it cites. The facts are listed in
+story order: books whose order is known come in that order, then each
+book's facts by chapter and place in the chapter. A fact's label shows where
+it comes from. {order_note}
+You may only say what the facts say. Never add a name, number, detail,
+reason or event they do not state, including what you know about the story.
+Every sentence lists the numbers of the facts it uses, in `claims`.
+
+- Write in your own words. Paraphrase, combine and summarise freely, as long
+  as nothing is added that the facts do not say. Do not copy a fact's
+  wording when plainer words say the same.
+- Never put fact numbers, chapter numbers, book titles in brackets, or any
+  citation inside the sentence text. Citations go only in `claims`.
+- Use every fact, unless it only repeats another fact.
+- Every part that has facts must be answered. With several parts, cover
+  them in order, and never skip a part's facts to focus on another part.
+- For a broad question, you may open with one sentence that answers the
+  whole question in brief. It lists the numbers of every fact it
+  summarises, and the sentences after it give the detail. Never say more
+  than the facts do: no "always" or "every" unless the facts say so.
+- When the question is about change, sequence, development, cause over time
+  or connections across books, tell the answer as a narrative in story
+  order, with order words ("at first", "earlier", "later", "by the end",
+  "in the next book"). Otherwise reply directly, in natural prose.
+- An order word is allowed only where the labels show that order: the
+  later fact comes later in the list, in a later chapter or a later book.
+  Never use an order word between facts from books whose order is unknown.
+- Contrast and addition words ("also", "however", "although", "in
+  contrast") add no fact and are fine. Say "meanwhile" or "at the same
+  time" only when the facts themselves show the events were simultaneous.
+- A word that states a cause or a consequence ("because", "so", "which led
+  to", "as a result", "in order to") still needs a fact that states that
+  link. When no fact does, state the two things separately.
+- If the facts do not answer a whole part of the question, put that part's
+  number in `unanswered` and write no sentence for it.
+- If the facts do not cover one aspect that the question asks about, inside
+  a part they do answer, write no sentence for it. Name it in `gaps`
+  instead: at most two short phrases, each under 15 words, with no numbers.
+  Never name a gap that a fact answers.
+- Do not state the same fact twice.
+- Name a book, in plain words ("In <book title>, ..."), only when the
+  facts come from more than one book.
+- Keep each fact's certainty: if a fact says someone seemed, was suspected
+  or claimed, say so too.
+- When a fact's quote is a character speaking or narrating their own story
+  (first person, "I" or "my", or quoted speech), the fact is that
+  character's own account, not the narrator's: attribute it ("X says ...",
+  "according to X ...") and never state it as plain fact.
+- Vary how sentences begin. Once a person is named in a paragraph, use he,
+  she or they where it is clear who is meant, instead of repeating the name.
+- Each item in `sentences` is exactly one sentence; a paragraph is several
+  items. Set new_paragraph as the field; never write it in the text.
+- Length: a narrow question gets two to four sentences. A broad, abstract
+  or multi-part question gets a detailed answer of up to four short
+  paragraphs, about 400 words at most. Start a new paragraph for each part
+  or theme: mark its first sentence with new_paragraph.
+
+Question: {question}
+Parts:
+{parts}
+Facts:
+{facts}
+"""
+
+
 def _title(book_id: str, book_titles: dict[str, str] | None) -> str:
     return (book_titles or {}).get(book_id) or book_id
+
+
+def book_infos(book_titles: dict[str, str] | None,
+               books: dict[str, BookInfo] | None) -> dict[str, BookInfo]:
+    """Every known book: the rows where there are any, a title-only entry
+    (no story position) for a book known only by title."""
+    merged = {k: BookInfo(title=v) for k, v in (book_titles or {}).items()}
+    merged.update(books or {})
+    return merged
+
+
+def story_plan(claims: Sequence[Claim], passages: Iterable[Passage],
+               book_titles: dict[str, str] | None, books: dict[str, BookInfo] | None):
+    """(claims' indices in story order, each claim's position or None, the
+    unknown-order line). Claims are ordered by their passage's position; one
+    whose passage is not among `passages` goes last, in its given order."""
+    by_number = {p.n: p for p in passages}
+    cited = [by_number[n] for n in dict.fromkeys(c.passage for c in claims) if n in by_number]
+    order = order_passages(cited, book_infos(book_titles, books))
+    rank = {pos.n: i for i, pos in enumerate(order.ordered)}
+    indices = sorted(range(len(claims)), key=lambda i: (rank.get(claims[i].passage, len(rank)), i))
+    return indices, [order.positions.get(c.passage) for c in claims], order.note()
 
 
 def part_texts(question: str, sub_questions: Sequence[str]) -> list[str]:
@@ -96,27 +205,55 @@ def part_texts(question: str, sub_questions: Sequence[str]) -> list[str]:
 
 
 def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[Claim],
-                  passages: Iterable[Passage], book_titles: dict[str, str] | None) -> str:
+                  passages: Iterable[Passage], book_titles: dict[str, str] | None,
+                  books: dict[str, BookInfo] | None = None) -> str:
+    passages = list(passages)
+    parts = "\n".join(f"{i}. {s}" for i, s in enumerate(part_texts(question, sub_questions), start=1))
+    if STORY_ORDER:
+        indices, positions, note = story_plan(claims, passages, book_titles, books)
+        lines = []
+        for shown, i in enumerate(indices, start=1):
+            where = f" ({positions[i].label()})" if positions[i] else ""
+            lines.append(f"{shown}. {claims[i].text.strip()}{where}\n   quote: {claims[i].quote.strip()}")
+        return STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
+                                          order_note=note)
     by_number = {p.n: p for p in passages}
     lines = []
     for number, claim in enumerate(claims, start=1):
         p = by_number.get(claim.passage)
         where = f" ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})" if p else ""
         lines.append(f"{number}. {claim.text.strip()}{where}\n   quote: {claim.quote.strip()}")
-    parts = "\n".join(f"{i}. {s}" for i, s in enumerate(part_texts(question, sub_questions), start=1))
     return WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines))
 
 
 async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequence[Claim],
                        passages: Iterable[Passage], generate: Generate, *,
-                       book_titles: dict[str, str] | None = None) -> Prose | None:
+                       book_titles: dict[str, str] | None = None,
+                       books: dict[str, BookInfo] | None = None) -> Prose | None:
     """The writer's prose, or None on any failure: a failed extra step must
-    never cost the user the checked claims (they are the fallback)."""
+    never cost the user the checked claims (they are the fallback).
+
+    With STORY_ORDER the facts reach the writer in story order, so the
+    numbers it cites are positions in that list; they are converted back to
+    the claims' own numbers here, before anything else sees them. A number
+    outside the list becomes 0, which `verify_prose` drops with its
+    sentence, as it drops any out-of-range citation."""
+    passages = list(passages)
     try:
-        reply = await generate(writer_prompt(question, sub_questions, claims, passages, book_titles), Prose)
+        reply = await generate(
+            writer_prompt(question, sub_questions, claims, passages, book_titles, books),
+            Prose if STORY_ORDER else _PlainProse)
     except Exception:  # noqa: BLE001 -- see the docstring
         return None
-    return reply if isinstance(reply, Prose) and reply.sentences else None
+    if not (isinstance(reply, _PlainProse) and reply.sentences):
+        return None
+    if STORY_ORDER:
+        indices = story_plan(claims, passages, book_titles, books)[0]
+        back = {shown: i + 1 for shown, i in enumerate(indices, start=1)}
+        reply = reply.model_copy(update={"sentences": [
+            s.model_copy(update={"claims": [back.get(k, 0) for k in s.claims]})
+            for s in reply.sentences]})
+    return reply
 
 
 _REST = r"[^\s,()\[\]]*"
@@ -202,6 +339,23 @@ def verify_prose(prose: Prose, n_claims: int,
     return out
 
 
+MAX_GAPS = 2
+MAX_GAP_WORDS = 15
+
+
+def clean_gaps(gaps: Iterable[str]) -> list[str]:
+    """The writer's gaps as the answer may carry them: citations stripped,
+    cut to MAX_GAP_WORDS words, no trailing punctuation, no empty or repeated
+    phrase, at most MAX_GAPS of them."""
+    out: list[str] = []
+    for gap in gaps:
+        words = strip_residue(str(gap)).split()
+        text = " ".join(words[:MAX_GAP_WORDS]).strip().rstrip(".;:,!?").strip()
+        if re.search(r"\w", text) and text.casefold() not in {g.casefold() for g in out}:
+            out.append(text)
+    return out[:MAX_GAPS]
+
+
 def valid_unanswered(prose: Prose, n_parts: int) -> list[int]:
     """In-range, deduplicated part numbers, in the order given."""
     seen: list[int] = []
@@ -266,13 +420,17 @@ def paragraphs_by_book(prose: Sequence[ProseSentence],
                  for i, s in enumerate(prose))
 
 
-def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = ()) -> str:
+def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = (),
+                 gaps: Sequence[str] = ()) -> str:
+    """The prose with its citations, then one closing line naming what the
+    passages do not answer: whole parts first, then gaps within a part."""
     paragraphs: list[list[str]] = [[]]
     for s in prose:
         if s.new_paragraph and paragraphs[-1]:
             paragraphs.append([])
         paragraphs[-1].append(s.text + " " + "".join(f"[{n}]" for n in s.passages))
     text = "\n\n".join(" ".join(p) for p in paragraphs)
-    if unanswered:
-        text += f"\n\n{UNANSWERED_LEAD} " + "; ".join(unanswered)
+    closing = [*unanswered, *(g for g in gaps if g not in unanswered)]
+    if closing:
+        text += f"\n\n{UNANSWERED_LEAD} " + "; ".join(closing)
     return text

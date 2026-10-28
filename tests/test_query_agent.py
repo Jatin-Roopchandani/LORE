@@ -1474,3 +1474,27 @@ async def test_the_parts_path_emits_compose(tmp_path: Path) -> None:
     assert sum(1 for n, st, _ in steps if (n, st) == ("compose", "start")) == 1
     assert sum(1 for n, st, _ in steps if (n, st) == ("compose", "done")) == 1
     assert sum(1 for n, st, _ in steps if (n, st) == ("write", "done")) == 1
+
+
+async def test_the_books_series_reaches_the_writer_and_the_check(tmp_path: Path) -> None:
+    from dataclasses import replace as dc_replace
+    from lore.ingest.registry import set_series
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path)
+    prompts = {"write": [], "check": []}
+    write, check = models.write, models.check
+
+    async def spy_write(prompt, schema):
+        prompts["write"].append(prompt)
+        return await write(prompt, schema)
+
+    async def spy_check(prompt, schema):
+        prompts["check"].append(prompt)
+        return await check(prompt, schema)
+
+    models = dc_replace(models, write=spy_write, check=spy_check)
+    (book_id,) = [r[0] for r in conn.execute("SELECT id FROM books")]
+    assert set_series(conn, book_id, "The Saga", 2.0)
+    await answer_question(conn, kuzu, lance, q, models)
+    conn.close()
+    assert "book 2 of The Saga, chapter 1" in prompts["write"][0]
+    assert "book 2 of The Saga, chapter 2" in prompts["check"][0]

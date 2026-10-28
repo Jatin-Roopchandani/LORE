@@ -33,9 +33,11 @@ from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 from pydantic import BaseModel
 
 from lore.query import write as write_module
-from lore.query.models import Answer, Claim, EdgeRow, Evidence, Passage, ProseSentence
+from lore.query.models import Answer, BookInfo, Claim, EdgeRow, Evidence, Passage, ProseSentence
+from lore.query.position import order_passages
 from lore.query.write import (
-    assemble, compose_text, coverage_gaps, paragraphs_by_book, part_texts, split_items, valid_unanswered, verify_prose, write_answer,
+    assemble, book_infos, clean_gaps, compose_text, coverage_gaps, paragraphs_by_book, part_texts, split_items,
+    valid_unanswered, verify_prose, write_answer,
 )
 
 if TYPE_CHECKING:  # write.py never imports this module, so no cycle at runtime
@@ -440,9 +442,16 @@ class Judgement(BaseModel):
     reason: str = ""
 
 
-class Faithfulness(BaseModel):
+class _PlainFaithfulness(BaseModel):
+    """The check's reply as it was before STORY_ORDER (and still is when it
+    is off): the schema asked of the model is part of the request."""
+
     judgements: list[Judgement]
     sentence_judgements: list[Judgement] = []
+
+
+class Faithfulness(_PlainFaithfulness):
+    gap_judgements: list[Judgement] = []
 
 
 _CHECK_PROMPT = """Check each numbered claim against the one passage it cites.
@@ -484,12 +493,61 @@ sentence, numbered 1 to {count} in the claim field, with a verdict and a
 reason of at most {max_words} words.
 """
 
+# STORY_ORDER (write.STORY_ORDER): the sentence rule judges meaning, not
+# wording, and accepts an order word when the cited claims' positions show
+# that order. What it still refuses is what adds something: a fact, a
+# cause, an order the positions do not show, or a summary that overstates.
+_STORY_SENTENCES_BLOCK = """
+Sentences:
+{sentences}
+
+Then check each numbered sentence of the written answer against the claims
+it uses (their text, quotes and positions above). Judge meaning, not
+wording.
+"{supported}": those claims, together, support what the sentence means.
+- Paraphrase, summary and combining claims are supported when they add
+  nothing.
+- An order word ("at first", "earlier", "later", "by the end", "in the next
+  book") is supported when the positions of the cited claims show that
+  order.
+- Contrast and addition words ("also", "however", "although", "in
+  contrast") never make a sentence "{not_supported}".
+"{not_supported}": the sentence
+- adds a fact, name, number or detail the cited claims do not state;
+- states a cause or consequence ("because", "so", "which led to", "as a
+  result") that no cited claim states;
+- uses an order word that the positions contradict, or that links claims
+  from books whose relative order is unknown;
+- or summarises with more than the claims show, such as "always" or
+  "every" when they show one case or some.
+Return these in sentence_judgements, one per sentence, numbered 1 to
+{count} in the claim field, with a verdict and a reason of at most
+{max_words} words.
+"""
+
+# Gaps are statements that the facts leave something out; code shows them
+# only if the check agrees. "supported" means the statement is true.
+_GAPS_BLOCK = """
+Gaps:
+{gaps}
+
+Each gap says the claims above do not cover something the question asks
+about. Judge each against all of the claims above.
+"{supported}": the claims say nothing that answers the gap, so it is a true
+gap.
+"{not_supported}": some claim, or the claims together, do answer it.
+Return these in gap_judgements, one per gap, numbered 1 to {count} in the
+claim field, with a verdict and a reason of at most {max_words} words.
+"""
+
 
 def faithfulness_prompt(
     claims: Sequence[Claim],
     passages: Iterable[Passage],
     book_titles: dict[str, str] | None = None,
     sentences: Sequence["Sentence"] | None = None,
+    books: dict[str, BookInfo] | None = None,
+    gaps: Sequence[str] | None = None,
 ) -> str:
     """The one batched prompt: the cited passages, then the numbered claims.
 
@@ -506,15 +564,18 @@ def faithfulness_prompt(
     by_number = {p.n: p for p in passages}
     cited = [by_number[n] for n in sorted({c.passage for c in claims})
              if n in by_number]
-    shown = "\n\n".join(
-        f"[{p.n}] ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})\n{p.text}"
-        for p in cited
-    )
+    story = write_module.STORY_ORDER
+    order = order_passages(cited, book_infos(book_titles, books)) if story else None
+
+    def head(p: Passage) -> str:
+        return (order.positions[p.n].label(detail=True) if order
+                else f"{_title(p.book_id, book_titles)}, chapter {p.chapter_seq}")
+
+    shown = "\n\n".join(f"[{p.n}] ({head(p)})\n{p.text}" for p in cited)
     items = []
     for number, claim in enumerate(claims, start=1):
         passage = by_number.get(claim.passage)
-        where = (f"[{claim.passage}] ({_title(passage.book_id, book_titles)}, chapter "
-                 f"{passage.chapter_seq})" if passage else f"[{claim.passage}]")
+        where = f"[{claim.passage}] ({head(passage)})" if passage else f"[{claim.passage}]"
         items.append(f"{number}. claim: {claim.text.strip()}\n"
                      f"   cites passage {where}\n"
                      f"   quote: {claim.quote.strip()}")
@@ -523,13 +584,20 @@ def faithfulness_prompt(
         supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS,
         strict_links=(_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
                       if STRICT_LINKS else ""))
+    if order and order.note():
+        prompt += "\n" + order.note() + "\n"
     if sentences:
         lines = "\n".join(
             f"{i}. sentence: {s.text.strip()}\n   uses claims {', '.join(str(k) for k in s.claims)}"
             for i, s in enumerate(sentences, start=1))
-        prompt += _SENTENCES_BLOCK.format(
+        prompt += (_STORY_SENTENCES_BLOCK if story else _SENTENCES_BLOCK).format(
             sentences=lines, count=len(sentences), supported=SUPPORTED,
             not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+        if story and gaps:
+            prompt += _GAPS_BLOCK.format(
+                gaps="\n".join(f"{i}. gap: {g}" for i, g in enumerate(gaps, start=1)),
+                count=len(gaps), supported=SUPPORTED, not_supported=NOT_SUPPORTED,
+                max_words=MAX_REASON_WORDS)
     return prompt
 
 
@@ -562,10 +630,11 @@ def validated_verdicts(
     return verdicts
 
 
-def validated_sentence_verdicts(result, expected: int) -> list[bool] | None:
+def validated_sentence_verdicts(result, expected: int,
+                                field: str = "sentence_judgements") -> list[bool] | None:
     """One supported-flag per sentence, or None if the answer does not line
     up -- the same verifiable-mapping rule as `validated_verdicts`."""
-    items = getattr(result, "sentence_judgements", None)
+    items = getattr(result, field, None)
     if not isinstance(items, list) or not items:
         return None
     if [getattr(item, "claim", None) for item in items] != list(range(1, expected + 1)):
@@ -579,6 +648,11 @@ def validated_sentence_verdicts(result, expected: int) -> list[bool] | None:
     return flags
 
 
+def validated_gap_verdicts(result, expected: int) -> list[bool] | None:
+    """One flag per gap (True: the gap is real), under the same rule."""
+    return validated_sentence_verdicts(result, expected, "gap_judgements")
+
+
 @dataclass
 class CheckOutcome:
     kept: list[Claim]
@@ -586,6 +660,9 @@ class CheckOutcome:
     ran: bool
     claim_ok: list[bool]
     sentence_ok: list[bool] | None
+    # Per gap asked: True when the check agrees the facts leave it open.
+    # None when no gaps were asked or the verdicts did not line up.
+    gap_ok: list[bool] | None = None
 
 
 async def check_answer(
@@ -595,22 +672,29 @@ async def check_answer(
     *,
     book_titles: dict[str, str] | None = None,
     sentences: Sequence["Sentence"] | None = None,
+    books: dict[str, BookInfo] | None = None,
+    gaps: Sequence[str] | None = None,
 ) -> CheckOutcome:
     """`check_claims`, plus one verdict per prose sentence in the same call.
 
     Claim and sentence verdicts are validated separately: garbled sentence
     verdicts cost only the prose (`sentence_ok=None`), never the claim check.
+    Gap verdicts likewise: garbled ones cost only the gaps (`gap_ok=None`).
     """
     claims = list(claims)
     if not claims:
         return CheckOutcome([], [], True, [], None)
     passages = list(passages)
+    gap_ok = None
     try:
         result = await check(
-            faithfulness_prompt(claims, passages, book_titles, sentences), Faithfulness)
+            faithfulness_prompt(claims, passages, book_titles, sentences, books, gaps),
+            Faithfulness if write_module.STORY_ORDER else _PlainFaithfulness)
         verdicts = validated_verdicts(result, len(claims))
         sentence_ok = (validated_sentence_verdicts(result, len(sentences))
                        if sentences and verdicts is not None else None)
+        if gaps and sentences and verdicts is not None and write_module.STORY_ORDER:
+            gap_ok = validated_gap_verdicts(result, len(gaps))
     except Exception:  # noqa: BLE001 -- see check_claims
         verdicts, sentence_ok = None, None
     if verdicts is None:
@@ -619,7 +703,7 @@ async def check_answer(
     dropped: list[tuple[Claim, str]] = []
     for claim, (supported, reason) in zip(claims, verdicts):
         (kept.append(claim) if supported else dropped.append((claim, reason)))
-    return CheckOutcome(kept, dropped, True, [ok for ok, _ in verdicts], sentence_ok)
+    return CheckOutcome(kept, dropped, True, [ok for ok, _ in verdicts], sentence_ok, gap_ok)
 
 
 async def check_claims(
@@ -648,16 +732,16 @@ PROSE_FALLBACK_NOTE = "the written answer did not pass verification; showing the
 
 
 async def _finish(question, sub_questions, kept, evidence, check, write, book_titles,
-                  part_claims=None):
+                  part_claims=None, books=None):
     """Writer (when it applies) and the faithfulness check, in one place for
     both synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note,
-    unanswered part texts -- set only when the prose is shown)."""
+    unanswered part texts, gaps -- both set only when the prose is shown)."""
     try_prose = (write_module.PROSE_ANSWERS and write is not None and check is not None
                  and len(kept) >= 2)
-    sentences, written, prose_note, missing = None, 0, None, []
+    sentences, written, prose_note, missing, gaps = None, 0, None, [], []
     if try_prose:
         drafted = await write_answer(question, sub_questions, kept, evidence.passages, write,
-                                     book_titles=book_titles)
+                                     book_titles=book_titles, books=books)
         if drafted is None:
             prose_note = PROSE_FALLBACK_NOTE
         else:
@@ -665,11 +749,15 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
             sentences, written = verify_prose(drafted, len(kept), texts), len(split_items(drafted))
             parts = part_texts(question, sub_questions)
             missing = [parts[k - 1] for k in valid_unanswered(drafted, len(parts))]
+            if write_module.STORY_ORDER:
+                gaps = [g for g in clean_gaps(drafted.gaps)
+                        if g.casefold() not in {m.casefold() for m in missing}]
     if check is None or not kept:
-        return kept, [], (), None, prose_note, ()
+        return kept, [], (), None, prose_note, (), ()
     passage_of = [c.passage for c in kept]
     outcome = await check_answer(kept, evidence.passages, check, book_titles=book_titles,
-                                 sentences=sentences or None)
+                                 sentences=sentences or None, books=books,
+                                 gaps=gaps if sentences else None)
     skipped = None if outcome.ran else CHECK_SKIPPED_NOTE
     prose: tuple[ProseSentence, ...] = ()
     if sentences is not None:
@@ -684,8 +772,12 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
             prose = paragraphs_by_book(built, {p.n: p.book_id for p in evidence.passages})
         else:
             prose_note = PROSE_FALLBACK_NOTE
+    # A gap is shown only if the check ran over it and agreed: an unchecked
+    # "the passages don't say" is a claim like any other.
+    shown_gaps = (tuple(g for g, ok in zip(gaps, outcome.gap_ok) if ok)
+                  if prose and outcome.gap_ok is not None and len(outcome.gap_ok) == len(gaps) else ())
     return (outcome.kept, [c for c, _ in outcome.dropped], prose, skipped, prose_note,
-            tuple(missing) if prose else ())
+            tuple(missing) if prose else (), shown_gaps)
 
 
 async def synthesize(
@@ -700,6 +792,7 @@ async def synthesize(
     checklist: Sequence[str] = (),
     check: Generate | None = None,
     write: Generate | None = None,
+    books: dict[str, BookInfo] | None = None,
 ) -> Answer:
     """`checklist`: the question's sub-questions; shown only when there are
     several, so a partial answer is visible as partial.
@@ -726,8 +819,9 @@ async def synthesize(
     result = _capped(result)
     verified, _ = verify_claims(result, evidence.passages)
     kept = _collapse(verified)
-    kept, _cut, prose, skipped, prose_note, unanswered = await _finish(
-        question, list(checklist) or [question], kept, evidence, check, write, book_titles)
+    kept, _cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
+        question, list(checklist) or [question], kept, evidence, check, write, book_titles,
+        books=books)
     if not kept:
         return answer(REFUSAL)
     # can_answer=false with verified claims is a partial answer, not a
@@ -736,8 +830,8 @@ async def synthesize(
     # survivors only, so a claim's presence in Answer is its verdict.
     partial = None if result.can_answer else PARTIAL_NOTE
     if prose:
-        return replace(answer(compose_text(prose, unanswered), partial, skipped, claims=tuple(kept)),
-                       prose=prose, answer_style="prose", unanswered=unanswered)
+        return replace(answer(compose_text(prose, unanswered, gaps), partial, skipped, claims=tuple(kept)),
+                       prose=prose, answer_style="prose", unanswered=unanswered, gaps=gaps)
     return answer(_compose(kept), partial, skipped, prose_note, claims=tuple(kept))
 
 
@@ -756,6 +850,7 @@ async def synthesize_parts(
     book_titles: dict[str, str] | None = None,
     check: Generate | None = None,
     write: Generate | None = None,
+    books: dict[str, BookInfo] | None = None,
 ) -> Answer:
     """One synthesis call per sub-question, over that part's share, merged.
 
@@ -787,7 +882,8 @@ async def synthesize_parts(
     if len(sub_questions) < 2 or len(evidence.shares) != len(sub_questions):
         return await synthesize(question, evidence, generate, mode=mode, template=template,
                                 note=note, book_titles=book_titles,
-                                checklist=sub_questions, check=check, write=write)
+                                checklist=sub_questions, check=check, write=write,
+                                books=books)
 
     def answer(text: str, *extra_notes: str | None,
               claims: tuple[Claim, ...] = ()) -> Answer:
@@ -815,9 +911,9 @@ async def synthesize_parts(
         kept.extend(c for c in verified if c not in kept)
 
     kept = _collapse(kept)
-    kept, cut, prose, skipped, prose_note, unanswered = await _finish(
+    kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         question, sub_questions, kept, evidence, check, write, book_titles,
-        part_claims=per_part)
+        part_claims=per_part, books=books)
     missing = [part for part, claims in zip(sub_questions, per_part)
                if not claims or all(c in cut for c in claims)]
 
@@ -828,6 +924,6 @@ async def synthesize_parts(
     # `claims` carries the SAME post-check list `_compose` just flattened --
     # survivors only, so a claim's presence in Answer is its verdict.
     if prose:
-        return replace(answer(compose_text(prose, unanswered), partial, skipped, claims=tuple(kept)),
-                       prose=prose, answer_style="prose", unanswered=unanswered)
+        return replace(answer(compose_text(prose, unanswered, gaps), partial, skipped, claims=tuple(kept)),
+                       prose=prose, answer_style="prose", unanswered=unanswered, gaps=gaps)
     return answer(_compose(kept), partial, skipped, prose_note, claims=tuple(kept))

@@ -86,11 +86,20 @@ def forget_book(conn: sqlite3.Connection, book_id: str) -> bool:
 
 
 def list_books(conn: sqlite3.Connection) -> list[dict]:
-    rows = conn.execute(
-        "SELECT b.id, b.title, b.author, b.status, COUNT(c.id), b.series, b.series_index"
-        " FROM books b LEFT JOIN chunks c ON c.book_id = b.id"
-        " GROUP BY b.id ORDER BY b.created_at"
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT b.id, b.title, b.author, b.status, COUNT(c.id), b.series, b.series_index"
+            " FROM books b LEFT JOIN chunks c ON c.book_id = b.id"
+            " GROUP BY b.id ORDER BY b.created_at"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # A library not yet migrated to v5 (the query path may open the file
+        # read-only, as it is): no book has a story position.
+        rows = [(*r, None, None) for r in conn.execute(
+            "SELECT b.id, b.title, b.author, b.status, COUNT(c.id)"
+            " FROM books b LEFT JOIN chunks c ON c.book_id = b.id"
+            " GROUP BY b.id ORDER BY b.created_at"
+        ).fetchall()]
     return [
         {"id": r[0], "title": r[1], "author": r[2], "status": r[3], "chunk_count": r[4],
          "series": r[5], "series_index": r[6]}

@@ -143,3 +143,6 @@ class Answer:
     answer_style: str = "claims"
     # Sub-question texts the shown prose does not answer; empty otherwise.
     unanswered: tuple[str, ...] = ()
+    # Aspects of the question, inside a part the prose does answer, that the
+    # facts do not cover (checked); shown with `unanswered` in one line.
+    gaps: tuple[str, ...] = ()

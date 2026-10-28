@@ -163,10 +163,13 @@ def test_book_rows_survive_a_library_not_yet_migrated(tmp_path: Path) -> None:
     from lore.ingest.registry import book_rows
     path = tmp_path / "old.db"
     old = sqlite3.connect(path)
+    old.execute("CREATE TABLE chunks (id TEXT PRIMARY KEY, book_id TEXT)")
     old.execute("CREATE TABLE books (id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT,"
                 " source TEXT, file_path TEXT, status TEXT, created_at TEXT)")
     old.execute("INSERT INTO books (id, title) VALUES ('b1', 'Old')")
     old.commit()
     rows = book_rows(old)
     assert rows["b1"].title == "Old" and rows["b1"].series is None
+    (listed,) = list_books(old)
+    assert listed["title"] == "Old" and listed["series"] is None and listed["chunk_count"] == 0
     old.close()
