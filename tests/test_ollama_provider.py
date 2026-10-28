@@ -148,6 +148,7 @@ async def test_healthy_false_when_down() -> None:
 
 
 @pytest.mark.live
+@pytest.mark.network
 @pytest.mark.asyncio
 async def test_live_roundtrip() -> None:
     provider = OllamaProvider(OllamaConfig())
