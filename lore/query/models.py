@@ -128,3 +128,5 @@ class Answer:
     claims: tuple[Claim, ...] = ()
     edges: tuple[EdgeRow, ...] = ()
     seeds: tuple[SeedEntity, ...] = ()
+    prose: tuple[ProseSentence, ...] = ()
+    answer_style: str = "claims"

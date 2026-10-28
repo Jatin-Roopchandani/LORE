@@ -27,12 +27,14 @@ answers anyway. Whoever builds `generate` for synthesis must pass a
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
 
-from lore.query.models import Answer, Claim, EdgeRow, Evidence, Passage
+from lore.query import write as write_module
+from lore.query.models import Answer, Claim, EdgeRow, Evidence, Passage, ProseSentence
+from lore.query.write import assemble, compose_text, verify_prose, write_answer
 
 if TYPE_CHECKING:  # write.py never imports this module, so no cycle at runtime
     from lore.query.write import Sentence
@@ -602,6 +604,39 @@ async def check_claims(
     return outcome.kept, outcome.dropped, outcome.ran
 
 
+PROSE_FALLBACK_NOTE = "the written answer did not pass verification; showing the checked facts"
+
+
+async def _finish(question, sub_questions, kept, evidence, check, write, book_titles):
+    """Writer (when it applies) and the faithfulness check, in one place for
+    both synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note)."""
+    try_prose = (write_module.PROSE_ANSWERS and write is not None and check is not None
+                 and len(kept) >= 2)
+    sentences, written, prose_note = None, 0, None
+    if try_prose:
+        drafted = await write_answer(question, sub_questions, kept, evidence.passages, write,
+                                     book_titles=book_titles)
+        if drafted is None:
+            prose_note = PROSE_FALLBACK_NOTE
+        else:
+            sentences, written = verify_prose(drafted, len(kept)), len(drafted.sentences)
+    if check is None or not kept:
+        return kept, [], (), None, prose_note
+    passage_of = [c.passage for c in kept]
+    outcome = await check_answer(kept, evidence.passages, check, book_titles=book_titles,
+                                 sentences=sentences or None)
+    skipped = None if outcome.ran else CHECK_SKIPPED_NOTE
+    prose: tuple[ProseSentence, ...] = ()
+    if sentences is not None:
+        built = (assemble(sentences, written, outcome.claim_ok, outcome.sentence_ok, passage_of)
+                 if sentences and outcome.ran and outcome.sentence_ok is not None else None)
+        if built:
+            prose = built
+        else:
+            prose_note = PROSE_FALLBACK_NOTE
+    return outcome.kept, [c for c, _ in outcome.dropped], prose, skipped, prose_note
+
+
 async def synthesize(
     question: str,
     evidence: Evidence,
@@ -613,6 +648,7 @@ async def synthesize(
     book_titles: dict[str, str] | None = None,
     checklist: Sequence[str] = (),
     check: Generate | None = None,
+    write: Generate | None = None,
 ) -> Answer:
     """`checklist`: the question's sub-questions; shown only when there are
     several, so a partial answer is visible as partial.
@@ -639,19 +675,19 @@ async def synthesize(
     result = _capped(result)
     verified, _ = verify_claims(result, evidence.passages)
     kept = _collapse(verified)
-    skipped = None
-    if check is not None and kept:
-        kept, _dropped, ran = await check_claims(
-            kept, evidence.passages, check, book_titles=book_titles)
-        skipped = None if ran else CHECK_SKIPPED_NOTE
+    kept, _cut, prose, skipped, prose_note = await _finish(
+        question, list(checklist) or [question], kept, evidence, check, write, book_titles)
     if not kept:
         return answer(REFUSAL)
     # can_answer=false with verified claims is a partial answer, not a
     # refusal: Task 10a measured H6 and H4 discarding verified gold claims.
     # `claims` carries the SAME post-check list `_compose` just flattened --
     # survivors only, so a claim's presence in Answer is its verdict.
-    return answer(_compose(kept), None if result.can_answer else PARTIAL_NOTE, skipped,
-                 claims=tuple(kept))
+    partial = None if result.can_answer else PARTIAL_NOTE
+    if prose:
+        return replace(answer(compose_text(prose), partial, skipped, claims=tuple(kept)),
+                       prose=prose, answer_style="prose")
+    return answer(_compose(kept), partial, skipped, prose_note, claims=tuple(kept))
 
 
 NOT_FOUND = "not found: "
@@ -668,6 +704,7 @@ async def synthesize_parts(
     note: str | None = None,
     book_titles: dict[str, str] | None = None,
     check: Generate | None = None,
+    write: Generate | None = None,
 ) -> Answer:
     """One synthesis call per sub-question, over that part's share, merged.
 
@@ -699,7 +736,7 @@ async def synthesize_parts(
     if len(sub_questions) < 2 or len(evidence.shares) != len(sub_questions):
         return await synthesize(question, evidence, generate, mode=mode, template=template,
                                 note=note, book_titles=book_titles,
-                                checklist=sub_questions, check=check)
+                                checklist=sub_questions, check=check, write=write)
 
     def answer(text: str, *extra_notes: str | None,
               claims: tuple[Claim, ...] = ()) -> Answer:
@@ -727,13 +764,8 @@ async def synthesize_parts(
         kept.extend(c for c in verified if c not in kept)
 
     kept = _collapse(kept)
-    skipped = None
-    cut: list[Claim] = []
-    if check is not None and kept:
-        kept, dropped, ran = await check_claims(
-            kept, evidence.passages, check, book_titles=book_titles)
-        cut = [claim for claim, _reason in dropped]
-        skipped = None if ran else CHECK_SKIPPED_NOTE
+    kept, cut, prose, skipped, prose_note = await _finish(
+        question, sub_questions, kept, evidence, check, write, book_titles)
     missing = [part for part, claims in zip(sub_questions, per_part)
                if not claims or all(c in cut for c in claims)]
 
@@ -743,4 +775,7 @@ async def synthesize_parts(
                if missing else None)
     # `claims` carries the SAME post-check list `_compose` just flattened --
     # survivors only, so a claim's presence in Answer is its verdict.
-    return answer(_compose(kept), partial, skipped, claims=tuple(kept))
+    if prose:
+        return replace(answer(compose_text(prose), partial, skipped, claims=tuple(kept)),
+                       prose=prose, answer_style="prose")
+    return answer(_compose(kept), partial, skipped, prose_note, claims=tuple(kept))

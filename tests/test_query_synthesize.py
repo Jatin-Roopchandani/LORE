@@ -1172,3 +1172,79 @@ def test_validated_sentence_verdicts():
     assert validated_sentence_verdicts(Faithfulness(judgements=[], sentence_judgements=[_j(1, "supported"), _j(2, "Not Supported")]), 2) == [True, False]
     assert validated_sentence_verdicts(Faithfulness(judgements=[], sentence_judgements=[_j(1, "maybe")]), 1) is None
     assert validated_sentence_verdicts(Faithfulness(judgements=[]), 1) is None
+
+
+# --- prose answers: synthesis ----------------------------------------------------
+
+from lore.query import write as write_module  # noqa: E402
+from lore.query.synthesize import PROSE_FALLBACK_NOTE  # noqa: E402
+from lore.query.write import Prose  # noqa: E402
+
+_EV = Evidence(edges=(), passages=_PS, truncated=False)
+_TWO = Synthesis(claims=_CS, can_answer=True)
+
+
+def _gen(reply):
+    calls = []
+    async def generate(prompt, schema):
+        calls.append(prompt)
+        return reply
+    return generate, calls
+
+
+def _check(claim_v, sent_v):
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[_j(i + 1, v) for i, v in enumerate(claim_v)],
+                            sentence_judgements=[_j(i + 1, v) for i, v in enumerate(sent_v)])
+    return check
+
+
+async def test_prose_becomes_the_answer():
+    gen, _ = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])]))
+    a = await synthesize("Habits?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "prose" and a.prose[0].passages == (1, 2)
+    assert a.text == "Holmes played the violin while Watson kept a bull pup. [1][2]"
+    assert len(a.claims) == 2 and len(wcalls) == 1
+
+
+async def test_failing_prose_falls_back_to_claims_with_a_note():
+    gen, _ = _gen(_TWO)
+    write, _ = _gen(Prose(sentences=[Sentence(text="x", claims=[1]), Sentence(text="y", claims=[2])]))
+    a = await synthesize("q", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["not_supported"] * 2), write=write)
+    assert a.answer_style == "claims" and a.prose == () and PROSE_FALLBACK_NOTE in a.note
+
+
+async def test_no_writer_call_for_a_single_claim():
+    gen, _ = _gen(Synthesis(claims=[_CS[0]], can_answer=True))
+    write, wcalls = _gen(Prose(sentences=[]))
+    a = await synthesize("q", _EV, gen, mode="graph", check=_check(["supported"], []), write=write)
+    assert wcalls == [] and a.answer_style == "claims"
+
+
+async def test_no_writer_call_without_a_check():
+    gen, _ = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[]))
+    a = await synthesize("q", _EV, gen, mode="graph", check=None, write=write)
+    assert wcalls == [] and a.answer_style == "claims"
+
+
+async def test_prose_off_is_todays_behaviour(monkeypatch):
+    monkeypatch.setattr(write_module, "PROSE_ANSWERS", False)
+    gen, calls = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="x", claims=[1])]))
+    check_prompts = []
+    async def check(prompt, schema):
+        check_prompts.append(prompt)
+        return Faithfulness(judgements=[_j(1, "supported"), _j(2, "supported")])
+    a = await synthesize("q", _EV, gen, mode="graph", check=check, write=write)
+    assert wcalls == [] and a.answer_style == "claims"
+    assert "Sentences:" not in check_prompts[0]
+
+
+async def test_a_writer_failure_keeps_the_claim_check():
+    gen, _ = _gen(_TWO)
+    async def write(prompt, schema):
+        raise RuntimeError("quota")
+    a = await synthesize("q", _EV, gen, mode="graph", check=_check(["supported", "not_supported"], []), write=write)
+    assert a.answer_style == "claims" and len(a.claims) == 1 and PROSE_FALLBACK_NOTE in a.note
