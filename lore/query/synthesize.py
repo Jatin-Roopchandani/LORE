@@ -633,7 +633,8 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
         if drafted is None:
             prose_note = PROSE_FALLBACK_NOTE
         else:
-            sentences, written = verify_prose(drafted, len(kept)), len(split_items(drafted))
+            texts = [c.text for c in kept]
+            sentences, written = verify_prose(drafted, len(kept), texts), len(split_items(drafted))
             parts = part_texts(question, sub_questions)
             missing = [parts[k - 1] for k in valid_unanswered(drafted, len(parts))]
     if check is None or not kept:

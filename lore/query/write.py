@@ -145,7 +145,26 @@ _ABBREV = r"(?<!\bMr\.)(?<!\bMrs\.)(?<!\bMs\.)(?<!\bDr\.)(?<!\bSt\.)(?<!\bNo\.)(
 _SENTENCE_END = re.compile(rf"{_ABBREV}(?<=[.!?])\s+(?=[A-Z\u201c\"'])")
 
 
-def split_items(prose: Prose) -> list[Sentence]:
+_STOP = frozenset("""a an the and or but of to in on at by for with from as is was were be been
+his her their its he she they it him them that this which who whom what not no
+had has have did do does would could should said says so than then there""".split())
+
+
+def _content_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]+", text.lower()) if len(w) > 2 and w not in _STOP}
+
+
+def _claims_used(piece: str, cited: list[int], claim_texts: Sequence[str]) -> list[int]:
+    """The cited claims a split-off sentence actually draws on: those sharing
+    at least half as many content words with it as the best match. Sharing
+    none with any keeps them all -- the check then judges it against all."""
+    words = _content_words(piece)
+    scores = {k: len(words & _content_words(claim_texts[k - 1])) for k in cited}
+    best = max(scores.values(), default=0)
+    return [k for k in cited if scores[k] * 2 >= best and scores[k] > 0] if best else list(cited)
+
+
+def split_items(prose: Prose, claim_texts: Sequence[str] | None = None) -> list[Sentence]:
     """One sentence per item. Measured 2026-10-28: asked for long answers,
     the writer packed a whole paragraph into one item, so one unsupported
     clause sank the paragraph. Each piece cites the item's claims, so the
@@ -156,18 +175,23 @@ def split_items(prose: Prose) -> list[Sentence]:
         text, flag = item.text, item.new_paragraph
         if _FLAG_IN_TEXT.match(text):
             text, flag = _FLAG_IN_TEXT.sub("", text), True
-        for i, piece in enumerate(p for p in _SENTENCE_END.split(text.strip()) if p.strip()):
-            out.append(item.model_copy(update={"text": piece.strip(),
+        pieces = [p.strip() for p in _SENTENCE_END.split(text.strip()) if p.strip()]
+        narrow = claim_texts is not None and len(pieces) > 1 and all(
+            1 <= k <= len(claim_texts) for k in item.claims)
+        for i, piece in enumerate(pieces):
+            claims = _claims_used(piece, item.claims, claim_texts) if narrow else item.claims
+            out.append(item.model_copy(update={"text": piece, "claims": claims,
                                                "new_paragraph": flag and i == 0}))
     return out
 
 
-def verify_prose(prose: Prose, n_claims: int) -> list[Sentence]:
+def verify_prose(prose: Prose, n_claims: int,
+                 claim_texts: Sequence[str] | None = None) -> list[Sentence]:
     """Sentences (one per item, see split_items) that cite at least one
     claim, all within 1..n_claims, with stray citation residue stripped from
     the text (a sentence left with no words is dropped)."""
     out = []
-    for s in split_items(prose):
+    for s in split_items(prose, claim_texts):
         if not (s.claims and all(1 <= k <= n_claims for k in s.claims)):
             continue
         text = strip_residue(s.text)

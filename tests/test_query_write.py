@@ -239,3 +239,25 @@ def test_a_multi_book_answer_breaks_paragraphs_where_the_book_changes() -> None:
 def test_a_one_book_answer_keeps_the_writers_paragraphs() -> None:
     prose = (_bs("A1.", (1,)), _bs("A2.", (2,), flag=True))
     assert paragraphs_by_book(prose, {1: "a", 2: "a"}) == prose
+
+
+def test_split_sentences_keep_only_the_claims_they_use() -> None:
+    claims = ["Hope wanted revenge for John Ferrier.", "Hope saw himself as an officer of justice.",
+              "Drebber and Hope were rivals for Lucy."]
+    prose = Prose(sentences=[Sentence(
+        text="Hope sought revenge for John Ferrier. He saw himself as an officer of justice. "
+             "Drebber was his rival for Lucy.", claims=[1, 2, 3])])
+    items = split_items(prose, claims)
+    assert [s.claims for s in items] == [[1], [2], [3]]
+
+
+def test_a_single_sentence_item_keeps_all_its_claims() -> None:
+    items = split_items(Prose(sentences=[Sentence(text="Hope and Drebber.", claims=[1, 2])]),
+                        ["Unrelated words entirely.", "Nothing shared here."])
+    assert items[0].claims == [1, 2]
+
+
+def test_a_split_sentence_sharing_no_words_keeps_the_items_claims() -> None:
+    items = split_items(Prose(sentences=[Sentence(text="Alpha beta. Gamma delta.", claims=[1, 2])]),
+                        ["Alpha beta words.", "Epsilon zeta."])
+    assert [s.claims for s in items] == [[1], [1, 2]]
