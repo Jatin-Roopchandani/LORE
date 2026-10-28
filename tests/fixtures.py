@@ -11,6 +11,7 @@ def make_epub(
     author: str,
     chapters: list[tuple[str, str]],
     raw: set[int] | None = None,
+    series: tuple[str, float] | None = None,
 ) -> Path:
     """chapters: list of (chapter_title, html_body) pairs.
 
@@ -24,6 +25,9 @@ def make_epub(
     book.set_title(title)
     book.set_language("en")
     book.add_author(author)
+    if series is not None:  # calibre-style series metadata
+        book.add_metadata(None, "meta", "", {"name": "calibre:series", "content": series[0]})
+        book.add_metadata(None, "meta", "", {"name": "calibre:series_index", "content": str(series[1])})
     items = []
     for i, (chapter_title, body_html) in enumerate(chapters, start=1):
         item = epub.EpubHtml(

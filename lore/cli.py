@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -23,7 +24,7 @@ from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
 from lore.ingest.models import IngestError, book_id_for_file
 from lore.ingest.pdf import parse_pdf
-from lore.ingest.registry import forget_book, ingest_book, list_books
+from lore.ingest.registry import find_books, forget_book, ingest_book, list_books, set_series
 from lore.inference.base import ProviderOutputError
 from lore.inference.gemini import (
     GeminiClient,
@@ -166,6 +167,7 @@ def ingest(
         created = ingest_book(
             conn, book_id=book_id, title=parsed.title, author=parsed.author,
             source="upload", file_path=str(path), chunks=chunks,
+            series=parsed.series, series_index=parsed.series_index,
         )
     finally:
         conn.close()
@@ -194,10 +196,62 @@ def books() -> None:
         typer.echo("library is empty")
         return
     for row in rows:
+        where = (f"  ({row['series']} #{row['series_index']:g})"
+                 if row["series"] and row["series_index"] is not None else
+                 f"  ({row['series']})" if row["series"] else "")
         typer.echo(
             f"{row['id']}  {row['title']}  [{row['status']}]  "
-            f"{row['chunk_count']} chunks"
+            f"{row['chunk_count']} chunks{where}"
         )
+
+
+book_app = typer.Typer(help="Per-book settings.", no_args_is_help=True)
+app.add_typer(book_app, name="book")
+
+
+@book_app.command("series")
+def book_series(
+    book: str = typer.Argument(..., help="book id, or its title (or part of it)"),
+    series: str | None = typer.Option(None, "--series", help="the series' name"),
+    index: float | None = typer.Option(
+        None, "--index", help="the book's place in the series: 1, 2, 2.5 ..."),
+    clear: bool = typer.Option(False, "--clear", help="forget the book's series"),
+) -> None:
+    """Set or clear a book's place in a series.
+
+    Answers put facts from books of one series in story order. Books are
+    ordered against each other only when both have the same series and an
+    index; otherwise their order is treated as unknown.
+    """
+    if clear == bool(series or index is not None):
+        typer.echo("give --series NAME with --index N, or --clear")
+        raise typer.Exit(2)
+    if not clear and (not (series or "").strip() or index is None):
+        typer.echo("--series and --index go together")
+        raise typer.Exit(2)
+    if index is not None and not math.isfinite(index):
+        typer.echo("--index must be a finite number")
+        raise typer.Exit(2)
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        matches = find_books(conn, book)
+        if not matches:
+            typer.echo(f"no book matches {book!r} (see: lore books)")
+            raise typer.Exit(1)
+        if len(matches) > 1:
+            typer.echo(f"more than one book matches {book!r}; use its id:")
+            for m in matches:
+                typer.echo(f"  {m['id']}  {m['title']}")
+            raise typer.Exit(1)
+        target = matches[0]
+        set_series(conn, target["id"], None if clear else series.strip(),
+                   None if clear else index)
+    finally:
+        conn.close()
+    typer.echo(f"{target['title']}: series cleared" if clear
+               else f"{target['title']}: {series.strip()} #{index:g}")
 
 
 def _graph_build_key(

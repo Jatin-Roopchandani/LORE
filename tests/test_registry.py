@@ -23,7 +23,7 @@ def _chunks(n: int) -> list[Chunk]:
 
 def test_migration_v2_applies(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "lore.db")
-    assert schema_version(conn) == 4
+    assert schema_version(conn) == 5
     tables = {
         r[0]
         for r in conn.execute(
@@ -122,3 +122,51 @@ def test_chunks_for_book_returns_narrative_order(tmp_path: Path) -> None:
     )
     assert [c.text for c in chunks_for_book(conn, BOOK_ID)] == ["a", "b", "c"]
     conn.close()
+
+
+def test_ingest_book_stores_series_and_list_books_reports_it(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    ingest_book(conn, book_id=BOOK_ID, title="T", author="A", source="upload",
+                file_path="/x/b.epub", chunks=_chunks(1), series="Saga", series_index=2.0)
+    (row,) = list_books(conn)
+    assert (row["series"], row["series_index"]) == ("Saga", 2.0)
+    conn.close()
+
+
+def test_ingest_book_without_series_leaves_it_null(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    ingest_book(conn, book_id=BOOK_ID, title="T", author="A", source="upload",
+                file_path="/x/b.epub", chunks=_chunks(1))
+    (row,) = list_books(conn)
+    assert (row["series"], row["series_index"]) == (None, None)
+    conn.close()
+
+
+def test_set_series_sets_clears_and_validates(tmp_path: Path) -> None:
+    from lore.ingest.registry import set_series
+    conn = open_db(tmp_path / "lore.db")
+    ingest_book(conn, book_id=BOOK_ID, title="T", author="A", source="upload",
+                file_path="/x/b.epub", chunks=_chunks(1))
+    assert set_series(conn, BOOK_ID, "Saga", 3.0) is True
+    (row,) = list_books(conn)
+    assert (row["series"], row["series_index"]) == ("Saga", 3.0)
+    assert set_series(conn, BOOK_ID, None, None) is True
+    (row,) = list_books(conn)
+    assert (row["series"], row["series_index"]) == (None, None)
+    assert set_series(conn, "nope", "Saga", 1.0) is False
+    conn.close()
+
+
+def test_book_rows_survive_a_library_not_yet_migrated(tmp_path: Path) -> None:
+    """The read-only query path opens the file as is: a v4 library still answers."""
+    import sqlite3
+    from lore.ingest.registry import book_rows
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE books (id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT,"
+                " source TEXT, file_path TEXT, status TEXT, created_at TEXT)")
+    old.execute("INSERT INTO books (id, title) VALUES ('b1', 'Old')")
+    old.commit()
+    rows = book_rows(old)
+    assert rows["b1"].title == "Old" and rows["b1"].series is None
+    old.close()

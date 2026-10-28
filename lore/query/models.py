@@ -17,6 +17,17 @@ class Claim(BaseModel):
 
 
 @dataclass(frozen=True)
+class BookInfo:
+    """A library book as the answer steps see it. `series` and
+    `series_index` are the book's story position when someone (the file's
+    metadata, or `lore book series`) said so; None otherwise."""
+
+    title: str
+    series: str | None = None
+    series_index: float | None = None
+
+
+@dataclass(frozen=True)
 class SeedEntity:
     """A canonical entity the question's vector neighbourhood pointed at."""
 

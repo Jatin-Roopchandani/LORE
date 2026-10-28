@@ -75,6 +75,15 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             " ON gemini_ledger(day, model)",
         ],
     ),
+    # Story position (2026-10-28): which series a book belongs to and where.
+    # Both optional; two books are ordered only when both are set.
+    (
+        5,
+        [
+            "ALTER TABLE books ADD COLUMN series TEXT",
+            "ALTER TABLE books ADD COLUMN series_index REAL",
+        ],
+    ),
 ]
 
 

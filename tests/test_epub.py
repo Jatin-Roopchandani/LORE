@@ -344,3 +344,75 @@ def test_hr_scene_split_survives_through_chunker(tmp_path: Path) -> None:
     book = parse_epub(path)
     chunks = chunk_book(book, book_id="b")
     assert {c.scene_seq for c in chunks} == {0, 1}
+
+
+# --- series metadata (story position) ---------------------------------------
+
+_OPF_HEAD = ('<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" '
+             'version="{v}"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+             '<dc:title>T</dc:title>')
+
+
+def _opf(meta: str, version: str = "2.0") -> str:
+    return _OPF_HEAD.format(v=version) + meta + "</metadata></package>"
+
+
+def test_series_from_calibre_meta() -> None:
+    from lore.ingest.epub import series_from_opf
+    xml = _opf('<meta name="calibre:series" content="The Saga"/>'
+               '<meta name="calibre:series_index" content="2.0"/>')
+    assert series_from_opf(xml) == ("The Saga", 2.0)
+
+
+def test_series_from_calibre_meta_without_an_index() -> None:
+    from lore.ingest.epub import series_from_opf
+    assert series_from_opf(_opf('<meta name="calibre:series" content="The Saga"/>')) == ("The Saga", None)
+
+
+def test_series_from_epub3_collection() -> None:
+    from lore.ingest.epub import series_from_opf
+    xml = _opf('<meta property="belongs-to-collection" id="c1">Big Cycle</meta>'
+               '<meta refines="#c1" property="collection-type">series</meta>'
+               '<meta refines="#c1" property="group-position">3</meta>', "3.0")
+    assert series_from_opf(xml) == ("Big Cycle", 3.0)
+
+
+def test_epub3_collection_that_is_not_a_series_is_ignored() -> None:
+    from lore.ingest.epub import series_from_opf
+    xml = _opf('<meta property="belongs-to-collection" id="c1">Omnibus</meta>'
+               '<meta refines="#c1" property="collection-type">set</meta>'
+               '<meta refines="#c1" property="group-position">1</meta>', "3.0")
+    assert series_from_opf(xml) == (None, None)
+
+
+def test_epub3_collection_may_omit_its_type() -> None:
+    from lore.ingest.epub import series_from_opf
+    xml = _opf('<meta property="belongs-to-collection" id="c1">Big Cycle</meta>'
+               '<meta refines="#c1" property="group-position">1.5</meta>', "3.0")
+    assert series_from_opf(xml) == ("Big Cycle", 1.5)
+
+
+def test_no_series_metadata_is_none_and_garbage_is_survived() -> None:
+    from lore.ingest.epub import series_from_opf
+    assert series_from_opf(_opf("")) == (None, None)
+    assert series_from_opf("<not xml") == (None, None)
+    bad = _opf('<meta name="calibre:series" content="S"/><meta name="calibre:series_index" content="two"/>')
+    assert series_from_opf(bad) == ("S", None)
+    assert series_from_opf(_opf('<meta name="calibre:series" content="  "/>')) == (None, None)
+
+
+def test_parse_epub_reads_series_from_the_file(tmp_path: Path) -> None:
+    from tests.fixtures import make_epub
+    path = make_epub(tmp_path / "s.epub", title="Book Two", author="A",
+                     chapters=[("One", "<p>Text here.</p>")],
+                     series=("The Saga", 2))
+    book = parse_epub(path)
+    assert (book.series, book.series_index) == ("The Saga", 2.0)
+
+
+def test_parse_epub_without_series_has_none(tmp_path: Path) -> None:
+    from tests.fixtures import make_epub
+    path = make_epub(tmp_path / "s.epub", title="Solo", author="A",
+                     chapters=[("One", "<p>Text here.</p>")])
+    book = parse_epub(path)
+    assert (book.series, book.series_index) == (None, None)

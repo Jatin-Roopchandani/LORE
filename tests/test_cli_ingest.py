@@ -138,3 +138,75 @@ def test_force_clears_jobs_rows_that_reference_the_book(
         assert conn.execute("SELECT COUNT(*) FROM books").fetchone()[0] == 1
     finally:
         conn.close()
+
+
+def test_ingest_records_series_from_the_epub(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    path = make_epub(tmp_path / "s.epub", title="Book Two", author="A",
+                     chapters=[("One", _long_html("one"))], series=("The Saga", 2))
+    assert runner.invoke(app, ["ingest", str(path)]).exit_code == 0
+    conn = open_db(tmp_path / "data" / "lore.db")
+    assert conn.execute("SELECT series, series_index FROM books").fetchall() == [("The Saga", 2.0)]
+    conn.close()
+
+
+def _library(tmp_path: Path, monkeypatch) -> list[str]:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    ids = []
+    for title in ("First Tale", "Second Tale"):
+        path = make_epub(tmp_path / f"{title}.epub", title=title, author="A",
+                         chapters=[("One", _long_html(title))])
+        runner.invoke(app, ["ingest", str(path)])
+    conn = open_db(tmp_path / "data" / "lore.db")
+    ids = [r[0] for r in conn.execute("SELECT id FROM books ORDER BY title")]
+    conn.close()
+    return ids
+
+
+def _series(tmp_path: Path) -> list[tuple]:
+    conn = open_db(tmp_path / "data" / "lore.db")
+    try:
+        return conn.execute("SELECT title, series, series_index FROM books ORDER BY title").fetchall()
+    finally:
+        conn.close()
+
+
+def test_book_series_sets_by_id_or_title_and_clears(tmp_path: Path, monkeypatch) -> None:
+    first, _second = _library(tmp_path, monkeypatch)
+    out = runner.invoke(app, ["book", "series", first, "--series", "The Saga", "--index", "1"])
+    assert out.exit_code == 0, out.output
+    out = runner.invoke(app, ["book", "series", "second tale", "--series", "The Saga", "--index", "2.5"])
+    assert out.exit_code == 0, out.output
+    assert _series(tmp_path) == [("First Tale", "The Saga", 1.0), ("Second Tale", "The Saga", 2.5)]
+    out = runner.invoke(app, ["book", "series", first, "--clear"])
+    assert out.exit_code == 0, out.output
+    assert _series(tmp_path)[0] == ("First Tale", None, None)
+
+
+def test_book_series_rejects_an_unknown_book_and_bad_arguments(tmp_path: Path, monkeypatch) -> None:
+    first, _ = _library(tmp_path, monkeypatch)
+    missing = runner.invoke(app, ["book", "series", "No Such Book", "--series", "S", "--index", "1"])
+    assert missing.exit_code != 0 and "no book" in missing.output.lower()
+    assert runner.invoke(app, ["book", "series", first, "--series", "S"]).exit_code != 0  # no index
+    assert runner.invoke(app, ["book", "series", first, "--index", "1"]).exit_code != 0  # no series
+    assert runner.invoke(app, ["book", "series", first]).exit_code != 0
+    assert runner.invoke(app, ["book", "series", first, "--clear", "--series", "S"]).exit_code != 0
+    assert runner.invoke(app, ["book", "series", first, "--series", "S", "--index", "x"]).exit_code != 0
+    assert runner.invoke(app, ["book", "series", first, "--series", "S", "--index", "nan"]).exit_code != 0
+    assert _series(tmp_path)[0] == ("First Tale", None, None)
+
+
+def test_book_series_ambiguous_title_is_refused(tmp_path: Path, monkeypatch) -> None:
+    _library(tmp_path, monkeypatch)
+    out = runner.invoke(app, ["book", "series", "Tale", "--series", "S", "--index", "1"])
+    assert out.exit_code != 0 and "more than one" in out.output.lower()
+    assert all(row[1] is None for row in _series(tmp_path))
+
+
+def test_books_listing_shows_the_series(tmp_path: Path, monkeypatch) -> None:
+    first, _ = _library(tmp_path, monkeypatch)
+    runner.invoke(app, ["book", "series", first, "--series", "The Saga", "--index", "1"])
+    out = runner.invoke(app, ["books"]).output
+    assert "The Saga #1" in out

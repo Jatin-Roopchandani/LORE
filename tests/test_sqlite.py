@@ -14,14 +14,14 @@ def _tables(conn: sqlite3.Connection) -> set[str]:
 def test_open_db_creates_schema(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "lore.db")
     assert {"schema_migrations", "books", "jobs", "quota_ledger", "chunks", "gemini_ledger"} <= _tables(conn)
-    assert schema_version(conn) == 4
+    assert schema_version(conn) == 5
     conn.close()
 
 
 def test_open_db_is_idempotent(tmp_path: Path) -> None:
     open_db(tmp_path / "lore.db").close()
     conn = open_db(tmp_path / "lore.db")  # second open must not re-apply v1
-    assert schema_version(conn) == 4
+    assert schema_version(conn) == 5
     conn.close()
 
 
@@ -47,15 +47,15 @@ def test_migration_atomicity(tmp_path: Path, monkeypatch) -> None:
     """
     db_path = tmp_path / "lore.db"
 
-    # First, create the database successfully at v1, v2, v3, and v4
+    # First, create the database successfully at v1 to v5
     conn = open_db(db_path)
-    assert schema_version(conn) == 4
+    assert schema_version(conn) == 5
     conn.close()
 
     # Now simulate a failed migration with a statement that succeeds followed by one that fails
     # This tests that partial migrations are rolled back entirely
     broken_migration = (
-        5,
+        6,
         [
             "CREATE TABLE extra_table (x INTEGER)",
             "THIS IS NOT VALID SQL",
@@ -70,13 +70,37 @@ def test_migration_atomicity(tmp_path: Path, monkeypatch) -> None:
     # Remove the broken migration to restore normal behavior
     monkeypatch.setattr("lore.db.sqlite.MIGRATIONS", MIGRATIONS)
 
-    # Verify that open_db() works again and schema_version is still 4
+    # Verify that open_db() works again and schema_version is still 5
     # (the failed migration should have left nothing behind due to atomicity)
     conn = open_db(db_path)
-    assert schema_version(conn) == 4
+    assert schema_version(conn) == 5
     assert {"schema_migrations", "books", "jobs", "quota_ledger", "chunks", "gemini_ledger"} <= _tables(conn)
 
     # Most importantly: verify that extra_table does NOT exist
     # This proves the transaction was rolled back, not just the failed statement
     assert "extra_table" not in _tables(conn)
+    conn.close()
+
+
+def test_migration_v5_adds_series_columns_to_books(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    cols = {r[1]: r[2] for r in conn.execute("PRAGMA table_info(books)")}
+    assert cols["series"] == "TEXT" and cols["series_index"] == "REAL"
+    conn.close()
+
+
+def test_migration_v5_keeps_existing_books(tmp_path: Path, monkeypatch) -> None:
+    """A library made at v4 gains the columns, null, and loses nothing."""
+    path = tmp_path / "lore.db"
+    monkeypatch.setattr("lore.db.sqlite.MIGRATIONS", [m for m in MIGRATIONS if m[0] <= 4])
+    conn = open_db(path)
+    assert schema_version(conn) == 4
+    conn.execute("INSERT INTO books (id, title, file_path) VALUES ('b1', 'Old Book', '/x.epub')")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr("lore.db.sqlite.MIGRATIONS", MIGRATIONS)
+    conn = open_db(path)
+    assert schema_version(conn) == 5
+    assert conn.execute("SELECT title, series, series_index FROM books").fetchall() == [
+        ("Old Book", None, None)]
     conn.close()
