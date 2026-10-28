@@ -311,3 +311,43 @@ def test_run_book_loses_the_race_after_its_own_check(conn, config, monkeypatch) 
     monkeypatch.setattr(jobs, "get_job", late)
     with pytest.raises(JobRefused):
         run_book(conn, config, "b1", [FakeStage("extract", [1], [])], now=NOW)
+
+
+def test_the_row_stays_claimed_between_stages(conn, config) -> None:
+    # Between two stages the row used to read `idle`, so a second runner (the
+    # CLI against a web job) could claim it in the gap.
+    seen: list[str] = []
+
+    class Probe:
+        name = "load"
+
+        def total(self, ctx):
+            return 0
+
+        def run(self, ctx, job_ctl):
+            seen.append(jobs.get_job(conn, "b1").state)
+            with pytest.raises(JobRefused):
+                jobs.claim_job(conn, "b1")
+
+    first = FakeStage("extract", [1], [])
+
+    class Between(FakeStage):
+        def run(self, ctx, job_ctl):
+            super().run(ctx, job_ctl)
+
+    stages = [first, Probe()]
+    original = jobs.finish_stage
+
+    def spy(c, book_id, next_stage, **kw):
+        original(c, book_id, next_stage, **kw)
+        seen.append(jobs.get_job(c, book_id).state)
+
+    import lore.orchestrator.pipeline as p
+    p.jobs.finish_stage, saved = spy, p.jobs.finish_stage
+    try:
+        final = run_book(conn, config, "b1", stages)
+    finally:
+        p.jobs.finish_stage = saved
+    assert seen[0] == jobs.RUNNING  # right after the extract stage finished
+    assert seen[1] == jobs.RUNNING  # inside the next stage
+    assert final.state == jobs.DONE

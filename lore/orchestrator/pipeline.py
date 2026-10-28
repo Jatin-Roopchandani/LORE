@@ -172,15 +172,18 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
     if job is not None and job.state != jobs.DONE and job.stage in STAGES:
         resume_at = STAGES.index(job.stage)
 
+    # Claim the row once, atomically, and own it until the run ends: every
+    # later stamp is unguarded, and the row stays `running` between stages.
+    if not claimed:
+        jobs.claim_job(conn, book_id, now=clock())
+
     ctx = StageContext(conn, config, book_id)
     ctl = JobCtl(ctx, clock)
     for stage in stages:
         if STAGES.index(stage.name) < resume_at:
             continue
         total = stage.total(ctx)
-        # Atomic: refuses if another runner took the row since our check.
-        jobs.start_job(conn, book_id, stage.name, total, now=clock(),
-                       guard=not claimed)
+        jobs.start_job(conn, book_id, stage.name, total, now=clock(), guard=False)
         try:
             with keep_alive(conn, book_id, clock, keepalive_interval):
                 stage.run(ctx, ctl)
@@ -195,6 +198,7 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
             jobs.fail(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000],
                       now=clock())
             return jobs.get_job(conn, book_id)
-        jobs.finish_stage(conn, book_id, _next_stage(stage.name), now=clock())
+        jobs.finish_stage(conn, book_id, _next_stage(stage.name), now=clock(),
+                          keep_running=True)
     jobs.done(conn, book_id, now=clock())
     return jobs.get_job(conn, book_id)

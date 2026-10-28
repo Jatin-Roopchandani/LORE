@@ -179,13 +179,17 @@ def heartbeat(conn: sqlite3.Connection, book_id: str, *,
 
 
 def finish_stage(conn: sqlite3.Connection, book_id: str, next_stage: str, *,
-                 now: datetime | None = None) -> None:
-    """The stage is complete: park the job, idle, at the start of `next_stage`."""
+                 now: datetime | None = None, keep_running: bool = False) -> None:
+    """The stage is complete: the job moves to the start of `next_stage`.
+
+    `keep_running`: the runner goes straight on to that stage and still owns
+    the row, so it stays `running` (fresh heartbeat) -- parked `idle`, another
+    runner could claim it in the gap between two stages."""
     _write(conn, book_id,
-           "UPDATE book_jobs SET stage = ?, state = 'idle', done_items = 0,"
+           "UPDATE book_jobs SET stage = ?, state = ?, done_items = 0,"
            " total_items = 0, stopped_reason = NULL, resumable_at = NULL,"
            " updated_at = ? WHERE book_id = ?",
-           (next_stage, _iso(_aware(now)), book_id))
+           (next_stage, RUNNING if keep_running else IDLE, _iso(_aware(now)), book_id))
 
 
 def stop_quota(conn: sqlite3.Connection, book_id: str, reason: str, *,
