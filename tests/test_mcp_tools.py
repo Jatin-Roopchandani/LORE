@@ -1146,3 +1146,14 @@ def test_overview_caps_links(overview_config, monkeypatch):
 
 def test_overview_without_a_graph_returns_no_graph(empty_config):
     assert overview(empty_config)["error"]["code"] == "no_graph"
+
+
+def test_search_result_carries_prose():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)),), answer_style="prose")
+    out = to_search_result(answer, {}).model_dump()
+    assert out["answer_style"] == "prose"
+    assert out["prose"] == [{"text": "A.", "claims": [1], "passages": [1], "new_paragraph": False}]

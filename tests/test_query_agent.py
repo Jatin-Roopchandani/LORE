@@ -1379,3 +1379,39 @@ async def test_the_baseline_still_answers_from_vector_k_passages(tmp_path: Path)
     await answer_question(conn, EntityKuzu({}), lance, "who?", models, baseline=True)
     assert lance.searches == [(tuple(Q), VECTOR_K)]
     conn.close()
+
+
+# --- prose answers: the compose step ------------------------------------------
+
+async def test_the_compose_step_sits_between_write_and_check(tmp_path: Path) -> None:
+    from dataclasses import replace as dc_replace
+    from lore.query.models import Claim
+    from lore.query.synthesize import Faithfulness, Judgement, Synthesis
+    from lore.query.write import Prose, Sentence
+
+    conn = _conn(tmp_path)
+    _chunk(conn, "b1:2:0", "Watson kept a bull pup in the rooms.", 2)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1), _row("b1:2:0", [], 0.25, 2)]},
+                        {"b1:1:0": Q, "b1:2:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    two = Synthesis(claims=[Claim(text="Holmes talked the case over with Watson.", passage=1, quote=QUOTE),
+                            Claim(text="Watson kept a bull pup.", passage=2, quote="Watson kept a bull pup")],
+                    can_answer=True)
+    models, _ = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"],
+                          [TemplateChoice(template="neighbours", entities=[1])], two)
+
+    async def write(prompt, schema):
+        return Prose(sentences=[Sentence(text="Holmes discussed the case with Watson, who kept a bull pup.", claims=[1, 2])])
+
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[Judgement(claim=1, verdict="supported"), Judgement(claim=2, verdict="supported")],
+                            sentence_judgements=[Judgement(claim=1, verdict="supported")])
+
+    models = dc_replace(models, write=write, check=check)
+    events = []
+    answer = await answer_question(conn, kuzu, lance, "who?", models, on_event=events.append)
+    conn.close()
+    steps = [(e["name"], e["state"]) for e in events if e["type"] == "step"]
+    assert steps[-6:] == [("write", "start"), ("write", "done"), ("compose", "start"),
+                          ("compose", "done"), ("check", "start"), ("check", "done")]
+    assert answer.answer_style == "prose"

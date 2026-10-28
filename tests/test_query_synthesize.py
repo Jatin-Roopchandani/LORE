@@ -1047,6 +1047,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
     from pathlib import Path
 
     from lore.query import synthesize as synthesize_module
+    from lore.query import write as write_module
 
     common = set(
         "a an the and or but nor of to in on at by for from with as into is"
@@ -1067,7 +1068,8 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
     prompt = grams("\n".join((
         synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
         synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
-        synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE)))
+        synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE,
+        write_module.WRITER_PROMPT)))
     for q in (q for path in sets for q in json.loads(path.read_text())):
         leaked = (grams(q["question"]) | grams(q["verified"])) & prompt
         assert not leaked, f"{q['id']} leaks into the prompt: {sorted(leaked)}"

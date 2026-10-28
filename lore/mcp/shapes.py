@@ -93,6 +93,13 @@ class SeedOut(BaseModel):
     score: float | None
 
 
+class ProseOut(BaseModel):
+    text: str
+    claims: list[int]
+    passages: list[int]
+    new_paragraph: bool = False
+
+
 class SearchResult(BaseModel):
     answer: str
     mode: str
@@ -105,6 +112,8 @@ class SearchResult(BaseModel):
     passages: list[PassageOut]
     edges: list[EdgeOut]
     seeds: list[SeedOut]
+    prose: list[ProseOut] = []
+    answer_style: str = "claims"
 
 
 class ChunkHit(BaseModel):
@@ -243,4 +252,7 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
         seeds=[SeedOut(id=s.id, name=s.name, kind=s.kind, books=list(s.books),
                        score=s.score if math.isfinite(s.score) else None)
                for s in answer.seeds],
+        prose=[ProseOut(text=s.text, claims=list(s.claims), passages=list(s.passages),
+                        new_paragraph=s.new_paragraph) for s in answer.prose],
+        answer_style=answer.answer_style,
     )

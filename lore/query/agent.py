@@ -157,6 +157,7 @@ class QueryModels:
     decompose: Generate | None = field(default=None)
     evidence_chars: int = MAX_EVIDENCE_CHARS
     check: Generate | None = field(default=None)
+    write: Generate | None = field(default=None)
 
 
 @dataclass(frozen=True)
@@ -294,7 +295,7 @@ def make_query_models(
                        # The same callable as synthesis: same provider, same
                        # client, same cascade, same temperature 0, and so the
                        # same request bookkeeping.
-                       check=synthesize_with)
+                       check=synthesize_with, write=synthesize_with)
 
 
 async def _select(question, seeds, models: QueryModels):
@@ -328,10 +329,10 @@ async def _synthesize(question, evidence, models: QueryModels, *,
 
     if sub_questions is None:
         answer = await synthesize(question, evidence, generate, check=models.check,
-                                  **kwargs)
+                                  write=models.write, **kwargs)
     else:
         answer = await synthesize_parts(question, sub_questions, evidence, generate,
-                                        check=models.check, **kwargs)
+                                        check=models.check, write=models.write, **kwargs)
     return replace(answer, model=models.synthesis_model() if asked else None)
 
 
@@ -386,7 +387,7 @@ async def _parts(question, vector, models: QueryModels, kuzu):
 CHECK_UNVERIFIED = "couldn't verify \u2014 claims kept"
 
 
-class _CheckSteps:
+class _AnswerSteps:
     """Announces the faithfulness check as a step. Writing ends, and
     checking begins, exactly when the check is called; the step closes once
     synthesis returns, with a detail decided from the final outcome --
@@ -395,17 +396,37 @@ class _CheckSteps:
     def __init__(self, on_event: OnEvent) -> None:
         self.on_event = on_event
         self.ran = False
+        self.composed = False
         self.reply = None
         self.closed = False
 
     def wrap(self, models: QueryModels) -> QueryModels:
+        if models.write is not None:
+            write = models.write
+
+            async def composing(prompt, schema):
+                self.composed = True
+                emit(self.on_event, "step", name="write", state="done", part=None, detail=None)
+                emit(self.on_event, "step", name="compose", state="start", part=None, detail=None)
+                reply = None
+                try:
+                    reply = await write(prompt, schema)
+                    return reply
+                finally:
+                    n = len(getattr(reply, "sentences", None) or [])
+                    emit(self.on_event, "step", name="compose", state="done", part=None,
+                         detail=f"{n} sentences" if n else "no prose")
+
+            models = replace(models, write=composing)
         if models.check is None:
             return models
         check = models.check
 
         async def announced(prompt, schema):
             self.ran = True
-            emit(self.on_event, "step", name="write", state="done", part=None, detail=None)
+            if not self.composed:
+                emit(self.on_event, "step", name="write", state="done", part=None,
+                     detail=None)
             emit(self.on_event, "step", name="check", state="start", part=None,
                  detail=None)
             self.reply = await check(prompt, schema)
@@ -429,6 +450,9 @@ class _CheckSteps:
         emit(self.on_event, "step", name="check", state="done", part=None, detail=detail)
 
 
+_CheckSteps = _AnswerSteps
+
+
 async def answer_question(
     conn: sqlite3.Connection,
     kuzu,
@@ -450,7 +474,7 @@ async def answer_question(
         return await _vector_answer(lance, question, vector, models, titles,
                                     mode="vector-baseline", note=None)
 
-    check_steps = _CheckSteps(on_event) if on_event is not None else None
+    check_steps = _AnswerSteps(on_event) if on_event is not None else None
     if check_steps is not None:
         models = check_steps.wrap(models)
 
@@ -583,7 +607,7 @@ async def answer_question(
     finally:
         if check_steps is not None:
             check_steps.close(answer)
-    if check_steps is None or not check_steps.ran:
+    if check_steps is None or not (check_steps.ran or check_steps.composed):
         emit(on_event, "step", name="write", state="done", part=None,
              detail=f"{len(answer.claims)} claims")
     # The subgraph the UI draws: the evidence edges rows came from, and the
