@@ -14,7 +14,7 @@ from lore.config import LoreConfig
 from lore.ingest.registry import chunks_for_book
 from lore.orchestrator.local import make_gemini_tier, parts_done
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
-from lore.orchestrator.run import _run_unit_here, _UnitHalted, unit_state
+from lore.orchestrator.run import RunReport, _run_unit_here, _UnitHalted, unit_state
 from lore.orchestrator.workunit import WorkUnit, pack_units
 
 
@@ -31,6 +31,8 @@ class ExtractStage:
         self._api_key = api_key
         self._factory = gemini_tier_factory
         self._on_event = on_event
+        # The RunReport-like summary `lore process` prints; set by run().
+        self.report: RunReport | None = None
 
     def _units(self, ctx: StageContext) -> list[WorkUnit]:
         chunks = chunks_for_book(ctx.conn, ctx.book_id)
@@ -49,6 +51,8 @@ class ExtractStage:
         units = self._units(ctx)
         completed = {u.unit_id for u in units
                      if unit_state(ctx.conn, u.unit_id) == "completed"}
+        report = self.report = RunReport(
+            ctx.book_id, units_total=len(units), units_completed=len(completed))
         base = sum(len(u.chunks) for u in units if u.unit_id in completed)
         pending = [u for u in units if u.unit_id not in completed]
         # The runner starts the job at done=0, even on a resume.
@@ -70,7 +74,7 @@ class ExtractStage:
                         job_ctl.advance(others + n)
 
                     try:
-                        ok, *_ = _run_unit_here(
+                        ok, _, n_ok, n_dead = _run_unit_here(
                             ctx.conn, unit,
                             lambda unit=unit, dest=dest, on_chunk=on_chunk: loop.run(
                                 tier.run(unit, dest,
@@ -79,12 +83,17 @@ class ExtractStage:
                             self._on_event,
                         )
                     except _UnitHalted as halt:
+                        report.stopped_reason = str(halt)
                         if halt.quota:
                             raise QuotaStop(str(halt)) from halt
                         raise RuntimeError(str(halt)) from halt
                     if not ok:
+                        report.units_failed += 1
                         raise RuntimeError(
                             f"unit {unit.unit_id} failed; see the jobs table")
+                    report.units_completed += 1
+                    report.chunks_ok += n_ok
+                    report.chunks_dead += n_dead
                     done_now = others + len(unit.chunks)
                     job_ctl.advance(done_now)
             finally:

@@ -39,6 +39,7 @@ from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
 from lore.orchestrator.gemini_budget import day_report, recorder_for, today
 from lore.orchestrator.jobs import DONE, FAILED, WAITING_QUOTA, get_job, list_jobs
+from lore.orchestrator.extract_stage import ExtractStage
 from lore.orchestrator.local import missing_gemini_key_message
 from lore.orchestrator.pipeline import JobRefused, QuotaStop, run_book
 from lore.orchestrator.quota import iso_week, week_report
@@ -466,12 +467,19 @@ def default_stages(config: LoreConfig, *, skip_extract: bool = False,
     """
     stages: list = [ChunkStage()]
     if not skip_extract:
-        stages.append(extract_stage if extract_stage is not None else
-                      _RunExtractionStage(config, resume=resume, api_key=api_key))
-    stages.append(LoadStage(
+        if extract_stage is None:
+            extract_stage = (
+                ExtractStage(api_key=api_key,
+                             on_event=lambda m: typer.echo(f"       {m}"))
+                if config.extraction_provider == "gemini" else
+                _RunExtractionStage(config, resume=resume, api_key=api_key))
+        stages.append(extract_stage)
+    load_stage = LoadStage(
         # Looked up at call time, so tests may patch `lore.cli._load_book_sync`.
-        lambda cfg, conn, book_id: _load_book_sync(cfg, conn, book_id, api_key=api_key)))
-    stages.append(DisambiguateStage())
+        lambda cfg, conn, book_id: _load_book_sync(cfg, conn, book_id, api_key=api_key))
+    stages.append(load_stage)
+    # New answers apply on one more (free) load, right after the request.
+    stages.append(DisambiguateStage(reload=load_stage.reload))
     stages.append(BeatsStage())
     return stages
 

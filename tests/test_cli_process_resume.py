@@ -14,6 +14,7 @@ from lore.db.sqlite import open_db
 from lore.graph.loader import LoadReport
 from lore.inference.gemini import GeminiQuotaError
 from lore.orchestrator import jobs
+from lore.orchestrator.pipeline import QuotaStop
 from lore.orchestrator.run import RunReport
 from tests.fixtures import seed_book
 
@@ -130,8 +131,18 @@ def test_a_gemini_extraction_stop_parks_the_job_at_extract(
     _setup(tmp_path, monkeypatch, '[lore]\nextraction_provider = "gemini"\n')
     stopped = RunReport(book_id=BOOK, units_total=3, units_completed=1,
                         stopped_reason="Gemini cannot extract right now: HTTP 429")
+    class Stopped:
+        name = "extract"
+        report = stopped
+
+        def total(self, ctx) -> int:
+            return 0
+
+        def run(self, ctx, job_ctl) -> None:
+            raise QuotaStop(stopped.stopped_reason)
+
     with (
-        patch("lore.cli.run_extraction", return_value=stopped),
+        patch("lore.cli.ExtractStage", lambda **kw: Stopped()),
         patch("lore.cli._load_book_sync") as load,
     ):
         result = runner.invoke(app, ["process", BOOK])
@@ -183,3 +194,15 @@ def test_books_shows_each_books_job_state_and_stage(tmp_path, monkeypatch) -> No
     result = runner.invoke(app, ["books"])
     assert "waiting_quota" in result.output
     assert "stage load" in result.output
+
+
+def test_default_stages_pick_the_extract_stage_by_provider(tmp_path, monkeypatch) -> None:
+    from lore.cli import _RunExtractionStage, default_stages
+    from lore.orchestrator.extract_stage import ExtractStage
+
+    _setup(tmp_path, monkeypatch, '[lore]\nextraction_provider = "gemini"\n')
+    gemini = default_stages(LoreConfig.load())
+    assert isinstance(gemini[1], ExtractStage)
+    (tmp_path / "lore.toml").write_text('[lore]\nextraction_provider = "ollama"\n')
+    other = default_stages(LoreConfig.load())
+    assert isinstance(other[1], _RunExtractionStage)

@@ -152,6 +152,15 @@ def test_a_legacy_unit_without_parts_is_redone_whole(tmp_path) -> None:
     assert pq.read_table(dest / "triplets.parquet").num_rows == 2
 
 
+def test_the_stage_keeps_a_runreport_like_summary(tmp_path) -> None:
+    config, conn = _setup(tmp_path, 2, "a")
+    stage = ExtractStage(gemini_tier_factory=Server().factory())
+    run_book(conn, config, BOOK, [stage])
+    r = stage.report
+    assert (r.units_total, r.units_completed, r.units_failed) == (1, 1, 0)
+    assert (r.chunks_ok, r.chunks_dead, r.stopped_reason) == (2, 0, None)
+
+
 def test_key_rejection_fails_the_job_instead_of_waiting_for_quota(tmp_path) -> None:
     config, conn = _setup(tmp_path, 2, "a")
 

@@ -80,11 +80,15 @@ class LoadStage:
         job_ctl.advance(0)
         if ctx.config.adjudication.provider == "gemini":
             job_ctl.spend_check()
+        self.reload(ctx)
+        job_ctl.advance(1)
+
+    def reload(self, ctx: StageContext) -> None:
+        """Load again, keeping the fresh report (also used to apply answers)."""
         try:
             self.report = self._load_fn(ctx.config, ctx.conn, ctx.book_id)
         except GeminiQuotaError as exc:
             raise quota_stop_from(exc) from exc
-        job_ctl.advance(1)
 
 
 class DisambiguateStage:
@@ -93,13 +97,17 @@ class DisambiguateStage:
     A no-op unless `[lore.disambiguation] enabled`. Each batch's answers are
     cached as soon as they are verified, so a stop after batch 2 of 4 keeps
     batches 1-2 and a resume asks only the rest. `client_factory(config)`
-    returns a GeminiClient-like object (generate, aclose).
+    returns a GeminiClient-like object (generate, aclose). When this run
+    obtained any new answers, `reload(ctx)` runs once at the end to apply
+    them (the load is free: its adjudication answers are cached).
     """
 
     name = "disambiguate"
 
-    def __init__(self, client_factory: Callable | None = None) -> None:
+    def __init__(self, client_factory: Callable | None = None,
+                 reload: Callable[[StageContext], None] | None = None) -> None:
         self._client_factory = client_factory or _gemini_client
+        self._reload = reload
 
     @staticmethod
     def _store(ctx: StageContext) -> DisambiguationStore:
@@ -125,8 +133,10 @@ class DisambiguateStage:
             return
         store = self._store(ctx)
         client = self._client_factory(ctx.config)
+        got_new = False
 
         async def _run() -> None:
+            nonlocal got_new
             # One loop for the requests and the close: httpx binds its
             # sockets to the loop that opened them.
             try:
@@ -135,6 +145,7 @@ class DisambiguateStage:
                     answers = await ask_disambiguation(
                         client, todo[start:start + MAX_BATCH])
                     store.save_answers(answers)
+                    got_new = got_new or bool(answers)
                     job_ctl.advance(already + start // MAX_BATCH + 1)
             finally:
                 await client.aclose()
@@ -143,6 +154,8 @@ class DisambiguateStage:
             asyncio.run(_run())
         except GeminiQuotaError as exc:
             raise quota_stop_from(exc) from exc
+        if got_new and self._reload is not None:
+            self._reload(ctx)
 
 
 def _gemini_client(config) -> GeminiClient:

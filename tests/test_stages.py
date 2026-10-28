@@ -10,7 +10,7 @@ from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.inference.gemini import GeminiQuotaError
 from lore.orchestrator import jobs
-from lore.orchestrator.pipeline import run_book
+from lore.orchestrator.pipeline import StageContext, run_book
 from lore.orchestrator.stages import (
     BeatsStage,
     ChunkStage,
@@ -165,6 +165,42 @@ def test_disambiguate_quota_stop_keeps_finished_batches_and_resumes(env) -> None
     assert second.calls == 1, "only the unanswered batch is asked"
     store = DisambiguationStore(config.disambiguation_dir)
     assert store.unanswered(store.pending()) == []
+
+
+def test_disambiguate_reloads_once_when_it_got_new_answers(env) -> None:
+    config, conn = env
+    config = _enable(config)
+    _record(config, MAX_BATCH + 5)  # two batches, one reload at the end
+    reloads = []
+    stage = DisambiguateStage(lambda cfg: _Client(), reload=reloads.append)
+    job = run_book(conn, config, BOOK, [stage])
+    assert job.state == jobs.DONE
+    assert len(reloads) == 1
+
+
+def test_disambiguate_does_not_reload_without_new_answers(env) -> None:
+    config, conn = env
+    config = _enable(config)
+    reloads = []
+    # Nothing recorded: nothing to ask, nothing to apply.
+    stage = DisambiguateStage(lambda cfg: _Client(), reload=reloads.append)
+    assert run_book(conn, config, BOOK, [stage]).state == jobs.DONE
+    assert reloads == []
+    # All answered already: the second run asks nothing and reloads nothing.
+    _record(config, 3)
+    run_book(conn, config, BOOK, [DisambiguateStage(lambda cfg: _Client())])
+    again = DisambiguateStage(lambda cfg: _Client(), reload=reloads.append)
+    run_book(conn, config, BOOK, [again])
+    assert reloads == []
+
+
+def test_load_stage_reload_refreshes_the_report(env) -> None:
+    config, conn = env
+    calls = []
+    stage = LoadStage(lambda cfg, c, book_id: calls.append(1) or len(calls))
+    run_book(conn, config, BOOK, [stage])
+    stage.reload(StageContext(conn, config, BOOK))
+    assert stage.report == 2
 
 
 def test_beats_stage_is_a_no_op(env) -> None:

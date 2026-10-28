@@ -5,6 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 from lore.cli import app
+from lore.orchestrator.pipeline import QuotaStop
 from tests.fixtures import seed_book
 from lore.graph.loader import LoadReport, PartialLoadError
 from lore.orchestrator.run import RunReport
@@ -455,6 +456,23 @@ def test_process_names_both_gemini_steps_when_both_lack_a_key(
     assert "[lore.adjudication]" in result.output
 
 
+class _FakeExtract:
+    """Stands in for the Gemini ExtractStage: no network."""
+
+    name = "extract"
+
+    def __init__(self, report, stop: bool = False) -> None:
+        self.report = report
+        self._stop = stop
+
+    def total(self, ctx) -> int:
+        return 0
+
+    def run(self, ctx, job_ctl) -> None:
+        if self._stop:
+            raise QuotaStop(self.report.stopped_reason)
+
+
 def test_process_passes_one_key_to_extraction_and_load(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
@@ -464,14 +482,19 @@ def test_process_passes_one_key_to_extraction_and_load(tmp_path: Path, monkeypat
         '[lore]\nextraction_provider = "gemini"\n[lore.adjudication]\nprovider = "gemini"\n')
     report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
                         chunks=1, mentions=1)
+    made = {}
+
+    def fake_stage(**kwargs):
+        made.update(kwargs)
+        return _FakeExtract(RunReport(book_id=BOOK, units_total=1, units_completed=1))
+
     with (
-        patch("lore.cli.run_extraction",
-              return_value=RunReport(book_id=BOOK, units_total=1, units_completed=1)) as extract,
+        patch("lore.cli.ExtractStage", fake_stage),
         patch("lore.cli._load_book_sync", return_value=report) as load,
     ):
         result = runner.invoke(app, ["process", BOOK])
     assert result.exit_code == 0, result.output
-    assert extract.call_args.kwargs["api_key"] == "k-env"
+    assert made["api_key"] == "k-env"
     assert load.call_args.kwargs["api_key"] == "k-env"
 
 
@@ -488,7 +511,7 @@ def test_process_does_not_load_a_gemini_extraction_that_stopped_early(
     stopped = RunReport(book_id=BOOK, units_total=3, units_completed=1, units_failed=1,
                         stopped_reason="Gemini cannot extract right now: HTTP 429")
     with (
-        patch("lore.cli.run_extraction", return_value=stopped),
+        patch("lore.cli.ExtractStage", lambda **kw: _FakeExtract(stopped, stop=True)),
         patch("lore.cli._load_book_sync") as load,
     ):
         result = runner.invoke(app, ["process", BOOK])
