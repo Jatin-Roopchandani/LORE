@@ -38,9 +38,12 @@ from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
 from lore.orchestrator.gemini_budget import day_report, recorder_for, today
+from lore.orchestrator.jobs import DONE, FAILED, WAITING_QUOTA, get_job, list_jobs
 from lore.orchestrator.local import missing_gemini_key_message
+from lore.orchestrator.pipeline import JobRefused, QuotaStop, run_book
 from lore.orchestrator.quota import iso_week, week_report
 from lore.orchestrator.run import run_extraction
+from lore.orchestrator.stages import BeatsStage, ChunkStage, DisambiguateStage, LoadStage
 from lore.query.agent import answer_question, make_query_models
 from lore.resolve.disambiguation import (
     MAX_BATCH,
@@ -190,6 +193,7 @@ def books() -> None:
     conn = open_db(config.sqlite_path)
     try:
         rows = list_books(conn)
+        job_by_book = {job.book_id: job for job in list_jobs(conn)}
     finally:
         conn.close()
     if not rows:
@@ -201,8 +205,20 @@ def books() -> None:
                  f"  ({row['series']})" if row["series"] else "")
         typer.echo(
             f"{row['id']}  {row['title']}  [{row['status']}]  "
-            f"{row['chunk_count']} chunks{where}"
+            f"{row['chunk_count']} chunks{where}{_job_note(job_by_book.get(row['id']))}"
         )
+
+
+def _job_note(job) -> str:
+    """` — job: state at stage (done/total)` for `lore books`, or nothing."""
+    if job is None:
+        return ""
+    note = f"  job: {job.state}, stage {job.stage}"
+    if job.total_items:
+        note += f" ({job.done_items}/{job.total_items})"
+    if job.state == WAITING_QUOTA and job.resumable_at is not None:
+        note += f", resumes after {job.resumable_at.astimezone():%H:%M} local"
+    return note
 
 
 book_app = typer.Typer(help="Per-book settings.", no_args_is_help=True)
@@ -403,15 +419,104 @@ def _load_book_sync(config: LoreConfig, conn, book_id: str, api_key: str | None 
         kuzu.close()
 
 
+class _RunExtractionStage:
+    """Today's extraction, wrapped as a pipeline stage (the ExtractStage seam).
+
+    Used by `default_stages` until a purpose-built ExtractStage is passed in
+    its place. A Gemini run that stopped early (quota, key, network) becomes
+    a QuotaStop so the job parks; any other stop (e.g. the weekly GPU quota)
+    only records the report, and `process` prints it as incomplete after the
+    load, as before.
+    """
+
+    name = "extract"
+
+    def __init__(self, config: LoreConfig, *, resume: bool,
+                 api_key: str | None) -> None:
+        self._config = config
+        self._resume = resume
+        self._api_key = api_key
+        self.report = None
+
+    def total(self, ctx) -> int:
+        return 0
+
+    def run(self, ctx, job_ctl) -> None:
+        job_ctl.advance(0)
+        # Looked up at call time, so tests may patch `lore.cli.run_extraction`.
+        self.report = run_extraction(
+            self._config, ctx.conn, ctx.book_id, resume=self._resume,
+            on_event=lambda message: typer.echo(f"       {message}"),
+            api_key=self._api_key,
+        )
+        if self._config.extraction_provider == "gemini" and self.report.stopped_reason:
+            # Loading a half-extracted book would spend adjudication requests
+            # on questions the finished book asks differently.
+            raise QuotaStop(self.report.stopped_reason)
+
+
+def default_stages(config: LoreConfig, *, skip_extract: bool = False,
+                   resume: bool = False, api_key: str | None = None,
+                   extract_stage=None) -> list:
+    """The stages `lore process` runs, in order.
+
+    `extract_stage` is the seam for extraction: pass a pipeline Stage named
+    "extract" to use it; None wraps today's `run_extraction`. With
+    `skip_extract` there is no extract stage at all.
+    """
+    stages: list = [ChunkStage()]
+    if not skip_extract:
+        stages.append(extract_stage if extract_stage is not None else
+                      _RunExtractionStage(config, resume=resume, api_key=api_key))
+    stages.append(LoadStage(
+        # Looked up at call time, so tests may patch `lore.cli._load_book_sync`.
+        lambda cfg, conn, book_id: _load_book_sync(cfg, conn, book_id, api_key=api_key)))
+    stages.append(DisambiguateStage())
+    stages.append(BeatsStage())
+    return stages
+
+
+class _Recording:
+    """Wraps a stage to keep the exception that failed it.
+
+    run_book stores a failure as text on the job row; `process` needs the
+    exception itself to tell a half-loaded graph from an ordinary failure.
+    """
+
+    def __init__(self, stage) -> None:
+        self._stage = stage
+        self.name = stage.name
+        self.error: Exception | None = None
+
+    def total(self, ctx) -> int:
+        return self._stage.total(ctx)
+
+    def run(self, ctx, job_ctl) -> None:
+        try:
+            self._stage.run(ctx, job_ctl)
+        except Exception as exc:  # noqa: BLE001 - re-raised for the runner
+            if not isinstance(exc, QuotaStop):
+                self.error = exc
+            raise
+
+
 @app.command()
 def process(
     book_id: str,
-    resume: bool = typer.Option(False, "--resume", help="skip completed work units"),
+    resume: bool = typer.Option(
+        False, "--resume",
+        help="continue the saved job (skips completed work units and stages)"),
     skip_extract: bool = typer.Option(
         False, "--skip-extract", help="reload the graph from existing artifacts"
     ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="start even though the Gemini allowance has not reset yet"),
 ) -> None:
     """Extract, resolve entities, and load the graph for a book.
+
+    Progress is saved per book (see `lore books`): a run stopped by the
+    daily Gemini allowance resumes from where it stopped.
 
     Note: even with --skip-extract, loading re-runs the resolver's
     adjudication against whatever the graph already holds, so a reload
@@ -426,45 +531,64 @@ def process(
     )
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
-    extraction = None
     try:
-        if not skip_extract:
-            extraction = run_extraction(
-                config, conn, book_id, resume=resume,
-                on_event=lambda message: typer.echo(f"       {message}"),
-                api_key=api_key,
-            )
-        # A Gemini run stops when no model can serve (quota, key, network).
-        # Loading the half-extracted book now would spend adjudication
-        # requests on questions the finished book will ask differently, so
-        # the load waits for --resume.
-        halted = (extraction is not None and config.extraction_provider == "gemini"
-                  and bool(extraction.stopped_reason))
-        if not halted:
-            report = _load_book_sync(config, conn, book_id, api_key=api_key)
-    except PartialLoadError as exc:
-        # The graph committed but the vector write did not: the book is
-        # genuinely half-loaded. Never report success or mark it ready —
-        # a plain re-run repairs it because the load is idempotent.
-        typer.echo(f"process failed: {exc}")
-        typer.echo(
-            f"book {book_id} is NOT fully processed — re-run "
-            f"`lore process {book_id} --skip-extract` to repair it"
-        )
-        raise typer.Exit(1)
-    except (ValueError, RuntimeError) as exc:
-        typer.echo(f"process failed: {exc}")
-        raise typer.Exit(1)
+        # The job row references the book, so an unregistered id is refused
+        # here with a message rather than as a foreign-key error.
+        if conn.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone() is None:
+            typer.echo(f"process failed: unknown book {book_id} (see `lore books`)")
+            raise typer.Exit(1)
+        saved = get_job(conn, book_id)
+        # A saved, unfinished job means finished extraction units are skipped.
+        resume_units = resume or (saved is not None and saved.state != DONE)
+        stages = [_Recording(stage) for stage in default_stages(
+            config, skip_extract=skip_extract, resume=resume_units, api_key=api_key)]
+        try:
+            job = run_book(conn, config, book_id, stages, force=force)
+        except JobRefused as exc:
+            typer.echo(f"process refused: {exc}")
+            if "resets at" in str(exc):
+                typer.echo("pass --force to try anyway")
+            raise typer.Exit(1)
+        by_name = {s.name: s._stage for s in stages}
+        failure = next((s.error for s in stages if s.error is not None), None)
+        if job.state == FAILED:
+            if isinstance(failure, PartialLoadError):
+                # The graph committed but the vector write did not: the book is
+                # genuinely half-loaded. Never report success or mark it ready —
+                # a plain re-run repairs it because the load is idempotent.
+                typer.echo(f"process failed: {failure}")
+                typer.echo(
+                    f"book {book_id} is NOT fully processed — re-run "
+                    f"`lore process {book_id} --skip-extract` to repair it"
+                )
+            else:
+                typer.echo(f"process failed: {failure or job.stopped_reason}")
+            raise typer.Exit(1)
     finally:
         conn.close()
-    if halted:
-        typer.echo(f"extraction stopped early — {extraction.stopped_reason}")
-        typer.echo(
-            f"extraction: {extraction.units_completed}/{extraction.units_total}"
-            f" units run; the graph was NOT loaded. Rerun `lore process"
-            f" {book_id} --resume` to finish it."
-        )
+    extraction = getattr(by_name.get("extract"), "report", None)
+    load_stage = by_name["load"]
+    if job.state == WAITING_QUOTA:
+        if job.stage == "extract" and extraction is not None:
+            typer.echo(f"extraction stopped early — {extraction.stopped_reason}")
+            typer.echo(
+                f"extraction: {extraction.units_completed}/{extraction.units_total}"
+                f" units run; the graph was NOT loaded. Rerun `lore process"
+                f" {book_id} --resume` to finish it."
+            )
+        else:
+            typer.echo(f"process paused — {job.stopped_reason}")
+        if job.resumable_at is not None:
+            typer.echo(
+                f"allowance resets at {job.resumable_at.astimezone():%H:%M}"
+                f" (your local time); then run `lore process {book_id} --resume`")
         raise typer.Exit(1)
+    report = load_stage.report
+    if report is None:
+        # Nothing ran: the job was already past load. Say where it stands.
+        typer.echo(f"{book_id}: nothing left to do")
+        _mark_graphed(config, book_id)
+        return
     typer.echo(
         # "canonical" because each merged alias is ALSO persisted as its own
         # node, linked by ALIAS_OF: `lore graph` counts those too, so the
@@ -551,6 +675,10 @@ def process(
     # Success path only: every failure above has already exited non-zero.
     # Spec 5. `ask` does not gate on this (it asks the graph itself), so a
     # book loaded before this line existed stays queryable without a backfill.
+    _mark_graphed(config, book_id)
+
+
+def _mark_graphed(config: LoreConfig, book_id: str) -> None:
     conn = open_db(config.sqlite_path)
     try:
         conn.execute("UPDATE books SET status = 'graphed' WHERE id = ?", (book_id,))

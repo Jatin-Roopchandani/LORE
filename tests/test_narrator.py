@@ -804,6 +804,8 @@ def test_process_reports_first_person_resolution(tmp_path: Path, monkeypatch, fi
 
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    from tests.fixtures import seed_book
+    seed_book(BOOK)
     (tmp_path / "lore.toml").write_text(
         f'[lore]\nextraction_provider = "ollama"\n[lore.adjudication]\nprovider = "{provider}"\n')
     report = LoadReport(book_id=BOOK, entities=1, rel_edges=1, chunks=1, **fields)

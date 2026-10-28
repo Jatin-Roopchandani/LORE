@@ -5,6 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 from lore.cli import app
+from tests.fixtures import seed_book
 from lore.graph.loader import LoadReport, PartialLoadError
 from lore.orchestrator.run import RunReport
 
@@ -15,6 +16,7 @@ BOOK = "abcdef0123456789"
 def test_process_runs_extraction_then_load(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     report = LoadReport(book_id=BOOK, entities=4, alias_links=1, rel_edges=7,
                         chunks=2, mentions=6)
     with (
@@ -31,6 +33,7 @@ def test_process_runs_extraction_then_load(tmp_path: Path, monkeypatch) -> None:
 def test_process_skip_extract_only_loads(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
                         chunks=1, mentions=1)
     with (
@@ -46,6 +49,7 @@ def test_process_reports_dropped_mentions(tmp_path: Path, monkeypatch) -> None:
     """A non-zero dropped_mentions count must be visible, not silent."""
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
                         chunks=1, mentions=1, dropped_mentions=3)
     with (
@@ -63,6 +67,7 @@ def test_process_says_nothing_when_no_mentions_were_dropped(
 ) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
                         chunks=1, mentions=1, dropped_mentions=0)
     with (
@@ -78,6 +83,7 @@ def test_process_says_nothing_when_no_mentions_were_dropped(
 def test_process_reports_a_load_failure(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     with (
         patch("lore.cli.run_extraction",
               return_value=RunReport(book_id=BOOK, units_total=1, units_completed=1)),
@@ -99,6 +105,7 @@ def test_process_reports_partial_load_and_does_not_claim_success(
     """
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     with (
         patch("lore.cli.run_extraction",
               return_value=RunReport(book_id=BOOK, units_total=1, units_completed=1)),
@@ -127,6 +134,7 @@ def test_process_with_failed_units_does_not_claim_success(
     """
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     report = LoadReport(book_id=BOOK, entities=4, alias_links=1, rel_edges=7,
                         chunks=2, mentions=6)
     extraction = RunReport(book_id=BOOK, units_total=2, units_completed=1,
@@ -150,6 +158,7 @@ def test_process_with_quota_truncated_extraction_does_not_claim_success(
     """
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
                         chunks=1, mentions=1)
     extraction = RunReport(book_id=BOOK, units_total=5, units_completed=1,
@@ -168,6 +177,7 @@ def test_process_with_quota_truncated_extraction_does_not_claim_success(
 def test_graph_reports_empty_store(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     result = runner.invoke(app, ["graph"])
     assert result.exit_code == 0
     assert "0" in result.output
@@ -188,6 +198,7 @@ def test_load_book_sync_closes_the_client_on_the_loop_it_used(
 
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     seen: dict[str, object] = {}
     report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
                         chunks=1, mentions=1)
@@ -226,6 +237,7 @@ def _dead_letter_run(monkeypatch, tmp_path: Path, extraction: RunReport,
                      report: LoadReport):
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     with (
         patch("lore.cli.run_extraction", return_value=extraction),
         patch("lore.cli._load_book_sync", return_value=report),
@@ -289,6 +301,7 @@ def test_process_resume_with_nothing_pending_still_succeeds(
     a complete success. `units_completed < units_total` would false-fire."""
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     with (
         patch("lore.cli.run_extraction",
               return_value=RunReport(book_id=BOOK, units_total=3,
@@ -314,6 +327,7 @@ def test_process_labels_its_entity_count_as_canonical(
 ) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     with (
         patch("lore.cli.run_extraction",
               return_value=RunReport(book_id=BOOK, units_total=1,
@@ -343,6 +357,8 @@ def _registered(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "data" / "lore.db")
     conn.execute("INSERT INTO books (id, title, author, source, file_path, status)"
                  " VALUES (?, 'T', NULL, 'upload', '/x', 'chunked')", (BOOK,))
+    conn.execute("INSERT INTO chunks (id, book_id, chapter_seq, scene_seq, seq, text)"
+                 " VALUES ('c0', ?, 0, 0, 0, 'x')", (BOOK,))
     conn.commit()
     conn.close()
 
@@ -408,6 +424,7 @@ def test_process_with_gemini_adjudication_and_no_key_refuses_before_loading(
 ) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     _no_key(tmp_path, monkeypatch)
     (tmp_path / "lore.toml").write_text('[lore.adjudication]\nprovider = "gemini"\n')
     with (
@@ -426,6 +443,7 @@ def test_process_names_both_gemini_steps_when_both_lack_a_key(
 ) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     _no_key(tmp_path, monkeypatch)
     (tmp_path / "lore.toml").write_text(
         '[lore]\nextraction_provider = "gemini"\n[lore.adjudication]\nprovider = "gemini"\n')
@@ -440,6 +458,7 @@ def test_process_names_both_gemini_steps_when_both_lack_a_key(
 def test_process_passes_one_key_to_extraction_and_load(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     monkeypatch.setenv("GEMINI_API_KEY", "k-env")
     (tmp_path / "lore.toml").write_text(
         '[lore]\nextraction_provider = "gemini"\n[lore.adjudication]\nprovider = "gemini"\n')
@@ -463,6 +482,7 @@ def test_process_does_not_load_a_gemini_extraction_that_stopped_early(
     # questions the finished book asks differently. Stop, and say --resume.
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     monkeypatch.setenv("GEMINI_API_KEY", "k-env")
     (tmp_path / "lore.toml").write_text('[lore]\nextraction_provider = "gemini"\n')
     stopped = RunReport(book_id=BOOK, units_total=3, units_completed=1, units_failed=1,
@@ -483,6 +503,7 @@ def test_process_does_not_load_a_gemini_extraction_that_stopped_early(
 def test_process_reports_dropped_self_loops(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book(BOOK)
     report = LoadReport(book_id=BOOK, entities=1, alias_links=0, rel_edges=1,
                         chunks=1, mentions=1, self_loop_edges=4)
     with patch("lore.cli._load_book_sync", return_value=report):

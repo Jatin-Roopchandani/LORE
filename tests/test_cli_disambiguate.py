@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 from typer.testing import CliRunner
 
 from lore.cli import app
+from tests.fixtures import seed_book
 from lore.config import LoreConfig
 from lore.inference.gemini import GeminiQuotaError
 from lore.resolve.disambiguation import Candidate, DisambiguationStore, Question
@@ -238,6 +239,7 @@ def test_process_wires_no_store_when_disambiguation_is_off(
 
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)  # no lore.toml: default-off
+    seed_book("b")
     with (
         patch("lore.cli.run_extraction"),
         patch("lore.cli.load_book",
@@ -255,6 +257,7 @@ def test_process_wires_a_store_when_disambiguation_is_on(
 
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
+    seed_book("b")
     (tmp_path / "lore.toml").write_text(
         "[lore.disambiguation]\nenabled = true\n"
     )

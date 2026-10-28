@@ -69,3 +69,29 @@ def make_pdf(
     doc.save(str(path))
     doc.close()
     return path
+
+
+def seed_book(book_id: str, chunks: int = 1) -> None:
+    """Register `book_id` with `chunks` chunks in the library the env points at.
+
+    `lore process` runs through the job store, whose rows reference `books`,
+    so a CLI test that fakes extraction and load still needs the book row.
+    """
+    from lore.config import LoreConfig
+    from lore.db.sqlite import open_db
+
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        with conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO books (id, title, file_path) VALUES (?, ?, ?)",
+                (book_id, "T", "t.epub"))
+            for i in range(chunks):
+                conn.execute(
+                    "INSERT OR IGNORE INTO chunks (id, book_id, chapter_seq,"
+                    " scene_seq, seq, text) VALUES (?, ?, 0, 0, ?, 'x')",
+                    (f"{book_id}-c{i}", book_id, i))
+    finally:
+        conn.close()
