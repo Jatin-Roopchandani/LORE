@@ -27,11 +27,15 @@ answers anyway. Whoever builds `generate` for synthesis must pass a
 from __future__ import annotations
 
 import re
-from typing import Awaitable, Callable, Iterable, Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
 
 from lore.query.models import Answer, Claim, EdgeRow, Evidence, Passage
+
+if TYPE_CHECKING:  # write.py never imports this module, so no cycle at runtime
+    from lore.query.write import Sentence
 
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
 
@@ -398,6 +402,7 @@ class Judgement(BaseModel):
 
 class Faithfulness(BaseModel):
     judgements: list[Judgement]
+    sentence_judgements: list[Judgement] = []
 
 
 _CHECK_PROMPT = """Check each numbered claim against the one passage it cites.
@@ -425,11 +430,26 @@ Return one entry per claim, in the same order, each with its claim number:
 Answer every claim: give exactly {count} entries, numbered 1 to {count}, in order.
 """
 
+_SENTENCES_BLOCK = """
+Sentences:
+{sentences}
+
+Then check each numbered sentence of the written answer against the claims
+it uses (their text and quotes above). "{supported}": those claims,
+together, state everything the sentence says. "{not_supported}": the
+sentence says more than they do. Connecting words count: a "because",
+"so", "later" or "which led to" that no cited claim states makes the
+sentence "{not_supported}". Return these in sentence_judgements, one per
+sentence, numbered 1 to {count} in the claim field, with a verdict and a
+reason of at most {max_words} words.
+"""
+
 
 def faithfulness_prompt(
     claims: Sequence[Claim],
     passages: Iterable[Passage],
     book_titles: dict[str, str] | None = None,
+    sentences: Sequence["Sentence"] | None = None,
 ) -> str:
     """The one batched prompt: the cited passages, then the numbered claims.
 
@@ -458,9 +478,17 @@ def faithfulness_prompt(
         items.append(f"{number}. claim: {claim.text.strip()}\n"
                      f"   cites passage {where}\n"
                      f"   quote: {claim.quote.strip()}")
-    return _CHECK_PROMPT.format(
+    prompt = _CHECK_PROMPT.format(
         passages=shown, claims="\n\n".join(items), count=len(claims),
         supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+    if sentences:
+        lines = "\n".join(
+            f"{i}. sentence: {s.text.strip()}\n   uses claims {', '.join(str(k) for k in s.claims)}"
+            for i, s in enumerate(sentences, start=1))
+        prompt += _SENTENCES_BLOCK.format(
+            sentences=lines, count=len(sentences), supported=SUPPORTED,
+            not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+    return prompt
 
 
 def validated_verdicts(
@@ -492,6 +520,66 @@ def validated_verdicts(
     return verdicts
 
 
+def validated_sentence_verdicts(result, expected: int) -> list[bool] | None:
+    """One supported-flag per sentence, or None if the answer does not line
+    up -- the same verifiable-mapping rule as `validated_verdicts`."""
+    items = getattr(result, "sentence_judgements", None)
+    if not isinstance(items, list) or not items:
+        return None
+    if [getattr(item, "claim", None) for item in items] != list(range(1, expected + 1)):
+        return None
+    flags: list[bool] = []
+    for item in items:
+        word = _SPACE.sub("_", str(item.verdict).strip().lower().strip(".")).strip("_")
+        if word not in (SUPPORTED, NOT_SUPPORTED):
+            return None
+        flags.append(word == SUPPORTED)
+    return flags
+
+
+@dataclass
+class CheckOutcome:
+    kept: list[Claim]
+    dropped: list[tuple[Claim, str]]
+    ran: bool
+    claim_ok: list[bool]
+    sentence_ok: list[bool] | None
+
+
+async def check_answer(
+    claims: Sequence[Claim],
+    passages: Iterable[Passage],
+    check: Generate,
+    *,
+    book_titles: dict[str, str] | None = None,
+    sentences: Sequence["Sentence"] | None = None,
+) -> CheckOutcome:
+    """`check_claims`, plus one verdict per prose sentence in the same call.
+
+    Claim and sentence verdicts are validated separately: garbled sentence
+    verdicts cost only the prose (`sentence_ok=None`), never the claim check.
+    """
+    claims = list(claims)
+    if not claims:
+        return CheckOutcome([], [], True, [], None)
+    passages = list(passages)
+    try:
+        result = await check(
+            faithfulness_prompt(claims, passages, book_titles, sentences), Faithfulness)
+        verdicts = validated_verdicts(result, len(claims))
+        sentence_ok = (validated_sentence_verdicts(result, len(sentences))
+                       if sentences and verdicts is not None else None)
+    except Exception:  # noqa: BLE001 -- see check_claims
+        verdicts, sentence_ok = None, None
+    if verdicts is None:
+        return CheckOutcome(claims, [], False, [True] * len(claims), None)
+    kept: list[Claim] = []
+    dropped: list[tuple[Claim, str]] = []
+    for claim, (supported, reason) in zip(claims, verdicts):
+        (kept.append(claim) if supported else dropped.append((claim, reason)))
+    return CheckOutcome(kept, dropped, True, [ok for ok, _ in verdicts], sentence_ok)
+
+
 async def check_claims(
     claims: Sequence[Claim],
     passages: Iterable[Passage],
@@ -510,21 +598,8 @@ async def check_claims(
     failure in an extra safety check must not destroy an answer that is
     correct without it, and must never be read as `not_supported`.
     """
-    if not claims:
-        return list(claims), [], True
-    try:
-        result = await check(
-            faithfulness_prompt(claims, passages, book_titles), Faithfulness)
-        verdicts = validated_verdicts(result, len(claims))
-    except Exception:  # noqa: BLE001 -- see the docstring
-        verdicts = None
-    if verdicts is None:
-        return list(claims), [], False
-    kept: list[Claim] = []
-    dropped: list[tuple[Claim, str]] = []
-    for claim, (supported, reason) in zip(claims, verdicts):
-        (kept.append(claim) if supported else dropped.append((claim, reason)))
-    return kept, dropped, True
+    outcome = await check_answer(claims, passages, check, book_titles=book_titles)
+    return outcome.kept, outcome.dropped, outcome.ran
 
 
 async def synthesize(

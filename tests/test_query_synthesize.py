@@ -1106,3 +1106,69 @@ def test_full_answers_and_no_restate_are_the_default() -> None:
     from lore.query import synthesize as synthesize_module
     assert synthesize_module.FULL_ANSWERS is True
     assert synthesize_module.NO_RESTATE is True
+
+
+# --- prose answers: the combined check -----------------------------------------
+
+from lore.query.synthesize import (  # noqa: E402
+    CheckOutcome, Faithfulness, Judgement, check_answer, faithfulness_prompt,
+    validated_sentence_verdicts,
+)
+from lore.query.write import Sentence  # noqa: E402
+
+_PS = (Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Holmes played the violin."),
+       Passage(n=2, chunk_id="b1:2:0", book_id="b1", chapter_seq=2, text="Watson kept a bull pup."))
+_CS = [Claim(text="Holmes played the violin.", passage=1, quote="Holmes played the violin"),
+       Claim(text="Watson kept a bull pup.", passage=2, quote="Watson kept a bull pup")]
+
+
+def test_without_sentences_the_check_prompt_is_unchanged():
+    assert "Sentences:" not in faithfulness_prompt(_CS, _PS)
+
+
+def test_with_sentences_the_prompt_numbers_them_and_names_their_facts():
+    p = faithfulness_prompt(_CS, _PS, sentences=[Sentence(text="Holmes played, and Watson kept a pup.", claims=[1, 2])])
+    assert "Sentences:" in p and "1. sentence: Holmes played, and Watson kept a pup." in p
+    assert "uses claims 1, 2" in p
+    assert "sentence_judgements" in p
+
+
+def _j(n, v):
+    return Judgement(claim=n, verdict=v, reason="r")
+
+
+async def test_check_answer_applies_both_verdict_lists():
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[_j(1, "supported"), _j(2, "not_supported")],
+                            sentence_judgements=[_j(1, "supported"), _j(2, "not_supported")])
+    out = await check_answer(_CS, _PS, check, sentences=[Sentence(text="a", claims=[1]), Sentence(text="b", claims=[1])])
+    assert out.ran and out.claim_ok == [True, False] and out.sentence_ok == [True, False]
+    assert out.kept == [_CS[0]] and out.dropped[0][0] == _CS[1]
+
+
+async def test_garbled_sentence_verdicts_keep_the_claim_verdicts():
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[_j(1, "supported"), _j(2, "not_supported")],
+                            sentence_judgements=[_j(2, "supported")])   # misnumbered
+    out = await check_answer(_CS, _PS, check, sentences=[Sentence(text="a", claims=[1])])
+    assert out.ran and out.claim_ok == [True, False] and out.sentence_ok is None
+
+
+async def test_garbled_claim_verdicts_keep_every_claim_and_drop_the_prose():
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[_j(2, "supported")], sentence_judgements=[_j(1, "supported")])
+    out = await check_answer(_CS, _PS, check, sentences=[Sentence(text="a", claims=[1])])
+    assert not out.ran and out.kept == _CS and out.claim_ok == [True, True] and out.sentence_ok is None
+
+
+async def test_a_raising_check_keeps_everything():
+    async def check(prompt, schema):
+        raise RuntimeError("503")
+    out = await check_answer(_CS, _PS, check, sentences=[Sentence(text="a", claims=[1])])
+    assert not out.ran and out.kept == _CS and out.sentence_ok is None
+
+
+def test_validated_sentence_verdicts():
+    assert validated_sentence_verdicts(Faithfulness(judgements=[], sentence_judgements=[_j(1, "supported"), _j(2, "Not Supported")]), 2) == [True, False]
+    assert validated_sentence_verdicts(Faithfulness(judgements=[], sentence_judgements=[_j(1, "maybe")]), 1) is None
+    assert validated_sentence_verdicts(Faithfulness(judgements=[]), 1) is None
