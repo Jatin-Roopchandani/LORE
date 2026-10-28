@@ -32,7 +32,8 @@ from lore.config import LoreConfig  # noqa: E402
 from lore.mcp import tools  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-SETS = {"dev": HERE / "questions.json", "heldout": HERE / "heldout.json"}
+SETS = {"dev": HERE / "questions.json", "heldout": HERE / "heldout.json",
+        "arc": HERE / "arc.json"}
 RUNS = HERE / "runs"
 
 
@@ -186,8 +187,9 @@ def main() -> None:
                         help="run name, e.g. baseline or round-1")
     parser.add_argument("--set", dest="qset", choices=sorted(SETS),
                         default="dev",
-                        help="dev (56, used to decide changes) or heldout (16,"
-                             " milestones only -- see GRADING.md)")
+                        help="dev (56, used to decide changes), heldout (16,"
+                             " milestones only) or arc (16, timeline/arc"
+                             " questions, never tuned on -- see GRADING.md)")
     parser.add_argument("--evidence-only", action="store_true",
                         help="stop before writing answers; record only the"
                              " evidence (for retrieval/recall.py --run)")

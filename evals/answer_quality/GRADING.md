@@ -130,6 +130,18 @@ each arm shows the user, not the claims behind it.
 4. The fallback rate is reported. Above 25% means the writer needs work
    before adoption.
 
+## Arc set
+
+`arc.json` (A1-A16, written 2026-10-28) is a third set for change over time,
+relationships, arcs and loyalty, within one book or across the two graphed
+books (A Study in Scarlet and The Sign of the Four). Several answers are shown
+through actions rather than stated. It was written from the text before any
+timeline-beats results existed, and every quote in `verified` was checked as an
+exact substring of its chunk. Like the held-out set it is never used to tune:
+run it with `run_pair.py --set arc` only to measure the story-beats feature,
+grade it with the rules above, and keep its text out of every prompt (the leak
+test scans it).
+
 ## Decisions
 
 **2026-10-12: FULL_ANSWERS + NO_RESTATE adopted as the default** (lore/query/synthesize.py).

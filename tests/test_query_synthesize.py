@@ -1066,7 +1066,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
                 if sum(w not in common for w in words[i:i + 3]) >= 2}
 
     evals = Path(__file__).parents[1] / "evals/answer_quality"
-    sets = [evals / "questions.json", evals / "heldout.json"]
+    sets = [evals / "questions.json", evals / "heldout.json", evals / "arc.json"]
     prompt = grams("\n".join((
         synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
         synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,

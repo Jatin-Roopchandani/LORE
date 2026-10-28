@@ -1,0 +1,661 @@
+[
+ {
+  "id": "A1",
+  "question": "How does Athelney Jones's confidence in his own handling of the Norwood case change as The Sign of the Four goes on?",
+  "verified": "At Pondicherry Lodge Jones is brusque and sure of himself: he dismisses theories, announces that Thaddeus Sholto killed his brother and walked off with the treasure, and arrests Thaddeus, the gatekeeper, the housekeeper and the Indian servant. Later his theory collapses because Thaddeus proves an unshakable alibi, and he comes to Baker Street downcast, meek and apologetic, admitting his professional credit is at stake and asking for help, and praising Holmes. Once the launch has caught Small he again gives himself airs, and at the end he is angry when the treasure box is found empty.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:9:8] \"Sholto was, on his own confession, with his brother last night.\"\n- [0ee225a9a3b5fbc2:9:10] \"“Facts are better than mere theories, after all.\"\n- [0ee225a9a3b5fbc2:10:4] \"He has arrested not only friend Thaddeus, but the gatekeeper, the housekeeper, and the Indian servant.\"\n- [0ee225a9a3b5fbc2:12:8] \"Very different was he, however, from the brusque and masterful professor of common sense who had taken over the case so confidently at Upper Norwood.\"\n- [0ee225a9a3b5fbc2:12:8] \"His expression was downcast, and his bearing meek and even apologetic.\"\n- [0ee225a9a3b5fbc2:12:9] \"He was able to prove an alibi which could not be shaken.\"\n- [0ee225a9a3b5fbc2:12:9] \"It’s a very dark case, and my professional credit is at stake. I should be very glad of a little assistance.\"\n- [0ee225a9a3b5fbc2:12:9] \"I never saw the case yet that he could not throw a light upon.\"\n- [0ee225a9a3b5fbc2:14:4] \"It was amusing to notice how the consequential Jones was already beginning to give himself airs on the strength of the capture.\"",
+  "key_facts": [
+   "Jones is confident and brusque at the scene, preferring facts to theories",
+   "He builds a theory that Thaddeus Sholto killed his brother, and arrests Thaddeus, the gatekeeper, the housekeeper and the Indian servant",
+   "His theory fails because Thaddeus proves an alibi",
+   "He later arrives at Baker Street downcast, meek and apologetic, asks for help and praises Holmes",
+   "After catching Small he gives himself airs again"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:8",
+    "quote": "Sholto was, on his own confession, with his brother last night."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:10",
+    "quote": "“Facts are better than mere theories, after all."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:4",
+    "quote": "He has arrested not only friend Thaddeus, but the gatekeeper, the housekeeper, and the Indian servant."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:8",
+    "quote": "Very different was he, however, from the brusque and masterful professor of common sense who had taken over the case so confidently at Upper Norwood."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:8",
+    "quote": "His expression was downcast, and his bearing meek and even apologetic."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:9",
+    "quote": "He was able to prove an alibi which could not be shaken."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:9",
+    "quote": "It’s a very dark case, and my professional credit is at stake. I should be very glad of a little assistance."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:9",
+    "quote": "I never saw the case yet that he could not throw a light upon."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:4",
+    "quote": "It was amusing to notice how the consequential Jones was already beginning to give himself airs on the strength of the capture."
+   }
+  ]
+ },
+ {
+  "id": "A2",
+  "question": "Which characters in The Sign of the Four keep faith with the people they swore to stand by, and which ones break it?",
+  "verified": "Jonathan Small and his three Sikh comrades swear that each will always act for all, and Small says he has never broken that oath. He holds to it when the officers want only him and he answers 'None or all', and Captain Morstan remarks that Small is a man of his word who does not flinch from his friend. Major Sholto, by contrast, goes to India to test the story but never comes back, and Morstan finds the treasure stolen, without any of the conditions of the bargain carried out. At the end Small throws the treasure into the Thames rather than let Sholto's or Morstan's kin have it, saying he has acted all through for his three comrades as much as himself.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:24] \"we had sworn that we should each always act for all, so that none might take advantage. That is an oath that I can put my hand to my heart and swear that I have never broken.\"\n- [0ee225a9a3b5fbc2:15:32] \"‘None or all,’ I answered. ‘We have sworn it. The four of us must always act together.’\"\n- [0ee225a9a3b5fbc2:15:32] \"‘You see, Morstan,’ said he, ‘Small is a man of his word. He does not flinch from his friend.\"\n- [0ee225a9a3b5fbc2:15:33] \"The villain Sholto went off to India, but he never came back again.\"\n- [0ee225a9a3b5fbc2:15:34] \"The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret.\"\n- [0ee225a9a3b5fbc2:15:1] \"I have acted all through for them as much as for myself. It’s been the sign of four with us always.\"\n- [0ee225a9a3b5fbc2:15:1] \"throw the treasure into the Thames rather than let it go to kith or kin of Sholto or of Morstan\"",
+  "key_facts": [
+   "Small and the three Sikhs swore to act each for all, the sign of the four",
+   "Small insisted on none or all when the officers would take only him, and Morstan called him a man of his word",
+   "Major Sholto went to India but never came back and stole the treasure without keeping the conditions",
+   "Small threw the treasure into the Thames rather than let Sholto's or Morstan's kin have it, acting for his comrades too"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:24",
+    "quote": "we had sworn that we should each always act for all, so that none might take advantage. That is an oath that I can put my hand to my heart and swear that I have never broken."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:32",
+    "quote": "‘None or all,’ I answered. ‘We have sworn it. The four of us must always act together.’"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:32",
+    "quote": "‘You see, Morstan,’ said he, ‘Small is a man of his word. He does not flinch from his friend."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:33",
+    "quote": "The villain Sholto went off to India, but he never came back again."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:1",
+    "quote": "I have acted all through for them as much as for myself. It’s been the sign of four with us always."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:1",
+    "quote": "throw the treasure into the Thames rather than let it go to kith or kin of Sholto or of Morstan"
+   }
+  ]
+ },
+ {
+  "id": "A3",
+  "question": "How did Jefferson Hope and Lucy Ferrier first meet, and where did things stand between them when he left for the mountains?",
+  "verified": "Hope, a hunter returning from prospecting in the Nevada mountains, caught Lucy's frightened horse when she was caught in a drove of cattle. He asked her to tell her father to remember the Jefferson Hopes of St. Louis, since his father and Ferrier had been close, and she invited him to call. He then visited the farm many times and became a favourite with the old farmer, while Lucy's blushes showed her heart was no longer her own. When he set off again he asked whether she would be ready to come when he returned in a couple of months, and told her that Ferrier had given his consent provided the mines worked out.\n\nEvidence (verbatim):\n- [05ab674df048d13f:13:7] \"a sinewy brown hand caught the frightened horse by the curb, and forcing a way through the drove, soon brought her to the outskirts.\"\n- [05ab674df048d13f:13:7] \"When you see him, ask him if he remembers the Jefferson Hopes of St. Louis. If he’s the same Ferrier, my father and he were pretty thick.\"\n- [05ab674df048d13f:13:8] \"He and they had been among the Nevada Mountains prospecting for silver\"\n- [05ab674df048d13f:13:9] \"He called on John Ferrier that night, and many times again, until his face was a familiar one at the farm-house.\"\n- [05ab674df048d13f:13:10] \"He soon became a favourite with the old farmer, who spoke eloquently of his virtues.\"\n- [05ab674df048d13f:13:10] \"her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own.\"\n- [05ab674df048d13f:13:10] \"“A couple of months at the outside. I will come and claim you then, my darling.\"\n- [05ab674df048d13f:13:10] \"“He has given his consent, provided we get these mines working all right.\"",
+  "key_facts": [
+   "Hope rescued Lucy's frightened horse from the cattle",
+   "He knew of her father: his own father and Ferrier were old friends from St. Louis",
+   "He had been prospecting for silver in the Nevada mountains",
+   "He became a regular visitor and favourite of Ferrier while Lucy fell in love with him",
+   "Before leaving he asked her to be ready to be claimed in a couple of months, with Ferrier's consent conditional on the mines"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:13:7",
+    "quote": "a sinewy brown hand caught the frightened horse by the curb, and forcing a way through the drove, soon brought her to the outskirts."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:7",
+    "quote": "When you see him, ask him if he remembers the Jefferson Hopes of St. Louis. If he’s the same Ferrier, my father and he were pretty thick."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:8",
+    "quote": "He and they had been among the Nevada Mountains prospecting for silver"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:9",
+    "quote": "He called on John Ferrier that night, and many times again, until his face was a familiar one at the farm-house."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:10",
+    "quote": "He soon became a favourite with the old farmer, who spoke eloquently of his virtues."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:10",
+    "quote": "her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:10",
+    "quote": "“A couple of months at the outside. I will come and claim you then, my darling."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:10",
+    "quote": "“He has given his consent, provided we get these mines working all right."
+   }
+  ]
+ },
+ {
+  "id": "A4",
+  "question": "What did Mrs. Charpentier tell Gregson about how Enoch Drebber behaved while he lodged with her, and what happened on the evening he left?",
+  "verified": "Drebber, who had boarded with her for nearly three weeks with his secretary Stangerson, was coarse and brutish, drunk from the day he arrived and free and familiar with the maids. He pressed his attentions on her daughter Alice, once seizing her in his arms, which made even Stangerson reproach him. She gave him notice and he drove off, but within the hour he returned drunk, said he had missed his train, proposed that Alice run away with him and caught her by the wrist. Her son Arthur came in, there was a scuffle, and Arthur went after him with a stick, returning after she had gone to bed.\n\nEvidence (verbatim):\n- [05ab674df048d13f:10:8] \"He was coarse in his habits and brutish in his ways.\"\n- [05ab674df048d13f:10:8] \"On one occasion he actually seized her in his arms and embraced her—an outrage which caused his own secretary to reproach him for his unmanly conduct.\"\n- [05ab674df048d13f:10:9] \"I gave him notice to leave on account of it.\"\n- [05ab674df048d13f:10:9] \"He then turned to Alice, and before my very face, proposed to her that she should fly with him.\"\n- [05ab674df048d13f:10:9] \"but he caught her by the wrist and endeavoured to draw her towards the door.\"\n- [05ab674df048d13f:10:10] \"I saw Arthur standing in the doorway laughing, with a stick in his hand.\"\n- [05ab674df048d13f:10:10] \"“I don’t think that fine fellow will trouble us again,” he said. “I will just go after him and see what he does with himself.”\"",
+  "key_facts": [
+   "Drebber was coarse, brutish and drunk almost all the time, and free with the maids",
+   "He pressed himself on Alice, once embracing her, and his own secretary reproached him",
+   "She gave him notice to leave",
+   "He came back drunk that evening, said he had missed his train, and urged Alice to fly with him, seizing her wrist",
+   "Arthur came in, scuffled with him and went off after him with a stick"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:10:8",
+    "quote": "He was coarse in his habits and brutish in his ways."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:8",
+    "quote": "On one occasion he actually seized her in his arms and embraced her—an outrage which caused his own secretary to reproach him for his unmanly conduct."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:9",
+    "quote": "I gave him notice to leave on account of it."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:9",
+    "quote": "He then turned to Alice, and before my very face, proposed to her that she should fly with him."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:9",
+    "quote": "but he caught her by the wrist and endeavoured to draw her towards the door."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:10",
+    "quote": "I saw Arthur standing in the doorway laughing, with a stick in his hand."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:10",
+    "quote": "“I don’t think that fine fellow will trouble us again,” he said. “I will just go after him and see what he does with himself.”"
+   }
+  ]
+ },
+ {
+  "id": "A5",
+  "question": "How does Holmes's state of mind change from the opening of The Sign of the Four to its last page?",
+  "verified": "The book opens with Holmes idle and on cocaine, saying he cannot live without brain-work. Once Thaddeus Sholto's case takes hold he is restless, pacing the rooms and snapping at Mrs. Hudson, then on the night of the chase he is in nervous exaltation, brilliant and gay after his black depression. When it is over he says the reaction has come and he will be limp for a week, admits there are in him the makings of a fine loafer and a spry fellow, and when Watson asks what remains for him, reaches for the cocaine bottle.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:4:14] \"“None. Hence the cocaine. I cannot live without brain-work. What else is there to live for?\"\n- [0ee225a9a3b5fbc2:12:2] \"After you was gone he walked and he walked, up and down, and up and down, until I was weary of the sound of his footstep.\"\n- [0ee225a9a3b5fbc2:13:0] \"He appeared to be in a state of nervous exaltation. I have never known him so brilliant.\"\n- [0ee225a9a3b5fbc2:13:0] \"His bright humour marked the reaction from his black depression of the preceding days.\"\n- [0ee225a9a3b5fbc2:15:42] \"“Yes, the reaction is already upon me. I shall be as limp as a rag for a week.”\"\n- [0ee225a9a3b5fbc2:15:42] \"there are in me the makings of a very fine loafer and also of a pretty spry sort of fellow.\"\n- [0ee225a9a3b5fbc2:15:42] \"“For me,” said Sherlock Holmes, “there still remains the cocaine-bottle.”\"\n- [0ee225a9a3b5fbc2:15:43] \"And he stretched his long white hand up for it.\"",
+  "key_facts": [
+   "At the start he is idle and takes cocaine because he has no brain-work",
+   "During the case he is restless and pacing, worrying Mrs. Hudson",
+   "Before the river chase he is in high spirits, nervously exalted, after black depression",
+   "After the capture the reaction sets in and he will be limp for a week",
+   "He ends by reaching for the cocaine bottle"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:14",
+    "quote": "“None. Hence the cocaine. I cannot live without brain-work. What else is there to live for?"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:2",
+    "quote": "After you was gone he walked and he walked, up and down, and up and down, until I was weary of the sound of his footstep."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:0",
+    "quote": "He appeared to be in a state of nervous exaltation. I have never known him so brilliant."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:0",
+    "quote": "His bright humour marked the reaction from his black depression of the preceding days."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "“Yes, the reaction is already upon me. I shall be as limp as a rag for a week.”"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "there are in me the makings of a very fine loafer and also of a pretty spry sort of fellow."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "“For me,” said Sherlock Holmes, “there still remains the cocaine-bottle.”"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:43",
+    "quote": "And he stretched his long white hand up for it."
+   }
+  ]
+ },
+ {
+  "id": "A6",
+  "question": "How do Watson's feelings for Mary Morstan show themselves as The Sign of the Four goes on?",
+  "verified": "At first sight Watson judges her face the clearest promise of a refined and sensitive nature he has ever seen. Waiting in the dark outside Pondicherry Lodge, her hand is in his, and he notes that their hands sought each other without any word of affection. When he carries the empty treasure box to her he speaks jovially though his heart is heavy. Once the treasure is gone he says 'Thank God', takes her hand, which she does not withdraw, and tells her he loves her because the riches had sealed his lips, and she answers 'Thank God' too.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:5:0] \"I have never looked upon a face which gave a clearer promise of a refined and sensitive nature.\"\n- [0ee225a9a3b5fbc2:8:3] \"Miss Morstan and I stood together, and her hand was in mine.\"\n- [0ee225a9a3b5fbc2:8:3] \"in an hour of trouble our hands instinctively sought for each other.\"\n- [0ee225a9a3b5fbc2:14:6] \"speaking jovially and boisterously, though my heart was heavy within me.\"\n- [0ee225a9a3b5fbc2:14:9] \"“Because you are within my reach again,” I said, taking her hand. She did not withdraw it.\"\n- [0ee225a9a3b5fbc2:14:9] \"Now that they are gone I can tell you how I love you.\"",
+  "key_facts": [
+   "At first sight Watson is struck by her refined, sensitive face",
+   "In the dark at Pondicherry Lodge their hands instinctively sought each other",
+   "He brings her the empty box with forced cheer and a heavy heart",
+   "When the treasure is gone he says Thank God, takes her hand, which she does not withdraw, and tells her he loves her because the riches had sealed his lips"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:0",
+    "quote": "I have never looked upon a face which gave a clearer promise of a refined and sensitive nature."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:8:3",
+    "quote": "Miss Morstan and I stood together, and her hand was in mine."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:8:3",
+    "quote": "in an hour of trouble our hands instinctively sought for each other."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:6",
+    "quote": "speaking jovially and boisterously, though my heart was heavy within me."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:9",
+    "quote": "“Because you are within my reach again,” I said, taking her hand. She did not withdraw it."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:9",
+    "quote": "Now that they are gone I can tell you how I love you."
+   }
+  ]
+ },
+ {
+  "id": "A7",
+  "question": "Two servants in the Sholto household turn out to matter in The Sign of the Four. How does each one act toward his master's secrets?",
+  "verified": "Lal Chowdar was Major Sholto's faithful old servant. He let Morstan in on the night he died, overheard the quarrel and the blow, said his lips were sealed, and helped the Major hide the body; he knew where the treasure was hidden and has since died. Lal Rao is the butler of Bartholomew's household, whom Mrs. Bernstone distrusted, and Holmes suspects of being inside contact for Small; at the end Holmes says he was the confederate in the house.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:7:8] \"He walked over from the station, and was admitted by my faithful old Lal Chowdar, who is now dead.\"\n- [0ee225a9a3b5fbc2:7:9] \"“I heard it all, Sahib,” said he. “I heard you quarrel, and I heard the blow. But my lips are sealed.\"\n- [0ee225a9a3b5fbc2:7:9] \"Lal Chowdar and I disposed of the body that night\"\n- [0ee225a9a3b5fbc2:10:14] \"very possibly he established communications with some one inside the house. There is this butler, Lal Rao, whom we have not seen. Mrs. Bernstone gives him far from a good character.\"\n- [0ee225a9a3b5fbc2:10:14] \"no one ever knew, save the major and one faithful servant who had died.\"\n- [0ee225a9a3b5fbc2:15:42] \"they had, as I surmised, a confederate in the house, who could be none other than Lal Rao, the butler\"",
+  "key_facts": [
+   "Lal Chowdar was Major Sholto's faithful servant who admitted Morstan that night",
+   "He overheard the quarrel and offered to hide the body, saying his lips were sealed, and helped dispose of it",
+   "He was the one faithful servant who knew where the treasure lay, and has died",
+   "Lal Rao, the butler, had a bad character with the housekeeper and Holmes suspected him of being in touch with Small",
+   "Holmes concludes Lal Rao was the confederate inside the house"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:8",
+    "quote": "He walked over from the station, and was admitted by my faithful old Lal Chowdar, who is now dead."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:9",
+    "quote": "“I heard it all, Sahib,” said he. “I heard you quarrel, and I heard the blow. But my lips are sealed."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:9",
+    "quote": "Lal Chowdar and I disposed of the body that night"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:14",
+    "quote": "very possibly he established communications with some one inside the house. There is this butler, Lal Rao, whom we have not seen. Mrs. Bernstone gives him far from a good character."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:14",
+    "quote": "no one ever knew, save the major and one faithful servant who had died."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "they had, as I surmised, a confederate in the house, who could be none other than Lal Rao, the butler"
+   }
+  ]
+ },
+ {
+  "id": "A8",
+  "question": "Jonathan Small and Jefferson Hope are both caught and both talk. How does each defend himself, and which killings does each own up to?",
+  "verified": "Hope owns the killings openly and treats them as justice: he says he decided to be judge, jury and executioner, claims he is as much an officer of justice as the detectives, and says he did not mean to kill Drebber in cold blood but offered him the poisoned-pill choice. Small disowns the death of Bartholomew Sholto, swearing he never raised a hand against him and blaming Tonga, with whom he says he had no quarrel; he says he would gladly have killed the old Major. About Achmet's murder he does not deny it but argues it was his life or the merchant's, and that few would have refused a share of the loot.\n\nEvidence (verbatim):\n- [05ab674df048d13f:17:3] \"I determined that I should be judge, jury, and executioner all rolled into one.\"\n- [05ab674df048d13f:17:10] \"“Don’t imagine that I intended to kill him in cold blood.\"\n- [05ab674df048d13f:17:16] \"You may consider me to be a murderer; but I hold that I am just as much an officer of justice as you are.\"\n- [0ee225a9a3b5fbc2:14:0] \"I give you my word on the book that I never raised hand against Mr. Sholto. It was that little hell-hound Tonga who shot one of his cursed darts into him.\"\n- [0ee225a9a3b5fbc2:14:1] \"Now, if it had been the old major I would have swung for him with a light heart.\"\n- [0ee225a9a3b5fbc2:14:1] \"But it’s cursed hard that I should be lagged over this young Sholto, with whom I had no quarrel whatever.\"\n- [0ee225a9a3b5fbc2:15:22] \"Besides, it was my life or his when once he was in the fort.\"\n- [0ee225a9a3b5fbc2:15:22] \"I should like to know how many fellows in my shoes would have refused a share of this loot\"",
+  "key_facts": [
+   "Hope says he decided to be judge, jury and executioner and calls himself an officer of justice",
+   "Hope says he did not mean to kill Drebber in cold blood but gave him a chance with the pills",
+   "Small swears he never raised a hand against Bartholomew Sholto and blames Tonga for the dart",
+   "Small says he had no quarrel with the younger Sholto but would have killed the old Major gladly",
+   "Small excuses the merchant's killing as a matter of his life or the man's, and says few would have refused the loot"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:17:3",
+    "quote": "I determined that I should be judge, jury, and executioner all rolled into one."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:10",
+    "quote": "“Don’t imagine that I intended to kill him in cold blood."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:16",
+    "quote": "You may consider me to be a murderer; but I hold that I am just as much an officer of justice as you are."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:0",
+    "quote": "I give you my word on the book that I never raised hand against Mr. Sholto. It was that little hell-hound Tonga who shot one of his cursed darts into him."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:1",
+    "quote": "Now, if it had been the old major I would have swung for him with a light heart."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:1",
+    "quote": "But it’s cursed hard that I should be lagged over this young Sholto, with whom I had no quarrel whatever."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:22",
+    "quote": "Besides, it was my life or his when once he was in the fort."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:22",
+    "quote": "I should like to know how many fellows in my shoes would have refused a share of this loot"
+   }
+  ]
+ },
+ {
+  "id": "A9",
+  "question": "How did the relationship between Joseph Stangerson and Enoch Drebber change between Utah and London?",
+  "verified": "In Utah they were rivals for Lucy Ferrier: there were words between them as to which should have her, Stangerson having shot her father, but Drebber's party was stronger in council and the Prophet gave her to him. Later both left the Church, and Drebber turned much of his property into money and went off wealthy while Stangerson was comparatively poor. In Cleveland Stangerson had become Drebber's private secretary, and in London he is a quiet, reserved man in his employer's service, who reproaches Drebber's unmanly conduct toward Alice Charpentier.\n\nEvidence (verbatim):\n- [05ab674df048d13f:16:9] \"There was some words between young Drebber and young Stangerson as to which was to have her.\"\n- [05ab674df048d13f:16:9] \"when they argued it out in council, Drebber’s party was the stronger, so the Prophet gave her over to him.\"\n- [05ab674df048d13f:16:13] \"Rumour reported that Drebber had managed to convert a large part of his property into money, and that he had departed a wealthy man, while his companion, Stangerson, was comparatively poor.\"\n- [05ab674df048d13f:16:14] \"accompanied by Stangerson, who had become his private secretary\"\n- [05ab674df048d13f:10:8] \"Stangerson was a quiet reserved man, but his employer, I am sorry to say, was far otherwise.\"\n- [05ab674df048d13f:10:8] \"an outrage which caused his own secretary to reproach him for his unmanly conduct.\"",
+  "key_facts": [
+   "In Utah they were rivals for Lucy and quarrelled over who should have her; Drebber's party won the council",
+   "Both later left the Mormon community",
+   "Drebber left wealthy, while Stangerson was comparatively poor",
+   "Stangerson became Drebber's private secretary",
+   "In London Stangerson was quiet and reserved and reproached Drebber's treatment of Alice"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:16:9",
+    "quote": "There was some words between young Drebber and young Stangerson as to which was to have her."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:9",
+    "quote": "when they argued it out in council, Drebber’s party was the stronger, so the Prophet gave her over to him."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:13",
+    "quote": "Rumour reported that Drebber had managed to convert a large part of his property into money, and that he had departed a wealthy man, while his companion, Stangerson, was comparatively poor."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:14",
+    "quote": "accompanied by Stangerson, who had become his private secretary"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:8",
+    "quote": "Stangerson was a quiet reserved man, but his employer, I am sorry to say, was far otherwise."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:8",
+    "quote": "an outrage which caused his own secretary to reproach him for his unmanly conduct."
+   }
+  ]
+ },
+ {
+  "id": "A10",
+  "question": "How do Gregson and Lestrade's attitudes toward the Drebber case change between the morning Gregson announces an arrest and the day the murderer is finally taken?",
+  "verified": "Gregson arrives beaming with satisfaction, says he has the man under lock and key, and boasts of his own way of working while mocking Holmes's own line as the wrong track. He is crestfallen to find Holmes already noticed the hat and triumphant over Lestrade's confusion. When Lestrade brings news of Stangerson's murder Gregson jumps up, upsets his drink and stammers; the two of them then admit they have both failed and press Holmes to say what he knows. After Hope is caught, Holmes says they will be wild about his death, and the papers give them the credit.\n\nEvidence (verbatim):\n- [05ab674df048d13f:10:3] \"Here is Gregson coming down the road with beatitude written upon every feature of his face.\"\n- [05ab674df048d13f:10:4] \"“The right track! Why, sir, we have the man under lock and key.”\"\n- [05ab674df048d13f:10:4] \"“Arthur Charpentier, sub-lieutenant in Her Majesty’s navy,” cried Gregson, pompously\"\n- [05ab674df048d13f:10:12] \"“This is a most extraordinary case,” he said at last—“a most incomprehensible affair.”\"\n- [05ab674df048d13f:11:0] \"Gregson sprang out of his chair and upset the remainder of his whiskey and water.\"\n- [05ab674df048d13f:11:0] \"“Are you—are you sure of this piece of intelligence?” stammered Gregson.\"\n- [05ab674df048d13f:11:11] \"We have both tried, and we have both failed.\"\n- [05ab674df048d13f:18:0] \"“Gregson and Lestrade will be wild about his death,” Holmes remarked\"\n- [05ab674df048d13f:18:8] \"It is an open secret that the credit of this smart capture belongs entirely to the well-known Scotland Yard officials, Messrs. Lestrade and Gregson.\"",
+  "key_facts": [
+   "Gregson arrives pleased with himself, announcing he has Arthur Charpentier under lock and key",
+   "He is pompous and triumphant, even laughing at Holmes's line of enquiry",
+   "Lestrade calls the case extraordinary and incomprehensible",
+   "Stangerson's murder shakes Gregson, who sprang up and stammered",
+   "Both admit they have failed and demand Holmes tell them what he knows",
+   "Holmes predicts they will be wild about Hope's death and the papers give them credit"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:10:3",
+    "quote": "Here is Gregson coming down the road with beatitude written upon every feature of his face."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:4",
+    "quote": "“The right track! Why, sir, we have the man under lock and key.”"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:4",
+    "quote": "“Arthur Charpentier, sub-lieutenant in Her Majesty’s navy,” cried Gregson, pompously"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:12",
+    "quote": "“This is a most extraordinary case,” he said at last—“a most incomprehensible affair.”"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:0",
+    "quote": "Gregson sprang out of his chair and upset the remainder of his whiskey and water."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:0",
+    "quote": "“Are you—are you sure of this piece of intelligence?” stammered Gregson."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:11:11",
+    "quote": "We have both tried, and we have both failed."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:0",
+    "quote": "“Gregson and Lestrade will be wild about his death,” Holmes remarked"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:8",
+    "quote": "It is an open secret that the credit of this smart capture belongs entirely to the well-known Scotland Yard officials, Messrs. Lestrade and Gregson."
+   }
+  ]
+ },
+ {
+  "id": "A11",
+  "question": "What did Jefferson Hope do in Utah after he found out what had happened to the Ferriers, and why did he go back to the mines?",
+  "verified": "Finding Ferrier's grave and learning that Lucy had been taken, Hope resolved to devote his life to revenge. On the night before her burial he walked into the room where the other wives sat with her body, kissed her forehead and took the wedding-ring from her finger, saying she should not be buried in it. For some months he stayed in the mountains and attacked the two young Mormons: a bullet through Stangerson's window and a boulder dropped at Drebber. When they took precautions he returned to the Nevada mines to recover his health and earn money to pursue them, staying nearly five years.\n\nEvidence (verbatim):\n- [05ab674df048d13f:16:6] \"If there was nothing else left to him, he could at least devote his life to revenge.\"\n- [05ab674df048d13f:16:10] \"Stooping over her, he pressed his lips reverently to her cold forehead, and then, snatching up her hand, he took the wedding-ring from her finger.\"\n- [05ab674df048d13f:16:10] \"“She shall not be buried in that,” he cried with a fierce snarl\"\n- [05ab674df048d13f:16:11] \"Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him.\"\n- [05ab674df048d13f:16:11] \"On another occasion, as Drebber passed under a cliff a great boulder crashed down on him\"\n- [05ab674df048d13f:16:12] \"he reluctantly returned to the old Nevada mines, there to recruit his health and to amass money enough to allow him to pursue his object without privation.\"\n- [05ab674df048d13f:16:12] \"prevented his leaving the mines for nearly five.\"",
+  "key_facts": [
+   "He resolved to devote his life to revenge",
+   "At Lucy's bier he kissed her forehead and took the wedding ring from her finger, saying she should not be buried in it",
+   "He attacked Stangerson (bullet) and Drebber (boulder) from the mountains",
+   "He went back to the Nevada mines to recover his health and earn money for the pursuit, staying nearly five years"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:16:6",
+    "quote": "If there was nothing else left to him, he could at least devote his life to revenge."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:10",
+    "quote": "Stooping over her, he pressed his lips reverently to her cold forehead, and then, snatching up her hand, he took the wedding-ring from her finger."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:10",
+    "quote": "“She shall not be buried in that,” he cried with a fierce snarl"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:11",
+    "quote": "Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:11",
+    "quote": "On another occasion, as Drebber passed under a cliff a great boulder crashed down on him"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:12",
+    "quote": "he reluctantly returned to the old Nevada mines, there to recruit his health and to amass money enough to allow him to pursue his object without privation."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:12",
+    "quote": "prevented his leaving the mines for nearly five."
+   }
+  ]
+ },
+ {
+  "id": "A12",
+  "question": "The Sholto brothers did not see eye to eye about Mary Morstan. How did each regard what was owed to her, and what did the quarrel lead one of them to do?",
+  "verified": "Thaddeus held that they were her trustees and that it would be bad taste to treat a young lady so scurvily; he wanted her to have her due and says he will do her justice whatever Bartholomew says. Bartholomew was averse to part with the pearls, being, in Thaddeus's words, inclined to the Major's fault, and could not see it that way. Thaddeus had to persuade him to let him send her a pearl at intervals so she would never feel destitute. Their difference went so far that Thaddeus left Pondicherry Lodge and set up rooms of his own, and when the treasure was found he told Mary and Bartholomew angrily objected.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:7:13] \"The pearls were evidently of great value, and he was averse to part with them, for, between friends, my brother was himself a little inclined to my father’s fault.\"\n- [0ee225a9a3b5fbc2:7:13] \"It was all that I could do to persuade him to let me find out Miss Morstan’s address and send her a detached pearl at fixed intervals, so that at least she might never feel destitute.\"\n- [0ee225a9a3b5fbc2:7:14] \"“That was the view which I took of it, though Brother Bartholomew could not altogether see it in that light.\"\n- [0ee225a9a3b5fbc2:7:14] \"Our difference of opinion on this subject went so far that I thought it best to set up rooms for myself: so I left Pondicherry Lodge\"\n- [0ee225a9a3b5fbc2:7:2] \"I can do you justice; and I will, too, whatever Brother Bartholomew may say.\"\n- [0ee225a9a3b5fbc2:7:5] \"He is very angry with me for taking the course which has seemed right to me.\"",
+  "key_facts": [
+   "Thaddeus thought they were Mary's trustees and he would do her justice",
+   "Bartholomew was averse to parting with the pearls, taking after their father",
+   "Thaddeus persuaded him to let him send Mary a pearl at intervals so she would not feel destitute",
+   "The disagreement was so strong that Thaddeus left Pondicherry Lodge to set up his own rooms"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:13",
+    "quote": "The pearls were evidently of great value, and he was averse to part with them, for, between friends, my brother was himself a little inclined to my father’s fault."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:13",
+    "quote": "It was all that I could do to persuade him to let me find out Miss Morstan’s address and send her a detached pearl at fixed intervals, so that at least she might never feel destitute."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:14",
+    "quote": "“That was the view which I took of it, though Brother Bartholomew could not altogether see it in that light."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:14",
+    "quote": "Our difference of opinion on this subject went so far that I thought it best to set up rooms for myself: so I left Pondicherry Lodge"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:2",
+    "quote": "I can do you justice; and I will, too, whatever Brother Bartholomew may say."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:5",
+    "quote": "He is very angry with me for taking the course which has seemed right to me."
+   }
+  ]
+ },
+ {
+  "id": "A13",
+  "question": "What does Watson notice about Holmes's vanity in each of the two novels, and what does Holmes do that shows it?",
+  "verified": "In A Study in Scarlet, when Watson compares him to Poe's Dupin, Holmes says Dupin was a very inferior fellow, and later when Watson praises his detection as an exact science he flushes with pleasure, and Watson notes he is as sensitive to flattery about his art as any girl about her beauty. In The Sign of the Four Holmes calls himself the last and highest court of appeal in detection, and Watson is irritated by the egotism that seemed to demand that every line of his pamphlet be devoted to Holmes's own doings.\n\nEvidence (verbatim):\n- [05ab674df048d13f:6:16] \"“Now, in my opinion, Dupin was a very inferior fellow.\"\n- [05ab674df048d13f:8:4] \"My companion flushed up with pleasure at my words, and the earnest way in which I uttered them.\"\n- [05ab674df048d13f:8:4] \"I had already observed that he was as sensitive to flattery on the score of his art as any girl could be of her beauty.\"\n- [0ee225a9a3b5fbc2:4:2] \"I am the last and highest court of appeal in detection.\"\n- [0ee225a9a3b5fbc2:4:3] \"I confess, too, that I was irritated by the egotism which seemed to demand that every line of my pamphlet should be devoted to his own special doings.\"",
+  "key_facts": [
+   "Study: Holmes dismissed Dupin as a very inferior fellow when compared to him",
+   "Study: he flushed with pleasure at Watson's praise and Watson saw he was sensitive to flattery about his art",
+   "Sign: Holmes calls himself the last and highest court of appeal in detection",
+   "Sign: Watson was irritated by Holmes's egotism in wanting the pamphlet devoted to his own doings"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:6:16",
+    "quote": "“Now, in my opinion, Dupin was a very inferior fellow."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:8:4",
+    "quote": "My companion flushed up with pleasure at my words, and the earnest way in which I uttered them."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:8:4",
+    "quote": "I had already observed that he was as sensitive to flattery on the score of his art as any girl could be of her beauty."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:2",
+    "quote": "I am the last and highest court of appeal in detection."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:3",
+    "quote": "I confess, too, that I was irritated by the egotism which seemed to demand that every line of my pamphlet should be devoted to his own special doings."
+   }
+  ]
+ },
+ {
+  "id": "A14",
+  "question": "In both novels the killer had a helper. How does each killer treat that helper when he is questioned, and what does it show about his loyalty?",
+  "verified": "Hope will not give up his accomplice: asked who came for the ring, he says he can tell his own secrets but does not get other people into trouble, and boasts the friend did it smartly. Small, in contrast, immediately blames Tonga for the dart that killed Bartholomew and says he would have half killed him for leaving the club behind, yet later calls him stanch and true and says no man ever had a more faithful mate. So Hope protects his ally by silence while Small's loyalty to Tonga is real but he is ready to put the blame on him.\n\nEvidence (verbatim):\n- [05ab674df048d13f:17:17] \"“I can tell my own secrets,” he said, “but I don’t get other people into trouble.\"\n- [05ab674df048d13f:17:17] \"I think you’ll own he did it smartly.\"\n- [0ee225a9a3b5fbc2:14:0] \"It was that little hell-hound Tonga who shot one of his cursed darts into him.\"\n- [0ee225a9a3b5fbc2:14:3] \"I’d have half killed Tonga for it if he had not scrambled off.\"\n- [0ee225a9a3b5fbc2:15:35] \"He was stanch and true, was little Tonga. No man ever had a more faithful mate.\"",
+  "key_facts": [
+   "Hope refuses to name his accomplice, saying he does not get other people into trouble",
+   "Hope says his friend did it smartly",
+   "Small blames Tonga for the fatal dart",
+   "Small says he would have half killed Tonga for leaving his club",
+   "Small elsewhere calls Tonga stanch and true and the most faithful mate"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:17:17",
+    "quote": "“I can tell my own secrets,” he said, “but I don’t get other people into trouble."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:17",
+    "quote": "I think you’ll own he did it smartly."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:0",
+    "quote": "It was that little hell-hound Tonga who shot one of his cursed darts into him."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:3",
+    "quote": "I’d have half killed Tonga for it if he had not scrambled off."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:35",
+    "quote": "He was stanch and true, was little Tonga. No man ever had a more faithful mate."
+   }
+  ]
+ },
+ {
+  "id": "A15",
+  "question": "As The Sign of the Four goes on, what does Holmes ask Watson to do on his own, and what does it say about how he regards him?",
+  "verified": "At Pondicherry Lodge Holmes tells Watson that his presence will be of great service and has him feel the dead man's arm and say what killed him, then sends him off, after escorting Miss Morstan, to fetch Toby from the bird-stuffer. Later Holmes leaves him at Baker Street as his representative, to open all notes and telegrams and act on his own judgment, asking if he can rely on him.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:9:13] \"“Your presence will be of great service to me,” he answered.\"\n- [0ee225a9a3b5fbc2:9:6] \"“Before they come,” said Holmes, “just put your hand here on this poor fellow’s arm, and here on his leg. What do you feel?”\"\n- [0ee225a9a3b5fbc2:9:13] \"Knock old Sherman up, and tell him, with my compliments, that I want Toby at once.\"\n- [0ee225a9a3b5fbc2:12:5] \"you can be much more useful if you will remain here as my representative.\"\n- [0ee225a9a3b5fbc2:12:5] \"to act on your own judgment if any news should come. Can I rely upon you?”\"",
+  "key_facts": [
+   "Holmes tells Watson his presence is of great service and works the case independently of Jones",
+   "He has Watson feel the dead man's arm and give a medical opinion",
+   "He sends Watson to fetch Toby from Sherman the bird-stuffer",
+   "He leaves Watson as his representative to open notes and telegrams and act on his own judgment, asking if he can rely on him"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:13",
+    "quote": "“Your presence will be of great service to me,” he answered."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:6",
+    "quote": "“Before they come,” said Holmes, “just put your hand here on this poor fellow’s arm, and here on his leg. What do you feel?”"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:13",
+    "quote": "Knock old Sherman up, and tell him, with my compliments, that I want Toby at once."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:5",
+    "quote": "you can be much more useful if you will remain here as my representative."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:5",
+    "quote": "to act on your own judgment if any news should come. Can I rely upon you?”"
+   }
+  ]
+ },
+ {
+  "id": "A16",
+  "question": "In each novel a daughter's fate follows from what happened to her father. What does each father do for his daughter, and how does each daughter show her attachment to him?",
+  "verified": "John Ferrier gave up his ruined farm for Lucy's honour and happiness, comforted her when the Prophet threatened them ('We'll fix it up somehow') and sent for Hope to help. Lucy, in turn, says it is for her father that she is frightened, holds him back by the arm when he would rush for his gun, and after his death never holds her head up and dies within a month. Captain Morstan's telegram to Mary is full of kindness and love, and he vanishes soon after; Mary says she knew in her heart that he was dead and years later, her care is shown by how she preserved the Agra plan from all her father's papers.\n\nEvidence (verbatim):\n- [05ab674df048d13f:15:10] \"the thought of the honour and happiness of his daughter outweighed any regret at his ruined fortunes.\"\n- [05ab674df048d13f:14:6] \"“We’ll fix it up somehow or another.\"\n- [05ab674df048d13f:14:6] \"But it is for you that I am frightened, dear.\"\n- [05ab674df048d13f:15:2] \"had not Lucy seized him by the arm and restrained him.\"\n- [05ab674df048d13f:16:10] \"poor Lucy never held up her head again, but pined away and died within a month.\"\n- [0ee225a9a3b5fbc2:5:2] \"His message, as I remember, was full of kindness and love.\"\n- [0ee225a9a3b5fbc2:7:2] \"“I knew in my heart that he was dead,” said she.\"\n- [0ee225a9a3b5fbc2:15:42] \"witness the way in which she preserved that Agra plan from all the other papers of her father.\"",
+  "key_facts": [
+   "Ferrier gives up his farm for his daughter's happiness and comforts her under the Prophet's threat",
+   "Lucy says it is for her father that she is afraid and restrains him from rushing for his gun",
+   "Lucy pines after her father's death and dies within a month",
+   "Captain Morstan's message to Mary was full of kindness and love and he then vanished",
+   "Mary says she knew in her heart he was dead and preserved the Agra plan from his papers"
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:15:10",
+    "quote": "the thought of the honour and happiness of his daughter outweighed any regret at his ruined fortunes."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:6",
+    "quote": "“We’ll fix it up somehow or another."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:6",
+    "quote": "But it is for you that I am frightened, dear."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:2",
+    "quote": "had not Lucy seized him by the arm and restrained him."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:10",
+    "quote": "poor Lucy never held up her head again, but pined away and died within a month."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:2",
+    "quote": "His message, as I remember, was full of kindness and love."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:2",
+    "quote": "“I knew in my heart that he was dead,” said she."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "witness the way in which she preserved that Agra plan from all the other papers of her father."
+   }
+  ]
+ }
+]
