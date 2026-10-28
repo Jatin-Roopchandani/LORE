@@ -7,7 +7,9 @@ from typing import Iterable, Sequence
 
 from lore.ingest.registry import chunks_by_id
 from lore.query.models import EdgeRow, Evidence, Passage, TemplateCall
+from lore.query.retrieval import drop_boilerplate
 from lore.query.templates import MAX_EVIDENCE_CHARS, TEMPLATES
+from lore.resolve.entityhood import is_boilerplate_chunk
 
 _Item = tuple[str, str, int, str]  # chunk_id, book_id, chapter_seq, text
 
@@ -259,7 +261,10 @@ def assemble_ranked(
 
     ordered = sorted(positions.items(), key=lambda kv: (kv[1][0], kv[1][1], kv[0]))
     texts = chunks_by_id(conn, [c for c, _ in ordered])
-    items = [(c, b, s, texts[c]) for c, (b, s) in ordered if c in texts]
+    # Whatever path a chunk came from (edge, vector, keyword), a licence or
+    # table-of-contents chunk is no evidence.
+    items = [(c, b, s, texts[c]) for c, (b, s) in ordered
+             if c in texts and not is_boilerplate_chunk(texts[c])]
     rank_list = _by_relevance if book_fair else _pure_relevance
     lists = [rank_list(items, scores) for scores in score_lists] or [_interleaved(items)]
     turns = _next_unseen(lists)
@@ -287,6 +292,7 @@ def assemble_ranked(
 
 def passages_from_chunks(chunk_rows: list[dict]) -> tuple[Passage, ...]:
     """Passages straight from LanceDB rows, for the no-graph paths."""
+    chunk_rows = drop_boilerplate(chunk_rows)
     return tuple(
         Passage(n=index + 1, chunk_id=str(row["chunk_id"]),
                 book_id=str(row.get("book_id", "")),

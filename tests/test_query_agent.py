@@ -798,7 +798,8 @@ async def test_the_union_adds_a_vector_only_chunk_to_the_evidence(tmp_path: Path
     assert [p.chunk_id for p in answer.passages] == ["b1:1:0", "b1:9:0"]
     assert "VECTORONLY" in calls["synthesize"][0]
     # The union takes CANDIDATE_K per vector, the question's own included.
-    assert (tuple(Q), CANDIDATE_K) in lance.searches
+    # (read a little wider: boilerplate is filtered out and the result cut back)
+    assert any(v == tuple(Q) and n >= CANDIDATE_K for v, n in lance.searches)
     conn.close()
 
 
@@ -1377,7 +1378,9 @@ async def test_the_baseline_still_answers_from_vector_k_passages(tmp_path: Path)
     lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]}, {"b1:1:0": Q})
     models, _ = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"], [])
     await answer_question(conn, EntityKuzu({}), lance, "who?", models, baseline=True)
-    assert lance.searches == [(tuple(Q), VECTOR_K)]
+    # One search, read a little wider than VECTOR_K so boilerplate can be dropped.
+    (vector, asked), = lance.searches
+    assert vector == tuple(Q) and asked >= VECTOR_K
     conn.close()
 
 

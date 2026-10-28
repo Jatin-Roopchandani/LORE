@@ -18,6 +18,8 @@ from __future__ import annotations
 import re
 import sqlite3
 
+from lore.resolve.entityhood import is_boilerplate_chunk
+
 # Words too common to say anything about a passage; FTS5 itself has no
 # stopword list, and with OR-ed terms a single "the" matches everything.
 _STOP = frozenset("""
@@ -50,9 +52,12 @@ class KeywordIndex:
             " chapter_seq UNINDEXED, text)")
         self._db.executemany(
             "INSERT INTO c VALUES (?, ?, ?, ?)",
-            conn.execute("SELECT id, book_id, chapter_seq, text FROM chunks"))
+            (row for row in conn.execute(
+                "SELECT id, book_id, chapter_seq, text FROM chunks")
+             if not is_boilerplate_chunk(row[3])))
 
-    def search(self, text: str, limit: int) -> list[tuple[str, str, int]]:
+    def search(self, text: str, limit: int,
+               book_id: str | None = None) -> list[tuple[str, str, int]]:
         """(chunk_id, book_id, chapter_seq) of the best BM25 matches for any
         of `text`'s content words, best first. No content words, no hits."""
         terms = query_terms(text)
@@ -61,9 +66,10 @@ class KeywordIndex:
         # Each term quoted, so a word FTS5 treats as syntax (AND, NEAR) is
         # searched as a word.
         match = " OR ".join(f'"{t}"' for t in terms)
+        where, args = (" AND book_id = ?", [book_id]) if book_id else ("", [])
         rows = self._db.execute(
-            "SELECT id, book_id, chapter_seq FROM c WHERE c MATCH ?"
-            " ORDER BY bm25(c) LIMIT ?", (match, limit))
+            "SELECT id, book_id, chapter_seq FROM c WHERE c MATCH ?" + where
+            + " ORDER BY bm25(c) LIMIT ?", (match, *args, limit))
         return [(str(i), str(b), int(s)) for i, b, s in rows]
 
     def close(self) -> None:

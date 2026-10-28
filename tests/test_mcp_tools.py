@@ -661,8 +661,10 @@ async def test_vector_search_limit_ceiling_is_documented_and_applied(
         return real(self, vector, limit)
 
     monkeypatch.setattr(LanceStore, "search_chunks", spy)
-    await vector_search(search_config, "q", limit=10**6, embed=_fake_embed)
-    assert asked == [tools.VECTOR_LIMIT_MAX]
+    result = await vector_search(search_config, "q", limit=10**6, embed=_fake_embed)
+    # Read a little past the ceiling (boilerplate is filtered out), return no more.
+    assert asked and asked[0] >= tools.VECTOR_LIMIT_MAX
+    assert len(result["chunks"]) <= tools.VECTOR_LIMIT_MAX
 
 
 async def test_vector_search_distance_is_strict_json(search_config, monkeypatch):

@@ -12,6 +12,8 @@ from typing import Awaitable, Callable, Iterable, Protocol, Sequence
 
 from lore.extract.embed import QUERY_PREFIX
 from lore.query.models import SeedEntity
+from lore.query.retrieval import search_chunks
+from lore.resolve.normalize import normalize_name
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
 
@@ -99,6 +101,7 @@ async def seed_entities(
     max_seeds: int = 8,
     vector: list[float] | None = None,
     named: Sequence[SeedEntity] = (),
+    exclude_names: frozenset[str] = frozenset(),
 ) -> list[SeedEntity]:
     """The canonical entities the question's vector neighbourhood points at.
 
@@ -120,12 +123,16 @@ async def seed_entities(
     and `embed` is not called: the agent embeds once and reuses that vector
     to rank the evidence.
 
+    `exclude_names` are normalised library book titles: an entity made from
+    a book's own title is no seed (see `_entities`).
+
     `named` (from `named_seeds`) come first and are not counted against
     `max_seeds`; a vector seed that is also named appears once, as named.
     """
     if vector is None:
         vector = await embed_question(question, embed)
-    chunks = lance.search_chunks(vector, limit=k)
+    # Story chunks only: a licence or contents chunk bridges to junk entities.
+    chunks = search_chunks(lance, vector, k)
 
     # LanceDB returns a squared-L2 distance, not a similarity. Both sides
     # are unit-normalised nomic vectors (measured: |v| = 1.0000), so the
@@ -153,13 +160,18 @@ async def seed_entities(
     # Named seeds do not spend the vector cap (Task 10d): John Ferrier, named
     # in Q3, sat at live rank 9 and was cut.
     taken = {seed.id for seed in named}
-    vector_seeds = _entities(kuzu, [i for i in resolved if i not in taken], best)
+    vector_seeds = _entities(kuzu, [i for i in resolved if i not in taken], best,
+                             exclude_names)
     return [*named, *vector_seeds[:max_seeds]]
 
 
-def _entities(kuzu: _Kuzu, entity_ids: list[str],
-              best: dict[str, float]) -> list[SeedEntity]:
-    """SeedEntity per id, in the order given; an id with no node is skipped."""
+def _entities(kuzu: _Kuzu, entity_ids: list[str], best: dict[str, float],
+              exclude_names: frozenset[str] = frozenset()) -> list[SeedEntity]:
+    """SeedEntity per id, in the order given; an id with no node is skipped,
+    and so is one whose normalised name is in `exclude_names` -- a node made
+    from a book's own title ("A Study in Scarlet", Object) is a junk seed:
+    the title is mentioned in prose, but it is no character or object a
+    traversal can learn anything from."""
     if not entity_ids:
         return []
     rows = {
@@ -175,6 +187,7 @@ def _entities(kuzu: _Kuzu, entity_ids: list[str],
                    score=best.get(entity_id, float("inf")))
         for entity_id in entity_ids
         if (row := rows.get(entity_id)) is not None
+        and normalize_name(str(row[1] or "")) not in exclude_names
     ]
 
 
@@ -273,8 +286,9 @@ def named_entity_ids(text: str, index: NameIndex) -> list[str]:
     return found
 
 
-async def named_seeds(kuzu: _Kuzu, entity_ids: Sequence[str]) -> list[SeedEntity]:
+async def named_seeds(kuzu: _Kuzu, entity_ids: Sequence[str], *,
+                      exclude_names: frozenset[str] = frozenset()) -> list[SeedEntity]:
     """Named entity ids as seeds: resolved to their canonical, edgeless dropped,
     in the order given. Uncapped; the caller's vector seeds carry the cap."""
     resolved = live_entity_ids(kuzu, canonical_ids(kuzu, list(entity_ids)))
-    return _entities(kuzu, resolved, {i: 0.0 for i in resolved})
+    return _entities(kuzu, resolved, {i: 0.0 for i in resolved}, exclude_names)

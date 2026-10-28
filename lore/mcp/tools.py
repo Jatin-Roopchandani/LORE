@@ -31,6 +31,7 @@ from lore.orchestrator.gemini_budget import (
     BudgetExceeded, check_budget, recorder_for, today,
 )
 from lore.query.agent import QueryModels, answer_question, make_query_models
+from lore.query.retrieval import search_chunks
 from lore.query.seed import (
     canonical_ids, embed_question, live_entity_ids, load_name_index,
     named_entity_ids,
@@ -628,10 +629,9 @@ async def vector_search(config: LoreConfig, query: str,
     # 3. Search.
     with open_stores(config, kuzu=False) as stores:
         if book_id is None:
-            rows = stores.lance.search_chunks(vector, limit=limit)
+            rows = search_chunks(stores.lance, vector, limit)
         else:
-            rows = stores.lance.search_chunks_in_book(vector, book_id,
-                                                      limit=limit)
+            rows = search_chunks(stores.lance, vector, limit, book_id=book_id)
             # Chunks are embedded only by `lore graph load`. A book that was
             # chunked but never loaded (the live "Pride and Prejudice": 731
             # chunks, 0 vectors) would otherwise come back [] and read as

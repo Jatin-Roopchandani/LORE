@@ -26,6 +26,7 @@ from lore.query.seed import (
     named_seeds,
     seed_entities,
 )
+from lore.query.retrieval import books_named, search_chunks, title_names
 from lore.query.select import select_template
 from lore.query.subgraph import (
     assemble_ranked,
@@ -107,6 +108,18 @@ VECTOR_K = 5
 # stay at today's behaviour until a change passes the held-out check.
 CANDIDATE_K = VECTOR_K
 KEYWORD_K = 0
+# A part scoped to a book but with no usable entity seed, or whose template
+# found fewer than WEAK_EVIDENCE distinct passages, has nothing for the graph
+# to add ("What drives the villains in A Study in Scarlet?" names no
+# character). Only then does it also take SCOPED_K candidates from EACH of
+# vector and keyword search over the book it names. Round 3 rejected a
+# global CANDIDATE_K increase; this widens nothing for a part the graph
+# already answers.
+SCOPED_K = 12
+WEAK_EVIDENCE = 5
+# Subtracted from the relevance of a chunk of ANOTHER book in a scoped part's
+# ranking: cosines are within [-1, 1], so it puts them below every in-book chunk.
+SCOPE_PENALTY = 2.0
 # The evidence budget when Gemini writes the answer. MAX_EVIDENCE_CHARS
 # (12,000) was sized for the local 3B's 12,288-token context and stays the
 # Ollama budget. On the Holmes library the median chunk is ~1,473 chars, so
@@ -338,7 +351,7 @@ async def _synthesize(question, evidence, models: QueryModels, *,
 
 async def _vector_answer(lance, question, vector, models, titles, *, mode,
                          note) -> Answer:
-    passages = passages_from_chunks(lance.search_chunks(vector, limit=VECTOR_K))
+    passages = passages_from_chunks(search_chunks(lance, vector, VECTOR_K))
     evidence = Evidence(edges=(), passages=passages, truncated=False)
     return await _synthesize(question, evidence, models, mode=mode, note=note,
                              book_titles=titles)
@@ -354,6 +367,25 @@ def _keyword_hits(conn: sqlite3.Connection,
         return [index.search(part, KEYWORD_K) for part in parts]
     finally:
         index.close()
+
+
+def _scoped_candidates(lance, conn: sqlite3.Connection, part: str,
+                       vector: list[float], book_ids: list[str]
+                       ) -> list[tuple[str, str, int]]:
+    """(chunk_id, book_id, chapter_seq) of a part's candidates drawn from the
+    books it names: the SCOPED_K nearest story chunks of each, then the
+    SCOPED_K best keyword matches in each. The weak-evidence path only."""
+    out: list[tuple[str, str, int]] = []
+    index = KeywordIndex(conn)
+    try:
+        for book_id in book_ids:
+            for row in search_chunks(lance, vector, SCOPED_K, book_id=book_id):
+                out.append((str(row["chunk_id"]), book_id,
+                            int(row.get("chapter_seq", 0))))
+            out += index.search(part, SCOPED_K, book_id=book_id)
+    finally:
+        index.close()
+    return out
 
 
 def _cosine(row: dict) -> float:
@@ -485,8 +517,8 @@ async def answer_question(
 
     empty = Evidence(edges=(), passages=(), truncated=False)
     # The baseline's passages for the whole question, then each part's.
-    nearest: dict[tuple, list[dict]] = {tuple(vector): lance.search_chunks(
-        vector, limit=CANDIDATE_K)}
+    nearest: dict[tuple, list[dict]] = {tuple(vector): search_chunks(
+        lance, vector, CANDIDATE_K)}
     if not nearest[tuple(vector)]:
         # Vector search returns a nearest chunk whenever there is any chunk,
         # so no part could find one either: skip decomposition.
@@ -501,7 +533,7 @@ async def answer_question(
          detail=f"{len(parts)} part" + ("s" if len(parts) != 1 else ""))
     for v in (v for _, v in parts):
         if tuple(v) not in nearest:
-            nearest[tuple(v)] = lance.search_chunks(v, limit=CANDIDATE_K)
+            nearest[tuple(v)] = search_chunks(lance, v, CANDIDATE_K)
     best = max((_cosine(row) for _, v in parts for row in nearest[tuple(v)]),
                default=float("-inf"))
     if best < RELEVANCE_FLOOR:
@@ -512,6 +544,10 @@ async def answer_question(
 
     # Every name and alias in one read per question, not one per part.
     names = load_name_index(kuzu)
+    # A node made from a book's own title is no seed (retrieval.title_names).
+    book_names = title_names(titles.values())
+    scoped: list[tuple[str, str, int]] = []
+    scoped_books: dict[int, list[str]] = {}  # part index -> the books it is scoped to
     named_in_question = named_entity_ids(question, names)
     rows: list[EdgeRow] = []
     templates: list[str] = []
@@ -533,13 +569,19 @@ async def answer_question(
         # part may have dropped a name the question gave.
         emit(on_event, "step", name="seeds", state="start", part=index, detail=None)
         named = await named_seeds(kuzu, list(dict.fromkeys(
-            named_entity_ids(part, names) + named_in_question)))
+            named_entity_ids(part, names) + named_in_question)),
+            exclude_names=book_names)
         seeds = await seed_entities(part, lance, kuzu, models.embed,
-                                    vector=part_vector, named=named)
+                                    vector=part_vector, named=named,
+                                    exclude_names=book_names)
         emit(on_event, "seeds", part=index, entities=list(seeds))
         emit(on_event, "step", name="seeds", state="done", part=index,
              detail=f"{len(seeds)} found")
+        part_books = books_named(part, titles)
         if not seeds:
+            if part_books:
+                scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
+                scoped_books[index] = part_books
             continue
         seeded = True
         for s in seeds:
@@ -551,6 +593,9 @@ async def answer_question(
         if model and model not in chosen_by:
             chosen_by.append(model)
         if call is None:
+            if part_books:
+                scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
+                scoped_books[index] = part_books
             emit(on_event, "edges", part=index, template=None, total=0, edges=[])
             emit(on_event, "step", name="search", state="done", part=index,
                  detail="no graph search fitted")
@@ -559,12 +604,15 @@ async def answer_question(
             templates.append(call.template)
         found = run_template(kuzu, call)
         rows.extend(found)
+        if part_books and len({r.chunk_id for r in found}) < WEAK_EVIDENCE:
+            scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
+            scoped_books[index] = part_books
         emit(on_event, "edges", part=index, template=call.template, total=len(found),
              edges=found[:EDGES_PER_PART_CAP])
         emit(on_event, "step", name="search", state="done", part=index,
              detail=f"{call.template.replace('_', ' ')} · {len(found)} relationships")
 
-    if not seeded:
+    if not seeded and not scoped:
         # None of the nearest passages bridges to a live entity.
         return await _synthesize(question, empty, models, mode="empty",
                                  book_titles=titles)
@@ -576,9 +624,16 @@ async def answer_question(
              for found in nearest.values() for row in found]
     keyword_hits = _keyword_hits(conn, [part for part, _ in parts])
     extra += [hit for hits in keyword_hits for hit in hits]
+    extra += scoped
+    books_of = {r.chunk_id: r.book_id for r in rows} | {c: b for c, b, _ in extra}
     candidates = sorted({row.chunk_id for row in rows} | {c for c, _, _ in extra})
     stored = lance.chunk_vectors(candidates)
     score_lists = [relevance(v, stored) for _, v in parts]
+    # A scoped part ranks its own book's passages first: another book's chunk
+    # (nearest globally, or reached by a graph edge) is demoted below all of them.
+    for index, book_ids in scoped_books.items():
+        score_lists[index] = {c: v if books_of.get(c) in book_ids else v - SCOPE_PENALTY
+                              for c, v in score_lists[index].items()}
     if KEYWORD_K > 0:
         score_lists = [fused(scores, [c for c, _, _ in hits])
                        for scores, hits in zip(score_lists, keyword_hits)]
