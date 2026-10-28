@@ -130,3 +130,5 @@ class Answer:
     seeds: tuple[SeedEntity, ...] = ()
     prose: tuple[ProseSentence, ...] = ()
     answer_style: str = "claims"
+    # Sub-question texts the shown prose does not answer; empty otherwise.
+    unanswered: tuple[str, ...] = ()

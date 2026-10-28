@@ -1176,3 +1176,12 @@ def test_search_result_without_prose_is_claims_style():
     out = to_search_result(Answer(text="x", passages=(), mode="graph", template=None, note=None),
                            {}).model_dump()
     assert out["prose"] == [] and out["answer_style"] == "claims"
+
+
+def test_search_result_carries_unanswered():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer
+    base = dict(text="x", passages=(), mode="graph", template=None, note=None)
+    assert to_search_result(Answer(**base), {}).model_dump()["unanswered"] == []
+    out = to_search_result(Answer(**base, unanswered=("How?",)), {}).model_dump()
+    assert out["unanswered"] == ["How?"]

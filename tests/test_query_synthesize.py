@@ -1301,3 +1301,27 @@ async def test_all_claims_dropped_with_the_writer_called_is_a_refusal():
     a = await synthesize("q", _EV, gen, mode="graph",
                          check=_check(["not_supported"] * 2, ["supported"]), write=write)
     assert len(wcalls) == 1 and a.text == REFUSAL and a.claims == ()
+
+
+async def test_unanswered_part_is_reported_and_rendered_by_code():
+    gen, _ = _gen(_TWO)
+    write, _ = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])],
+                          unanswered=[2, 9]))
+    a = await synthesize("Habits and why?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]),
+                         write=write)
+    # single-part question: part 1 is the question itself; 2 and 9 are out of range
+    assert a.answer_style == "prose" and a.unanswered == ()
+    write2, _ = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])],
+                           unanswered=[1, 1]))
+    b = await synthesize("Habits and why?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]),
+                         write=write2)
+    assert b.unanswered == ("Habits and why?",)
+    assert b.text.endswith("The passages found don't answer: Habits and why?")
+
+
+async def test_claims_fallback_leaves_unanswered_empty():
+    gen, _ = _gen(_TWO)
+    write, _ = _gen(Prose(sentences=[Sentence(text="x", claims=[1]), Sentence(text="y", claims=[2])], unanswered=[1]))
+    a = await synthesize("Habits?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["unsupported", "unsupported"]),
+                         write=write)
+    assert a.answer_style == "claims" and a.unanswered == ()

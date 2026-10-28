@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { highlightQuote } from "../highlight";
+import { UI } from "../messages";
 import type { SearchResult } from "../types";
 
 export function Prose({ result, onHoverChunks }: { result: SearchResult; onHoverChunks: (chunks: string[]) => void }) {
@@ -43,6 +44,9 @@ export function Prose({ result, onHoverChunks }: { result: SearchResult; onHover
           }))}
         </div>
       ))}
+      {(result.unanswered?.length ?? 0) > 0 && (
+        <p className="unanswered">{`${UI.unanswered} ${result.unanswered!.join("; ")}`}</p>
+      )}
     </div>
   );
 }

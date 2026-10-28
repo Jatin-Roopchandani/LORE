@@ -13,6 +13,7 @@ export const UI = {
   noBooks: "Pick at least one book to see its part of the graph.",
   refusal: "The books don't contain enough to answer that. The graph shows where LORE looked.",
   evidence: (n: number) => `Evidence (${n} ${n === 1 ? "claim" : "claims"})`,
+  unanswered: "The passages found don't answer:",
   proseFallback: "Showing the checked facts; the written answer didn't pass verification.",
   partial: (parts: string[]) => `Not found in the books: ${parts.join("; ")}`,
   showingEdges: (shown: number, total: number) => `Showing ${shown} of ${total} relationships`,

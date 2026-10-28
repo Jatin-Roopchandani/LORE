@@ -34,3 +34,14 @@ test("hovering a sentence reports every chunk it cites", () => {
   fireEvent.mouseLeave(screen.getByText(/who was forced to marry Drebber/));
   expect(onHover).toHaveBeenLastCalledWith([]);
 });
+
+test("shows a muted line for parts the passages do not answer", () => {
+  const { container } = render(<Prose result={{ ...result, unanswered: ["How did he lose it?"] }} onHoverChunks={() => {}} />);
+  const line = container.querySelector("p.unanswered");
+  expect(line?.textContent).toBe("The passages found don't answer: How did he lose it?");
+});
+
+test("no unanswered line when the list is empty", () => {
+  const { container } = render(<Prose result={{ ...result, unanswered: [] }} onHoverChunks={() => {}} />);
+  expect(container.querySelector(".unanswered")).toBeNull();
+});

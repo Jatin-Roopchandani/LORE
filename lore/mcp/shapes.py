@@ -114,6 +114,7 @@ class SearchResult(BaseModel):
     seeds: list[SeedOut]
     prose: list[ProseOut] = []
     answer_style: str = "claims"
+    unanswered: list[str] = []
 
 
 class ChunkHit(BaseModel):
@@ -255,4 +256,5 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
         prose=[ProseOut(text=s.text, claims=list(s.claims), passages=list(s.passages),
                         new_paragraph=s.new_paragraph) for s in answer.prose],
         answer_style=answer.answer_style,
+        unanswered=list(answer.unanswered),
     )

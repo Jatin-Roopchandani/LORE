@@ -9,6 +9,7 @@ rules: prose that does not pass is never shown -- the claim list is.
 """
 from __future__ import annotations
 
+import re
 from typing import Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
@@ -30,17 +31,30 @@ class Sentence(BaseModel):
 
 class Prose(BaseModel):
     sentences: list[Sentence]
+    # 1-based numbers of the question's parts the facts do not answer.
+    unanswered: list[int] = []
+
+# Rendered by code, never by the model.
+UNANSWERED_LEAD = "The passages found don't answer:"
 
 
 WRITER_PROMPT = """Write the answer to the question from the numbered facts below.
 
 Each fact was checked against the book it cites. Use only what the facts
 say; never add anything they do not say, including what you know about the
-story. Every sentence lists the numbers of the facts it uses.
+story. Every sentence lists the numbers of the facts it uses, in `claims`.
 
-- Answer the question directly in your first sentence.
+- Never put fact numbers, chapter numbers, book titles in brackets, or any
+  citation inside the sentence text. Citations go only in `claims`.
+- Write as a direct reply to the question, in natural prose, not as a
+  restatement of each fact. Combine related facts into one sentence where
+  the facts support it.
+- If the facts do not answer a part of the question, do not pretend they
+  do: put that part's number in `unanswered` and write no sentence for it.
+- The first sentence answers the first part the facts do answer.
 - Do not state the same fact twice.
-- When the facts come from more than one book, say which book.
+- Name a book, in plain words ("In <book title>, ..."), only when the
+  facts come from more than one book.
 - Keep each fact's certainty: if a fact says someone seemed, was suspected
   or claimed, say so too.
 - Length: a narrow question gets two to four sentences; a broad one gets
@@ -50,6 +64,7 @@ story. Every sentence lists the numbers of the facts it uses.
   ("because", "so", "later", "which led to") unless a cited fact states it.
 
 Question: {question}
+Parts:
 {parts}
 Facts:
 {facts}
@@ -60,6 +75,11 @@ def _title(book_id: str, book_titles: dict[str, str] | None) -> str:
     return (book_titles or {}).get(book_id) or book_id
 
 
+def part_texts(question: str, sub_questions: Sequence[str]) -> list[str]:
+    """The question's parts; a question with none listed is its own part 1."""
+    return list(sub_questions) or [question]
+
+
 def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[Claim],
                   passages: Iterable[Passage], book_titles: dict[str, str] | None) -> str:
     by_number = {p.n: p for p in passages}
@@ -68,8 +88,7 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
         p = by_number.get(claim.passage)
         where = f" ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})" if p else ""
         lines.append(f"{number}. {claim.text.strip()}{where}\n   quote: {claim.quote.strip()}")
-    parts = ("It has these parts:\n" + "\n".join(f"- {s}" for s in sub_questions) + "\n"
-             if len(sub_questions) > 1 else "")
+    parts = "\n".join(f"{i}. {s}" for i, s in enumerate(part_texts(question, sub_questions), start=1))
     return WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines))
 
 
@@ -85,10 +104,48 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     return reply if isinstance(reply, Prose) and reply.sentences else None
 
 
+_REST = r"[^\s,()\[\]]*"
+# a title-like lead: capitalised words, with small connectors between them
+_CAP = rf"[A-Z]{_REST}"
+_TITLE = rf"{_CAP}(?:\s+(?:(?:of|the|and|in|a|an|to|for|at|on)|{_CAP}))*"
+_NUMS = r"\d+(?:\s*(?:,|and|&|-|\u2013)\s*\d+)*"
+_RESIDUE_PAREN = re.compile(rf"\(\s*(?:{_TITLE}\s*,\s*)?(?:(?:chapters?|ch\.?)\s*)?{_NUMS}\s*\)")
+_RESIDUE_BRACKET = re.compile(r"\[\s*\d+(?:\s*,\s*\d+)*\s*\]")
+_YEAR = re.compile(r"\(\s*\d{4}\s*\)")
+
+
+def strip_residue(text: str) -> str:
+    """Remove citation residue the writer copied into a sentence: "(Book, 1,
+    2)", "(1, 2)", "(chapter 3)", "[3]". A parenthetical with ordinary words,
+    or a lone four-digit year, is kept."""
+    text = _RESIDUE_PAREN.sub(lambda m: m.group(0) if _YEAR.fullmatch(m.group(0)) else "", text)
+    text = _RESIDUE_BRACKET.sub("", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r"\s+([.,;:!?])", r"\1", text)
+    return text.strip()
+
+
 def verify_prose(prose: Prose, n_claims: int) -> list[Sentence]:
-    """Sentences that cite at least one claim, all within 1..n_claims."""
-    return [s for s in prose.sentences
-            if s.text.strip() and s.claims and all(1 <= k <= n_claims for k in s.claims)]
+    """Sentences that cite at least one claim, all within 1..n_claims, with
+    stray citation residue stripped from the text (a sentence left with no
+    words is dropped)."""
+    out = []
+    for s in prose.sentences:
+        if not (s.claims and all(1 <= k <= n_claims for k in s.claims)):
+            continue
+        text = strip_residue(s.text)
+        if re.search(r"\w", text):
+            out.append(s.model_copy(update={"text": text}))
+    return out
+
+
+def valid_unanswered(prose: Prose, n_parts: int) -> list[int]:
+    """In-range, deduplicated part numbers, in the order given."""
+    seen: list[int] = []
+    for k in prose.unanswered:
+        if 1 <= k <= n_parts and k not in seen:
+            seen.append(k)
+    return seen
 
 
 def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[bool],
@@ -120,10 +177,13 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
         for i, s in enumerate(kept))
 
 
-def compose_text(prose: Sequence[ProseSentence]) -> str:
+def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = ()) -> str:
     paragraphs: list[list[str]] = [[]]
     for s in prose:
         if s.new_paragraph and paragraphs[-1]:
             paragraphs.append([])
         paragraphs[-1].append(s.text + " " + "".join(f"[{n}]" for n in s.passages))
-    return "\n\n".join(" ".join(p) for p in paragraphs)
+    text = "\n\n".join(" ".join(p) for p in paragraphs)
+    if unanswered:
+        text += f"\n\n{UNANSWERED_LEAD} " + "; ".join(unanswered)
+    return text

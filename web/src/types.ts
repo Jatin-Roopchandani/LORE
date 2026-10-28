@@ -11,7 +11,7 @@ export interface ProseSentence { text: string; claims: number[]; passages: numbe
 export interface SearchResult { answer: string; mode: string; template: string | null; note: string | null;
   model: string | null; selection_model: string | null; sub_questions: string[]; claims: Claim[];
   passages: Passage[]; edges: Edge[]; seeds: Seed[];
-  prose?: ProseSentence[]; answer_style?: "prose" | "claims" }
+  prose?: ProseSentence[]; answer_style?: "prose" | "claims"; unanswered?: string[] }
 export interface ApiError { code: string; message: string }
 export type AskEvent =
   | { type: "step"; t: number; name: StepName; state: "start" | "done"; part: number | null; detail: string | null }

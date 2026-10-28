@@ -90,3 +90,61 @@ async def test_write_answer_returns_the_prose():
         return Prose(sentences=[S("Hope loved Lucy.", [1])])
     out = await write_answer("q", ["q"], C, P, ok)
     assert out.sentences[0].claims == [1]
+
+
+# ---- Fix A: citation residue ----
+
+from lore.query.write import (  # noqa: E402
+    UNANSWERED_LEAD, strip_residue, valid_unanswered,
+)
+
+
+def test_strip_residue_exact_example():
+    t = "Jonathan Small lost his right leg, which is replaced by a wooden stump (The Sign of the Four, 1, 2)."
+    assert strip_residue(t) == "Jonathan Small lost his right leg, which is replaced by a wooden stump."
+
+
+def test_strip_residue_bare_numbers_and_brackets_and_chapter():
+    assert strip_residue("He left (1, 2).") == "He left."
+    assert strip_residue("He left [3] early.") == "He left early."
+    assert strip_residue("He left [1, 2].") == "He left."
+    assert strip_residue("He left (chapter 3).") == "He left."
+    assert strip_residue("He left (A Study in Scarlet, ch. 4).") == "He left."
+
+
+def test_strip_residue_keeps_normal_parentheticals():
+    t = "He went with Watson (his old friend) to the house (in 1888)."
+    assert strip_residue(t) == t
+
+
+def test_verify_prose_cleans_and_drops_emptied_sentences():
+    prose = Prose(sentences=[S("Hope loved Lucy (The Book, 1, 2).", [1]), S("(1, 2) [3]", [2])])
+    kept = verify_prose(prose, n_claims=2)
+    assert [s.text for s in kept] == ["Hope loved Lucy."]
+
+
+def test_writer_prompt_forbids_inline_citations_and_lists_parts_always():
+    one = writer_prompt("Q one?", ["Q one?"], C, P, None)
+    assert "Parts:\n1. Q one?" in one
+    two = writer_prompt("Q?", ["A?", "B?"], C, P, None)
+    assert "1. A?" in two and "2. B?" in two
+    assert "unanswered" in one and "inside the sentence text" in one
+
+
+# ---- Fix B: unanswered ----
+
+def test_valid_unanswered_keeps_in_range_deduplicated():
+    p = Prose(sentences=[S("A.", [1])], unanswered=[2, 2, 0, 5, 1, -1])
+    assert valid_unanswered(p, 2) == [2, 1]
+    assert valid_unanswered(Prose(sentences=[S("A.", [1])]), 2) == []
+
+
+def test_prose_unanswered_defaults_empty():
+    assert Prose(sentences=[]).unanswered == []
+
+
+def test_compose_text_appends_unanswered_paragraph():
+    s = (ProseSentence("A.", (1,), (3,)),)
+    assert compose_text(s, ("How did he lose it?",)) == f"A. [3]\n\n{UNANSWERED_LEAD} How did he lose it?"
+    assert compose_text(s, ("X?", "Y?")).endswith(f"{UNANSWERED_LEAD} X?; Y?")
+    assert compose_text(s) == "A. [3]"
