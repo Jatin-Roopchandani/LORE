@@ -168,3 +168,56 @@ def test_startup_recovers_stale_running_jobs(config):
     _client(config, [])
     job = _job(config)
     assert job.state == jobs.IDLE and job.stopped_reason == "interrupted"
+
+
+def test_continue_marks_running_before_the_202_returns(config):
+    gate = threading.Event()
+    client = _client(config, [FakeStage(gate=gate)])
+    try:
+        assert client.post("/api/books/b1/continue").status_code == 202
+        job = _job(config)  # no waiting: the 202 implies running
+        assert job is not None and job.state == jobs.RUNNING
+        assert job.updated_at == NOW
+    finally:
+        gate.set()
+    _wait_done(config)
+
+
+def test_get_books_recovers_a_dead_runner(config):
+    client = _client(config, [])
+    conn = open_db(config.sqlite_path)
+    jobs.start_job(conn, "b1", "extract", 10, now=NOW - timedelta(minutes=10))
+    conn.close()
+    job = client.get("/api/books").json()["books"][0]["job"]
+    assert job["state"] == "idle" and job["can_continue"] is True
+
+
+def test_a_running_job_stays_fresh_with_a_moving_clock(config):
+    ticks = {"t": NOW}
+
+    def clock():
+        ticks["t"] += timedelta(seconds=40)
+        return ticks["t"]
+
+    gate = threading.Event()
+
+    class Slow(FakeStage):
+        def run(self, ctx, job_ctl):
+            job_ctl.advance(1)
+            job_ctl.advance(2)
+            gate.wait(5)
+
+    app = create_app(config, stages_factory=lambda cfg: [Slow()], clock=clock)
+    client = TestClient(app, base_url="http://127.0.0.1:8766")
+    try:
+        assert client.post("/api/books/b1/continue").status_code == 202
+        for _ in range(200):
+            j = _job(config)
+            if j.done_items == 2:
+                break
+            time.sleep(0.02)
+        assert _job(config).updated_at > NOW + timedelta(seconds=40), \
+            "stamps follow the clock, not the start time"
+    finally:
+        gate.set()
+    _wait_done(config)

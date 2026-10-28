@@ -29,7 +29,8 @@ from lore.ingest.registry import list_books
 from lore.mcp import tools
 from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE, day_report, today
-from lore.orchestrator.pipeline import JobRefused, processing_budget_left, run_book
+from lore.orchestrator.jobs import JobRefused
+from lore.orchestrator.pipeline import processing_budget_left, run_book
 from lore.web.ask import ask_events
 from lore.web.security import OriginGuard, allowed_hosts, allowed_origins
 
@@ -131,17 +132,22 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     now_utc = clock or (lambda: datetime.now(timezone.utc))
     runner_slot = threading.Lock()  # held while a processing job runs
 
-    try:  # a job whose server died mid-run resumes from Continue, no reset wait
-        conn = open_db(config.sqlite_path)
+    def recover() -> None:
+        """A job whose runner died resumes from Continue, no reset wait."""
         try:
-            jobs.recover_stale(conn, now_utc())
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        pass
+            conn = open_db(config.sqlite_path)
+            try:
+                jobs.recover_stale(conn, now_utc())
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            pass
+
+    recover()
 
     @api.get("/api/books")
     def books():
+        recover()
         now = now_utc()
         conn = open_db(config.sqlite_path)
         try:
@@ -160,33 +166,44 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     def _process(book_id: str) -> None:
         conn = open_db(config.sqlite_path)  # its own connection: another thread
         try:
-            run_book(conn, config, book_id, make_stages(config), now=now_utc())
+            run_book(conn, config, book_id, make_stages(config),
+                     clock=now_utc, claimed=True)
         except JobRefused:
             pass  # raced a CLI run; its row stands
-        except Exception:  # noqa: BLE001 - a setup failure must not kill the thread
-            pass
+        except Exception as exc:  # noqa: BLE001 - a setup failure must not kill the thread
+            try:  # the claimed row must not look running until it goes stale
+                jobs.fail(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000],
+                          now=now_utc())
+            except sqlite3.Error:
+                pass
         finally:
             conn.close()
             runner_slot.release()
 
     @api.post("/api/books/{book_id}/continue", status_code=202)
     def continue_book(book_id: str):
-        conn = open_db(config.sqlite_path)
-        try:
-            if book_id not in {b["id"] for b in list_books(conn)}:
-                return _api_error(404, "not_found", f"no book with id {book_id!r}")
-            ok, why = jobs.can_continue(jobs.get_job(conn, book_id), now_utc())
-        finally:
-            conn.close()
-        if not ok:
-            return _api_error(409, "not_resumable", why)
         if not runner_slot.acquire(blocking=False):
             return _api_error(409, "busy", "another book is being processed")
+        handed_off = False
         try:
+            conn = open_db(config.sqlite_path)
+            try:
+                if book_id not in {b["id"] for b in list_books(conn)}:
+                    return _api_error(404, "not_found", f"no book with id {book_id!r}")
+                ok, why = jobs.can_continue(jobs.get_job(conn, book_id), now_utc())
+                if not ok:
+                    return _api_error(409, "not_resumable", why)
+                try:  # the 202 implies running: mark it before the thread starts
+                    jobs.claim_job(conn, book_id, now=now_utc())
+                except JobRefused as exc:
+                    return _api_error(409, "not_resumable", str(exc))
+            finally:
+                conn.close()
             threading.Thread(target=_process, args=(book_id,), daemon=True).start()
-        except BaseException:
-            runner_slot.release()
-            raise
+            handed_off = True
+        finally:
+            if not handed_off:
+                runner_slot.release()
         return {"started": True}
 
     @api.get("/api/library")
