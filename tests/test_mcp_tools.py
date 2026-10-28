@@ -1157,3 +1157,22 @@ def test_search_result_carries_prose():
     out = to_search_result(answer, {}).model_dump()
     assert out["answer_style"] == "prose"
     assert out["prose"] == [{"text": "A.", "claims": [1], "passages": [1], "new_paragraph": False}]
+
+
+def test_search_result_maps_new_paragraph():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]\n\nB. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)), ProseSentence("B.", (1,), (1,), True)),
+                    answer_style="prose")
+    out = to_search_result(answer, {}).model_dump()
+    assert [p["new_paragraph"] for p in out["prose"]] == [False, True]
+
+
+def test_search_result_without_prose_is_claims_style():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer
+    out = to_search_result(Answer(text="x", passages=(), mode="graph", template=None, note=None),
+                           {}).model_dump()
+    assert out["prose"] == [] and out["answer_style"] == "claims"

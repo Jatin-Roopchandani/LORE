@@ -1383,7 +1383,8 @@ async def test_the_baseline_still_answers_from_vector_k_passages(tmp_path: Path)
 
 # --- prose answers: the compose step ------------------------------------------
 
-async def test_the_compose_step_sits_between_write_and_check(tmp_path: Path) -> None:
+
+def _compose_setup(tmp_path: Path, subs=("who?",), qtext="who?"):
     from dataclasses import replace as dc_replace
     from lore.query.models import Claim
     from lore.query.synthesize import Faithfulness, Judgement, Synthesis
@@ -1397,8 +1398,9 @@ async def test_the_compose_step_sits_between_write_and_check(tmp_path: Path) -> 
     two = Synthesis(claims=[Claim(text="Holmes talked the case over with Watson.", passage=1, quote=QUOTE),
                             Claim(text="Watson kept a bull pup.", passage=2, quote="Watson kept a bull pup")],
                     can_answer=True)
-    models, _ = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"],
-                          [TemplateChoice(template="neighbours", entities=[1])], two)
+    vectors = {QUERY_PREFIX + t: Q for t in (qtext, *subs)}
+    models, _ = _scripted(vectors, list(subs),
+                          [TemplateChoice(template="neighbours", entities=[1])] * 4, two)
 
     async def write(prompt, schema):
         return Prose(sentences=[Sentence(text="Holmes discussed the case with Watson, who kept a bull pup.", claims=[1, 2])])
@@ -1407,11 +1409,65 @@ async def test_the_compose_step_sits_between_write_and_check(tmp_path: Path) -> 
         return Faithfulness(judgements=[Judgement(claim=1, verdict="supported"), Judgement(claim=2, verdict="supported")],
                             sentence_judgements=[Judgement(claim=1, verdict="supported")])
 
-    models = dc_replace(models, write=write, check=check)
+    return conn, kuzu, lance, dc_replace(models, write=write, check=check), qtext
+
+
+def _steps(events):
+    return [(e["name"], e["state"], e.get("detail")) for e in events if e["type"] == "step"]
+
+
+async def test_the_compose_step_sits_between_write_and_check(tmp_path: Path) -> None:
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path)
     events = []
-    answer = await answer_question(conn, kuzu, lance, "who?", models, on_event=events.append)
+    answer = await answer_question(conn, kuzu, lance, q, models, on_event=events.append)
     conn.close()
-    steps = [(e["name"], e["state"]) for e in events if e["type"] == "step"]
-    assert steps[-6:] == [("write", "start"), ("write", "done"), ("compose", "start"),
-                          ("compose", "done"), ("check", "start"), ("check", "done")]
+    steps = _steps(events)
+    assert [(n, st) for n, st, _ in steps[-6:]] == [
+        ("write", "start"), ("write", "done"), ("compose", "start"),
+        ("check", "start"), ("check", "done"), ("compose", "done")]
+    assert steps[-1][2] == "1 sentence"
     assert answer.answer_style == "prose"
+
+
+@pytest.mark.parametrize("mode", ["none", "raises"])
+async def test_a_failed_writer_closes_compose_as_a_fallback(tmp_path: Path, mode) -> None:
+    from dataclasses import replace as dc_replace
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path)
+
+    async def write(prompt, schema):
+        if mode == "raises":
+            raise RuntimeError("boom")
+        return None
+
+    models = dc_replace(models, write=write)
+    events = []
+    answer = await answer_question(conn, kuzu, lance, q, models, on_event=events.append)
+    conn.close()
+    steps = _steps(events)
+    assert answer.answer_style == "claims"
+    assert steps.count(("compose", "start", None)) == 1
+    assert steps.count(("compose", "done", "fell back to facts")) == 1
+    assert sum(1 for n, st, _ in steps if (n, st) == ("write", "done")) == 1
+
+
+async def test_prose_off_emits_no_compose_events(tmp_path: Path, monkeypatch) -> None:
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "PROSE_ANSWERS", False)
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path)
+    events = []
+    answer = await answer_question(conn, kuzu, lance, q, models, on_event=events.append)
+    conn.close()
+    assert not [e for e in _steps(events) if e[0] == "compose"]
+    assert answer.answer_style == "claims"
+
+
+async def test_the_parts_path_emits_compose(tmp_path: Path) -> None:
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path, subs=("a?", "b?"), qtext="a? and b?")
+    events = []
+    answer = await answer_question(conn, kuzu, lance, q, models, on_event=events.append)
+    conn.close()
+    steps = _steps(events)
+    assert answer.sub_questions == ("a?", "b?") or list(answer.sub_questions) == ["a?", "b?"]
+    assert sum(1 for n, st, _ in steps if (n, st) == ("compose", "start")) == 1
+    assert sum(1 for n, st, _ in steps if (n, st) == ("compose", "done")) == 1
+    assert sum(1 for n, st, _ in steps if (n, st) == ("write", "done")) == 1

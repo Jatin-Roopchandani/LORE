@@ -408,14 +408,7 @@ class _AnswerSteps:
                 self.composed = True
                 emit(self.on_event, "step", name="write", state="done", part=None, detail=None)
                 emit(self.on_event, "step", name="compose", state="start", part=None, detail=None)
-                reply = None
-                try:
-                    reply = await write(prompt, schema)
-                    return reply
-                finally:
-                    n = len(getattr(reply, "sentences", None) or [])
-                    emit(self.on_event, "step", name="compose", state="done", part=None,
-                         detail=f"{n} sentences" if n else "no prose")
+                return await write(prompt, schema)
 
             models = replace(models, write=composing)
         if models.check is None:
@@ -435,9 +428,21 @@ class _AnswerSteps:
         return replace(models, check=announced)
 
     def close(self, answer: Answer | None) -> None:
-        if not self.ran or self.closed:
+        if self.closed:
             return
         self.closed = True
+        try:
+            if self.ran:
+                self._close_check(answer)
+        finally:
+            if self.composed:
+                n = len(answer.prose) if answer is not None else 0
+                prose = answer is not None and answer.answer_style == "prose" and n
+                emit(self.on_event, "step", name="compose", state="done", part=None,
+                     detail=(f"{n} sentence{'s' if n != 1 else ''}" if prose
+                             else "fell back to facts"))
+
+    def _close_check(self, answer: Answer | None) -> None:
         detail = CHECK_UNVERIFIED
         applied = (answer is not None and self.reply is not None
                    and CHECK_SKIPPED_NOTE not in (answer.note or ""))
