@@ -178,3 +178,64 @@ def test_coverage_gaps_none_when_each_part_is_cited_once():
 
 def test_coverage_gaps_ignores_parts_without_surviving_claims():
     assert coverage_gaps(_ps((3,)), [[], [3]]) == []
+
+
+# --- one sentence per item (2026-10-28: the writer packed paragraphs) -----
+from lore.query.write import split_items  # noqa: E402
+
+
+def test_a_paragraph_item_is_split_into_sentences_citing_the_same_claims() -> None:
+    prose = Prose(sentences=[Sentence(
+        text="Mr. Hope wanted revenge. He saw himself as a judge! Was he right?",
+        claims=[1, 2], new_paragraph=True)])
+    items = split_items(prose)
+    assert [s.text for s in items] == [
+        "Mr. Hope wanted revenge.", "He saw himself as a judge!", "Was he right?"]
+    assert all(s.claims == [1, 2] for s in items)
+    assert [s.new_paragraph for s in items] == [True, False, False]
+
+
+def test_new_paragraph_typed_into_the_text_becomes_the_flag() -> None:
+    items = split_items(Prose(sentences=[
+        Sentence(text="First.", claims=[1]),
+        Sentence(text="new_paragraph: In the second book, Small sought the treasure.", claims=[2])]))
+    assert items[1].text == "In the second book, Small sought the treasure."
+    assert items[1].new_paragraph is True
+
+
+def test_abbreviations_do_not_split_a_sentence() -> None:
+    items = split_items(Prose(sentences=[Sentence(
+        text="Dr. Watson met Mrs. Hudson at No. 221B Baker St. in London.", claims=[1])]))
+    assert len(items) == 1
+
+
+def test_verify_prose_judges_split_sentences() -> None:
+    kept = verify_prose(Prose(sentences=[Sentence(text="One. Two.", claims=[1])]), 1)
+    assert [s.text for s in kept] == ["One.", "Two."]
+
+
+def test_a_long_answer_tolerates_one_failure_in_five() -> None:
+    sents = [Sentence(text=f"S{i}.", claims=[1]) for i in range(10)]
+    ok = [True] * 8 + [False, False]
+    built = assemble(sents, 10, [True], ok, [3])
+    assert built is not None and len(built) == 8
+    assert assemble(sents, 10, [True], [True] * 7 + [False] * 3, [3]) is None
+
+
+from lore.query.write import paragraphs_by_book  # noqa: E402
+
+
+def _bs(text, passages, flag=False):
+    return ProseSentence(text=text, claims=(1,), passages=passages, new_paragraph=flag)
+
+
+def test_a_multi_book_answer_breaks_paragraphs_where_the_book_changes() -> None:
+    prose = (_bs("A1.", (1,)), _bs("A2.", (2,)), _bs("A3.", (1,), flag=True),
+             _bs("B1.", (5,)), _bs("B2.", (6,)))
+    out = paragraphs_by_book(prose, {1: "a", 2: "a", 5: "b", 6: "b"})
+    assert [s.new_paragraph for s in out] == [False, False, False, True, False]
+
+
+def test_a_one_book_answer_keeps_the_writers_paragraphs() -> None:
+    prose = (_bs("A1.", (1,)), _bs("A2.", (2,), flag=True))
+    assert paragraphs_by_book(prose, {1: "a", 2: "a"}) == prose

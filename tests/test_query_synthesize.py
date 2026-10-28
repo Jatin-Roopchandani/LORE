@@ -1069,6 +1069,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
         synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
         synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
         synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE,
+        synthesize_module._ATTRIBUTE_SPEECH_RULE,
         write_module.WRITER_PROMPT)))
     for q in (q for path in sets for q in json.loads(path.read_text())):
         leaked = (grams(q["question"]) | grams(q["verified"])) & prompt
@@ -1335,3 +1336,15 @@ async def test_one_sided_prose_over_parts_falls_back_to_claims():
                                check=_check(["supported"] * 2, ["supported"]), write=write)
     assert a.answer_style == "claims" and len(a.claims) == 2
     assert PROSE_FALLBACK_NOTE in a.note
+
+
+def test_attribute_speech_adds_its_rule_only_when_on(monkeypatch) -> None:
+    from lore.query import synthesize as synthesize_module
+    from lore.query.synthesize import _build_prompt
+    evidence = Evidence(edges=(), passages=(
+        Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text."),),
+        truncated=False)
+    monkeypatch.setattr(synthesize_module, "ATTRIBUTE_SPEECH", False)
+    assert "that character's account" not in _build_prompt("why?", evidence)
+    monkeypatch.setattr(synthesize_module, "ATTRIBUTE_SPEECH", True)
+    assert "that character's account" in _build_prompt("why?", evidence)

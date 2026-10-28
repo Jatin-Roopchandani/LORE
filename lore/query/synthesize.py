@@ -35,7 +35,7 @@ from pydantic import BaseModel
 from lore.query import write as write_module
 from lore.query.models import Answer, Claim, EdgeRow, Evidence, Passage, ProseSentence
 from lore.query.write import (
-    assemble, compose_text, coverage_gaps, part_texts, valid_unanswered, verify_prose, write_answer,
+    assemble, compose_text, coverage_gaps, paragraphs_by_book, part_texts, split_items, valid_unanswered, verify_prose, write_answer,
 )
 
 if TYPE_CHECKING:  # write.py never imports this module, so no cycle at runtime
@@ -122,6 +122,15 @@ NO_RESTATE = True
 _NO_RESTATE_RULE = """Every claim must add a fact the earlier claims do not already state. Do not
 say the same thing twice, even in other words or from a different passage;
 if two passages state one fact, make one claim and quote the clearer one.
+"""
+# ATTRIBUTE_SPEECH (2026-10-28): a claim drawn from a character's own speech
+# or first-person story was written as plain fact -- "the killing was the
+# result of Tonga's instincts" from Small's confession. The claim now names
+# whose account it is. Off gives the earlier prompt byte for byte.
+ATTRIBUTE_SPEECH = True
+_ATTRIBUTE_SPEECH_RULE = """When the quote is a character speaking, or telling their own story in the
+first person, the claim is that character's account: say whose it is
+("Small says ...", "according to Hope ..."), never state it as plain fact.
 """
 _PART_CONTEXT = "This is one part of the larger question: {part_of}\nAnswer only this part.\n"
 _FULL_PART_CONTEXT = ("This is one part of the larger question: {part_of}\n"
@@ -366,7 +375,8 @@ def _build_prompt(
     )
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
                           facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
-                          + (_NO_RESTATE_RULE if NO_RESTATE else ""),
+                          + (_NO_RESTATE_RULE if NO_RESTATE else "")
+                          + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations, passages=passages,
@@ -623,7 +633,7 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
         if drafted is None:
             prose_note = PROSE_FALLBACK_NOTE
         else:
-            sentences, written = verify_prose(drafted, len(kept)), len(drafted.sentences)
+            sentences, written = verify_prose(drafted, len(kept)), len(split_items(drafted))
             parts = part_texts(question, sub_questions)
             missing = [parts[k - 1] for k in valid_unanswered(drafted, len(parts))]
     if check is None or not kept:
@@ -642,7 +652,7 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
             if coverage_gaps(built, numbered):
                 built = None  # one-sided prose: the claim list covers every part
         if built:
-            prose = built
+            prose = paragraphs_by_book(built, {p.n: p.book_id for p in evidence.passages})
         else:
             prose_note = PROSE_FALLBACK_NOTE
     return (outcome.kept, [c for c, _ in outcome.dropped], prose, skipped, prose_note,

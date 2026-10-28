@@ -10,6 +10,7 @@ rules: prose that does not pass is never shown -- the claim list is.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
@@ -64,12 +65,16 @@ story. Every sentence lists the numbers of the facts it uses, in `claims`.
   (first person, "I" or "my", or quoted speech), the fact is that
   character's own account, not the narrator's: attribute it ("X says ...",
   "according to X ...") and never state it as plain fact.
+- Each item in `sentences` is exactly one sentence; a paragraph is several
+  items. Set new_paragraph as the field; never write it in the text.
 - Length: a narrow question gets two to four sentences. A broad, abstract
   or multi-part question gets a detailed answer of up to four short
   paragraphs, about 400 words at most. Start a new paragraph for each part
   or theme: mark its first sentence with new_paragraph.
 - Do not use connecting words that add a cause, an order or a consequence
-  ("because", "so", "later", "which led to") unless a cited fact states it.
+  ("because", "so", "as", "while", "later", "the result of", "which led
+  to") unless a cited fact states it. When unsure, write two plain
+  sentences instead of one joined one.
 
 Question: {question}
 Parts:
@@ -133,12 +138,36 @@ def strip_residue(text: str) -> str:
     return text.strip()
 
 
-def verify_prose(prose: Prose, n_claims: int) -> list[Sentence]:
-    """Sentences that cite at least one claim, all within 1..n_claims, with
-    stray citation residue stripped from the text (a sentence left with no
-    words is dropped)."""
+_FLAG_IN_TEXT = re.compile(r"^\s*new_paragraph\s*:\s*", re.I)
+# A sentence ends at . ! ? before a capital or an opening quote -- unless the
+# word before the stop is a title or abbreviation ("Mr.", "No.", "St.").
+_ABBREV = r"(?<!\bMr\.)(?<!\bMrs\.)(?<!\bMs\.)(?<!\bDr\.)(?<!\bSt\.)(?<!\bNo\.)(?<!\bCol\.)(?<!\bCapt\.)(?<!\bMaj\.)(?<!\bGen\.)(?<!\bJr\.)(?<!\bSr\.)(?<!\bvs\.)"
+_SENTENCE_END = re.compile(rf"{_ABBREV}(?<=[.!?])\s+(?=[A-Z\u201c\"'])")
+
+
+def split_items(prose: Prose) -> list[Sentence]:
+    """One sentence per item. Measured 2026-10-28: asked for long answers,
+    the writer packed a whole paragraph into one item, so one unsupported
+    clause sank the paragraph. Each piece cites the item's claims, so the
+    check judges it against exactly the facts the item rested on. A
+    `new_paragraph:` the writer typed into the text becomes the flag."""
     out = []
-    for s in prose.sentences:
+    for item in prose.sentences:
+        text, flag = item.text, item.new_paragraph
+        if _FLAG_IN_TEXT.match(text):
+            text, flag = _FLAG_IN_TEXT.sub("", text), True
+        for i, piece in enumerate(p for p in _SENTENCE_END.split(text.strip()) if p.strip()):
+            out.append(item.model_copy(update={"text": piece.strip(),
+                                               "new_paragraph": flag and i == 0}))
+    return out
+
+
+def verify_prose(prose: Prose, n_claims: int) -> list[Sentence]:
+    """Sentences (one per item, see split_items) that cite at least one
+    claim, all within 1..n_claims, with stray citation residue stripped from
+    the text (a sentence left with no words is dropped)."""
+    out = []
+    for s in split_items(prose):
         if not (s.claims and all(1 <= k <= n_claims for k in s.claims)):
             continue
         text = strip_residue(s.text)
@@ -160,7 +189,8 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
              sentence_ok: Sequence[bool], passage_of: Sequence[int]) -> tuple[ProseSentence, ...] | None:
     """The prose to show, or None to fall back to the claim list.
 
-    `written`: how many sentences the writer produced, before verify_prose.
+    `written`: how many sentences the writer produced (split_items), before
+    verify_prose.
     `claim_ok`/`passage_of`: per claim given to the writer (1-based order).
     `sentence_ok`: per sentence in `sentences`.
     """
@@ -172,7 +202,10 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
             survivors_index[k] = len(survivors_index) + 1
     standing = [(s, ok) for s, ok in zip(sentences, sentence_ok)
                 if all(k in survivors_index for k in s.claims)]
-    if sum(not ok for _, ok in standing) > 1:
+    # One unsupported sentence is removed; more falls back -- except that a
+    # long answer may lose one in five (amended 2026-10-28 with the longer
+    # answers: one weak clause in ten sentences should not cost the prose).
+    if sum(not ok for _, ok in standing) > max(1, len(standing) // 5):
         return None
     kept = [s for s, ok in standing if ok]
     if not kept or 2 * len(kept) < written:
@@ -191,6 +224,20 @@ def coverage_gaps(prose: Sequence[ProseSentence], part_claims: Sequence[Sequence
     (1-based, as in `ProseSentence.claims`)."""
     cited = {k for s in prose for k in s.claims}
     return [i for i, ks in enumerate(part_claims) if ks and not cited.intersection(ks)]
+
+
+def paragraphs_by_book(prose: Sequence[ProseSentence],
+                       book_of: dict[int, str]) -> tuple[ProseSentence, ...]:
+    """In an answer drawn from more than one book, paragraphs follow the
+    books: a sentence whose passages are all in a different book from the
+    previous sentence's opens a paragraph, and no other does. Measured
+    2026-10-28: the writer's own new_paragraph landed mid-book. A one-book
+    answer keeps the writer's paragraphs."""
+    books = [frozenset(book_of.get(n, "") for n in s.passages) for s in prose]
+    if len(set().union(*books)) < 2:
+        return tuple(prose)
+    return tuple(replace(s, new_paragraph=i > 0 and not (books[i] & books[i - 1]))
+                 for i, s in enumerate(prose))
 
 
 def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = ()) -> str:

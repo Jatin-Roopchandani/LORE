@@ -43,6 +43,8 @@ ARM_SETTINGS = {
     "max_claims": ("lore.query.synthesize", "MAX_CLAIMS", int),
     "no_restate": ("lore.query.synthesize", "NO_RESTATE",
                    lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "attribute_speech": ("lore.query.synthesize", "ATTRIBUTE_SPEECH",
+                         lambda v: v.lower() in ("1", "true", "yes", "on")),
     "full_answers": ("lore.query.synthesize", "FULL_ANSWERS",
                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     "prose_answers": ("lore.query.write", "PROSE_ANSWERS",
