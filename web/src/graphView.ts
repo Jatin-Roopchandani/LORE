@@ -10,7 +10,7 @@ export interface ViewLink { id: string; source: string; target: string; label: s
 // `overview`: the library overview is drawn (before any question); its own links are faint and unlabelled.
 export interface GraphView { nodes: ViewNode[]; links: ViewLink[]; shownEdges: number; totalEdges: number; overview?: boolean }
 export type KindMap = Record<string, { kind: string; books: string[] }>;
-export interface ViewOptions { hiddenBooks: Set<string>; hoverChunk: string | null; expansions: SubgraphData[]; kinds?: KindMap;
+export interface ViewOptions { hiddenBooks: Set<string>; hoverChunks: string[]; expansions: SubgraphData[]; kinds?: KindMap;
   // The library overview, drawn before any question: like an expansion, but it marks no node expanded.
   overview?: SubgraphData | null }
 
@@ -84,7 +84,7 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
     if (allHidden(books)) linkState = "faint";
     links.push({ id, source: g.source, target: g.target, label: pairLabel((fwd ?? back)!, fwd && back),
       count: g.rows.length, chunkIds, part: g.part, state: linkState,
-      hot: options.hoverChunk !== null && chunkIds.includes(options.hoverChunk), books, both: !!(fwd && back) });
+      hot: chunkIds.some((c) => options.hoverChunks.includes(c)), books, both: !!(fwd && back) });
   }
 
   const extra = new Map<string, { source: string; target: string; fwd: Map<string, number>; back: Map<string, number>; nf: number; nb: number; quiet: boolean }>();

@@ -23,10 +23,10 @@ const events: AskEvent[] = [
 
 test("node kinds the search did not carry are fetched once, in one batch, and applied", async () => {
   const state = events.reduce(askReducer, initialState("q"));
-  const props = { hiddenBooks: new Set<string>(), hoverChunk: null, noBooks: false };
+  const props = { hiddenBooks: new Set<string>(), hoverChunks: [], noBooks: false };
   const { rerender } = render(<GraphPane state={state} {...props} />);
   await waitFor(() => expect(views.at(-1)!.nodes.find((n) => n.id === "x")!.kind).toBe("Place"));
-  rerender(<GraphPane state={state} {...props} hoverChunk="c1" />);
+  rerender(<GraphPane state={state} {...props} hoverChunks={["c1"]} />);
   await new Promise((r) => setTimeout(r, 250));
   expect(entities).toHaveBeenCalledTimes(1);
   expect(entities.mock.calls[0][0].sort()).toEqual(["x", "y"]);
@@ -37,7 +37,7 @@ test("before any question the overview is drawn under the overview stage text", 
   const overview = { truncated: false, depth: 0, nodes: [{ id: "h", name: "Holmes", kind: "Character", books: ["b1"] },
     { id: "w", name: "Watson", kind: "Character", books: ["b1"] }],
     edges: [{ subject: "Holmes", subject_id: "h", object: "Watson", object_id: "w", count: 1, predicates: { KNOWS: 1 } }] };
-  const props = { hiddenBooks: new Set<string>(), hoverChunk: null, noBooks: false };
+  const props = { hiddenBooks: new Set<string>(), hoverChunks: [], noBooks: false };
   const { getByText, unmount } = render(<GraphPane state={initialState()} overview={overview} {...props} />);
   expect(getByText(UI.overviewStage)).toBeInTheDocument();
   expect(views.at(-1)!.nodes.map((n) => n.id)).toEqual(["h", "w"]);
@@ -48,7 +48,7 @@ test("before any question the overview is drawn under the overview stage text", 
 });
 
 test("with no overview the idle text and a hint show, never an error", () => {
-  const { getByText } = render(<GraphPane state={initialState()} overview={null} hiddenBooks={new Set()} hoverChunk={null} noBooks={false} />);
+  const { getByText } = render(<GraphPane state={initialState()} overview={null} hiddenBooks={new Set()} hoverChunks={[]} noBooks={false} />);
   expect(getByText(UI.graphIdle)).toBeInTheDocument();
   expect(getByText(UI.overviewHint)).toBeInTheDocument();
 });

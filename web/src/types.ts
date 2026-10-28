@@ -1,5 +1,5 @@
-export type StepName = "split" | "seeds" | "search" | "rank" | "write" | "check";
-export const STEP_ORDER: StepName[] = ["split", "seeds", "search", "rank", "write", "check"];
+export type StepName = "split" | "seeds" | "search" | "rank" | "write" | "compose" | "check";
+export const STEP_ORDER: StepName[] = ["split", "seeds", "search", "rank", "write", "compose", "check"];
 export interface Seed { id: string; name: string; kind: string; books: string[]; score: number | null }
 export interface Edge { subject: string; predicate: string; predicate_raw: string; object: string;
   evidence: string; confidence: number; book_id: string; chapter_seq: number; chunk_id: string;
@@ -7,9 +7,11 @@ export interface Edge { subject: string; predicate: string; predicate_raw: strin
 export interface Claim { text: string; passage: number; quote: string }
 export interface Passage { n: number; chunk_id: string; book_id: string; book_title: string | null;
   chapter_seq: number; text: string }
+export interface ProseSentence { text: string; claims: number[]; passages: number[]; new_paragraph: boolean }
 export interface SearchResult { answer: string; mode: string; template: string | null; note: string | null;
   model: string | null; selection_model: string | null; sub_questions: string[]; claims: Claim[];
-  passages: Passage[]; edges: Edge[]; seeds: Seed[] }
+  passages: Passage[]; edges: Edge[]; seeds: Seed[];
+  prose?: ProseSentence[]; answer_style?: "prose" | "claims" }
 export interface ApiError { code: string; message: string }
 export type AskEvent =
   | { type: "step"; t: number; name: StepName; state: "start" | "done"; part: number | null; detail: string | null }

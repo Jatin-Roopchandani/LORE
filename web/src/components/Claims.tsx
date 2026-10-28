@@ -4,7 +4,7 @@ import type { SearchResult } from "../types";
 
 const short = (title: string | null) => (title ?? "Book").replace(/^(A|An|The) /, "").split(" ")[0];
 
-export function Claims({ result, onHoverChunk }: { result: SearchResult; onHoverChunk: (c: string | null) => void }) {
+export function Claims({ result, onHoverChunks }: { result: SearchResult; onHoverChunks: (chunks: string[]) => void }) {
   const [open, setOpen] = useState<number | null>(null);
   const byN = new Map(result.passages.map((p) => [p.n, p]));
   return (
@@ -12,7 +12,7 @@ export function Claims({ result, onHoverChunk }: { result: SearchResult; onHover
       {result.claims.map((c, i) => {
         const p = byN.get(c.passage);
         return (
-          <li key={i} className="claim" onMouseEnter={() => onHoverChunk(p?.chunk_id ?? null)} onMouseLeave={() => onHoverChunk(null)}>
+          <li key={i} className="claim" onMouseEnter={() => onHoverChunks(p ? [p.chunk_id] : [])} onMouseLeave={() => onHoverChunks([])}>
             <p>{c.text}
               {p && <button className="cite" type="button" aria-expanded={open === i} onClick={() => setOpen(open === i ? null : i)}>
                 {`${short(p.book_title)} ch.${p.chapter_seq} · [${c.passage}]`}</button>}

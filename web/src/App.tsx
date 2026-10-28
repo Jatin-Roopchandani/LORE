@@ -12,7 +12,7 @@ export default function App() {
   const [books, setBooks] = useState<Book[]>([]);
   const [showInternals, setShowInternals] = useState(true);
   const [hiddenBooks, setHiddenBooks] = useState<Set<string>>(new Set());
-  const [hoverChunk, setHoverChunk] = useState<string | null>(null);
+  const [hoverChunks, setHoverChunks] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [resetsAt, setResetsAt] = useState<string | undefined>();
   // The library overview, fetched once for both panes: undefined while loading, null if unavailable or empty.
@@ -36,8 +36,8 @@ export default function App() {
     <div className="app">
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey} />
       <div className="panes">
-        <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunk={setHoverChunk} overview={overview} />
-        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunk={hoverChunk} noBooks={noBooks} bookTitles={bookTitles} overview={overview} />
+        <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview} />
+        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} bookTitles={bookTitles} overview={overview} />
       </div>
     </div>
   );

@@ -17,8 +17,8 @@ const KIND_DELAY_MS = 150;
 // no camera pin, no positions and no kinds, and late results for the old ask land nowhere.
 // `overview` is the library overview (App fetches it once): drawn only while no question has been asked.
 // undefined = still loading; null = unavailable or empty.
-export function GraphPane({ state, hiddenBooks, hoverChunk, noBooks, bookTitles, overview }:
-  { state: AskState; hiddenBooks: Set<string>; hoverChunk: string | null; noBooks: boolean; bookTitles?: Map<string, string>;
+export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, bookTitles, overview }:
+  { state: AskState; hiddenBooks: Set<string>; hoverChunks: string[]; noBooks: boolean; bookTitles?: Map<string, string>;
     overview?: SubgraphData | null }) {
   const [expansions, setExpansions] = useState<Expansion[]>([]);
   const [fitRequest, setFitRequest] = useState(0);
@@ -28,8 +28,8 @@ export function GraphPane({ state, hiddenBooks, hoverChunk, noBooks, bookTitles,
   const positions = useRef<Positions>(new Map());
   const idle = state.status === "idle" && !state.question;
   const shownOverview = idle && overview?.nodes.length ? overview : null;
-  const view = useMemo(() => deriveGraph(state, { hiddenBooks, hoverChunk, expansions: expansions.map((e) => e.data), kinds,
-    overview: shownOverview }), [state, hiddenBooks, hoverChunk, expansions, kinds, shownOverview]);
+  const view = useMemo(() => deriveGraph(state, { hiddenBooks, hoverChunks, expansions: expansions.map((e) => e.data), kinds,
+    overview: shownOverview }), [state, hiddenBooks, hoverChunks, expansions, kinds, shownOverview]);
   const pos = useMemo(() => {
     positions.current = place(positions.current, view, expansions.at(-1)?.root ?? null, !!view.overview);
     return positions.current;

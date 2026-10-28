@@ -1,6 +1,7 @@
 import type { useAsk } from "../useAsk";
 import { errorMessage, UI } from "../messages";
 import { Claims } from "./Claims";
+import { Prose } from "./Prose";
 import { HistoryBar } from "./HistoryBar";
 import { HowPanel } from "./HowPanel";
 import { AskBox } from "./AskBox";
@@ -14,8 +15,8 @@ const NOT_FOUND = "not found: ";
 const missingParts = (note: string | null | undefined) =>
   (note ?? "").split("; ").filter((n) => n.startsWith(NOT_FOUND)).map((n) => n.slice(NOT_FOUND.length));
 
-export function ChatPane({ ask, showInternals, resetsAt, onHoverChunk, overview }:
-  { ask: ReturnType<typeof useAsk>; showInternals: boolean; resetsAt?: string; onHoverChunk: (c: string | null) => void;
+export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview }:
+  { ask: ReturnType<typeof useAsk>; showInternals: boolean; resetsAt?: string; onHoverChunks: (chunks: string[]) => void;
     overview?: SubgraphData | null }) {
   const { state } = ask;
   const r = state.result;
@@ -48,7 +49,20 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunk, overview 
               </div>
             )}
             {r && r.claims.length === 0 && <p className="note">{UI.refusal}</p>}
-            {r && r.claims.length > 0 && <Claims key={ask.run} result={r} onHoverChunk={onHoverChunk} />}
+            {r && r.claims.length > 0 && r.answer_style === "prose" && (r.prose?.length ?? 0) > 0 ? (
+              <>
+                <Prose key={ask.run} result={r} onHoverChunks={onHoverChunks} />
+                <details className="evidence">
+                  <summary>{UI.evidence(r.claims.length)}</summary>
+                  <Claims key={ask.run} result={r} onHoverChunks={onHoverChunks} />
+                </details>
+              </>
+            ) : r && r.claims.length > 0 && (
+              <>
+                {(r.note ?? "").includes("written answer did not pass verification") && <p className="note">{UI.proseFallback}</p>}
+                <Claims key={ask.run} result={r} onHoverChunks={onHoverChunks} />
+              </>
+            )}
             {notFound.length > 0 && <p className="note">{UI.partial(notFound)}</p>}
             <HowPanel state={state} showInternals={showInternals} />
           </div>

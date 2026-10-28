@@ -34,7 +34,7 @@ export function askReducer(state: AskState, event: AskEvent): AskState {
       const steps = s.steps.map((step, j) => {
         if (event.state === "start") {
           if (j === i) return { ...step, state: "running" as const, startedAt: step.startedAt ?? event.t };
-          if (j < i && (step.state === "running" || step.state === "pending")) return { ...step, state: "done" as const, doneAt: event.t };
+          if (j < i && !(event.name === "check" && step.name === "compose") && (step.state === "running" || step.state === "pending")) return { ...step, state: "done" as const, doneAt: event.t };
           return step;
         }
         if (j !== i) return step;

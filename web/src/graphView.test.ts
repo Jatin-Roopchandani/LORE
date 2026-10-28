@@ -3,7 +3,7 @@ import { askReducer, initialState } from "./askReducer";
 import two from "./fixtures/two-part.json";
 import type { AskEvent, Edge, SubgraphData } from "./types";
 
-const opts = { hiddenBooks: new Set<string>(), hoverChunk: null, expansions: [] };
+const opts = { hiddenBooks: new Set<string>(), hoverChunks: [], expansions: [] };
 const edge = (s: string, o: string, chunk: string, book = "b1", p = "KILLS"): Edge => ({ subject: s.toUpperCase(), predicate: p,
   predicate_raw: p, object: o.toUpperCase(), evidence: "", confidence: 1, book_id: book, chapter_seq: 1, chunk_id: chunk, subject_id: s, object_id: o });
 
@@ -41,7 +41,7 @@ test("after the answer, cited links glow and the rest fade; hover marks hot", ()
     claims: [{ text: "t", passage: 1, quote: "q" }], passages: [{ n: 1, chunk_id: "c2", book_id: "b1", book_title: null, chapter_seq: 1, text: "" }],
     edges: [], seeds: [] };
   const s = stateWith([...base, { type: "answer", t: 1, result }]);
-  const v = deriveGraph(s, { ...opts, hoverChunk: "c2" });
+  const v = deriveGraph(s, { ...opts, hoverChunks: ["c2"] });
   const hd = v.links.find((l) => l.target === "d")!;
   expect(hd.state).toBe("cited");
   expect(hd.hot).toBe(true);
@@ -179,4 +179,15 @@ test("an overview draws its nodes and links with their kinds and marks nothing e
   expect(again.links.find((l) => l.id === "h<->w")).toMatchObject({ state: "shown", label: "knows ×2" });
   // Without an overview nothing is quiet.
   expect(deriveGraph(stateWith(base), opts).overview).toBe(false);
+});
+
+test("hovering several chunks marks links of each as hot", () => {
+  const s = stateWith(base);
+  const links = deriveGraph(s, opts).links.filter((l) => l.chunkIds.length);
+  const a = links[0], b = links.find((l) => !l.chunkIds.some((c) => a.chunkIds.includes(c)))!;
+  const one = deriveGraph(s, { ...opts, hoverChunks: [a.chunkIds[0]] }).links.filter((l) => l.hot);
+  const both = deriveGraph(s, { ...opts, hoverChunks: [a.chunkIds[0], b.chunkIds[0]] }).links;
+  expect(both.find((l) => l.id === a.id)!.hot).toBe(true);
+  expect(both.find((l) => l.id === b.id)!.hot).toBe(true);
+  expect(one.some((l) => l.id === b.id)).toBe(false);
 });

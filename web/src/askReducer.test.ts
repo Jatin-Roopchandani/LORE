@@ -58,3 +58,16 @@ test("errors and empty answers", () => {
 test("elapsed never goes backwards", () => {
   expect(run(interrupted).elapsed).toBe(0.5);
 });
+
+test("compose and check run at the same time", () => {
+  const ev = (name: any, state: any, t: number) => ({ type: "step", t, name, state, part: null, detail: null }) as AskEvent;
+  let s = initialState("q");
+  for (const e of [ev("write", "start", 1), ev("write", "done", 2), ev("compose", "start", 3), ev("check", "start", 4)]) s = askReducer(s, e);
+  const st = (n: string) => s.steps.find((x) => x.name === n)!.state;
+  expect(st("compose")).toBe("running");
+  expect(st("check")).toBe("running");
+  expect(s.steps.map((x) => x.name).indexOf("compose")).toBe(s.steps.map((x) => x.name).indexOf("write") + 1);
+  s = askReducer(s, ev("check", "done", 5));
+  s = askReducer(s, { ...ev("compose", "done", 6), detail: "3 sentences" } as AskEvent);
+  expect(st("compose")).toBe("done");
+});

@@ -5,13 +5,15 @@ export const OLLAMA_START = "CUDA_VISIBLE_DEVICES=-1 OLLAMA_VULKAN=0 ~/.local/ol
 
 export const STEP_LABEL: Record<StepName, string> = {
   split: "Splitting the question", seeds: "Finding starting entities", search: "Searching the graph",
-  rank: "Ranking passages", write: "Writing the answer", check: "Checking claims against passages",
+  rank: "Ranking passages", write: "Writing the answer", compose: "Writing the answer in prose", check: "Checking claims against passages",
 };
 
 export const UI = {
   askPlaceholder: "Ask about your books…",
   noBooks: "Pick at least one book to see its part of the graph.",
   refusal: "The books don't contain enough to answer that. The graph shows where LORE looked.",
+  evidence: (n: number) => `Evidence (${n} ${n === 1 ? "claim" : "claims"})`,
+  proseFallback: "Showing the checked facts; the written answer didn't pass verification.",
   partial: (parts: string[]) => `Not found in the books: ${parts.join("; ")}`,
   showingEdges: (shown: number, total: number) => `Showing ${shown} of ${total} relationships`,
   graphIdle: "Evidence graph",
