@@ -5,6 +5,7 @@ import type { LibraryBook, LibraryStatus } from "../types";
 
 const POLL_MS = 3000;
 const TICK_MS = 30000;
+const START_CYCLES = 10; // polls forced after Continue, in case the first GET predates the worker
 
 const clock = (d: Date) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -60,6 +61,8 @@ export function LibraryPanel({ open, onClose, showInternals }: { open: boolean; 
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Books just started: poll until we see them run and then stop, or give up.
+  const [started, setStarted] = useState<Record<string, { left: number; seen: boolean }>>({});
   const opener = useRef<HTMLElement | null>(null);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -87,10 +90,31 @@ export function LibraryPanel({ open, onClose, showInternals }: { open: boolean; 
     const t = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => clearInterval(t);
   }, [open]);
-  const anyRunning = !!data?.books.some((b) => b.job?.state === "running");
+  useEffect(() => {
+    if (!data) return;
+    setStarted((cur) => {
+      let changed = false;
+      const next: typeof cur = {};
+      for (const [id, st] of Object.entries(cur)) {
+        const state = data.books.find((b) => b.id === id)?.job?.state;
+        if (state === "running") { next[id] = st.seen ? st : { ...st, seen: true }; changed = changed || !st.seen; }
+        else if (st.seen) changed = true; // ran, and has now stopped
+        else next[id] = st;
+      }
+      return changed ? next : cur;
+    });
+  }, [data]);
+  const anyRunning = !!data?.books.some((b) => b.job?.state === "running") || Object.keys(started).length > 0;
   useEffect(() => {
     if (!open || !anyRunning) return;
-    const t = setInterval(load, POLL_MS);
+    const t = setInterval(() => {
+      setStarted((cur) => {
+        const next: typeof cur = {};
+        for (const [id, st] of Object.entries(cur)) if (st.left > 1) next[id] = { ...st, left: st.left - 1 };
+        return next;
+      });
+      load();
+    }, POLL_MS);
     return () => clearInterval(t);
   }, [open, anyRunning, load]);
   if (!open) return null;
@@ -100,6 +124,7 @@ export function LibraryPanel({ open, onClose, showInternals }: { open: boolean; 
     const r = await api.continueBook(id);
     if (!alive.current) return;
     if (isError(r)) setErrors((e) => ({ ...e, [id]: r.error.message || LIBRARY.startFailed }));
+    else setStarted((cur) => ({ ...cur, [id]: { left: START_CYCLES, seen: false } }));
     setBusy((s) => { const n = new Set(s); n.delete(id); return n; });
     await load();
   };

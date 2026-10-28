@@ -86,3 +86,34 @@ test("a 409 message is shown", async () => {
   await act(async () => { screen.getByRole("button", { name: "Retry Book a" }).click(); });
   expect(screen.getByText("The daily limit is not reset yet.")).toBeInTheDocument();
 });
+
+test("after Continue, polling continues even if the first GET still shows paused", async () => {
+  const paused = job({ state: "waiting_quota", can_continue: true });
+  status = { gemini, books: [book("a", paused)] };
+  await open();
+  const gets = () => (fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) => c[1]?.method !== "POST").length;
+  await act(async () => { screen.getByRole("button", { name: "Continue Book a" }).click(); });
+  const after = gets();
+  await tick(3000); // still paused: the worker has not written yet
+  expect(gets()).toBe(after + 1);
+  await tick(3000);
+  expect(gets()).toBe(after + 2);
+  status = { gemini, books: [book("a", job({}))] };
+  await tick(3000);
+  status = { gemini, books: [book("a", job({ state: "done" }))] };
+  await tick(3000);
+  const settled = gets();
+  await tick(9000);
+  expect(gets()).toBe(settled);
+});
+
+test("the forced polling gives up after about ten cycles", async () => {
+  status = { gemini, books: [book("a", job({ state: "waiting_quota", can_continue: true }))] };
+  await open();
+  const gets = () => (fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) => c[1]?.method !== "POST").length;
+  await act(async () => { screen.getByRole("button", { name: "Continue Book a" }).click(); });
+  await tick(3000 * 12);
+  const settled = gets();
+  await tick(9000);
+  expect(gets()).toBe(settled);
+});
