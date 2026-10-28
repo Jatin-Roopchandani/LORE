@@ -132,6 +132,20 @@ _ATTRIBUTE_SPEECH_RULE = """When the quote is a character speaking, or telling t
 first person, the claim is that character's account: say whose it is
 ("Small says ...", "according to Hope ..."), never state it as plain fact.
 """
+# STRICT_LINKS (2026-10-28): FULL_ANSWERS asks for reasons, and a claim joined
+# two facts from one passage with a cause it never gave -- "Hope targeted
+# Drebber because they were rivals in love" from a passage saying only that
+# they were rivals. The claims rule and the check now both name the
+# connecting words. Off gives the earlier prompts byte for byte.
+STRICT_LINKS = True
+_STRICT_LINKS_RULE = """Give a reason, motive or consequence only when the quote itself states it.
+Two facts from one passage stay two claims: never join them with "because",
+"so", "since", "in order to" or "which led to" unless the passage says so.
+"""
+_STRICT_LINKS_CHECK = """Connecting words count: a "because", "so", "since", "in order to" or
+"which led to" in a claim that the cited passage does not state makes the
+claim "{not_supported}", even when both facts it joins are true.
+"""
 _PART_CONTEXT = "This is one part of the larger question: {part_of}\nAnswer only this part.\n"
 _FULL_PART_CONTEXT = ("This is one part of the larger question: {part_of}\n"
                       "Answer this part fully; the other parts are answered separately.\n")
@@ -376,7 +390,8 @@ def _build_prompt(
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
                           facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
-                          + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else ""),
+                          + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else "")
+                          + (_STRICT_LINKS_RULE if STRICT_LINKS else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations, passages=passages,
@@ -436,7 +451,7 @@ name is "{not_supported}". A claim that adds a cause, a motive or a
 consequence the cited passage does not state is "{not_supported}". Judge
 each claim against its own cited passage alone: what another passage says,
 or what you already know about the story, cannot make a claim supported.
-
+{strict_links}
 Return one entry per claim, in the same order, each with its claim number:
 - verdict: "{supported}" or "{not_supported}"
 - reason: at most {max_words} words.
@@ -494,7 +509,9 @@ def faithfulness_prompt(
                      f"   quote: {claim.quote.strip()}")
     prompt = _CHECK_PROMPT.format(
         passages=shown, claims="\n\n".join(items), count=len(claims),
-        supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+        supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS,
+        strict_links=(_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
+                      if STRICT_LINKS else ""))
     if sentences:
         lines = "\n".join(
             f"{i}. sentence: {s.text.strip()}\n   uses claims {', '.join(str(k) for k in s.claims)}"

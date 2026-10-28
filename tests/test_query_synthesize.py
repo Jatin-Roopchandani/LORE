@@ -1069,7 +1069,8 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
         synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
         synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
         synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE,
-        synthesize_module._ATTRIBUTE_SPEECH_RULE,
+        synthesize_module._ATTRIBUTE_SPEECH_RULE, synthesize_module._STRICT_LINKS_RULE,
+        synthesize_module._STRICT_LINKS_CHECK, __import__('lore.query.decompose', fromlist=['x'])._THEMATIC_RULE,
         write_module.WRITER_PROMPT)))
     for q in (q for path in sets for q in json.loads(path.read_text())):
         leaked = (grams(q["question"]) | grams(q["verified"])) & prompt
@@ -1348,3 +1349,26 @@ def test_attribute_speech_adds_its_rule_only_when_on(monkeypatch) -> None:
     assert "that character's account" not in _build_prompt("why?", evidence)
     monkeypatch.setattr(synthesize_module, "ATTRIBUTE_SPEECH", True)
     assert "that character's account" in _build_prompt("why?", evidence)
+
+
+def test_strict_links_adds_its_rules_only_when_on(monkeypatch) -> None:
+    from lore.query import synthesize as synthesize_module
+    from lore.query.synthesize import _build_prompt, faithfulness_prompt
+    passage = Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text.")
+    evidence = Evidence(edges=(), passages=(passage,), truncated=False)
+    claim = Claim(text="A did B.", passage=1, quote="Some text.")
+    monkeypatch.setattr(synthesize_module, "STRICT_LINKS", False)
+    assert "Two facts from one passage" not in _build_prompt("why?", evidence)
+    assert "Connecting words count" not in faithfulness_prompt([claim], [passage])
+    monkeypatch.setattr(synthesize_module, "STRICT_LINKS", True)
+    assert "Two facts from one passage stay two claims" in _build_prompt("why?", evidence)
+    assert "even when both facts it joins are true" in faithfulness_prompt([claim], [passage])
+
+
+def test_thematic_parts_adds_its_rule_only_when_on(monkeypatch) -> None:
+    from lore.query import decompose
+    monkeypatch.setattr(decompose, "THEMATIC_PARTS", False)
+    off = decompose.decomposition_prompt("q?")
+    assert "role or a theme" not in off and "{thematic}" not in off
+    monkeypatch.setattr(decompose, "THEMATIC_PARTS", True)
+    assert "every character it applies to" in decompose.decomposition_prompt("q?")

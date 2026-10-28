@@ -22,6 +22,17 @@ Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
 
 MAX_SUB_QUESTIONS = 4
 
+# THEMATIC_PARTS (2026-10-28): asked about a role or theme rather than a
+# named person, the parts found only the most prominent character -- the
+# culprit -- and missed the characters whose earlier wrongs drive the story.
+# Off gives the earlier prompt byte for byte.
+THEMATIC_PARTS = True
+_THEMATIC_RULE = """- If the question asks about a role or a theme (a kind of character, a
+  motive, a vice or a virtue) rather than a named person, make the parts
+  find every character it applies to, not only the most prominent one:
+  for example, those who commit the crimes and also those whose earlier
+  wrongs set the events in motion.
+"""
 _PROMPT = """You are splitting a question about books into the parts a search must cover.
 {books}
 Question: {question}
@@ -36,7 +47,7 @@ together ask exactly what the question asks.
   just because the library holds several books.
 - A question that asks "who ... and why ..." is two sub-questions: one
   for who, one for why. Likewise "what ... and how ...".
-- Each sub-question must make sense on its own: repeat the names it needs
+{thematic}- Each sub-question must make sense on its own: repeat the names it needs
   instead of "he", "she", "it", "they" or "that".
 - Do not answer, and do not add anything the question does not ask.
 """
@@ -51,7 +62,8 @@ def decomposition_prompt(question: str, book_titles: Sequence[str] = ()) -> str:
     # on single-book questions (Q3). They stay, for spelling book names.
     books = ("\nBooks in the library (a reference for names only): "
              + "; ".join(book_titles) + "\n" if book_titles else "")
-    return _PROMPT.format(question=question, books=books)
+    return _PROMPT.format(question=question, books=books,
+                          thematic=_THEMATIC_RULE if THEMATIC_PARTS else "")
 
 
 async def split(

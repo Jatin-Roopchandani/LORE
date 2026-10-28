@@ -65,6 +65,8 @@ story. Every sentence lists the numbers of the facts it uses, in `claims`.
   (first person, "I" or "my", or quoted speech), the fact is that
   character's own account, not the narrator's: attribute it ("X says ...",
   "according to X ...") and never state it as plain fact.
+- Vary how sentences begin. Once a person is named in a paragraph, use he,
+  she or they where it is clear who is meant, instead of repeating the name.
 - Each item in `sentences` is exactly one sentence; a paragraph is several
   items. Set new_paragraph as the field; never write it in the text.
 - Length: a narrow question gets two to four sentences. A broad, abstract
