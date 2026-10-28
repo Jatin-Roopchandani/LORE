@@ -84,6 +84,25 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             "ALTER TABLE books ADD COLUMN series_index REAL",
         ],
     ),
+    # Resumable processing (2026-10-28): one row per book saying where its
+    # processing stands. Times are ISO-8601 UTC strings.
+    (
+        6,
+        [
+            """
+            CREATE TABLE book_jobs (
+                book_id        TEXT PRIMARY KEY REFERENCES books(id),
+                stage          TEXT NOT NULL,
+                state          TEXT NOT NULL,     -- running, waiting_quota, failed, done, idle
+                done_items     INTEGER NOT NULL DEFAULT 0,
+                total_items    INTEGER NOT NULL DEFAULT 0,
+                stopped_reason TEXT,
+                resumable_at   TEXT,              -- set only when waiting_quota
+                updated_at     TEXT NOT NULL
+            )
+            """,
+        ],
+    ),
 ]
 
 

@@ -140,6 +140,14 @@ class WebConfig(BaseModel):
     port: int = 8766
 
 
+class ProcessingConfig(BaseModel):
+    """Book processing (resumable jobs). `answer_reserve` is the number of
+    Gemini requests per day that processing leaves untouched, so questions
+    in the UI keep working while a book is being processed."""
+
+    answer_reserve: int = Field(default=60, ge=0)
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
     # "kaggle": free T4 burst. "ollama": fully local, zero egress.
@@ -156,6 +164,7 @@ class LoreConfig(BaseModel):
     synthesis: SynthesisConfig = Field(default_factory=SynthesisConfig)
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
     web: WebConfig = Field(default_factory=WebConfig)
+    processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
