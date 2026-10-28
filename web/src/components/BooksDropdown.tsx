@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { LIBRARY } from "../messages";
 import type { Book } from "../types";
 
-export function BooksDropdown({ books, hiddenBooks, onChange }: { books: Book[]; hiddenBooks: Set<string>; onChange: (s: Set<string>) => void }) {
+export function BooksDropdown({ books, hiddenBooks, onChange, onOpenLibrary }: { books: Book[]; hiddenBooks: Set<string>; onChange: (s: Set<string>) => void; onOpenLibrary?: () => void }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const root = useRef<HTMLDivElement>(null);
@@ -43,6 +44,7 @@ export function BooksDropdown({ books, hiddenBooks, onChange }: { books: Book[];
             })}
             {!shown.length && <li className="hint">No book matches “{q}”.</li>}
           </ul>
+          {onOpenLibrary && <button type="button" className="tbtn" onClick={() => { setOpen(false); onOpenLibrary(); }}>{LIBRARY.manage}</button>}
           <p className="hint">Only graphed books can be searched. The rest are still processing.</p>
         </div>
       )}

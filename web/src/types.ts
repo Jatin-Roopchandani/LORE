@@ -36,3 +36,10 @@ export interface SubgraphLink { subject: string; subject_id: string; object: str
   count: number; predicates: Record<string, number> }
 export interface SubgraphData { nodes: SubgraphNode[]; edges: SubgraphLink[]; truncated: boolean; depth: number }
 export const edgeKey = (e: Edge) => `${e.subject_id}|${e.predicate}|${e.object_id}|${e.chunk_id}`;
+export interface BookJob { stage: string; state: "running" | "waiting_quota" | "failed" | "done" | "idle";
+  done: number; total: number; stopped_reason: string | null; resumable_at: string | null;
+  can_continue: boolean; continue_reason: string }
+export interface LibraryBook { id: string; title: string; author: string | null; status: string;
+  series: string | null; series_index: number | null; job: BookJob | null }
+export interface GeminiUse { used_today: number; limit: number; answer_reserve: number }
+export interface LibraryStatus { books: LibraryBook[]; gemini: GeminiUse }

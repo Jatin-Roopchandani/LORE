@@ -8,6 +8,29 @@ export const STEP_LABEL: Record<StepName, string> = {
   rank: "Ranking passages", write: "Writing the answer", compose: "Writing the answer in prose", check: "Checking claims against passages",
 };
 
+export const STAGE_LABEL: Record<string, string> = {
+  chunk: "Splitting into passages", extract: "Reading passages", load: "Building the graph",
+  disambiguate: "Merging duplicate entities", beats: "Finding story beats", ready: "Finishing up",
+};
+
+export const LIBRARY = {
+  open: "Library", manage: "Manage library\u2026", title: "Library", close: "Close", loading: "Loading the library…", empty: "No books yet.",
+  unreachable: "LORE isn't reachable. Check that `lore ui` is still running.",
+  ready: "Ready", paused: "Paused", failed: "Failed", unprocessed: "Not processed yet",
+  stage: (stage: string) => STAGE_LABEL[stage] ?? stage,
+  progress: (done: number, total: number) => `${done} / ${total}`,
+  progressLabel: (stage: string) => `${STAGE_LABEL[stage] ?? stage} progress`,
+  continuesAfter: (time: string, left: string) => `Continues after ${time} (your time) \u2014 in ${left}`,
+  inHM: (mins: number) => `${Math.floor(mins / 60)}h ${mins % 60}m`,
+  continue: "Continue", retry: "Retry", process: "Process",
+  action: (verb: string, title: string) => `${verb} ${title}`,
+  pausedDefault: "Paused until the daily allowance resets.",
+  failedDefault: "Processing failed.",
+  startFailed: "Couldn't start processing.",
+  gemini: (used: number, limit: number, reserve: number, internals: boolean) =>
+    `${internals ? "Gemini requests" : "Question allowance"} today: ${used} of ${limit} used \u00b7 ${reserve} kept for answering questions`,
+};
+
 export const UI = {
   askPlaceholder: "Ask about your books…",
   noBooks: "Pick at least one book to see its part of the graph.",

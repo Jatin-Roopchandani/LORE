@@ -1,4 +1,4 @@
-import type { ApiError, AskEvent, Book, EntityCardData, EntityKind, McpInfo, Quota, SubgraphData } from "./types";
+import type { ApiError, AskEvent, Book, EntityCardData, EntityKind, LibraryStatus, McpInfo, Quota, SubgraphData } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   const events: AskEvent[] = [];
@@ -70,7 +70,20 @@ export async function getJson<T>(path: string): Promise<T | { error: ApiError }>
 export const isError = (x: unknown): x is { error: ApiError } =>
   typeof x === "object" && x !== null && "error" in x;
 
+// Starts or resumes a book's processing. 202 gives {started: true}; 409 gives {error: {code, message}}.
+export async function postContinue(id: string): Promise<{ started: true } | { error: ApiError }> {
+  try {
+    const r = await fetch(`/api/books/${encodeURIComponent(id)}/continue`, { method: "POST", headers: { Accept: "application/json" } });
+    if (r.status === 404) return { error: { code: "not_found", message: "" } };
+    return (await r.json()) as { started: true } | { error: ApiError };
+  } catch {
+    return { error: { code: "unreachable", message: "" } };
+  }
+}
+
 export const api = {
+  books: () => getJson<LibraryStatus>("/api/books"),
+  continueBook: postContinue,
   library: () => getJson<{ books: Book[]; note: string | null }>("/api/library"),
   entity: (id: string) => getJson<EntityCardData>(`/api/entity?id=${encodeURIComponent(id)}`),
   entities: (ids: string[]) => getJson<{ entities: EntityKind[] }>(`/api/entities?ids=${encodeURIComponent(ids.join(","))}`),
