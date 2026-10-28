@@ -1248,3 +1248,54 @@ async def test_a_writer_failure_keeps_the_claim_check():
         raise RuntimeError("quota")
     a = await synthesize("q", _EV, gen, mode="graph", check=_check(["supported", "not_supported"], []), write=write)
     assert a.answer_style == "claims" and len(a.claims) == 1 and PROSE_FALLBACK_NOTE in a.note
+
+
+# --- prose answers: parts, check failure, remapping, refusal ---------------------
+
+from lore.query.synthesize import CHECK_SKIPPED_NOTE  # noqa: E402
+
+
+async def test_synthesize_parts_writes_one_prose_answer():
+    prompts: list[str] = []
+    gen = _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                     Synthesis(claims=[WHY_S], can_answer=True)], prompts)
+    write, wcalls = _gen(Prose(sentences=[Sentence(
+        text="Drebber forced Lucy to marry, and Stangerson shot her father.", claims=[1, 2])]))
+    a = await synthesize_parts("Why?", SUBS, PARTS_EV, gen, mode="graph",
+                               check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "prose" and len(wcalls) == 1 and len(prompts) == 2
+
+
+async def test_check_that_does_not_run_after_prose_falls_back_with_both_notes():
+    gen, _ = _gen(_TWO)
+    write, _ = _gen(Prose(sentences=[Sentence(text="x", claims=[1, 2])]))
+    async def check(prompt, schema):
+        raise RuntimeError("quota")
+    a = await synthesize("q", _EV, gen, mode="graph", check=check, write=write)
+    assert a.answer_style == "claims" and len(a.claims) == 2
+    assert PROSE_FALLBACK_NOTE in a.note and CHECK_SKIPPED_NOTE in a.note
+
+
+async def test_prose_indices_are_remapped_after_a_claim_is_dropped():
+    ps = _PS + (Passage(n=3, chunk_id="b1:3:0", book_id="b1", chapter_seq=3,
+                        text="Lestrade visited Baker Street."),)
+    c3 = Claim(text="Lestrade visited.", passage=3, quote="Lestrade visited Baker Street")
+    gen, _ = _gen(Synthesis(claims=[_CS[0], _CS[1], c3], can_answer=True))
+    write, _ = _gen(Prose(sentences=[
+        Sentence(text="Holmes played while Lestrade visited.", claims=[1, 3]),
+        Sentence(text="Watson kept a pup.", claims=[2])]))
+    ev = Evidence(edges=(), passages=ps, truncated=False)
+    a = await synthesize("q", ev, gen, mode="graph",
+                         check=_check(["supported", "not_supported", "supported"],
+                                      ["supported", "supported"]), write=write)
+    assert a.answer_style == "prose" and len(a.prose) == 1
+    assert a.prose[0].claims == (1, 2) and a.prose[0].passages == (1, 3)
+    assert [c.passage for c in a.claims] == [1, 3]
+
+
+async def test_all_claims_dropped_with_the_writer_called_is_a_refusal():
+    gen, _ = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="x", claims=[1, 2])]))
+    a = await synthesize("q", _EV, gen, mode="graph",
+                         check=_check(["not_supported"] * 2, ["supported"]), write=write)
+    assert len(wcalls) == 1 and a.text == REFUSAL and a.claims == ()
