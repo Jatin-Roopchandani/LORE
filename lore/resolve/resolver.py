@@ -325,6 +325,63 @@ def unambiguous_nesting(
     return counts.get((book_id, kind, shorter), 0) <= 1
 
 
+def nests_with_entity(
+    normalized: str, aliases: Iterable[str], book_id: str, kind: str,
+    counts: dict[tuple[str, str, str], int],
+) -> bool:
+    """True when a name is comparable with an entity's WHOLE alias set.
+
+    The strict rule is that the name nests with EVERY alias the entity
+    carries, so an entity never becomes a bridge between two names that do
+    not nest with each other (`mary` + `mary morstan`, then `morstan`
+    fusing the daughter with her father).
+
+    That rule is too strict in one measured shape. A bare GIVEN name that
+    has one superset merges into it first — `jonathan` into `jonathan
+    small`, because it sorts first — and the entity then carries
+    {jonathan, jonathan small}. The bare surname `small`, which also has
+    exactly one superset, nests inside `jonathan small` but not inside
+    `jonathan`, so it was dropped from the comparison silently (no merge, no
+    refusal, so it was never queued either) and The Sign of the Four ended
+    with `Small` (60 edges) and `Jonathan Small` as two people.
+
+    The relaxation: the aliases the name does NOT nest with may be skipped
+    when every one of them is a sub-name of one ANCHOR alias the name is
+    also a sub-name of, and each has that anchor as its ONLY superset. Then
+    they and the name are all short forms of one full name, and nothing
+    links two different people.
+
+    This only decides whether the entity is COMPARED. Whether the name then
+    merges is still the ambiguity rule's call (`unambiguous_nesting`, against
+    the anchor), so `sholto` — two sons — meeting an entity that holds
+    {thaddeus, thaddeus sholto} is now a refusal that is asked, not a
+    silent skip that the similarity path could undo. Anything outside the
+    shape keeps the strict rule: an alias with two supersets, or one that
+    lost a token to `name_tokens` (`No. 3` and `No. 7` are both {no}; bridging
+    through them would pull the street `Pinchin Lane` into the house `No. 3,
+    Pinchin Lane`).
+    """
+    mine = name_tokens(normalized)
+    alias_list = list(aliases)
+    loose = [
+        alias for alias in alias_list
+        if not tokens_nest(mine, name_tokens(alias))
+    ]
+    if not loose:
+        return True
+    if any(
+        len(alias.split()) != len(name_tokens(alias))
+        or counts.get((book_id, kind, alias), 0) > 1
+        for alias in loose
+    ):
+        return False
+    return any(
+        mine < name_tokens(anchor)
+        and all(name_tokens(alias) < name_tokens(anchor) for alias in loose)
+        for anchor in alias_list
+    )
+
+
 def display_name(candidates: Iterable[str]) -> str:
     """The longest surface form, ties broken alphabetically.
 
@@ -616,9 +673,9 @@ async def resolve_mentions(
             cid
             for cid in candidates
             if mention.book_id in books[cid]
-            and all(
-                tokens_nest(mention_tokens, name_tokens(alias))
-                for alias in alias_sets[cid]
+            and nests_with_entity(
+                normalized, alias_sets[cid], mention.book_id, mention.kind,
+                nesting_counts,
             )
         ]
         # Task 1k — a description may not be the TARGET of a subset merge.
@@ -693,8 +750,16 @@ async def resolve_mentions(
         ):
             groups: dict[str, list[str]] = {}
             for cid in sorted(refused):
+                # Only the aliases this name actually NESTS with decide what
+                # the question is about: a bridged entity also holds names
+                # that are unrelated to it (`arthur` beside `charpentier`),
+                # and the shortest of ALL of them would ask about the wrong
+                # bare name.
                 groups.setdefault(
-                    bare_name_of({normalized, *alias_sets[cid]}), []
+                    bare_name_of({normalized, *(
+                        alias for alias in alias_sets[cid]
+                        if tokens_nest(mention_tokens, name_tokens(alias))
+                    )}), []
                 ).append(cid)
 
             for bare in sorted(groups):
