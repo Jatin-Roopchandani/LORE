@@ -105,6 +105,38 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     ),
     # Disambiguation answers saved but not yet applied by a reload.
     (7, ["ALTER TABLE book_jobs ADD COLUMN needs_reload INTEGER NOT NULL DEFAULT 0"]),
+    # Story beats (2026-10-28): quote-anchored moments per chapter part, and
+    # the entity names each involves (entity_id is filled in by relink).
+    (
+        8,
+        [
+            """
+            CREATE TABLE beats (
+                id          TEXT PRIMARY KEY,
+                book_id     TEXT NOT NULL REFERENCES books(id),
+                chapter_seq INTEGER NOT NULL,
+                part        INTEGER NOT NULL DEFAULT 0,
+                chunk_id    TEXT NOT NULL,
+                kind        TEXT NOT NULL,
+                text        TEXT NOT NULL,
+                quote       TEXT NOT NULL,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            "CREATE INDEX idx_beats_part ON beats(book_id, chapter_seq, part)",
+            """
+            CREATE TABLE beat_entities (
+                beat_id   TEXT NOT NULL REFERENCES beats(id) ON DELETE CASCADE,
+                position  INTEGER NOT NULL,
+                name      TEXT NOT NULL,
+                entity_id TEXT,
+                PRIMARY KEY (beat_id, position)
+            )
+            """,
+            "CREATE INDEX idx_beat_entities_entity ON beat_entities(entity_id)",
+            "CREATE INDEX idx_beat_entities_name ON beat_entities(name)",
+        ],
+    ),
 ]
 
 
