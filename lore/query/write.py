@@ -46,6 +46,9 @@ story. Every sentence lists the numbers of the facts it uses, in `claims`.
 
 - Never put fact numbers, chapter numbers, book titles in brackets, or any
   citation inside the sentence text. Citations go only in `claims`.
+- Use every fact, unless it only repeats another fact.
+- Every part that has facts must be answered. With several parts, cover
+  them in order, and never skip a part's facts to focus on another part.
 - Write as a direct reply to the question, in natural prose, not as a
   restatement of each fact. Combine related facts into one sentence where
   the facts support it.
@@ -57,9 +60,14 @@ story. Every sentence lists the numbers of the facts it uses, in `claims`.
   facts come from more than one book.
 - Keep each fact's certainty: if a fact says someone seemed, was suspected
   or claimed, say so too.
-- Length: a narrow question gets two to four sentences; a broad one gets
-  up to two short paragraphs, about 200 words at most. Mark the first
-  sentence of a second paragraph with new_paragraph.
+- When a fact's quote is a character speaking or narrating their own story
+  (first person, "I" or "my", or quoted speech), the fact is that
+  character's own account, not the narrator's: attribute it ("X says ...",
+  "according to X ...") and never state it as plain fact.
+- Length: a narrow question gets two to four sentences. A broad, abstract
+  or multi-part question gets a detailed answer of up to four short
+  paragraphs, about 400 words at most. Start a new paragraph for each part
+  or theme: mark its first sentence with new_paragraph.
 - Do not use connecting words that add a cause, an order or a consequence
   ("because", "so", "later", "which led to") unless a cited fact states it.
 
@@ -175,6 +183,14 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
                       passages=tuple(sorted({passage_of[k - 1] for k in s.claims})),
                       new_paragraph=s.new_paragraph and i > 0)
         for i, s in enumerate(kept))
+
+
+def coverage_gaps(prose: Sequence[ProseSentence], part_claims: Sequence[Sequence[int]]) -> list[int]:
+    """0-based parts that have surviving claims but whose claims no prose
+    sentence cites. `part_claims`: per part, its claims' survivor numbers
+    (1-based, as in `ProseSentence.claims`)."""
+    cited = {k for s in prose for k in s.claims}
+    return [i for i, ks in enumerate(part_claims) if ks and not cited.intersection(ks)]
 
 
 def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = ()) -> str:

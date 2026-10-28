@@ -77,7 +77,8 @@ def _traced(models, sink: list):
         models, select=wrap("select", models.select),
         synthesize=wrap("synthesize", models.synthesize),
         decompose=wrap("decompose", models.decompose),
-        check=wrap("check", models.check))
+        check=wrap("check", models.check),
+        write=wrap("write", models.write))
 
 
 def _evidence_only_models(config):

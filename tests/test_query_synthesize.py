@@ -1325,3 +1325,13 @@ async def test_claims_fallback_leaves_unanswered_empty():
     a = await synthesize("Habits?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["unsupported", "unsupported"]),
                          write=write)
     assert a.answer_style == "claims" and a.unanswered == ()
+
+
+async def test_one_sided_prose_over_parts_falls_back_to_claims():
+    gen = _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                     Synthesis(claims=[WHY_S], can_answer=True)], [])
+    write, _ = _gen(Prose(sentences=[Sentence(text="Stangerson shot her father.", claims=[2])]))
+    a = await synthesize_parts("Why?", SUBS, PARTS_EV, gen, mode="graph",
+                               check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "claims" and len(a.claims) == 2
+    assert PROSE_FALLBACK_NOTE in a.note

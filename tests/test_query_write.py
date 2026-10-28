@@ -148,3 +148,33 @@ def test_compose_text_appends_unanswered_paragraph():
     assert compose_text(s, ("How did he lose it?",)) == f"A. [3]\n\n{UNANSWERED_LEAD} How did he lose it?"
     assert compose_text(s, ("X?", "Y?")).endswith(f"{UNANSWERED_LEAD} X?; Y?")
     assert compose_text(s) == "A. [3]"
+
+
+# ---- writer v2: coverage, length, attribution ----
+
+from lore.query.write import WRITER_PROMPT, coverage_gaps  # noqa: E402
+
+
+def test_prompt_demands_coverage_length_and_attribution():
+    text = " ".join(WRITER_PROMPT.split())
+    assert "Use every fact" in text and "Every part that has facts must be answered" in text
+    assert "in order" in text and "never skip a part's facts" in text
+    assert "four short paragraphs" in text and "400 words" in text
+    assert "own account" in text and "first person" in text
+
+
+def _ps(*cl):
+    return tuple(ProseSentence(text="x", claims=c, passages=(1,)) for c in cl)
+
+
+def test_coverage_gaps_finds_a_part_whose_claims_are_all_uncited():
+    # survivors 1,2 belong to part 1; 3 to part 2; prose cites only 3
+    assert coverage_gaps(_ps((3,)), [[1, 2], [3]]) == [0]
+
+
+def test_coverage_gaps_none_when_each_part_is_cited_once():
+    assert coverage_gaps(_ps((1,), (3,)), [[1, 2], [3]]) == []
+
+
+def test_coverage_gaps_ignores_parts_without_surviving_claims():
+    assert coverage_gaps(_ps((3,)), [[], [3]]) == []

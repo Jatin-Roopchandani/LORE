@@ -36,6 +36,9 @@ stays close to the quotes.
    - A focused question gets 2–4 sentences.
    - A broad question gets up to two short paragraphs, about 200 words at most.
    - Plain neutral prose, with every sentence cited.
+   - Amended 2026-10-28: the user asked for longer, detailed answers. A broad, abstract or
+     multi-part question now gets up to about four short paragraphs, about 400 words at
+     most, one paragraph per part or theme.
 3. **Writer over checked claims, one combined check (option 1).**
    - The writer sees only the claims that passed the quote check.
    - The existing faithfulness call is extended to judge the sentences too, in the same

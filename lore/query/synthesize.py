@@ -35,7 +35,7 @@ from pydantic import BaseModel
 from lore.query import write as write_module
 from lore.query.models import Answer, Claim, EdgeRow, Evidence, Passage, ProseSentence
 from lore.query.write import (
-    assemble, compose_text, part_texts, valid_unanswered, verify_prose, write_answer,
+    assemble, compose_text, coverage_gaps, part_texts, valid_unanswered, verify_prose, write_answer,
 )
 
 if TYPE_CHECKING:  # write.py never imports this module, so no cycle at runtime
@@ -609,7 +609,8 @@ async def check_claims(
 PROSE_FALLBACK_NOTE = "the written answer did not pass verification; showing the checked facts"
 
 
-async def _finish(question, sub_questions, kept, evidence, check, write, book_titles):
+async def _finish(question, sub_questions, kept, evidence, check, write, book_titles,
+                  part_claims=None):
     """Writer (when it applies) and the faithfulness check, in one place for
     both synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note,
     unanswered part texts -- set only when the prose is shown)."""
@@ -635,6 +636,11 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     if sentences is not None:
         built = (assemble(sentences, written, outcome.claim_ok, outcome.sentence_ok, passage_of)
                  if sentences and outcome.ran and outcome.sentence_ok is not None else None)
+        if built and part_claims is not None:
+            numbered = [[outcome.kept.index(c) + 1 for c in cs if c in outcome.kept]
+                        for cs in part_claims]
+            if coverage_gaps(built, numbered):
+                built = None  # one-sided prose: the claim list covers every part
         if built:
             prose = built
         else:
@@ -771,7 +777,8 @@ async def synthesize_parts(
 
     kept = _collapse(kept)
     kept, cut, prose, skipped, prose_note, unanswered = await _finish(
-        question, sub_questions, kept, evidence, check, write, book_titles)
+        question, sub_questions, kept, evidence, check, write, book_titles,
+        part_claims=per_part)
     missing = [part for part, claims in zip(sub_questions, per_part)
                if not claims or all(c in cut for c in claims)]
 
