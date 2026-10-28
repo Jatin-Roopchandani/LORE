@@ -22,6 +22,7 @@ from lore.inference.gemini import (
     default_key_file,
     resolve_api_key,
 )
+from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import recorder_for
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
 from lore.resolve.disambiguation import (
@@ -130,6 +131,8 @@ class DisambiguateStage:
         todo, _total, already = self._counts(ctx)
         job_ctl.advance(already)
         if not todo:
+            # Answers saved by an earlier run may never have been applied.
+            self._apply(ctx)
             return
         store = self._store(ctx)
         client = self._client_factory(ctx.config)
@@ -145,6 +148,9 @@ class DisambiguateStage:
                     answers = await ask_disambiguation(
                         client, todo[start:start + MAX_BATCH])
                     store.save_answers(answers)
+                    if answers and self._reload is not None:
+                        # Durable before anything else can stop the run.
+                        jobs.set_needs_reload(ctx.conn, ctx.book_id)
                     got_new = got_new or bool(answers)
                     job_ctl.advance(already + start // MAX_BATCH + 1)
             finally:
@@ -154,8 +160,15 @@ class DisambiguateStage:
             asyncio.run(_run())
         except GeminiQuotaError as exc:
             raise quota_stop_from(exc) from exc
-        if got_new and self._reload is not None:
-            self._reload(ctx)
+        if got_new:
+            self._apply(ctx)
+
+    def _apply(self, ctx: StageContext) -> None:
+        """Reload if answers await it; clear the marker only after success."""
+        if self._reload is None or not jobs.needs_reload(ctx.conn, ctx.book_id):
+            return
+        self._reload(ctx)
+        jobs.set_needs_reload(ctx.conn, ctx.book_id, False)
 
 
 def _gemini_client(config) -> GeminiClient:

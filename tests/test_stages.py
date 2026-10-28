@@ -207,3 +207,45 @@ def test_beats_stage_is_a_no_op(env) -> None:
     config, conn = env
     assert run_book(conn, config, BOOK, [BeatsStage()]).state == jobs.DONE
 
+
+
+def test_stop_after_batch_one_then_resume_reloads_exactly_once(env) -> None:
+    config, conn = env
+    config = _enable(config)
+    _record(config, MAX_BATCH + 5)
+    reloads = []
+    stage = DisambiguateStage(lambda cfg: _Client(fail_on={2}),
+                              reload=reloads.append)
+    job = run_book(conn, config, BOOK, [stage])
+    assert job.state == jobs.WAITING_QUOTA
+    assert reloads == []
+    assert jobs.needs_reload(conn, BOOK), "batch 1 answers await a reload"
+    job = run_book(conn, config, BOOK,
+                   [DisambiguateStage(lambda cfg: _Client(), reload=reloads.append)],
+                   force=True)
+    assert job.state == jobs.DONE
+    assert len(reloads) == 1
+    assert not jobs.needs_reload(conn, BOOK)
+
+
+def test_failed_reload_is_retried_on_resume_with_nothing_to_ask(env) -> None:
+    config, conn = env
+    config = _enable(config)
+    _record(config, 3)
+    reloads = []
+
+    def bad(ctx):
+        reloads.append("bad")
+        raise RuntimeError("load broke")
+
+    job = run_book(conn, config, BOOK,
+                   [DisambiguateStage(lambda cfg: _Client(), reload=bad)])
+    assert job.state == jobs.FAILED
+    assert jobs.needs_reload(conn, BOOK)
+    asked = _Client()
+    job = run_book(conn, config, BOOK,
+                   [DisambiguateStage(lambda cfg: asked, reload=reloads.append)])
+    assert job.state == jobs.DONE
+    assert asked.calls == 0
+    assert reloads == ["bad", reloads[1]] and len(reloads) == 2
+    assert not jobs.needs_reload(conn, BOOK)
