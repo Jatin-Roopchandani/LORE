@@ -104,6 +104,32 @@ on 2026-10-07, clear of every dev and held-out topic) because the ±4-fact
 noise floor on 26 questions was as large as the effects being measured.
 Re-measure the noise floor on the larger set before relying on it.
 
+## Grading prose answers
+
+The prose comparison (`prose_answers`, lore/query/write.py) grades the text
+each arm shows the user, not the claims behind it.
+
+- Build the packet with `grade_pair.py packet --answer-only`. Each A and B
+  holds only the `answer` text, so the grader never sees the claim list.
+- A key fact counts only if the answer text states it. A citation to a
+  passage that holds the fact does not count.
+- False claims are judged sentence by sentence.
+- Duplicates are counted as in the per-answer rules above.
+- Each pair also gets `"preferred": "A" | "B" | "tie"`: which reads better as
+  an answer to the question (clear, direct, well organised). Judge this
+  independently of correctness, and write `tie` when neither reads better.
+- `grade_pair.py styles --run <label> --arms <a1> <a2>` prints the
+  `answer_style` counts and the fallback rate (the share of answers with at
+  least two claims that fell back to the claim view).
+
+**Pre-registered bar for prose (spec section 6; it does not move after the run):**
+1. False claims no higher than control, on both dev and held-out.
+2. Key facts no worse than -4 on dev, and no loss on held-out.
+3. Readability: prose preferred on dev, with a two-sided sign test p < 0.05
+   over the non-tie pairs (`score` prints it).
+4. The fallback rate is reported. Above 25% means the writer needs work
+   before adoption.
+
 ## Decisions
 
 **2026-10-12: FULL_ANSWERS + NO_RESTATE adopted as the default** (lore/query/synthesize.py).

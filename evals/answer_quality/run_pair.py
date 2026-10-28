@@ -45,6 +45,8 @@ ARM_SETTINGS = {
                    lambda v: v.lower() in ("1", "true", "yes", "on")),
     "full_answers": ("lore.query.synthesize", "FULL_ANSWERS",
                      lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "prose_answers": ("lore.query.write", "PROSE_ANSWERS",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
 
 
