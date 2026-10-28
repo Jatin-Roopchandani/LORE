@@ -103,6 +103,8 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
         ],
     ),
+    # Disambiguation answers saved but not yet applied by a reload.
+    (7, ["ALTER TABLE book_jobs ADD COLUMN needs_reload INTEGER NOT NULL DEFAULT 0"]),
 ]
 
 

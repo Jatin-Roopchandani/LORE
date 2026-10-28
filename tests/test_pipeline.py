@@ -178,3 +178,136 @@ def test_reserve_stop(conn, config) -> None:
     assert "reserve" in job.stopped_reason
     assert job.resumable_at == RESET
     assert pipeline.processing_budget_left(conn, config, day) == 5
+
+
+class _Ticker:
+    """A clock that moves forward a second each time it is read."""
+
+    def __init__(self, start):
+        self.t = start
+
+    def __call__(self):
+        self.t += timedelta(seconds=1)
+        return self.t
+
+
+def test_a_clock_callable_is_read_on_every_stamp(conn, config) -> None:
+    seen = []
+
+    class Watch:
+        name = "extract"
+
+        def total(self, ctx):
+            return 2
+
+        def run(self, ctx, job_ctl):
+            job_ctl.advance(1)
+            seen.append(jobs.get_job(ctx.conn, "b1").updated_at)
+            job_ctl.advance(2)
+            seen.append(jobs.get_job(ctx.conn, "b1").updated_at)
+            job_ctl.heartbeat()
+            seen.append(jobs.get_job(ctx.conn, "b1").updated_at)
+
+    run_book(conn, config, "b1", [Watch()], clock=_Ticker(NOW))
+    assert seen[0] < seen[1] < seen[2]
+
+
+def test_spend_check_uses_the_clock_day(conn, config) -> None:
+    from lore.orchestrator.gemini_budget import today
+    from lore.inference.gemini import limits_for
+    # Spent everything on day 1 (Pacific); a clock that rolls to day 2
+    # mid-run sees a fresh allowance.
+    day1 = datetime(2026, 10, 28, 12, 0, tzinfo=UTC)
+    day2 = datetime(2026, 10, 29, 12, 0, tzinfo=UTC)
+    for m in dict.fromkeys(config.extraction.gemini_models):
+        for _ in range(limits_for(m).rpd):
+            record_call(conn, m, today(day1))
+    cur = {"t": day1}
+
+    class Spend:
+        name = "extract"
+
+        def total(self, ctx):
+            return 1
+
+        def run(self, ctx, job_ctl):
+            cur["t"] = day2  # midnight passes mid-run
+            job_ctl.spend_check()
+
+    job = run_book(conn, config, "b1", [Spend()], clock=lambda: cur["t"])
+    assert job.state == "done"
+
+
+def test_keep_alive_heartbeats_while_a_stage_runs(conn, config, tmp_path) -> None:
+    import time
+
+    stamps = []
+
+    class Slow:
+        name = "extract"
+
+        def total(self, ctx):
+            return 1
+
+        def run(self, ctx, job_ctl):
+            first = jobs.get_job(ctx.conn, "b1").updated_at
+            time.sleep(0.5)
+            stamps.append((first, jobs.get_job(ctx.conn, "b1").updated_at))
+
+    run_book(conn, config, "b1", [Slow()], clock=_Ticker(NOW),
+             keepalive_interval=0.05)
+    first, later = stamps[0]
+    assert later > first + timedelta(seconds=2), "the keep-alive thread wrote"
+
+
+@pytest.mark.parametrize("how", ["ok", "quota", "boom"])
+def test_keep_alive_stops_when_the_stage_ends(conn, config, how) -> None:
+    import threading
+
+    class S:
+        name = "extract"
+
+        def total(self, ctx):
+            return 1
+
+        def run(self, ctx, job_ctl):
+            if how == "quota":
+                raise QuotaStop("limit")
+            if how == "boom":
+                raise RuntimeError("x")
+
+    before = {t.name for t in threading.enumerate()}
+    job = run_book(conn, config, "b1", [S()], clock=_Ticker(NOW),
+                   keepalive_interval=0.01)
+    after = {t.name for t in threading.enumerate()}
+    assert after == before
+    stamp = job.updated_at
+    import time
+    time.sleep(0.1)
+    assert jobs.get_job(conn, "b1").updated_at == stamp
+    assert job.state != "running"
+
+
+def test_two_runners_one_is_refused_atomically(conn, config) -> None:
+    # Both pass the read-side check (no row yet); only one start_job wins.
+    jobs.start_job(conn, "b1", "extract", 1, now=NOW)
+    with pytest.raises(JobRefused):
+        jobs.start_job(conn, "b1", "extract", 1, now=NOW + timedelta(seconds=5))
+    # A stale row can be taken over.
+    jobs.start_job(conn, "b1", "extract", 1, now=NOW + timedelta(minutes=5))
+
+
+def test_run_book_loses_the_race_after_its_own_check(conn, config, monkeypatch) -> None:
+    real = jobs.get_job
+    calls = {"n": 0}
+
+    def late(c, b):
+        calls["n"] += 1
+        res = real(c, b)
+        if calls["n"] == 1:  # the other runner claims right after our read
+            jobs.start_job(c, b, "extract", 1, now=NOW)
+        return res
+
+    monkeypatch.setattr(jobs, "get_job", late)
+    with pytest.raises(JobRefused):
+        run_book(conn, config, "b1", [FakeStage("extract", [1], [])], now=NOW)

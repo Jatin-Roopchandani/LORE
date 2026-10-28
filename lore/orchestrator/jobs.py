@@ -16,6 +16,10 @@ from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE
 UTC = timezone.utc
 STALE_AFTER = timedelta(seconds=120)
 
+class JobRefused(Exception):
+    """A job will not start: a live runner, or the allowance has not reset."""
+
+
 RUNNING = "running"
 WAITING_QUOTA = "waiting_quota"
 FAILED = "failed"
@@ -88,21 +92,75 @@ def _write(conn: sqlite3.Connection, book_id: str, sql: str, params: tuple) -> N
         conn.execute(sql, params)
 
 
-def start_job(conn: sqlite3.Connection, book_id: str, stage: str, total: int,
-              done: int = 0, *, now: datetime | None = None) -> BookJob:
-    """Enter `stage` as running (creating the row if needed); clears any stop."""
-    ts = _iso(_aware(now))
+def _guarded_upsert(conn: sqlite3.Connection, sql: str, params: tuple,
+                    cutoff: str | None) -> None:
+    """Run an upsert whose DO UPDATE has a `WHERE` taking one `cutoff`
+    parameter last; no row changed means a fresh running row won."""
     with conn:
-        conn.execute(
-            "INSERT INTO book_jobs (book_id, stage, state, done_items,"
-            " total_items, stopped_reason, resumable_at, updated_at)"
-            " VALUES (?, ?, 'running', ?, ?, NULL, NULL, ?)"
-            " ON CONFLICT(book_id) DO UPDATE SET stage = excluded.stage,"
-            " state = 'running', done_items = excluded.done_items,"
-            " total_items = excluded.total_items, stopped_reason = NULL,"
-            " resumable_at = NULL, updated_at = excluded.updated_at",
-            (book_id, stage, done, total, ts))
+        cur = conn.execute(sql, params + ((cutoff,) if cutoff else ()))
+    if cur.rowcount == 0:
+        raise JobRefused("a job is already running for this book")
+
+
+def start_job(conn: sqlite3.Connection, book_id: str, stage: str, total: int,
+              done: int = 0, *, now: datetime | None = None,
+              guard: bool = True) -> BookJob:
+    """Enter `stage` as running (creating the row if needed); clears any stop.
+
+    Atomic: with `guard`, a fresh `running` row (heartbeat within
+    STALE_AFTER) is never overwritten; JobRefused is raised instead. The
+    holder of a claim (see claim_job) passes guard=False.
+    """
+    moment = _aware(now)
+    ts = _iso(moment)
+    sql = ("INSERT INTO book_jobs (book_id, stage, state, done_items,"
+           " total_items, stopped_reason, resumable_at, updated_at)"
+           " VALUES (?, ?, 'running', ?, ?, NULL, NULL, ?)"
+           " ON CONFLICT(book_id) DO UPDATE SET stage = excluded.stage,"
+           " state = 'running', done_items = excluded.done_items,"
+           " total_items = excluded.total_items, stopped_reason = NULL,"
+           " resumable_at = NULL, updated_at = excluded.updated_at")
+    params = (book_id, stage, done, total, ts)
+    if guard:
+        _guarded_upsert(
+            conn, sql + " WHERE book_jobs.state != 'running'"
+            " OR book_jobs.updated_at < ?", params, _iso(moment - STALE_AFTER))
+    else:
+        with conn:
+            conn.execute(sql, params)
     return get_job(conn, book_id)
+
+
+def claim_job(conn: sqlite3.Connection, book_id: str, *,
+              now: datetime | None = None) -> BookJob:
+    """Mark the book running (fresh heartbeat), keeping its saved stage and
+    counts, or creating the row at the first stage. Atomic like start_job."""
+    moment = _aware(now)
+    _guarded_upsert(
+        conn,
+        "INSERT INTO book_jobs (book_id, stage, state, done_items,"
+        " total_items, stopped_reason, resumable_at, updated_at)"
+        " VALUES (?, 'chunk', 'running', 0, 0, NULL, NULL, ?)"
+        " ON CONFLICT(book_id) DO UPDATE SET state = 'running',"
+        " stopped_reason = NULL, resumable_at = NULL,"
+        " updated_at = excluded.updated_at"
+        " WHERE book_jobs.state != 'running' OR book_jobs.updated_at < ?",
+        (book_id, _iso(moment)), _iso(moment - STALE_AFTER))
+    return get_job(conn, book_id)
+
+
+def needs_reload(conn: sqlite3.Connection, book_id: str) -> bool:
+    """True when disambiguation answers were saved but not yet loaded."""
+    r = conn.execute("SELECT needs_reload FROM book_jobs WHERE book_id = ?",
+                     (book_id,)).fetchone()
+    return bool(r and r[0])
+
+
+def set_needs_reload(conn: sqlite3.Connection, book_id: str,
+                     value: bool = True) -> None:
+    _write(conn, book_id,
+           "UPDATE book_jobs SET needs_reload = ? WHERE book_id = ?",
+           (1 if value else 0, book_id))
 
 
 def advance(conn: sqlite3.Connection, book_id: str, done: int, *,
