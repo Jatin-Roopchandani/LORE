@@ -377,16 +377,39 @@ def _relation_line(edge: EdgeRow, n: int, book_titles: dict[str, str] | None) ->
             f"({_title(edge.book_id, book_titles)}, chapter {edge.chapter_seq})")
 
 
+# STORY_ORDER, claims step (2026-10-28): a question about change got claims
+# only from the latest passages -- the step read its passages in rank order
+# with no positions, so it had no early and late to draw from. With
+# write.STORY_ORDER it reads them in story order, labelled, under this rule.
+_CHANGE_RULE = """If the question asks how something changed, developed or progressed, give
+claims that show the state at different points in the story, from the
+earliest passages to the latest, including what characters show or do and
+not only what is said outright.
+"""
+
+
+def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
+                   books: dict[str, BookInfo] | None) -> str:
+    if not write_module.STORY_ORDER:
+        return "\n\n".join(
+            f"[{p.n}] ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})\n{p.text}"
+            for p in evidence.passages)
+    order = order_passages(evidence.passages, write_module.book_infos(book_titles, books))
+    by_n = {p.n: p for p in evidence.passages}
+    block = "\n\n".join(f"[{pos.n}] ({pos.label(detail=True)})\n{by_n[pos.n].text}"
+                         for pos in order.ordered)
+    note = order.note()
+    return f"Passages are in story order.{' ' + note if note else ''}\n\n{block}"
+
+
 def _build_prompt(
     question: str, evidence: Evidence, book_titles: dict[str, str] | None = None,
     checklist: Sequence[str] = (), part_of: str | None = None,
+    books: dict[str, BookInfo] | None = None,
 ) -> str:
     lines = _relation_lines(evidence, book_titles)
     relations = _RELATIONS.format(lines="\n".join(lines)) if lines else ""
-    passages = "\n\n".join(
-        f"[{p.n}] ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})\n{p.text}"
-        for p in evidence.passages
-    )
+    passages = _passage_block(evidence, book_titles, books)
     truncation = (
         "\nSome evidence was truncated to fit; answer from what is shown.\n"
         if evidence.truncated else ""
@@ -404,7 +427,8 @@ def _build_prompt(
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
                           + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else "")
                           + (_STRICT_LINKS_RULE if STRICT_LINKS else "")
-                          + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else ""),
+                          + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else "")
+                          + (_CHANGE_RULE if write_module.STORY_ORDER else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations, passages=passages,
@@ -811,7 +835,7 @@ async def synthesize(
         return answer(REFUSAL)
 
     result = await generate(
-        _build_prompt(question, evidence, book_titles, checklist), Synthesis)
+        _build_prompt(question, evidence, book_titles, checklist, books=books), Synthesis)
 
     # The answer is written by code, from claims whose quotes were found in
     # the passage they cite. Nothing the model wrote outside a kept claim
@@ -905,7 +929,7 @@ async def synthesize_parts(
         own = Evidence(edges=evidence.edges, passages=passages,
                        truncated=evidence.truncated)
         result = await generate(
-            _build_prompt(part, own, book_titles, part_of=question), Synthesis)
+            _build_prompt(part, own, book_titles, part_of=question, books=books), Synthesis)
         verified, _ = verify_claims(_capped(result), passages)
         per_part.append(verified)
         kept.extend(c for c in verified if c not in kept)

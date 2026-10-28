@@ -137,7 +137,9 @@ async def test_passage_headers_and_edge_lines_show_book_titles() -> None:
         book_titles={"05ab": "A Study in Scarlet", "0ee2": "The Sign of the Four"},
     )
     assert "A Study in Scarlet" in prompt
-    assert prompt.count("The Sign of the Four") == 2  # the header and the edge
+    # the header, the edge, and (story order) the unknown-order note: these
+    # two books have no series, so their relative order is unknown
+    assert prompt.count("The Sign of the Four") == 3
     assert "05ab" not in prompt.replace("05ab:1:0", "")  # chunk ids aside
     assert "0ee2" not in prompt.replace("0ee2:3:0", "")
 
@@ -463,9 +465,9 @@ async def test_each_sub_question_gets_its_own_call_over_its_own_passages() -> No
     # The original question travels as context to both.
     assert all("Why did Hope kill Drebber and Stangerson?" in p for p in prompts)
     # Each call sees only its share, under its GLOBAL number.
-    assert "[1] (b1, chapter 1)" in first and "[2] (b1, chapter 2)" in first
+    assert "[1] (b1, chapter 1," in first and "[2] (b1, chapter 2," in first
     assert S3.text not in first
-    assert "[3] (b1, chapter 3)" in second and S1.text not in second and S2.text not in second
+    assert "[3] (b1, chapter 3," in second and S1.text not in second and S2.text not in second
     # A lead is shown only beside a passage the call can cite.
     assert "Drebber —distrusts→" in first and "Drebber —distrusts→" not in second
     # Composed in sub-question order, numbering global, every passage kept.
@@ -1070,6 +1072,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
         synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
         synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE,
         synthesize_module._ATTRIBUTE_SPEECH_RULE, synthesize_module._STRICT_LINKS_RULE, synthesize_module._ROLE_COVERAGE_RULE,
+        synthesize_module._CHANGE_RULE,
         synthesize_module._STRICT_LINKS_CHECK, __import__('lore.query.decompose', fromlist=['x'])._THEMATIC_RULE,
         write_module.WRITER_PROMPT, write_module.STORY_WRITER_PROMPT,
         synthesize_module._STORY_SENTENCES_BLOCK, synthesize_module._GAPS_BLOCK)))
@@ -1394,7 +1397,7 @@ def test_prompt_rules_name_no_character_book_or_genre() -> None:
     from lore.query import decompose, synthesize as s, write as w
     text = "\n".join((s._PROMPT, s._FACTS_RULE, s._FULL_FACTS_RULE, s._NO_RESTATE_RULE,
                       s._ATTRIBUTE_SPEECH_RULE, s._STRICT_LINKS_RULE, s._STRICT_LINKS_CHECK,
-                      s._ROLE_COVERAGE_RULE, s._CHECK_PROMPT, s._SENTENCES_BLOCK,
+                      s._ROLE_COVERAGE_RULE, s._CHANGE_RULE, s._CHECK_PROMPT, s._SENTENCES_BLOCK,
                       w.WRITER_PROMPT, w.STORY_WRITER_PROMPT, s._STORY_SENTENCES_BLOCK, s._GAPS_BLOCK,
                       decompose._PROMPT, decompose._THEMATIC_RULE))
     banned = r"\b(holmes|watson|sherlock|small|hope|drebber|stangerson|sholto|ferrier|tonga|" \

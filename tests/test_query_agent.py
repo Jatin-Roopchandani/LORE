@@ -296,7 +296,7 @@ async def test_book_titles_reach_synthesis_on_every_path(tmp_path: Path, edges, 
     answer = await answer_question(conn, FakeKuzu(edges), FakeLance([SEED_ROW]), "q", models)
     assert answer.mode == mode
     (prompt, _, _), = _synthesis_calls(ollama)
-    assert f"({TITLE}, chapter 1)" in prompt
+    assert f"({TITLE}, chapter 1," in prompt
     conn.close()
 
 
@@ -306,7 +306,7 @@ async def test_titles_reach_synthesis_on_the_baseline_path(tmp_path: Path) -> No
     await answer_question(conn, ExplodingKuzu(), FakeLance([SEED_ROW]), "q", models,
                           baseline=True)
     (prompt, _, _), = _synthesis_calls(ollama)
-    assert f"({TITLE}, chapter 1)" in prompt
+    assert f"({TITLE}, chapter 1," in prompt
     conn.close()
 
 
@@ -333,7 +333,7 @@ async def test_gemini_answers_while_selection_stays_local(tmp_path: Path) -> Non
     assert [schema for _, schema in gemini.prompts] == [SubQuestions, Synthesis,
                                                         Faithfulness]
     prompt = gemini.prompts[1][0]
-    assert f"({TITLE}, chapter 1)" in prompt
+    assert f"({TITLE}, chapter 1," in prompt
     conn.close()
 
 
@@ -884,8 +884,8 @@ async def test_a_two_part_question_gets_both_parts_before_a_second_for_either(
     first, second = calls["synthesize"]
     assert "Question: Who is A?" in first and "Question: Why B?" in second
     assert question in first and question in second
-    assert "[1] (A Study in Scarlet, chapter 2)\nMARK2" in first and "MARK4" not in first
-    assert "[2] (A Study in Scarlet, chapter 4)\nMARK4" in second and "MARK2" not in second
+    assert "[1] (A Study in Scarlet, chapter 2, passage 1 in the chapter)\nMARK2" in first and "MARK4" not in first
+    assert "[2] (A Study in Scarlet, chapter 4, passage 1 in the chapter)\nMARK4" in second and "MARK2" not in second
     # Decomposition is told the graph's books, so "in each novel" can split.
     assert "A Study in Scarlet" in calls["decompose"][0]
     conn.close()

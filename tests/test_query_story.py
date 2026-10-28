@@ -413,3 +413,40 @@ def test_story_position_is_not_behind_the_switch(monkeypatch):
     monkeypatch.setattr(write_module, "STORY_ORDER", False)
     order = order_passages(PS, BOOKS)
     assert [p.n for p in order.ordered] == [2, 3, 1, 4]
+
+
+# --- the claims step sees story order (2026-10-28) -------------------------
+# A "how did X change" question got claims only from the latest passages:
+# the claims step read its passages in rank order, with no positions.
+
+def _claims_prompt_fixture():
+    from lore.query.models import Evidence, Passage
+    from lore.query.position import BookInfo
+    passages = (
+        Passage(n=1, chunk_id="b2:3:0", book_id="b2", chapter_seq=3, text="Late text."),
+        Passage(n=2, chunk_id="b1:5:2", book_id="b1", chapter_seq=5, text="Early text."),
+    )
+    books = {"b1": BookInfo(title="First", series="Saga", series_index=1),
+             "b2": BookInfo(title="Second", series="Saga", series_index=2)}
+    return Evidence(edges=(), passages=passages, truncated=False), books
+
+
+def test_story_order_shows_the_claims_step_passages_in_story_order(monkeypatch) -> None:
+    from lore.query import synthesize as s, write as w
+    evidence, books = _claims_prompt_fixture()
+    monkeypatch.setattr(w, "STORY_ORDER", True)
+    prompt = s._build_prompt("how did it change?", evidence, books=books)
+    early, late = prompt.index("Early text."), prompt.index("Late text.")
+    assert early < late
+    assert "[2] (First, book 1 of Saga, chapter 5" in prompt
+    assert "state at different points in the story" in prompt
+
+
+def test_story_order_off_leaves_the_claims_prompt_unchanged(monkeypatch) -> None:
+    from lore.query import synthesize as s, write as w
+    evidence, books = _claims_prompt_fixture()
+    monkeypatch.setattr(w, "STORY_ORDER", False)
+    with_books = s._build_prompt("how did it change?", evidence, books=books)
+    assert with_books == s._build_prompt("how did it change?", evidence)
+    assert with_books.index("Late text.") < with_books.index("Early text.")
+    assert "state at different points" not in with_books
