@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lore-lockup-dark.svg">
+    <img src="docs/brand/lore-lockup.svg" alt="LORE" width="260">
+  </picture>
+</p>
+
 # LORE — Local Orchestration & Relational Extraction
 
 A local-first literary knowledge graph: e-books in, entities/relationships out

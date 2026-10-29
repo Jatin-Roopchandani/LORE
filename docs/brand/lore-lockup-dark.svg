@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 64" role="img" aria-label="LORE">
+  <g><path d="M32 56 C24 51 14 50 6 52 V30 C14 28 24 29 32 34 C40 29 50 28 58 30 V52 C50 50 40 51 32 56 Z" fill="none" stroke="#78AEEA" stroke-width="3.4" stroke-linejoin="round"/>
+  <path d="M32 34 V56" stroke="#78AEEA" stroke-width="3.4"/>
+  <path d="M32 30 L16 14 M32 30 L32 8 M32 30 L48 14 M16 14 L32 8 L48 14" fill="none" stroke="#78AEEA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="30" r="3.2" fill="#78AEEA"/>
+  <circle cx="16" cy="14" r="3.4" fill="#78AEEA"/><circle cx="32" cy="8" r="3.8" fill="#EBAA3C"/><circle cx="48" cy="14" r="3.4" fill="#78AEEA"/></g>
+  <text x="76" y="47" font-family="Fraunces, Georgia, 'Times New Roman', serif" font-weight="600" font-size="44" letter-spacing="2.6" fill="#E3E9EF">LORE</text>
+</svg>

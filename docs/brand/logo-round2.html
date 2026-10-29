@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LORE logo, round 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#17212B; --muted:#5A6774; --bg:#ECEFF2; --panel:#F8FAFB; --line:#D3DAE0;
+          --accent:#1E5AA0; --glow:#B97808; --d-bg:#0E141A; --d-ink:#E3E9EF; --d-accent:#78AEEA; --d-glow:#EBAA3C; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Public Sans",system-ui,sans-serif; }
+  header, main, footer { max-width:1180px; margin:0 auto; padding-left:20px; padding-right:20px; }
+  header { padding-top:40px; }
+  h1 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:34px; margin:0 0 6px; }
+  header p, .why { color:var(--muted); line-height:1.5; margin:0; max-width:760px; }
+  main { padding-top:24px; padding-bottom:40px; display:grid; gap:24px; }
+  .concept { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:24px; }
+  .concept h2 { margin:0 0 4px; font-size:18px; }
+  .why { font-size:14px; margin-bottom:18px; }
+  .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
+  .tile { border-radius:10px; padding:22px; display:flex; align-items:center; justify-content:center; gap:16px; min-height:150px; }
+  .light { background:#fff; border:1px solid var(--line); color:var(--ink); --a:var(--accent); --g:var(--glow); }
+  .dark { background:var(--d-bg); color:var(--d-ink); --a:var(--d-accent); --g:var(--d-glow); }
+  .icon { width:104px; height:104px; }
+  .lockup { display:flex; align-items:center; gap:12px; }
+  .lockup svg { width:56px; height:56px; }
+  .stack { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .stack svg { width:72px; height:72px; }
+  .word { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:44px; letter-spacing:.06em; line-height:1; }
+  .tag { font-size:12px; letter-spacing:.14em; text-transform:uppercase; opacity:.7; }
+  .sizes { display:flex; align-items:end; gap:14px; }
+  .sizes svg:nth-child(1){width:16px;height:16px} .sizes svg:nth-child(2){width:32px;height:32px} .sizes svg:nth-child(3){width:48px;height:48px}
+  .label { font-size:12px; opacity:.7; }
+  .appicon { width:96px; height:96px; border-radius:22px; display:flex; align-items:center; justify-content:center; }
+  .appicon svg { width:64px; height:64px; }
+  .appicon.l { background:var(--accent); --a:#fff; --g:#F6C76A; }
+  .appicon.d { background:#151D25; border:1px solid #26323D; --a:var(--d-accent); --g:var(--d-glow); }
+  footer { color:var(--muted); font-size:13px; padding-bottom:48px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LORE: Constellation book, round 2</h1>
+  <p>Four refinements of concept 1, then the full set (lockups, app icon, favicon) for the variant you pick. Same palette and serif as round 1.</p>
+</header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- A. Tightened original: book + 4-node chain above -->
+    <symbol id="a" viewBox="0 0 64 64">
+      <path d="M32 54 C24 49 14 48 6 50 V26 C14 24 24 25 32 30 C40 25 50 24 58 26 V50 C50 48 40 49 32 54 Z" fill="none" stroke="var(--a)" stroke-width="3.4" stroke-linejoin="round"/>
+      <path d="M32 30 V54" stroke="var(--a)" stroke-width="3.4"/>
+      <path d="M14 17 L26 10 L38 15 L50 8" fill="none" stroke="var(--a)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="14" cy="17" r="3.2" fill="var(--a)"/><circle cx="26" cy="10" r="3.6" fill="var(--g)"/>
+      <circle cx="38" cy="15" r="3.2" fill="var(--a)"/><circle cx="50" cy="8" r="3.2" fill="var(--a)"/>
+    </symbol>
+    <!-- B. Arc: nodes rise from the spine in a fan -->
+    <symbol id="b" viewBox="0 0 64 64">
+      <path d="M32 56 C24 51 14 50 6 52 V30 C14 28 24 29 32 34 C40 29 50 28 58 30 V52 C50 50 40 51 32 56 Z" fill="none" stroke="var(--a)" stroke-width="3.4" stroke-linejoin="round"/>
+      <path d="M32 34 V56" stroke="var(--a)" stroke-width="3.4"/>
+      <path d="M32 30 L16 14 M32 30 L32 8 M32 30 L48 14 M16 14 L32 8 L48 14" fill="none" stroke="var(--a)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="32" cy="30" r="3.2" fill="var(--a)"/>
+      <circle cx="16" cy="14" r="3.4" fill="var(--a)"/><circle cx="32" cy="8" r="3.8" fill="var(--g)"/><circle cx="48" cy="14" r="3.4" fill="var(--a)"/>
+    </symbol>
+    <!-- C. Graph on the pages: nodes sit on the open pages themselves -->
+    <symbol id="c" viewBox="0 0 64 64">
+      <path d="M32 52 C24 46 14 45 4 47 V15 C14 13 24 14 32 20 C40 14 50 13 60 15 V47 C50 45 40 46 32 52 Z" fill="none" stroke="var(--a)" stroke-width="3.2" stroke-linejoin="round"/>
+      <path d="M32 20 V52" stroke="var(--a)" stroke-width="3.2"/>
+      <path d="M12 24 L22 34 L14 40 M22 34 L32 30 L44 24 L52 34 M44 24 L48 40" fill="none" stroke="var(--a)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="12" cy="24" r="2.8" fill="var(--a)"/><circle cx="22" cy="34" r="3.2" fill="var(--a)"/><circle cx="14" cy="40" r="2.6" fill="var(--a)"/>
+      <circle cx="32" cy="30" r="3.6" fill="var(--g)"/>
+      <circle cx="44" cy="24" r="3.2" fill="var(--a)"/><circle cx="52" cy="34" r="2.8" fill="var(--a)"/><circle cx="48" cy="40" r="2.6" fill="var(--a)"/>
+    </symbol>
+    <!-- D. Monoline: one continuous stroke weight, lighter and more refined -->
+    <symbol id="d" viewBox="0 0 64 64">
+      <path d="M32 54 C24 49 14 48 6 50 V27 C14 25 24 26 32 31 C40 26 50 25 58 27 V50 C50 48 40 49 32 54 Z M32 31 V54" fill="none" stroke="var(--a)" stroke-width="2.4" stroke-linejoin="round"/>
+      <path d="M18 19 L28 11 L38 17 L48 9" fill="none" stroke="var(--a)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="18" cy="19" r="3" fill="none" stroke="var(--a)" stroke-width="2.4"/>
+      <circle cx="28" cy="11" r="3.4" fill="var(--g)"/>
+      <circle cx="38" cy="17" r="3" fill="none" stroke="var(--a)" stroke-width="2.4"/>
+      <circle cx="48" cy="9" r="3" fill="none" stroke="var(--a)" stroke-width="2.4"/>
+    </symbol>
+  </defs>
+</svg>
+
+<main>
+  <section class="concept">
+    <h2>A · Tightened</h2>
+    <p class="why">The round-1 mark with balanced spacing: a heavier book, the chain lifted clear of the pages, the glowing node slightly larger.</p>
+    <div class="row">
+      <div class="tile light"><svg class="icon" role="img" aria-label="Variant A"><use href="#a"/></svg></div>
+      <div class="tile dark"><svg class="icon" role="img" aria-label="Variant A"><use href="#a"/></svg></div>
+      <div class="tile light"><div class="lockup"><svg aria-hidden="true"><use href="#a"/></svg><span class="word">LORE</span></div></div>
+      <div class="tile dark"><div class="sizes"><svg aria-hidden="true"><use href="#a"/></svg><svg aria-hidden="true"><use href="#a"/></svg><svg aria-hidden="true"><use href="#a"/></svg></div><span class="label">16 · 32 · 48</span></div>
+    </div>
+  </section>
+
+  <section class="concept">
+    <h2>B · Arc</h2>
+    <p class="why">Edges fan up from the book's spine to three nodes: the book is the root everything grows from. Symmetrical, so it reads well centred and at small sizes.</p>
+    <div class="row">
+      <div class="tile light"><svg class="icon" role="img" aria-label="Variant B"><use href="#b"/></svg></div>
+      <div class="tile dark"><svg class="icon" role="img" aria-label="Variant B"><use href="#b"/></svg></div>
+      <div class="tile light"><div class="lockup"><svg aria-hidden="true"><use href="#b"/></svg><span class="word">LORE</span></div></div>
+      <div class="tile dark"><div class="sizes"><svg aria-hidden="true"><use href="#b"/></svg><svg aria-hidden="true"><use href="#b"/></svg><svg aria-hidden="true"><use href="#b"/></svg></div><span class="label">16 · 32 · 48</span></div>
+    </div>
+  </section>
+
+  <section class="concept">
+    <h2>C · Graph on the pages</h2>
+    <p class="why">The graph is drawn on the open pages, crossing the gutter through one glowing node: knowledge lives in the text itself. The most literal; busiest at 16 px.</p>
+    <div class="row">
+      <div class="tile light"><svg class="icon" role="img" aria-label="Variant C"><use href="#c"/></svg></div>
+      <div class="tile dark"><svg class="icon" role="img" aria-label="Variant C"><use href="#c"/></svg></div>
+      <div class="tile light"><div class="lockup"><svg aria-hidden="true"><use href="#c"/></svg><span class="word">LORE</span></div></div>
+      <div class="tile dark"><div class="sizes"><svg aria-hidden="true"><use href="#c"/></svg><svg aria-hidden="true"><use href="#c"/></svg><svg aria-hidden="true"><use href="#c"/></svg></div><span class="label">16 · 32 · 48</span></div>
+    </div>
+  </section>
+
+  <section class="concept">
+    <h2>D · Monoline</h2>
+    <p class="why">One even stroke weight, hollow nodes and a single filled glow. Lighter and more refined; pairs closely with the serif wordmark.</p>
+    <div class="row">
+      <div class="tile light"><svg class="icon" role="img" aria-label="Variant D"><use href="#d"/></svg></div>
+      <div class="tile dark"><svg class="icon" role="img" aria-label="Variant D"><use href="#d"/></svg></div>
+      <div class="tile light"><div class="lockup"><svg aria-hidden="true"><use href="#d"/></svg><span class="word">LORE</span></div></div>
+      <div class="tile dark"><div class="sizes"><svg aria-hidden="true"><use href="#d"/></svg><svg aria-hidden="true"><use href="#d"/></svg><svg aria-hidden="true"><use href="#d"/></svg></div><span class="label">16 · 32 · 48</span></div>
+    </div>
+  </section>
+
+  <section class="concept">
+    <h2>The full set (shown with A; any variant drops in)</h2>
+    <p class="why">Horizontal lockup for the UI header, stacked lockup with a tagline for the README, and app icons on a filled tile.</p>
+    <div class="row">
+      <div class="tile light"><div class="stack"><svg aria-hidden="true"><use href="#a"/></svg><span class="word">LORE</span><span class="tag">every claim traced to the text</span></div></div>
+      <div class="tile dark"><div class="stack"><svg aria-hidden="true"><use href="#a"/></svg><span class="word">LORE</span><span class="tag">every claim traced to the text</span></div></div>
+      <div class="tile light" style="gap:20px"><div class="appicon l"><svg aria-hidden="true"><use href="#a"/></svg></div><div class="appicon d"><svg aria-hidden="true"><use href="#a"/></svg></div></div>
+      <div class="tile dark"><div class="lockup"><svg aria-hidden="true" style="width:28px;height:28px"><use href="#a"/></svg><span class="word" style="font-size:22px">LORE</span></div><span class="label">header size</span></div>
+    </div>
+  </section>
+</main>
+<footer>Pick a variant (A–D, or a mix) and say if the tagline should stay. Next: final SVG files (icon, horizontal and stacked lockups, favicon, app icon), wired into the UI header, the browser tab and the README.</footer>
+</body>
+</html>
