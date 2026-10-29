@@ -261,3 +261,19 @@ def test_a_split_sentence_sharing_no_words_keeps_the_items_claims() -> None:
     items = split_items(Prose(sentences=[Sentence(text="Alpha beta. Gamma delta.", claims=[1, 2])]),
                         ["Alpha beta words.", "Epsilon zeta."])
     assert [s.claims for s in items] == [[1], [1, 2]]
+
+
+def test_a_failed_reading_or_judgement_is_dropped_without_costing_the_prose() -> None:
+    # Readings and judgements are optional extras: one the check rejects is
+    # dropped, and only fact sentences count toward the fallback limit.
+    facts = [Sentence(text=f"F{i}.", claims=[1]) for i in range(7)]
+    judged = Sentence(text="Arguably F stands out.", claims=[1, 2], kind="judgement")
+    ok = [True] * 6 + [False] + [False]
+    built = assemble(facts + [judged], 8, [True, True], ok, [3, 4])
+    assert built is not None
+    assert [s.kind for s in built] == ["fact"] * 6
+
+
+def test_two_failed_facts_still_fall_back() -> None:
+    facts = [Sentence(text=f"F{i}.", claims=[1]) for i in range(6)]
+    assert assemble(facts, 6, [True], [True] * 4 + [False, False], [3]) is None

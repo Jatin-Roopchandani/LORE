@@ -544,7 +544,10 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
     # One unsupported sentence is removed; more falls back -- except that a
     # long answer may lose one in five (amended 2026-10-28 with the longer
     # answers: one weak clause in ten sentences should not cost the prose).
-    if sum(not ok for _, ok in standing) > max(1, len(standing) // 5):
+    # Only facts count: a reading or judgement is an optional extra, and one
+    # the check rejects is simply dropped (2026-10-29).
+    facts = [ok for s, ok in standing if getattr(s, "kind", "fact") == "fact"]
+    if sum(not ok for ok in facts) > max(1, len(facts) // 5):
         return None
     kept = [s for s, ok in standing if ok]
     if not kept or 2 * len(kept) < written:
