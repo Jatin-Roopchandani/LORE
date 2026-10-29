@@ -41,8 +41,16 @@ def beat_id(book_id: str, chapter_seq: int, entities: Sequence[str],
 
 def save_beats(conn: sqlite3.Connection, book_id: str, chapter: int, part: int,
                beats: Sequence[Beat]) -> None:
-    """Replace this (book, chapter, part)'s beats with `beats`. Idempotent."""
+    """Replace this (book, chapter, part)'s beats with `beats`. Idempotent.
+
+    Entity links already made by `relink` survive a rewrite of the same beat
+    (a resume re-saves cached parts), so a run killed before its closing
+    relink never leaves beats unlinked."""
     with conn:
+        linked = {(r[0], r[1]): r[2] for r in conn.execute(
+            "SELECT beat_id, position, entity_id FROM beat_entities WHERE beat_id IN"
+            " (SELECT id FROM beats WHERE book_id=? AND chapter_seq=? AND part=?)",
+            (book_id, chapter, part))}
         conn.execute(
             "DELETE FROM beat_entities WHERE beat_id IN (SELECT id FROM beats"
             " WHERE book_id=? AND chapter_seq=? AND part=?)",
@@ -58,9 +66,9 @@ def save_beats(conn: sqlite3.Connection, book_id: str, chapter: int, part: int,
                  b.quote))
             conn.execute("DELETE FROM beat_entities WHERE beat_id=?", (b.id,))
             conn.executemany(
-                "INSERT INTO beat_entities (beat_id, position, name)"
-                " VALUES (?,?,?)",
-                [(b.id, i, n) for i, n in enumerate(b.entities)])
+                "INSERT INTO beat_entities (beat_id, position, name, entity_id)"
+                " VALUES (?,?,?,?)",
+                [(b.id, i, n, linked.get((b.id, i))) for i, n in enumerate(b.entities)])
 
 
 def beats_for_entities(conn: sqlite3.Connection,
@@ -77,11 +85,18 @@ def beats_for_entities(conn: sqlite3.Connection,
         f" b.quote FROM beats b WHERE b.id IN (SELECT beat_id FROM"
         f" beat_entities WHERE entity_id IN ({marks}))"
         f" ORDER BY b.book_id, b.chapter_seq, b.part, b.id", ids).fetchall()
+    # One query for every beat's entities, not one per beat.
+    ents_of: dict[str, list[tuple[str, str | None]]] = {}
+    beat_ids = [r[0] for r in rows]
+    for start in range(0, len(beat_ids), 500):
+        chunk = beat_ids[start:start + 500]
+        for beat_id, name, entity_id in conn.execute(
+                "SELECT beat_id, name, entity_id FROM beat_entities WHERE beat_id IN"
+                f" ({','.join('?' * len(chunk))}) ORDER BY beat_id, position", chunk):
+            ents_of.setdefault(beat_id, []).append((name, entity_id))
     out: list[Beat] = []
     for r in rows:
-        ents = conn.execute(
-            "SELECT name, entity_id FROM beat_entities WHERE beat_id=?"
-            " ORDER BY position", (r[0],)).fetchall()
+        ents = ents_of.get(r[0], [])
         out.append(Beat(
             id=r[0], book_id=r[1], chapter_seq=r[2], chunk_id=r[3], kind=r[4],
             text=r[5], quote=r[6], entities=tuple(e[0] for e in ents),

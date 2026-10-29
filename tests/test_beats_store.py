@@ -129,3 +129,22 @@ def test_lance_beats_upsert_and_search(tmp_path):
     assert store.search_beats(near, [], 5) == []
     store.delete_beats(["a"])
     assert store.count("beats") == 1
+
+
+def test_a_resave_keeps_the_links_relink_made(tmp_path) -> None:
+    # A resume re-saves cached parts; a kill before the closing relink must
+    # not leave them unlinked.
+    from lore.db.sqlite import open_db
+    from lore.beats import store
+    conn = open_db(tmp_path / "l.db")
+    conn.execute("INSERT INTO books (id, title, author, source, file_path, status)"
+                 " VALUES ('bk','T','A','upload','f','graphed')")
+    beat = store.Beat(id=store.beat_id("bk", 1, ["Ava"], "she left the tower at dawn"),
+                      book_id="bk", chapter_seq=1, chunk_id="bk:1:0",
+                      entities=("Ava",), kind="action", text="Ava leaves.",
+                      quote="she left the tower at dawn")
+    store.save_beats(conn, "bk", 1, 0, [beat])
+    conn.execute("UPDATE beat_entities SET entity_id='e1'")
+    conn.commit()
+    store.save_beats(conn, "bk", 1, 0, [beat])
+    assert [b.entity_ids for b in store.beats_for_entities(conn, ["e1"])] == [("e1",)]

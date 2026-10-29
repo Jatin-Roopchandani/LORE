@@ -295,7 +295,7 @@ def assemble_ranked(
         slice_cap = int(max_chars * timeline_share)
         for item in _next_unseen([[by_id[c] for c in ids] for ids in part_ids]).merged:
             if slice_used + len(item[3]) > slice_cap:
-                break
+                continue  # one oversized passage must not empty the slice
             slice_items.append(item)
             slice_used += len(item[3])
     slice_ids = {item[0] for item in slice_items}
