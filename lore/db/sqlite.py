@@ -137,6 +137,41 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             "CREATE INDEX idx_beat_entities_name ON beat_entities(name)",
         ],
     ),
+    # Worlds (2026-10-29): a world is the unit an entity may be shared
+    # within. Backfill: one world per distinct series, one per series-less
+    # book named after it (suffixed with the book id when the title is
+    # already a world's name, or another series-less book has it too).
+    # world_id stays nullable in the table (SQLite cannot add NOT NULL
+    # without a default); ingest_book always sets it.
+    (
+        9,
+        [
+            """
+            CREATE TABLE worlds (
+                id         INTEGER PRIMARY KEY,
+                name       TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            "ALTER TABLE books ADD COLUMN world_id INTEGER REFERENCES worlds(id)",
+            "CREATE INDEX idx_books_world ON books(world_id)",
+            "INSERT INTO worlds (name) SELECT DISTINCT trim(series) FROM books"
+            " WHERE series IS NOT NULL AND trim(series) <> '' ORDER BY trim(series)",
+            "UPDATE books SET world_id = (SELECT w.id FROM worlds w"
+            " WHERE w.name = trim(books.series))"
+            " WHERE series IS NOT NULL AND trim(series) <> ''",
+            "INSERT INTO worlds (name) SELECT CASE WHEN EXISTS"
+            " (SELECT 1 FROM worlds w WHERE w.name = b.title)"
+            " OR EXISTS (SELECT 1 FROM books b2 WHERE b2.world_id IS NULL"
+            " AND b2.title = b.title AND b2.rowid < b.rowid)"
+            " THEN b.title || ' (' || substr(b.id, 1, 8) || ')' ELSE b.title END"
+            " FROM books b WHERE b.world_id IS NULL ORDER BY b.rowid",
+            "UPDATE books SET world_id = COALESCE("
+            "(SELECT w.id FROM worlds w WHERE w.name = books.title || ' (' || substr(books.id, 1, 8) || ')'),"
+            " (SELECT w.id FROM worlds w WHERE w.name = books.title))"
+            " WHERE world_id IS NULL",
+        ],
+    ),
 ]
 
 

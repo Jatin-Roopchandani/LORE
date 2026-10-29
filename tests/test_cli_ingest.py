@@ -28,12 +28,12 @@ def test_ingest_then_noop(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     path = _fixture(tmp_path)
 
-    first = runner.invoke(app, ["ingest", str(path)])
+    first = runner.invoke(app, ["ingest", str(path), "--yes"])
     assert first.exit_code == 0, first.output
     assert "CLI Test Book" in first.output
     assert "2 chapters" in first.output
 
-    second = runner.invoke(app, ["ingest", str(path)])
+    second = runner.invoke(app, ["ingest", str(path), "--yes"])
     assert second.exit_code == 0
     assert "no-op" in second.output
 
@@ -41,7 +41,7 @@ def test_ingest_then_noop(tmp_path: Path, monkeypatch) -> None:
 def test_books_lists_library(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
-    runner.invoke(app, ["ingest", str(_fixture(tmp_path))])
+    runner.invoke(app, ["ingest", str(_fixture(tmp_path)), "--yes"])
 
     result = runner.invoke(app, ["books"])
     assert result.exit_code == 0
@@ -54,7 +54,7 @@ def test_unsupported_extension_fails(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     bad = tmp_path / "book.txt"
     bad.write_text("plain text")
-    result = runner.invoke(app, ["ingest", str(bad)])
+    result = runner.invoke(app, ["ingest", str(bad), "--yes"])
     assert result.exit_code != 0
 
 
@@ -73,20 +73,20 @@ def test_force_reingests_without_duplicating_rows(tmp_path: Path, monkeypatch) -
     monkeypatch.chdir(tmp_path)
     path = _fixture(tmp_path)
 
-    first = runner.invoke(app, ["ingest", str(path)])
+    first = runner.invoke(app, ["ingest", str(path), "--yes"])
     assert first.exit_code == 0, first.output
     books_before, chunks_before = _rows(tmp_path)
     assert len(books_before) == 1
     assert len(chunks_before) > 0
 
     # Without --force it stays a no-op and leaves the rows alone.
-    second = runner.invoke(app, ["ingest", str(path)])
+    second = runner.invoke(app, ["ingest", str(path), "--yes"])
     assert second.exit_code == 0, second.output
     assert "no-op" in second.output
     assert _rows(tmp_path) == (books_before, chunks_before)
 
     # With --force it really re-ingests: same counts, no duplicates.
-    third = runner.invoke(app, ["ingest", str(path), "--force"])
+    third = runner.invoke(app, ["ingest", str(path), "--yes", "--force"])
     assert third.exit_code == 0, third.output
     assert "no-op" not in third.output
     assert "cleared previous ingest" in third.output
@@ -100,7 +100,7 @@ def test_force_on_an_unknown_book_is_a_plain_ingest(tmp_path: Path, monkeypatch)
     # --force must not require a prior ingest to exist.
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["ingest", str(_fixture(tmp_path)), "--force"])
+    result = runner.invoke(app, ["ingest", str(_fixture(tmp_path)), "--yes", "--force"])
     assert result.exit_code == 0, result.output
     assert "cleared previous ingest" not in result.output
     assert "2 chapters" in result.output
@@ -116,7 +116,7 @@ def test_force_clears_jobs_rows_that_reference_the_book(
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
     path = _fixture(tmp_path)
-    assert runner.invoke(app, ["ingest", str(path)]).exit_code == 0
+    assert runner.invoke(app, ["ingest", str(path), "--yes"]).exit_code == 0
 
     db = tmp_path / "data" / "lore.db"
     conn = open_db(db)
@@ -130,7 +130,7 @@ def test_force_clears_jobs_rows_that_reference_the_book(
     finally:
         conn.close()
 
-    result = runner.invoke(app, ["ingest", str(path), "--force"])
+    result = runner.invoke(app, ["ingest", str(path), "--yes", "--force"])
     assert result.exit_code == 0, result.output
     conn = open_db(db)
     try:
@@ -145,7 +145,7 @@ def test_ingest_records_series_from_the_epub(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.chdir(tmp_path)
     path = make_epub(tmp_path / "s.epub", title="Book Two", author="A",
                      chapters=[("One", _long_html("one"))], series=("The Saga", 2))
-    assert runner.invoke(app, ["ingest", str(path)]).exit_code == 0
+    assert runner.invoke(app, ["ingest", str(path), "--yes"]).exit_code == 0
     conn = open_db(tmp_path / "data" / "lore.db")
     assert conn.execute("SELECT series, series_index FROM books").fetchall() == [("The Saga", 2.0)]
     conn.close()
@@ -158,7 +158,7 @@ def _library(tmp_path: Path, monkeypatch) -> list[str]:
     for title in ("First Tale", "Second Tale"):
         path = make_epub(tmp_path / f"{title}.epub", title=title, author="A",
                          chapters=[("One", _long_html(title))])
-        runner.invoke(app, ["ingest", str(path)])
+        runner.invoke(app, ["ingest", str(path), "--yes"])
     conn = open_db(tmp_path / "data" / "lore.db")
     ids = [r[0] for r in conn.execute("SELECT id FROM books ORDER BY title")]
     conn.close()

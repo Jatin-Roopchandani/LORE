@@ -24,6 +24,10 @@ from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
 from lore.ingest.models import IngestError, book_id_for_file
 from lore.ingest.pdf import parse_pdf
+from lore.worlds import (
+    WorldError, create_world, delete_world, get_world, list_worlds, rename_world,
+    books_in, suggest_world,
+)
 from lore.ingest.registry import find_books, forget_book, ingest_book, list_books, set_series
 from lore.inference.base import ProviderOutputError
 from lore.inference.gemini import (
@@ -147,6 +151,10 @@ def ingest(
         "--force",
         help="drop the book's existing rows first and re-ingest it",
     ),
+    world: str | None = typer.Option(
+        None, "--world", help="the world to put the book in (created if missing)"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="accept the world prompt without asking"),
 ) -> None:
     """Parse, chunk, and register an EPUB or PDF."""
     config = LoreConfig.load()
@@ -168,10 +176,14 @@ def ingest(
         # Drop first, then re-insert, so a re-chunk lands cleanly instead
         # of colliding with the old content-addressed chunk IDs.
         forgotten = forget_book(conn, book_id) if force else False
+        world_id = None
+        if not conn.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone():
+            world_id = _choose_world(conn, world, parsed.series, parsed.title, yes)
         created = ingest_book(
             conn, book_id=book_id, title=parsed.title, author=parsed.author,
             source="upload", file_path=str(path), chunks=chunks,
             series=parsed.series, series_index=parsed.series_index,
+            world_id=world_id,
         )
     finally:
         conn.close()
@@ -184,6 +196,34 @@ def ingest(
         f"{parsed.title} ({book_id}): "
         f"{len(parsed.chapters)} chapters, {len(chunks)} chunks"
     )
+
+
+def _choose_world(conn, world: str | None, series: str | None, title: str,
+                  yes: bool) -> int | None:
+    """The world id a new book goes in, asking before creating one (unless
+    --yes). None means ingest_book makes the suggested new world itself."""
+    if world is not None:
+        try:
+            found = get_world(conn, world)
+            if found is not None:
+                return found.id
+            if not yes and not typer.confirm(f"create world {world.strip()!r}?"):
+                raise typer.Exit(1)
+            return create_world(conn, world)
+        except WorldError as exc:
+            typer.echo(f"ingest failed: {exc}")
+            raise typer.Exit(2)
+    world_id, name = suggest_world(conn, series, title)
+    if world_id is not None:
+        typer.echo(f"world: {name!r} (existing world, same series)")
+        if not yes and not typer.confirm("put the book there?", default=True):
+            raise typer.Exit(1)
+        return world_id
+    typer.echo(f"world: {name!r} (new world)")
+    if not yes and not typer.confirm("create it?", default=True):
+        typer.echo("nothing ingested; pass --world NAME to choose")
+        raise typer.Exit(1)
+    return None
 
 
 @app.command()
@@ -206,7 +246,7 @@ def books() -> None:
                  f"  ({row['series']})" if row["series"] else "")
         typer.echo(
             f"{row['id']}  {row['title']}  [{row['status']}]  "
-            f"{row['chunk_count']} chunks{where}{_job_note(job_by_book.get(row['id']))}"
+            f"{row['chunk_count']} chunks{where}  world: {row['world'] or '-'}{_job_note(job_by_book.get(row['id']))}"
         )
 
 
@@ -220,6 +260,75 @@ def _job_note(job) -> str:
     if job.state == WAITING_QUOTA and job.resumable_at is not None:
         note += f", resumes after {job.resumable_at.astimezone():%H:%M} local"
     return note
+
+
+world_app = typer.Typer(help="Worlds: groups of books that share characters.",
+                        no_args_is_help=True)
+app.add_typer(world_app, name="world")
+
+
+def _world_or_exit(conn, ref: str):
+    found = get_world(conn, ref)
+    if found is None:
+        typer.echo(f"no world named {ref!r}")
+        raise typer.Exit(1)
+    return found
+
+
+@world_app.command("list")
+def world_list() -> None:
+    """List worlds and the books in each."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        worlds = list_worlds(conn)
+        if not worlds:
+            typer.echo("no worlds")
+            return
+        titles = {b["id"]: b["title"] for b in list_books(conn)}
+        for w in worlds:
+            members = [titles.get(b, b) for b in books_in(conn, w.id)]
+            typer.echo(f"{w.id}  {w.name}  ({len(members)} books)"
+                       + (f": {'; '.join(members)}" if members else ""))
+    finally:
+        conn.close()
+
+
+@world_app.command("rename")
+def world_rename(world: str, new_name: str) -> None:
+    """Rename a world."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        found = _world_or_exit(conn, world)
+        try:
+            rename_world(conn, found.id, new_name)
+        except WorldError as exc:
+            typer.echo(str(exc))
+            raise typer.Exit(1)
+    finally:
+        conn.close()
+    typer.echo(f"{found.name} -> {new_name.strip()}")
+
+
+@world_app.command("delete")
+def world_delete(world: str) -> None:
+    """Delete an empty world."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        found = _world_or_exit(conn, world)
+        try:
+            delete_world(conn, found.id)
+        except WorldError as exc:
+            typer.echo(str(exc))
+            raise typer.Exit(1)
+    finally:
+        conn.close()
+    typer.echo(f"deleted world {found.name}")
 
 
 book_app = typer.Typer(help="Per-book settings.", no_args_is_help=True)
