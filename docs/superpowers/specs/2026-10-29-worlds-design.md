@@ -83,6 +83,15 @@ This is idempotent and resumable: a move that is interrupted continues from its 
 - **Retrieval.** Seeds, select candidates, graph evidence, vector and keyword candidates, the timeline and the decomposition's book list are all filtered to the world's books. The existing book scoping applies within the world.
 - **All worlds.** Each world is searched as above and the evidence is pooled. Entities are never merged across worlds, so two same-named characters from different worlds appear as different people. The answer names the world (or book) when facts come from more than one world, using the same rule as naming books today.
 
+### 7.1 The graph follows the world
+
+Switching worlds switches everything the UI shows:
+- **The graph pane:** the library overview, the per-answer subgraph, node expansion and the entity cards show only the selected world's entities and edges.
+- **Example questions and history:** history items record their world. Replaying one switches to that world.
+- **"All worlds":** shows every world's graph together. Each world is a separate cluster, never joined by merged nodes, and nodes are marked with their world (in the label or colour, plus a legend). Two same-named characters from different worlds appear as two nodes.
+
+The graph endpoints (`/api/overview`, `/api/subgraph`, `/api/entity`, expand) take the same optional `world` as ask.
+
 ## 8. Library panel
 
 - Books are grouped by world, and each world header shows its series.
