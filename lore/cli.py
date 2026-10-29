@@ -456,6 +456,32 @@ class _RunExtractionStage:
             raise QuotaStop(self.report.stopped_reason)
 
 
+def _load_and_relink(config: LoreConfig, conn, book_id: str,
+                     api_key: str | None):
+    """A graph load, then the beats' entity names re-pointed at the new ids.
+
+    Beats store names, so a load that merges or splits entities moves them
+    without any request. Both lookups are at call time (tests patch them).
+    """
+    report = _load_book_sync(config, conn, book_id, api_key=api_key)
+    _relink_beats(config, conn)
+    return report
+
+
+def _relink_beats(config: LoreConfig, conn) -> None:
+    from lore.beats.store import relink
+
+    path = config.kuzu_dir / "graph"
+    if not path.exists() or conn.execute(
+            "SELECT 1 FROM beats LIMIT 1").fetchone() is None:
+        return
+    graph = KuzuStore(path, read_only=True)
+    try:
+        relink(conn, graph)
+    finally:
+        graph.close()
+
+
 def default_stages(config: LoreConfig, *, skip_extract: bool = False,
                    resume: bool = False, api_key: str | None = None,
                    extract_stage=None) -> list:
@@ -476,7 +502,7 @@ def default_stages(config: LoreConfig, *, skip_extract: bool = False,
         stages.append(extract_stage)
     load_stage = LoadStage(
         # Looked up at call time, so tests may patch `lore.cli._load_book_sync`.
-        lambda cfg, conn, book_id: _load_book_sync(cfg, conn, book_id, api_key=api_key))
+        lambda cfg, conn, book_id: _load_and_relink(cfg, conn, book_id, api_key))
     stages.append(load_stage)
     # New answers apply on one more (free) load, right after the request.
     stages.append(DisambiguateStage(reload=load_stage.reload))

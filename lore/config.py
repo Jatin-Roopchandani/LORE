@@ -148,6 +148,13 @@ class ProcessingConfig(BaseModel):
     answer_reserve: int = Field(default=60, ge=0)
 
 
+class BeatsConfig(BaseModel):
+    """Story beats (the `beats` pipeline stage). On by default; when False the
+    stage does nothing and the book simply has no beats."""
+
+    enabled: bool = True
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
     # "kaggle": free T4 burst. "ollama": fully local, zero egress.
@@ -165,6 +172,7 @@ class LoreConfig(BaseModel):
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
+    beats: BeatsConfig = Field(default_factory=BeatsConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
@@ -207,6 +215,11 @@ class LoreConfig(BaseModel):
         with no key and no config is byte-identical to today" testable.
         """
         return self.data_dir / "disambiguation"
+
+    @property
+    def beats_dir(self) -> Path:
+        """Cached beat answers, per book. Never created eagerly."""
+        return self.data_dir / "beats"
 
     @property
     def adjudication_dir(self) -> Path:

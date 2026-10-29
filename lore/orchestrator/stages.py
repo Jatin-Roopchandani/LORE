@@ -15,9 +15,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import dataclass
 
+from lore.beats import build as beats_build
+from lore.beats.store import relink as relink_beats, save_beats
 from lore.inference.gemini import (
     GeminiClient,
+    GeminiOutputError,
     GeminiQuotaError,
     default_key_file,
     resolve_api_key,
@@ -181,13 +185,200 @@ def _gemini_client(config) -> GeminiClient:
                         recorder=recorder_for(config.sqlite_path))
 
 
+@dataclass(frozen=True)
+class _BeatPart:
+    chapter: int
+    index: int
+    count: int
+    chunks: tuple
+    entities: tuple
+
+    @property
+    def label(self) -> str:
+        return f"{self.chapter}-{self.index}"
+
+
+def _beats_client(config) -> GeminiClient:
+    api_key = resolve_api_key(key_file=default_key_file())
+    if api_key is None:
+        raise RuntimeError(
+            "story beats need a Gemini API key (GEMINI_API_KEY or"
+            " ~/.config/lore/gemini.env)")
+    return GeminiClient(api_key, models=config.extraction.gemini_models,
+                        recorder=recorder_for(config.sqlite_path))
+
+
+def _local_embedder(config):
+    """(embed, aclose) on the local Ollama embedder, as the loader uses."""
+    from lore.graph.adjudicate import _embedder
+    from lore.inference.ollama import OllamaProvider
+
+    provider = OllamaProvider(config.ollama)
+    return _embedder(config, provider), provider.aclose
+
+
+def _open_graph(config):
+    """The graph read-only, or None when the book has not been graphed."""
+    from lore.db.kuzu_store import KuzuStore
+
+    path = config.kuzu_dir / "graph"
+    return KuzuStore(path, read_only=True) if path.exists() else None
+
+
+def _open_vectors(config):
+    from lore.db.lance_store import LanceStore
+
+    return LanceStore(config.lancedb_dir)
+
+
 class BeatsStage:
-    """Placeholder until the story-beats spec; does nothing."""
+    """Build the book's story beats, one request per chapter part.
+
+    A no-op unless `[lore.beats] enabled`. Items are chapter parts that have
+    at least one listed entity. Each part's raw answer is cached on disk
+    (`data/beats/<book>/<chapter>-<part>.json`, keyed by prompt and text
+    hashes) the moment it arrives, so a stop keeps every answer already
+    paid for and a resume requests only the rest. A part is stored (embedded,
+    written to LanceDB, then saved to SQLite, which marks it done) from its
+    verified beats, and the entity names are relinked to the current ids
+    when the run ends, however it ends.
+
+    The factories are the seams for tests: `client_factory(config)` returns a
+    GeminiClient-like object (generate_json, aclose); `embed_factory(config)`
+    returns (embed, aclose); `kuzu_factory(config)` returns a graph (or None
+    for "no graph") with execute and close; `lance_factory(config)` returns
+    a store with upsert_beats and delete_beats.
+    """
 
     name = "beats"
 
+    def __init__(self, client_factory: Callable | None = None,
+                 embed_factory: Callable | None = None,
+                 kuzu_factory: Callable | None = None,
+                 lance_factory: Callable | None = None) -> None:
+        self._client_factory = client_factory or _beats_client
+        self._embed_factory = embed_factory or _local_embedder
+        self._kuzu_factory = kuzu_factory or _open_graph
+        self._lance_factory = lance_factory or _open_vectors
+        self.skipped: list[str] = []
+
+    def _plan(self, ctx: StageContext, kuzu) -> list[_BeatPart]:
+        from lore.ingest.registry import chunks_for_book
+
+        if kuzu is None:
+            return []
+        plan: list[_BeatPart] = []
+        chapters = beats_build.part_chapters(chunks_for_book(ctx.conn, ctx.book_id))
+        for chapter, chunks in chapters.items():
+            entities = beats_build.chapter_entities(kuzu, ctx.book_id, chapter)
+            if not entities:
+                continue
+            parts = beats_build.chapter_parts(chunks, beats_build.MAX_PART_CHARS)
+            for index, part in enumerate(parts):
+                plan.append(_BeatPart(chapter, index, len(parts), tuple(part),
+                                      tuple(entities)))
+        return plan
+
+    def _cache(self, ctx: StageContext, part: _BeatPart):
+        return beats_build.cache_path(ctx.config.beats_dir, ctx.book_id,
+                                      part.chapter, part.index)
+
+    def _plan_for(self, ctx: StageContext) -> list[_BeatPart]:
+        if not ctx.config.beats.enabled:
+            return []
+        kuzu = self._kuzu_factory(ctx.config)
+        try:
+            return self._plan(ctx, kuzu)
+        finally:
+            if kuzu is not None:
+                kuzu.close()
+
     def total(self, ctx: StageContext) -> int:
-        return 0
+        return len(self._plan_for(ctx))
 
     def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
-        job_ctl.advance(0)
+        self.skipped = []
+        if not ctx.config.beats.enabled:
+            job_ctl.advance(0)
+            return
+        kuzu = self._kuzu_factory(ctx.config)
+        try:
+            plan = self._plan(ctx, kuzu)
+            cached = {p.label: beats_build.read_cached(self._cache(ctx, p), p.chunks)
+                      for p in plan}
+            done = sum(a is not None for a in cached.values())
+            job_ctl.advance(done)
+            if not plan:
+                return
+            try:
+                asyncio.run(self._run(ctx, job_ctl, plan, cached, done))
+            except GeminiQuotaError as exc:
+                raise quota_stop_from(exc) from exc
+        finally:
+            try:
+                if kuzu is not None:
+                    relink_beats(ctx.conn, kuzu)
+            finally:
+                if kuzu is not None:
+                    kuzu.close()
+
+    async def _run(self, ctx, job_ctl, plan, cached, done: int) -> None:
+        title = ctx.conn.execute("SELECT title FROM books WHERE id = ?",
+                                 (ctx.book_id,)).fetchone()[0]
+        client = embed = embed_close = lance = None
+        try:
+            # One loop for the requests, the embeds and the closes: httpx
+            # binds its sockets to the loop that opened them.
+            for part in plan:
+                answer = cached[part.label]
+                fresh = answer is None
+                if fresh:
+                    job_ctl.spend_check()
+                    if client is None:
+                        client = self._client_factory(ctx.config)
+                    prompt = beats_build.render_prompt(
+                        title, part.chapter, part.index, part.count,
+                        part.entities, part.chunks)
+                    try:
+                        answer = await client.generate_json(
+                            prompt, beats_build.BeatsAnswer,
+                            exhausted_hint="Continue the job when a daily"
+                                           " budget resets.")
+                    except GeminiOutputError:
+                        # Not cached: the next run asks this part again.
+                        self.skipped.append(f"{part.label}: unusable answer")
+                        done += 1
+                        job_ctl.advance(done)
+                        continue
+                    beats_build.write_cached(self._cache(ctx, part), part.chunks,
+                                             answer)
+                beats = beats_build.verify_beats(
+                    answer, ctx.book_id, part.chapter, part.chunks, part.entities)
+                existing = {r[0] for r in ctx.conn.execute(
+                    "SELECT id FROM beats WHERE book_id = ? AND chapter_seq = ?"
+                    " AND part = ?", (ctx.book_id, part.chapter, part.index))}
+                ids = {b.id for b in beats}
+                if beats and (fresh or ids != existing):
+                    if embed is None:
+                        embed, embed_close = self._embed_factory(ctx.config)
+                        lance = self._lance_factory(ctx.config)
+                    vectors = await embed([b.text for b in beats])
+                    lance.upsert_beats([
+                        {"id": b.id, "book_id": ctx.book_id, "vector": v}
+                        for b, v in zip(beats, vectors)])
+                if existing - ids:
+                    if lance is None:
+                        lance = self._lance_factory(ctx.config)
+                    lance.delete_beats(sorted(existing - ids))
+                # SQLite last: a part is done once its rows are saved.
+                save_beats(ctx.conn, ctx.book_id, part.chapter, part.index, beats)
+                if fresh:
+                    done += 1
+                    job_ctl.advance(done)
+        finally:
+            try:
+                if client is not None:
+                    await client.aclose()
+            finally:
+                if embed_close is not None:
+                    await embed_close()

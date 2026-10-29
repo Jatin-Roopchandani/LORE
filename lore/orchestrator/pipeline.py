@@ -20,7 +20,7 @@ from lore.inference.gemini import limits_for
 from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import calls_today, today
 
-# Order matters. `beats` is a no-op placeholder until the story-beats spec.
+# Order matters. `beats` needs the loaded graph (its entities), so it follows load.
 STAGES = ("chunk", "extract", "load", "disambiguate", "beats", "ready")
 
 
