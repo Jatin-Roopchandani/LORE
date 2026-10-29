@@ -24,6 +24,46 @@ function palette() {
   return { v, ink: v("--ink"), muted: v("--muted"), edge: v("--edge"), faint: v("--edge-faint"), glow: v("--glow"), panel: v("--panel") };
 }
 
+// Sigma's own hover box is always white while the label takes the theme's ink, so in dark mode the
+// hovered name vanished (white on white). Same geometry as sigma's drawDiscNodeHover, in theme colours.
+type HoverData = { x: number; y: number; size: number; label?: string | null };
+type HoverSettings = { labelSize: number; labelFont: string; labelWeight: string };
+function drawThemedHover(ctx: CanvasRenderingContext2D, data: HoverData, settings: HoverSettings) {
+  const p = palette();
+  const size = settings.labelSize, pad = 2;
+  ctx.font = `${settings.labelWeight} ${size}px ${settings.labelFont}`;
+  ctx.fillStyle = p.panel;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.shadowBlur = 8;
+  ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+  if (typeof data.label === "string" && data.label) {
+    const boxWidth = Math.round(ctx.measureText(data.label).width + 5);
+    const boxHeight = Math.round(size + 2 * pad);
+    const radius = Math.max(data.size, size / 2) + pad;
+    const angle = Math.asin(boxHeight / 2 / radius);
+    const dx = Math.sqrt(Math.abs(radius ** 2 - (boxHeight / 2) ** 2));
+    ctx.beginPath();
+    ctx.moveTo(data.x + dx, data.y + boxHeight / 2);
+    ctx.lineTo(data.x + radius + boxWidth, data.y + boxHeight / 2);
+    ctx.lineTo(data.x + radius + boxWidth, data.y - boxHeight / 2);
+    ctx.lineTo(data.x + dx, data.y - boxHeight / 2);
+    ctx.arc(data.x, data.y, radius, angle, -angle);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(data.x, data.y, data.size + pad, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  if (typeof data.label === "string" && data.label) {
+    ctx.fillStyle = p.ink;
+    ctx.fillText(data.label, data.x + data.size + 3, data.y + size / 3);
+  }
+}
+
 // While `pinned` is false the camera fits the whole layout on every change (staging and the answer).
 // Once it turns true (an expansion) the current framing is frozen before new nodes land, so nodes
 // already on screen stay put. Bumping `fitRequest` refits once and re-pins if still pinned.
@@ -80,7 +120,7 @@ export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitR
     sigma.current = new Sigma(graph.current, box.current!, {
       renderEdgeLabels: true, defaultEdgeType: "arrow", defaultNodeType: "ringed", nodeProgramClasses: { ringed: RingedNode }, labelFont: "Public Sans", labelSize: 12, edgeLabelSize: 10,
       labelRenderedSizeThreshold: 0, labelColor: { color: p.ink }, edgeLabelColor: { color: p.muted }, zIndex: true,
-      allowInvalidContainer: true,
+      allowInvalidContainer: true, defaultDrawNodeHover: drawThemedHover,
     });
     sigma.current.on("clickNode", ({ node }) => click.current(node));
     paint();
