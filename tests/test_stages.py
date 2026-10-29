@@ -249,3 +249,27 @@ def test_failed_reload_is_retried_on_resume_with_nothing_to_ask(env) -> None:
     assert asked.calls == 0
     assert reloads == ["bad", reloads[1]] and len(reloads) == 2
     assert not jobs.needs_reload(conn, BOOK)
+
+
+def test_remove_stage_keeps_the_report_and_reassign_sets_the_world(env) -> None:
+    from lore import worlds
+    from lore.orchestrator.stages import ReassignStage, RemoveStage
+
+    config, conn = env
+    world = worlds.create_world(conn, "Some Realm")
+    remove = RemoveStage(lambda cfg, c, book_id: ("removed", book_id))
+    job = run_book(conn, config, BOOK, [remove, ReassignStage(world)])
+    assert job.state == jobs.DONE
+    assert remove.report == ("removed", BOOK)
+    assert worlds.world_of(conn, BOOK).id == world
+
+
+def test_reassign_stage_fails_for_an_unknown_book(env) -> None:
+    from lore import worlds
+    from lore.orchestrator.stages import ReassignStage
+
+    config, conn = env
+    world = worlds.create_world(conn, "Some Realm")
+    ctl = type("Ctl", (), {"advance": lambda self, n: None})()
+    with pytest.raises(RuntimeError, match="unknown book"):
+        ReassignStage(world).run(StageContext(conn, config, "nope"), ctl)

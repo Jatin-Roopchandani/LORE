@@ -5,6 +5,7 @@ import asyncio
 import math
 import sqlite3
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -26,7 +27,7 @@ from lore.ingest.models import IngestError, book_id_for_file
 from lore.ingest.pdf import parse_pdf
 from lore.worlds import (
     WorldError, create_world, delete_world, get_world, list_worlds, rename_world,
-    books_in, suggest_world,
+    books_in, suggest_world, world_of,
 )
 from lore.ingest.registry import find_books, forget_book, ingest_book, list_books, set_series
 from lore.inference.base import ProviderOutputError
@@ -42,13 +43,30 @@ from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
 from lore.orchestrator.gemini_budget import day_report, recorder_for, today
-from lore.orchestrator.jobs import DONE, FAILED, WAITING_QUOTA, get_job, list_jobs
+from lore.graph.remove import remove_book_from_graph
+from lore.orchestrator.jobs import (
+    DONE,
+    FAILED,
+    WAITING_QUOTA,
+    finish_stage,
+    get_job,
+    is_fresh,
+    list_jobs,
+)
+from lore.orchestrator.move import prepare_move
 from lore.orchestrator.extract_stage import ExtractStage
 from lore.orchestrator.local import missing_gemini_key_message
 from lore.orchestrator.pipeline import JobRefused, QuotaStop, run_book
 from lore.orchestrator.quota import iso_week, week_report
 from lore.orchestrator.run import run_extraction
-from lore.orchestrator.stages import BeatsStage, ChunkStage, DisambiguateStage, LoadStage
+from lore.orchestrator.stages import (
+    BeatsStage,
+    ChunkStage,
+    DisambiguateStage,
+    LoadStage,
+    ReassignStage,
+    RemoveStage,
+)
 from lore.query.agent import answer_question, make_query_models
 from lore.resolve.disambiguation import (
     MAX_BATCH,
@@ -380,6 +398,143 @@ def book_series(
                else f"{target['title']}: {series.strip()} #{index:g}")
 
 
+def _one_book(conn, ref: str) -> dict:
+    """The one book `ref` names (id, or part of its title), or exit."""
+    matches = find_books(conn, ref)
+    if not matches:
+        typer.echo(f"no book matches {ref!r} (see: lore books)")
+        raise typer.Exit(1)
+    if len(matches) > 1:
+        typer.echo(f"more than one book matches {ref!r}; use its id:")
+        for m in matches:
+            typer.echo(f"  {m['id']}  {m['title']}")
+        raise typer.Exit(1)
+    return matches[0]
+
+
+@book_app.command("move")
+def book_move(
+    book: str = typer.Argument(..., help="book id, or its title (or part of it)"),
+    world: str = typer.Option(
+        ..., "--world", help="the world to move the book to (created if missing)"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="create a missing world without asking"),
+) -> None:
+    """Move a book to another world.
+
+    The book leaves the graph, changes world and is loaded into the new one,
+    from the saved extraction and answers. Interrupted? Run the same command
+    again and it continues. To undo a move, move the book back.
+    """
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        target = _one_book(conn, book)
+        book_id = target["id"]
+        found = get_world(conn, world)
+        current = world_of(conn, book_id)
+        if (found is not None and current is not None and current.id == found.id
+                and not _unfinished(conn, book_id)):
+            typer.echo(f"{target['title']} is already in world {found.name!r}"
+                       " - nothing to do")
+            return
+        api_key = _graph_build_key(config, "move", extracting=False, loading=True)
+        created = False
+        if found is None:
+            if not yes and not typer.confirm(f"create world {world.strip()!r}?"):
+                raise typer.Exit(1)
+            try:
+                found = get_world(conn, world) or get_world(
+                    conn, create_world(conn, world))
+            except WorldError as exc:
+                typer.echo(f"move failed: {exc}")
+                raise typer.Exit(2)
+            created = True
+        try:
+            run = prepare_move(conn, book_id, found.id)
+        except JobRefused as exc:
+            if created:
+                delete_world(conn, found.id)
+            typer.echo(f"move refused: {exc}")
+            raise typer.Exit(1)
+        if not run:
+            typer.echo(f"{target['title']} is already in world {found.name!r}"
+                       " - nothing to do")
+            return
+        stages = [_Recording(s) for s in move_stages(config, found.id,
+                                                     api_key=api_key)]
+        try:
+            job = run_book(conn, config, book_id, stages)
+        except JobRefused as exc:
+            typer.echo(f"move refused: {exc}")
+            raise typer.Exit(1)
+        failure = next((s.error for s in stages if s.error is not None), None)
+        if job.state == FAILED:
+            typer.echo(f"move failed: {failure or job.stopped_reason}")
+            typer.echo(f"run `lore book move {book_id} --world {found.name!r}`"
+                       " again to continue")
+            raise typer.Exit(1)
+        if job.state == WAITING_QUOTA:
+            typer.echo(f"move paused - {job.stopped_reason}")
+            if job.resumable_at is not None:
+                typer.echo(f"allowance resets at"
+                           f" {job.resumable_at.astimezone():%H:%M} (your local"
+                           " time); then run the same command again")
+            raise typer.Exit(1)
+    finally:
+        conn.close()
+    typer.echo(f"{target['title']}: moved to world {found.name!r}")
+
+
+def _unfinished(conn, book_id: str) -> bool:
+    saved = get_job(conn, book_id)
+    return saved is not None and saved.state != DONE
+
+
+@book_app.command("remove-from-graph")
+def book_remove_from_graph(
+    book: str = typer.Argument(..., help="book id, or its title (or part of it)"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="do not ask for confirmation"),
+) -> None:
+    """Take a book out of the graph and the vector indexes.
+
+    Its chunks, extraction and every cache stay, so `lore process BOOK
+    --skip-extract` (or Continue in the library) puts it back.
+    """
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        target = _one_book(conn, book)
+        book_id = target["id"]
+        saved = get_job(conn, book_id)
+        if saved is not None and is_fresh(saved, datetime.now(timezone.utc)):
+            typer.echo("remove refused: a job is running for this book")
+            raise typer.Exit(1)
+        if not yes and not typer.confirm(
+                f"remove {target['title']!r} from the graph? Its chunks and"
+                " caches stay."):
+            raise typer.Exit(1)
+        kuzu = KuzuStore(config.kuzu_dir / "graph")
+        try:
+            report = remove_book_from_graph(
+                conn, kuzu, LanceStore(config.lancedb_dir), book_id)
+        finally:
+            kuzu.close()
+        if saved is not None:
+            # A finished job would read "ready" for a book that is no longer
+            # in the graph: leave it ready to load again.
+            finish_stage(conn, book_id, "load")
+    finally:
+        conn.close()
+    typer.echo(
+        f"{target['title']}: removed {report.chunks} chunks,"
+        f" {report.rel_edges} relationships, {report.entities_deleted} entities"
+        f" ({report.entities_released} shared entities kept), {report.beats} beats")
+
+
 def _graph_build_key(
     config: LoreConfig, command: str, *, extracting: bool, loading: bool
 ) -> str | None:
@@ -617,6 +772,24 @@ def default_stages(config: LoreConfig, *, skip_extract: bool = False,
     stages.append(DisambiguateStage(reload=load_stage.reload))
     stages.append(BeatsStage())
     return stages
+
+
+def move_stages(config: LoreConfig, world_id: int, *,
+                api_key: str | None = None) -> list:
+    """The stages of a move to `world_id`: out of the graph, new world, load
+    into it, beats rebuilt from their cache (see orchestrator/move.py)."""
+
+    def load(cfg, conn, book_id):
+        report = _load_and_relink(cfg, conn, book_id, api_key)
+        _set_status(conn, book_id, "graphed")
+        return report
+
+    return [RemoveStage(), ReassignStage(world_id), LoadStage(load), BeatsStage()]
+
+
+def _set_status(conn, book_id: str, status: str) -> None:
+    with conn:
+        conn.execute("UPDATE books SET status = ? WHERE id = ?", (status, book_id))
 
 
 class _Recording:

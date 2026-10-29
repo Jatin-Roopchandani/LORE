@@ -64,6 +64,66 @@ class ChunkStage:
             raise RuntimeError(f"book {ctx.book_id} has no chunks; re-ingest it")
 
 
+class RemoveStage:
+    """Take the book out of the graph and indexes, keeping chunks and caches.
+
+    `remove_fn(config, conn, book_id)` does it and returns its report, kept
+    as `self.report`. The default opens the stores and calls
+    `remove_book_from_graph`; both stores are closed before the stage ends,
+    so the load that follows can open its own. Idempotent, so a stop in
+    this stage simply runs it again.
+    """
+
+    name = "remove"
+
+    def __init__(self, remove_fn: Callable | None = None) -> None:
+        self._remove_fn = remove_fn or _remove_from_stores
+        self.report = None
+
+    def total(self, ctx: StageContext) -> int:
+        return 1
+
+    def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
+        job_ctl.advance(0)
+        self.report = self._remove_fn(ctx.config, ctx.conn, ctx.book_id)
+        job_ctl.advance(1)
+
+
+def _remove_from_stores(config, conn, book_id: str):
+    from lore.db.kuzu_store import KuzuStore
+    from lore.graph.remove import remove_book_from_graph
+
+    kuzu = KuzuStore(config.kuzu_dir / "graph")
+    try:
+        return remove_book_from_graph(conn, kuzu, _open_vectors(config), book_id)
+    finally:
+        kuzu.close()
+
+
+class ReassignStage:
+    """Put the book in another world (the registry row; nothing else).
+
+    Runs after `remove`: an entity must never list books of two worlds, and
+    the load that follows writes the book into the new world's graph.
+    """
+
+    name = "reassign"
+
+    def __init__(self, world_id: int) -> None:
+        self._world_id = world_id
+
+    def total(self, ctx: StageContext) -> int:
+        return 1
+
+    def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
+        from lore import worlds
+
+        job_ctl.advance(0)
+        if not worlds.assign(ctx.conn, ctx.book_id, self._world_id):
+            raise RuntimeError(f"unknown book {ctx.book_id}")
+        job_ctl.advance(1)
+
+
 class LoadStage:
     """Resolve entities and write the graph and vector index.
 
