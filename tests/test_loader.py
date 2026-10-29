@@ -1274,14 +1274,14 @@ async def test_probe_two_same_base_generic_candidates_take_free_slots(
 
 # --------------------------------------------------------------------------
 # Task 1i defect 1: cross-book merging used to fire only on IDENTICAL names.
-# `Watson` (book one) and `Dr. John Watson` (book two) normalize to `watson`
-# and `john watson`, so their content-derived ids never collided and
+# `Whitlock` (book one) and `Dr. Joran Whitlock` (book two) normalize to `whitlock`
+# and `joran whitlock`, so their content-derived ids never collided and
 # `_reconcile_ids` never considered them. The same-book path got a token
 # subset rule in Task 1g; these tests extend it to the cross-book path.
 
 
-def _two_watsons(config, conn, *, kind_a="Character", kind_b="Character",
-                 name_a="Dr. John Watson", name_b="Watson") -> None:
+def _two_whitlocks(config, conn, *, kind_a="Character", kind_b="Character",
+                 name_a="Dr. Joran Whitlock", name_b="Whitlock") -> None:
     """Book A names him in full, book B by surname alone."""
     a = [_chunk(BOOK, 1, 0)]
     _add_book(config, conn, BOOK, a, [
@@ -1295,12 +1295,12 @@ def _two_watsons(config, conn, *, kind_a="Character", kind_b="Character",
     ])
 
 
-def _watsons(kuzu) -> list[tuple]:
+def _whitlocks(kuzu) -> list[tuple]:
     return sorted(
         (r[0], r[1], tuple(sorted(r[2] or ())), tuple(sorted(r[3] or ())))
         for r in _rows(
             kuzu,
-            "MATCH (e:Entity) WHERE e.name IN ['Dr. John Watson', 'Watson']"
+            "MATCH (e:Entity) WHERE e.name IN ['Dr. Joran Whitlock', 'Whitlock']"
             " RETURN e.id, e.name, e.books, e.aliases",
         )
     )
@@ -1308,20 +1308,20 @@ def _watsons(kuzu) -> list[tuple]:
 
 @pytest.mark.asyncio
 async def test_a_cross_book_name_variant_merges(tmp_path: Path) -> None:
-    """`watson` nests inside `john watson`, both distinctive: one entity."""
+    """`whitlock` nests inside `joran whitlock`, both distinctive: one entity."""
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn)
+    _two_whitlocks(config, conn)
     spy = _AdjudicateSpy(False)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
     assert spy.calls == []  # decided by rule, never by the 3B model
 
-    watsons = _watsons(kuzu)
-    assert len(watsons) == 1  # one node, not two
-    node_id, name, books, aliases = watsons[0]
+    whitlocks = _whitlocks(kuzu)
+    assert len(whitlocks) == 1  # one node, not two
+    node_id, name, books, aliases = whitlocks[0]
     assert books == tuple(sorted((BOOK, BOOK_B)))
-    assert name == "Dr. John Watson"  # the longest raw surface form
-    assert aliases == ("john watson", "watson")
+    assert name == "Dr. Joran Whitlock"  # the longest raw surface form
+    assert aliases == ("joran whitlock", "whitlock")
 
     edges = sorted(
         (r[0], r[1], r[2])
@@ -1375,17 +1375,17 @@ async def test_a_generic_cross_book_name_variant_does_not_merge(
 async def test_a_cross_book_name_variant_of_another_kind_does_not_merge(
     tmp_path: Path,
 ) -> None:
-    """A Place named `Watson` is not the Character `Dr. John Watson`."""
+    """A Place named `Whitlock` is not the Character `Dr. Joran Whitlock`."""
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn, kind_b="Place")
+    _two_whitlocks(config, conn, kind_b="Place")
     spy = _AdjudicateSpy(True)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
     assert spy.calls == []
 
-    watsons = _watsons(kuzu)
-    assert len(watsons) == 2
-    assert {books for _id, _n, books, _a in watsons} == {(BOOK,), (BOOK_B,)}
+    whitlocks = _whitlocks(kuzu)
+    assert len(whitlocks) == 2
+    assert {books for _id, _n, books, _a in whitlocks} == {(BOOK,), (BOOK_B,)}
     conn.close(); kuzu.close()
 
 
@@ -1403,15 +1403,15 @@ async def test_cross_book_variant_merge_is_independent_of_load_order(
     is asserted in the probe below.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn)
+    _two_whitlocks(config, conn)
     for book_id in order:
         await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
 
-    watsons = _watsons(kuzu)
-    assert len(watsons) == 1
-    node_id, name, books, aliases = watsons[0]
+    whitlocks = _whitlocks(kuzu)
+    assert len(whitlocks) == 1
+    node_id, name, books, aliases = whitlocks[0]
     assert (name, books, aliases) == (
-        "Dr. John Watson", tuple(sorted((BOOK, BOOK_B))), ("john watson", "watson")
+        "Dr. Joran Whitlock", tuple(sorted((BOOK, BOOK_B))), ("joran whitlock", "whitlock")
     )
     edges = sorted(
         (r[0], r[1], r[2])
@@ -1436,14 +1436,14 @@ async def test_a_variant_merge_survives_a_reload_of_either_book(
     node and strip this book from the merged one's `books`.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn)
+    _two_whitlocks(config, conn)
     for book_id in order:
         await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
     snapshot = _snapshot(kuzu, lance)
     for book_id in list(reversed(order)) + order:
         await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
     assert _snapshot(kuzu, lance) == snapshot
-    assert len(_watsons(kuzu)) == 1
+    assert len(_whitlocks(kuzu)) == 1
     conn.close(); kuzu.close()
 
 
@@ -1665,7 +1665,7 @@ async def test_a_variant_pair_with_one_generic_side_does_not_merge(
     below with `Inspector` itself.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn, name_a=persisted_name, name_b=incoming_name)
+    _two_whitlocks(config, conn, name_a=persisted_name, name_b=incoming_name)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
     rows = sorted(
@@ -1696,7 +1696,7 @@ async def test_a_bare_generic_never_merges_into_a_distinctive_name(
     different person in the other novel.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn, name_a=persisted_name, name_b=incoming_name)
+    _two_whitlocks(config, conn, name_a=persisted_name, name_b=incoming_name)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
     rows = sorted(
@@ -1731,16 +1731,16 @@ async def test_probe_the_variant_merge_adopts_the_first_loaded_books_id(
         root = tmp_path / order[0]
         root.mkdir()
         config, conn, kuzu, lance = _env(root)
-        _two_watsons(config, conn)
+        _two_whitlocks(config, conn)
         for book_id in order:
             await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
-        watsons = _watsons(kuzu)
-        assert len(watsons) == 1
-        ids[order[0]] = watsons[0][0]
+        whitlocks = _whitlocks(kuzu)
+        assert len(whitlocks) == 1
+        ids[order[0]] = whitlocks[0][0]
         conn.close(); kuzu.close()
 
-    assert ids[BOOK] == entity_id("john watson", "Character")   # A minted it
-    assert ids[BOOK_B] == entity_id("watson", "Character")      # B minted it
+    assert ids[BOOK] == entity_id("joran whitlock", "Character")   # A minted it
+    assert ids[BOOK_B] == entity_id("whitlock", "Character")      # B minted it
     assert ids[BOOK] != ids[BOOK_B]
 
 
@@ -2008,21 +2008,21 @@ async def test_a_cross_book_possessive_description_does_not_swallow_the_name(
 
 
 @pytest.mark.asyncio
-async def test_the_cross_book_guard_leaves_watson_alone(tmp_path: Path) -> None:
+async def test_the_cross_book_guard_leaves_whitlock_alone(tmp_path: Path) -> None:
     """The guard must not cost the one merge the cross-book rule exists for.
 
     Same body as `test_a_cross_book_name_variant_merges`, restated here so a
     regression in the Task 1k guard names itself.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn)
+    _two_whitlocks(config, conn)
     spy = _AdjudicateSpy(False)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
-    watsons = _watsons(kuzu)
-    assert len(watsons) == 1
-    assert watsons[0][1] == "Dr. John Watson"
-    assert watsons[0][3] == ("john watson", "watson")
+    whitlocks = _whitlocks(kuzu)
+    assert len(whitlocks) == 1
+    assert whitlocks[0][1] == "Dr. Joran Whitlock"
+    assert whitlocks[0][3] == ("joran whitlock", "whitlock")
     conn.close(); kuzu.close()
 
 
@@ -2119,31 +2119,31 @@ async def test_self_loop_edges_are_dropped_and_counted(tmp_path: Path) -> None:
     conn.close(); kuzu.close()
 
 
-def _watson_alias_in_one_book(config, conn) -> None:
+def _whitlock_alias_in_one_book(config, conn) -> None:
     """Book A writes the full name and the bare one; book B only the bare one.
 
-    A resolves `watson` into `john watson`, so `Watson` is only an ALIAS node
-    in A. B's own canonical `watson` hashes to that alias node's id.
+    A resolves `whitlock` into `joran whitlock`, so `Whitlock` is only an ALIAS node
+    in A. B's own canonical `whitlock` hashes to that alias node's id.
     """
     a = [_chunk(BOOK, 1, 0)]
     _add_book(config, conn, BOOK, a, [
-        _row(a[0].id, BOOK, "John Watson", "LOVES", "Bo",
-             ["John Watson", "Bo"], ["Character", "Character"]),
-        _row(a[0].id, BOOK, "Watson", "OPPOSES", "Cy",
-             ["Watson", "Cy"], ["Character", "Character"]),
+        _row(a[0].id, BOOK, "Joran Whitlock", "LOVES", "Bo",
+             ["Joran Whitlock", "Bo"], ["Character", "Character"]),
+        _row(a[0].id, BOOK, "Whitlock", "OPPOSES", "Cy",
+             ["Whitlock", "Cy"], ["Character", "Character"]),
     ])
     b = [_chunk(BOOK_B, 1, 0)]
     _add_book(config, conn, BOOK_B, b, [
-        _row(b[0].id, BOOK_B, "Dr. Watson", "LOVES", "Zed",
-             ["Dr. Watson", "Zed"], ["Character", "Character"]),
+        _row(b[0].id, BOOK_B, "Dr. Whitlock", "LOVES", "Zed",
+             ["Dr. Whitlock", "Zed"], ["Character", "Character"]),
     ])
 
 
-def _watson_edge_nodes(kuzu) -> dict[str, set[str]]:
-    """Watson-named node -> the books of the REL edges hanging on it."""
+def _whitlock_edge_nodes(kuzu) -> dict[str, set[str]]:
+    """Whitlock-named node -> the books of the REL edges hanging on it."""
     found: dict[str, set[str]] = {}
     for name, book in _rows(
-        kuzu, "MATCH (s:Entity)-[r:REL]->(:Entity) WHERE s.name CONTAINS 'Watson'"
+        kuzu, "MATCH (s:Entity)-[r:REL]->(:Entity) WHERE s.name CONTAINS 'Whitlock'"
               " RETURN s.name, r.book_id"):
         found.setdefault(name, set()).add(book)
     return found
@@ -2154,15 +2154,15 @@ def _watson_edge_nodes(kuzu) -> dict[str, set[str]]:
 async def test_a_bare_name_that_is_an_alias_in_another_book_joins_its_canonical(
     tmp_path: Path, order: list[str]
 ) -> None:
-    # Task 11a, measured: on A Study in Scarlet `watson` became an alias of
-    # "John H. Watson, M.D."; The Sign of the Four's own `watson` has the
-    # alias node's id, fused into THAT node by id collision, and Watson ended
+    # Task 11a, measured: on A Study in Scarlet `whitlock` became an alias of
+    # "Joran H. Whitlock, M.D."; The Sign of the Four's own `whitlock` has the
+    # alias node's id, fused into THAT node by id collision, and Whitlock ended
     # up as two nodes, 110 edges on the alias and 56 on the canonical.
     config, conn, kuzu, lance = _env(tmp_path)
-    _watson_alias_in_one_book(config, conn)
+    _whitlock_alias_in_one_book(config, conn)
     for book in order:
         await load_book(config, conn, kuzu, lance, book, _embed, _never)
-    assert _watson_edge_nodes(kuzu) == {"John Watson": {BOOK, BOOK_B}}
+    assert _whitlock_edge_nodes(kuzu) == {"Joran Whitlock": {BOOK, BOOK_B}}
     snapshot = _snapshot(kuzu, lance)
     for book in order + order:
         await load_book(config, conn, kuzu, lance, book, _embed, _never)

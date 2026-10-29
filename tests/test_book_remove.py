@@ -6,7 +6,7 @@ move back must record none, because everything is answered from the saved
 extraction, the adjudication caches and the beats cache.
 
 World "World A" holds books ONE and TWO. Both name Maren Vex (one entity once
-both are loaded) and Dr. John Watson; book TWO also writes plain "Watson" next
+both are loaded) and Dr. Joran Whitlock; book TWO also writes plain "Whitlock" next
 to him (an alias node there) and meets Zed, who is in no other book.
 """
 from __future__ import annotations
@@ -91,20 +91,20 @@ def _build(tmp_path: Path):
     """Both books in World A, loaded in order ONE, TWO, with their beats."""
     config, conn, kuzu, lance = _env(tmp_path)
     c1 = [_chunk(ONE, 1, 0, "Maren Vex stood at the old gate and refused to let anyone pass through it."),
-          _chunk(ONE, 1, 1, "Dr. John Watson wrote down every word she said in his small black notebook.")]
+          _chunk(ONE, 1, 1, "Dr. Joran Whitlock wrote down every word she said in his small black notebook.")]
     _add_book(config, conn, ONE, c1, [
         _row(c1[0].id, ONE, "Maren Vex", "OPPOSES", "Bo", ["Maren Vex", "Bo"], CHAR),
-        _row(c1[1].id, ONE, "Dr. John Watson", "LOVES", "Bo",
-             ["Dr. John Watson", "Bo"], CHAR),
+        _row(c1[1].id, ONE, "Dr. Joran Whitlock", "LOVES", "Bo",
+             ["Dr. Joran Whitlock", "Bo"], CHAR),
     ], world="World A")
     c2 = [_chunk(TWO, 1, 0, "Maren Vex gave the silver key to Zed without saying a single word."),
-          _chunk(TWO, 1, 1, "Watson followed them down the long cold corridor to the cellar door.")]
+          _chunk(TWO, 1, 1, "Whitlock followed them down the long cold corridor to the cellar door.")]
     _add_book(config, conn, TWO, c2, [
         _row(c2[0].id, TWO, "Maren Vex", "LOVES", "Zed", ["Maren Vex", "Zed"], CHAR),
-        _row(c2[1].id, TWO, "Dr. John Watson", "FOLLOWS", "Zed",
-             ["Dr. John Watson", "Zed"], CHAR),
-        _row(c2[1].id, TWO, "Watson", "TRUSTS", "Maren Vex",
-             ["Watson", "Maren Vex"], CHAR),
+        _row(c2[1].id, TWO, "Dr. Joran Whitlock", "FOLLOWS", "Zed",
+             ["Dr. Joran Whitlock", "Zed"], CHAR),
+        _row(c2[1].id, TWO, "Whitlock", "TRUSTS", "Maren Vex",
+             ["Whitlock", "Maren Vex"], CHAR),
     ], world="World A")
     _cache_beats(config, conn, ONE, "Maren Vex", "refused to let anyone pass through it")
     _cache_beats(config, conn, TWO, "Maren Vex", "gave the silver key to Zed")
@@ -250,7 +250,7 @@ def test_remove_equals_a_graph_built_without_the_book(tmp_path: Path) -> None:
     assert (_snapshot(conn, kuzu, lance, config, books=[ONE])
             == _snapshot(solo_conn, solo_kuzu, solo_lance, solo_config, books=[ONE]))
     assert report.chunks == 2 and report.beats == 1 and report.vector_chunks == 2
-    assert report.entities_deleted >= 2  # Zed, and the Watson alias node
+    assert report.entities_deleted >= 2  # Zed, and the Whitlock alias node
     assert report.shared_with == (ONE,)
     # The kept shared entities no longer list the book, and the alias form
     # only book TWO's alias node carried is gone from the canonical entity.
@@ -323,16 +323,16 @@ def test_a_remove_stopped_after_the_vectors_is_finished_by_the_next_run(
 
 def test_removing_a_book_drops_its_alias_nodes_and_forms(tmp_path: Path) -> None:
     config, conn, kuzu, lance, _gemini = _library(tmp_path)
-    watson = _named(kuzu, "Dr. John Watson")
-    assert len(watson) == 1
-    assert "watson" in _rows(kuzu, "MATCH (e:Entity {id: $i}) RETURN e.aliases",
-                             {"i": watson[0][0]})[0][0]
+    whitlock = _named(kuzu, "Dr. Joran Whitlock")
+    assert len(whitlock) == 1
+    assert "whitlock" in _rows(kuzu, "MATCH (e:Entity {id: $i}) RETURN e.aliases",
+                             {"i": whitlock[0][0]})[0][0]
     assert _rows(kuzu, "MATCH (a:Entity)-[:ALIAS_OF]->(:Entity) RETURN a.id")
     remove_book_from_graph(conn, kuzu, lance, TWO)
     assert _rows(kuzu, "MATCH (a:Entity)-[:ALIAS_OF]->(:Entity) RETURN a.id") == []
-    assert "watson" not in _rows(
+    assert "whitlock" not in _rows(
         kuzu, "MATCH (e:Entity {id: $i}) RETURN e.aliases",
-        {"i": watson[0][0]})[0][0]
+        {"i": whitlock[0][0]})[0][0]
     kuzu.close()
 
 
@@ -356,7 +356,7 @@ def test_a_move_out_and_back_restores_the_graph_with_no_requests(
     assert worlds.world_of(conn, TWO).id == world_b
     check_world_invariant(conn, kuzu)
     # The shared entities are now two each, one per world.
-    for name in ("Maren Vex", "Dr. John Watson"):
+    for name in ("Maren Vex", "Dr. Joran Whitlock"):
         nodes = _named(kuzu, name)
         assert len(nodes) == 2
         assert sorted(books for _id, books in nodes) == sorted([(ONE,), (TWO,)])
