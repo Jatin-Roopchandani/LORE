@@ -51,7 +51,10 @@ steps 1, 2, 2b and 2c, so a same-named character in another world takes the
 next free slot and stays its own node; the node still OCCUPIES its id, so
 the slot is never reused. Same-book resolution is unchanged. After every
 load `check_world_invariant` confirms that no entity's books span two
-worlds, and raises `WorldInvariantError` if one does.
+worlds, and raises `WorldInvariantError` if one does. The check covers the
+loaded world only (older violations elsewhere are a logged warning naming
+`lore world reconcile`); the first load after migration 9 runs that
+reconcile itself, once, so a library graphed before worlds heals on its own.
 
 Failure containment — the two stores have no shared transaction, so the
 write is staged in three phases and ordered so that the largest, most
@@ -76,6 +79,7 @@ failure-prone body of work sits under the one real transaction available:
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
@@ -692,23 +696,54 @@ def _run_in_transaction(kuzu: KuzuStore, statements: list[Statement]) -> None:
         raise
 
 
-def check_world_invariant(conn: sqlite3.Connection, kuzu: KuzuStore) -> None:
+log = logging.getLogger(__name__)
+
+
+def _note_reconciled(report: "worlds.ReconcileReport | None") -> None:
+    for merge in (report.merges if report else ()):
+        log.warning("merged worlds %s into %r: books sharing an entity must"
+                    " share a world", merge.absorbed, merge.kept)
+
+
+def check_world_invariant(conn: sqlite3.Connection, kuzu: KuzuStore,
+                          world_id: int | None = None) -> None:
     """Raise `WorldInvariantError` unless every entity's books share a world.
 
-    Read-only, over the whole graph (one small query plus one over `books`).
-    A book the registry does not know counts as a world of its own, so an
-    entity naming it alongside a registered book is reported too.
+    Read-only (one small query plus one over `books`). A book id the registry
+    does not know (a ghost left in `Entity.books`) is not a world: it is
+    skipped, so it can neither make an entity span worlds nor hide a real
+    span.
+
+    `world_id` scopes the check to the world just loaded: only entities that
+    touch one of its books can raise. A violation anywhere else was there
+    before this load (a library graphed before worlds existed) and is logged
+    as a warning naming `lore world reconcile`, so one old problem does not
+    fail every later load. Without `world_id` the whole graph is checked.
     """
     world_of_book = {
         row[0]: row[1] for row in conn.execute("SELECT id, world_id FROM books")
     }
+    scope = (None if world_id is None else
+             {book for book, world in world_of_book.items() if world == world_id})
     broken: list[str] = []
+    elsewhere: list[str] = []
     for node_id, name, books in kuzu.execute(
         "MATCH (e:Entity) RETURN e.id, e.name, e.books"
     ):
-        spanned = {world_of_book.get(book) for book in books or ()}
-        if len(spanned) > 1:
-            broken.append(f"{name!r} ({node_id}: books {sorted(books)})")
+        known = [book for book in books or () if book in world_of_book]
+        if len({world_of_book[book] for book in known}) < 2:
+            continue
+        found = f"{name!r} ({node_id}: books {sorted(known)})"
+        if scope is None or scope.intersection(known):
+            broken.append(found)
+        else:
+            elsewhere.append(found)
+    if elsewhere:
+        log.warning(
+            "%d entit%s span more than one world, outside the world just"
+            " loaded: %s. Run `lore world reconcile` to merge the worlds"
+            " involved.", len(elsewhere), "y" if len(elsewhere) == 1 else "ies",
+            "; ".join(sorted(elsewhere)[:5]))
     if broken:
         raise WorldInvariantError(
             f"{len(broken)} entit{'y' if len(broken) == 1 else 'ies'} span more"
@@ -748,6 +783,11 @@ async def load_book(
     (`rewrite_first_person`). An unresolved endpoint, or every endpoint when
     `first_person` is None, is left as extracted and drops as before.
     """
+    # A library graphed before worlds may still hold an entity fused across
+    # books that migration 9 put in different worlds; merge those worlds
+    # once, before anything is resolved (registry rows only, no graph write).
+    _note_reconciled(worlds.ensure_reconciled(conn, kuzu))
+
     # ---- Phase 1: read and compute. No store is mutated below this line.
     world = worlds.world_of(conn, book_id)
     if world is None:
@@ -1198,7 +1238,7 @@ async def load_book(
             " left incomplete. Re-run the load to repair it."
         ) from exc
     report.chunks = len(lance_chunk_rows)
-    check_world_invariant(conn, kuzu)
+    check_world_invariant(conn, kuzu, world_id=world.id)
 
     # ---- Phase 4: the questions this load could not answer.
     # Last, and outside both stores: it is a note to the user, not part of

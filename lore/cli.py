@@ -27,7 +27,8 @@ from lore.ingest.models import IngestError, book_id_for_file
 from lore.ingest.pdf import parse_pdf
 from lore.worlds import (
     WorldError, create_world, delete_world, get_world, list_worlds, rename_world,
-    books_in, suggest_world, world_of,
+    books_in, ensure_reconciled, reconcile_worlds_from_graph, suggest_world,
+    world_of,
 )
 from lore.ingest.registry import find_books, forget_book, ingest_book, list_books, set_series
 from lore.inference.base import ProviderOutputError
@@ -329,6 +330,36 @@ def world_rename(world: str, new_name: str) -> None:
     finally:
         conn.close()
     typer.echo(f"{found.name} -> {new_name.strip()}")
+
+
+@world_app.command("reconcile")
+def world_reconcile() -> None:
+    """Merge the worlds of books that share an entity in the graph.
+
+    For a library graphed before worlds existed: books joined by a shared
+    character must live in one world. The world holding the most books is
+    kept (a tie goes to a series world, then the oldest). It runs by itself
+    once, at the first load after upgrading; this reruns it by hand.
+    """
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        kuzu = KuzuStore(config.kuzu_dir / "graph")
+        try:
+            report = reconcile_worlds_from_graph(conn, kuzu)
+            ensure_reconciled(conn, kuzu)  # a manual run also settles the marker
+        finally:
+            kuzu.close()
+    finally:
+        conn.close()
+    if not report.merges:
+        typer.echo("no world spans a shared entity - nothing to merge")
+        return
+    for m in report.merges:
+        typer.echo(f"merged {', '.join(repr(n) for n in m.absorbed)} into"
+                   f" {m.kept!r} ({len(m.books)} book(s) moved)")
+    typer.echo(f"{report.merged} world(s) merged")
 
 
 @world_app.command("delete")

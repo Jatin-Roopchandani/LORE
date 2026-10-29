@@ -2393,12 +2393,13 @@ async def test_the_world_invariant_holds_after_every_load(
     real = loader.check_world_invariant
     monkeypatch.setattr(
         loader, "check_world_invariant",
-        lambda c, k: (checked.append(1), real(c, k))[1])
+        lambda c, k, **kw: (checked.append(kw), real(c, k, **kw))[1])
     config, conn, kuzu, lance = _env(tmp_path)
     _two_vexes(config, conn, world_a="north", world_b="south")
     await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
     assert len(checked) == 2  # every load checks, and neither raised
+    assert all(kw.get("world_id") for kw in checked)  # scoped to the loaded world
     real(conn, kuzu)
     conn.close(); kuzu.close()
 

@@ -7,7 +7,7 @@ elsewhere.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class WorldError(ValueError):
@@ -104,7 +104,8 @@ def suggest_world(conn: sqlite3.Connection, series: str | None,
                   title: str) -> tuple[int | None, str]:
     """The default world for a new book: (world_id or None, name).
 
-    1. its series already lives in a world: that world;
+    1. its series already lives in a world: that world (series match when
+       trimmed and case-folded, as migration 9 groups them);
     2. else it has a series: a new world named after the series;
     3. else a new world named after the title.
     """
@@ -112,9 +113,104 @@ def suggest_world(conn: sqlite3.Connection, series: str | None,
     if series:
         r = conn.execute(
             "SELECT w.id, w.name FROM books b JOIN worlds w ON w.id = b.world_id"
-            " WHERE b.series = ? COLLATE NOCASE ORDER BY b.rowid LIMIT 1",
+            " WHERE lower(trim(b.series)) = lower(?) ORDER BY b.rowid LIMIT 1",
             (series,)).fetchone()
         if r:
             return r[0], r[1]
         return None, series
     return None, title.strip()
+
+
+# ---- reconcile ------------------------------------------------------------
+
+
+@dataclass
+class Merge:
+    """One group of worlds folded into `kept`."""
+    kept: str
+    absorbed: list[str]
+    books: list[str]  # the books that changed world
+
+
+@dataclass
+class ReconcileReport:
+    merges: list[Merge] = field(default_factory=list)
+
+    @property
+    def merged(self) -> int:
+        return sum(len(m.absorbed) for m in self.merges)
+
+
+def reconcile_worlds_from_graph(conn: sqlite3.Connection, kuzu) -> ReconcileReport:
+    """Merge the worlds of books that share an entity in the graph.
+
+    A library graphed before worlds existed may have fused an entity across
+    books that the migration then put in different worlds. Books joined by a
+    shared `Entity.books` (union-find over those lists; ids the registry does
+    not know are ignored) must live in one world, so the worlds of each
+    connected group are merged into one.
+
+    The world kept is the one holding the most books; a tie goes to a world
+    with a series, then to the lowest id. The others' books move to it, and
+    the emptied worlds are deleted. Rows only: no graph change. Idempotent;
+    a second call finds nothing to merge.
+    """
+    world_of_book = {r[0]: r[1] for r in conn.execute(
+        "SELECT id, world_id FROM books WHERE world_id IS NOT NULL")}
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for (books,) in kuzu.execute("MATCH (e:Entity) RETURN e.books"):
+        ids = sorted({world_of_book[b] for b in (books or ()) if b in world_of_book})
+        for other in ids[1:]:
+            parent[find(other)] = find(ids[0])
+    groups: dict[int, list[int]] = {}
+    for w in list(parent):
+        groups.setdefault(find(w), []).append(w)
+
+    report = ReconcileReport()
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        marks = ",".join("?" * len(members))
+        size = {r[0]: r[1] for r in conn.execute(
+            f"SELECT world_id, COUNT(*) FROM books WHERE world_id IN ({marks})"
+            " GROUP BY world_id", members)}
+        has_series = {r[0] for r in conn.execute(
+            f"SELECT DISTINCT world_id FROM books WHERE world_id IN ({marks})"
+            " AND trim(coalesce(series, '')) <> ''", members)}
+        kept = min(members, key=lambda w: (-size.get(w, 0), w not in has_series, w))
+        absorbed = sorted(w for w in members if w != kept)
+        marks = ",".join("?" * len(absorbed))
+        moved = [r[0] for r in conn.execute(
+            f"SELECT id FROM books WHERE world_id IN ({marks}) ORDER BY rowid",
+            absorbed)]
+        names = {w: get_world(conn, w).name for w in members}
+        with conn:
+            conn.execute(
+                f"UPDATE books SET world_id = ? WHERE world_id IN ({marks})",
+                [kept, *absorbed])
+            conn.execute(f"DELETE FROM worlds WHERE id IN ({marks})", absorbed)
+        report.merges.append(Merge(kept=names[kept],
+                                   absorbed=[names[w] for w in absorbed],
+                                   books=moved))
+    return report
+
+
+def ensure_reconciled(conn: sqlite3.Connection, kuzu) -> ReconcileReport | None:
+    """Run `reconcile_worlds_from_graph` once per library (the first graph
+    open after migration 9), then record it in `world_reconcile`. None when it
+    already ran."""
+    if conn.execute("SELECT 1 FROM world_reconcile").fetchone():
+        return None
+    report = reconcile_worlds_from_graph(conn, kuzu)
+    with conn:
+        conn.execute("INSERT OR IGNORE INTO world_reconcile (id, merged) VALUES (1, ?)",
+                     (report.merged,))
+    return report

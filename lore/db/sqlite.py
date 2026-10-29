@@ -155,15 +155,20 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
             "ALTER TABLE books ADD COLUMN world_id INTEGER REFERENCES worlds(id)",
             "CREATE INDEX idx_books_world ON books(world_id)",
-            "INSERT INTO worlds (name) SELECT DISTINCT trim(series) FROM books"
-            " WHERE series IS NOT NULL AND trim(series) <> '' ORDER BY trim(series)",
+            # Series group by one collation: trimmed and case-folded, the
+            # same as worlds.suggest_world. The world takes the spelling of
+            # the series' first book.
+            "INSERT INTO worlds (name) SELECT name FROM ("
+            "SELECT trim(series) AS name, MIN(rowid) AS first_row FROM books"
+            " WHERE series IS NOT NULL AND trim(series) <> ''"
+            " GROUP BY lower(trim(series))) ORDER BY lower(name)",
             "UPDATE books SET world_id = (SELECT w.id FROM worlds w"
-            " WHERE w.name = trim(books.series))"
+            " WHERE lower(w.name) = lower(trim(books.series)))"
             " WHERE series IS NOT NULL AND trim(series) <> ''",
             "INSERT INTO worlds (name) SELECT CASE WHEN EXISTS"
-            " (SELECT 1 FROM worlds w WHERE w.name = b.title)"
+            " (SELECT 1 FROM worlds w WHERE lower(w.name) = lower(b.title))"
             " OR EXISTS (SELECT 1 FROM books b2 WHERE b2.world_id IS NULL"
-            " AND b2.title = b.title AND b2.rowid < b.rowid)"
+            " AND lower(b2.title) = lower(b.title) AND b2.rowid < b.rowid)"
             " THEN b.title || ' (' || substr(b.id, 1, 8) || ')' ELSE b.title END"
             " FROM books b WHERE b.world_id IS NULL ORDER BY b.rowid",
             "UPDATE books SET world_id = COALESCE("
@@ -175,6 +180,22 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
     # Where an unfinished move is going: Continue (web or CLI) needs the
     # target world to rerun `remove`/`reassign`. Cleared when the job is done.
     (10, ["ALTER TABLE book_jobs ADD COLUMN move_world_id INTEGER"]),
+    # One-time reconcile marker: a library graphed before worlds may have an
+    # entity fused across books that migration 9 put in different worlds.
+    # `worlds.ensure_reconciled` merges those worlds at the first graph open
+    # and writes the single row.
+    (
+        11,
+        [
+            """
+            CREATE TABLE world_reconcile (
+                id      INTEGER PRIMARY KEY CHECK (id = 1),
+                done_at TEXT NOT NULL DEFAULT (datetime('now')),
+                merged  INTEGER NOT NULL DEFAULT 0
+            )
+            """,
+        ],
+    ),
 ]
 
 

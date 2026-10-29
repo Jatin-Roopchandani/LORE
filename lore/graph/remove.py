@@ -23,7 +23,9 @@ from dataclasses import dataclass
 
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
-from lore.graph.loader import Statement, _centroid, _run_in_transaction
+from lore import worlds
+from lore.graph.loader import (
+    Statement, _centroid, _note_reconciled, _run_in_transaction)
 from lore.resolve.normalize import normalize_name
 from lore.resolve.resolver import display_name
 
@@ -49,6 +51,9 @@ def remove_book_from_graph(
     conn: sqlite3.Connection, kuzu: KuzuStore, lance: LanceStore, book_id: str
 ) -> RemovalReport:
     report = RemovalReport(book_id=book_id)
+    # The first graph open after migration 9 heals worlds split around an
+    # already-fused entity (see worlds.ensure_reconciled); registry rows only.
+    _note_reconciled(worlds.ensure_reconciled(conn, kuzu))
 
     # ---- Read. Nothing is changed until the plan is complete.
     owned = {
