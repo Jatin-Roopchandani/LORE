@@ -25,14 +25,17 @@ function palette() {
 }
 
 // Sigma's own hover box is always white while the label takes the theme's ink, so in dark mode the
-// hovered name vanished (white on white). Same geometry as sigma's drawDiscNodeHover, in theme colours.
+// hovered name vanished (white on white). Same geometry as sigma's drawDiscNodeHover, in the theme's
+// accent highlight: the panel colour sits too close to the dark canvas to show as a highlight.
 type HoverData = { x: number; y: number; size: number; label?: string | null };
 type HoverSettings = { labelSize: number; labelFont: string; labelWeight: string };
 function drawThemedHover(ctx: CanvasRenderingContext2D, data: HoverData, settings: HoverSettings) {
   const p = palette();
   const size = settings.labelSize, pad = 2;
   ctx.font = `${settings.labelWeight} ${size}px ${settings.labelFont}`;
-  ctx.fillStyle = p.panel;
+  ctx.fillStyle = p.v("--accent-soft");
+  ctx.strokeStyle = p.v("--accent");
+  ctx.lineWidth = 1.5;
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 0;
   ctx.shadowBlur = 8;
@@ -51,13 +54,16 @@ function drawThemedHover(ctx: CanvasRenderingContext2D, data: HoverData, setting
     ctx.arc(data.x, data.y, radius, angle, -angle);
     ctx.closePath();
     ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.stroke();
   } else {
     ctx.beginPath();
     ctx.arc(data.x, data.y, data.size + pad, 0, Math.PI * 2);
     ctx.closePath();
     ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.stroke();
   }
-  ctx.shadowBlur = 0;
   if (typeof data.label === "string" && data.label) {
     ctx.fillStyle = p.ink;
     ctx.fillText(data.label, data.x + data.size + 3, data.y + size / 3);
