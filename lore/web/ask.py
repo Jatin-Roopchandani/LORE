@@ -28,7 +28,7 @@ def sse(event: str, data: dict) -> bytes:
 
 
 async def ask_events(config, question: str, lock: asyncio.Lock,
-                     search=None) -> AsyncIterator[bytes]:
+                     search=None, world=None) -> AsyncIterator[bytes]:
     search = search or tools.lore_search
     started = time.monotonic()
 
@@ -41,7 +41,10 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
     async with lock:
         queue: asyncio.Queue[dict] = asyncio.Queue()
         getter = None
-        task = asyncio.create_task(search(config, question, on_event=queue.put_nowait))
+        # `world` only when given, so a search that takes none still works.
+        scope = {} if world is None else {"world": world}
+        task = asyncio.create_task(search(config, question, on_event=queue.put_nowait,
+                                          **scope))
         try:
             while True:
                 getter = asyncio.ensure_future(queue.get())

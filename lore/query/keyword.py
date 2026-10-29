@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from typing import Collection
 
 from lore.resolve.entityhood import is_boilerplate_chunk
 
@@ -56,17 +57,24 @@ class KeywordIndex:
                 "SELECT id, book_id, chapter_seq, text FROM chunks")
              if not is_boilerplate_chunk(row[3])))
 
-    def search(self, text: str, limit: int,
-               book_id: str | None = None) -> list[tuple[str, str, int]]:
+    def search(self, text: str, limit: int, book_id: str | None = None,
+               book_ids: Collection[str] | None = None) -> list[tuple[str, str, int]]:
         """(chunk_id, book_id, chapter_seq) of the best BM25 matches for any
-        of `text`'s content words, best first. No content words, no hits."""
+        of `text`'s content words, best first, within one book or within
+        `book_ids` (a world's) when given. No content words, no hits."""
         terms = query_terms(text)
         if not terms or limit <= 0:
             return []
+        if book_ids is not None and book_id is None:
+            if not book_ids:
+                return []
+            marks = ",".join("?" * len(book_ids))
+            where, args = f" AND book_id IN ({marks})", sorted(book_ids)
+        else:
+            where, args = (" AND book_id = ?", [book_id]) if book_id else ("", [])
         # Each term quoted, so a word FTS5 treats as syntax (AND, NEAR) is
         # searched as a word.
         match = " OR ".join(f'"{t}"' for t in terms)
-        where, args = (" AND book_id = ?", [book_id]) if book_id else ("", [])
         rows = self._db.execute(
             "SELECT id, book_id, chapter_seq FROM c WHERE c MATCH ?" + where
             + " ORDER BY bm25(c) LIMIT ?", (match, *args, limit))

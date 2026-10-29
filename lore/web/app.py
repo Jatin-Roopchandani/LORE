@@ -32,6 +32,7 @@ from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE, day_report, today
 from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.pipeline import processing_budget_left, run_book
 from lore.web.ask import ask_events
+from lore.worlds import list_worlds
 from lore.web.security import OriginGuard, allowed_hosts, allowed_origins
 
 STATIC = Path(__file__).parent / "static"
@@ -41,6 +42,8 @@ MAX_QUESTION_CHARS = 2000
 
 class AskBody(BaseModel):
     question: str
+    # A world's id or name; none (or "all") searches every world.
+    world: int | str | None = None
 
     @field_validator("question")
     @classmethod
@@ -206,34 +209,51 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 runner_slot.release()
         return {"started": True}
 
+    @api.get("/api/worlds")
+    def worlds():
+        conn = open_db(config.sqlite_path)
+        try:
+            rows = list_books(conn)
+            listed = list_worlds(conn)
+        finally:
+            conn.close()
+        return [
+            {"id": w.id, "name": w.name,
+             "books": [{"id": b["id"], "title": b["title"], "series": b["series"],
+                        "series_index": b["series_index"]}
+                       for b in rows if b["world_id"] == w.id]}
+            for w in listed]
+
     @api.get("/api/library")
-    def library():
-        return tools.library(config)
+    def library(world: str | None = None):
+        return tools.library(config, world=world)
 
     @api.get("/api/entity")
-    def entity(id: str | None = None, name: str | None = None):
+    def entity(id: str | None = None, name: str | None = None,
+               world: str | None = None):
         if id:
-            return tools.entity_by_id(config, id)
+            return tools.entity_by_id(config, id, world=world)
         if name:
-            return tools.entity(config, name)
+            return tools.entity(config, name, world=world)
         raise HTTPException(400, "give id or name")
 
     @api.get("/api/entities")
-    def entities(ids: str = ""):
-        return tools.entities_by_ids(config, [i for i in ids.split(",") if i])
+    def entities(ids: str = "", world: str | None = None):
+        return tools.entities_by_ids(config, [i for i in ids.split(",") if i],
+                                     world=world)
 
     @api.get("/api/subgraph")
     def subgraph(id: str | None = None, name: str | None = None,
-                 depth: int = Query(1, ge=1, le=3)):
+                 depth: int = Query(1, ge=1, le=3), world: str | None = None):
         if id:
-            return tools.subgraph_by_id(config, id, depth)
+            return tools.subgraph_by_id(config, id, depth, world=world)
         if name:
-            return tools.subgraph(config, name, depth)
+            return tools.subgraph(config, name, depth, world=world)
         raise HTTPException(400, "give id or name")
 
     @api.get("/api/overview")
-    def overview(limit: int = 40):
-        return tools.overview(config, limit)
+    def overview(limit: int = 40, world: str | None = None):
+        return tools.overview(config, limit, world=world)
 
     @api.get("/api/quota")
     def quota():
@@ -263,7 +283,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
         return StreamingResponse(
-            ask_events(config, body.question, lock, search=tools.lore_search),
+            ask_events(config, body.question, lock, search=tools.lore_search,
+                       world=body.world),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 

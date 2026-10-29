@@ -32,6 +32,7 @@ from lore.orchestrator.gemini_budget import (
 )
 from lore.query.agent import QueryModels, answer_question, make_query_models
 from lore.query.retrieval import search_chunks
+from lore.query.scope import Scope, UnknownWorld, resolve_scopes, world_books
 from lore.query.seed import (
     canonical_ids, embed_question, live_entity_ids, load_name_index,
     named_entity_ids,
@@ -68,9 +69,14 @@ def _guarded(fn):
     return wrapper
 
 
+def _world_error(exc: UnknownWorld) -> dict:
+    return error("not_found", str(exc))
+
+
 @_guarded
-def library(config: LoreConfig) -> dict:
-    """Every book, from SQLite; entity counts from the graph if it opens.
+def library(config: LoreConfig, world: int | str | None = None) -> dict:
+    """Every book (of one world, when `world` is given), from SQLite; entity
+    counts from the graph if it opens.
 
     The graph is best-effort: between `lore ingest` and `lore graph load`,
     or while a load holds the lock, the books are still listed, with
@@ -78,6 +84,12 @@ def library(config: LoreConfig) -> dict:
     """
     with open_stores(config, kuzu=False, lance=False) as stores:
         books = list_books(stores.conn)
+        try:
+            only = world_books(stores.conn, world)
+        except UnknownWorld as exc:
+            return _world_error(exc)
+    if only is not None:
+        books = [b for b in books if b["id"] in only]
     counts: dict[str, int] | None = {}
     note = None
     try:
@@ -97,7 +109,7 @@ def library(config: LoreConfig) -> dict:
         BookOut(id=b["id"], title=b["title"], author=b["author"],
                 status=b["status"], chunk_count=b["chunk_count"],
                 entity_count=None if counts is None else counts.get(b["id"], 0),
-                ).model_dump()
+                world=b.get("world")).model_dump()
         for b in books
     ], "note": note}
 
@@ -172,12 +184,14 @@ class _NotFound(Exception):
 
 
 class _Ambiguous(Exception):
-    def __init__(self, candidates: list[tuple[str, str]]) -> None:
+    def __init__(self, candidates: list[tuple[str, str]],
+                 across_worlds: bool = False) -> None:
         # [(id, name), ...]
         self.candidates = candidates
+        self.across_worlds = across_worlds
 
 
-def _resolve_one(kuzu, name: str) -> str:
+def _resolve_one(kuzu, name: str, books=None) -> str:
     """One canonical entity id for `name`, or raise.
 
     Resolves through NameIndex and canonical_ids -- the SAME path the query
@@ -190,11 +204,15 @@ def _resolve_one(kuzu, name: str) -> str:
     every candidate is edgeless we keep them: the entity is real, "no entity
     named X" would be a lie, and its card is honestly empty.
     """
-    index = load_name_index(kuzu)
+    index = load_name_index(kuzu, books)
     ids = named_entity_ids(name, index)
     if not ids:
         raise _NotFound()
     canonical = canonical_ids(kuzu, ids)
+    if books is not None:  # an alias may point at an entity of another world
+        canonical = _in_books(kuzu, canonical, books)
+        if not canonical:
+            raise _NotFound()
     distinct = list(dict.fromkeys(live_entity_ids(kuzu, canonical) or canonical))
     if len(distinct) > 1:
         rows = {
@@ -209,12 +227,23 @@ def _resolve_one(kuzu, name: str) -> str:
     return distinct[0]
 
 
+def _in_books(kuzu, ids: list[str], books) -> list[str]:
+    """`ids` whose entity has a book among `books`, in the order given."""
+    if not ids or not books:
+        return []
+    rows = {r[0]: r[1] or [] for r in kuzu.execute(
+        "MATCH (e:Entity) WHERE e.id IN $ids RETURN e.id, e.books", {"ids": ids})}
+    return [i for i in ids if any(b in books for b in rows.get(i, ()))]
+
+
 def _ambiguous_error(name: str, exc: _Ambiguous) -> dict:
     listed = ", ".join(f"{n} ({i})" for i, n in exc.candidates)
+    advice = ("Ask again with one of those names, or pass `world`."
+              if exc.across_worlds else "Ask again with one of those names.")
     return error(
         "not_found",
         f"{name!r} is ambiguous -- it matches {len(exc.candidates)}"
-        f" entities: {listed}. Ask again with one of those names.",
+        f" entities: {listed}. {advice}",
     )
 
 
@@ -231,7 +260,12 @@ def _edge(subject: str, subject_id: str, obj: str, object_id: str,
     )
 
 
-def _entity_card(kuzu, entity_id: str, edge_cap: int) -> EntityCard:
+def _book_filter(books, alias: str = "r") -> str:
+    """A Cypher clause keeping edges of `books`; "" for the whole library."""
+    return "" if books is None else f" AND {alias}.book_id IN $books"
+
+
+def _entity_card(kuzu, entity_id: str, edge_cap: int, books=None) -> EntityCard:
     """The entity row plus up to `edge_cap` REL edges each way, in a stable
     order, with the true totals.
 
@@ -242,6 +276,9 @@ def _entity_card(kuzu, entity_id: str, edge_cap: int) -> EntityCard:
 
     Edge subject/object are names and subject_id/object_id the ids, as in
     the subgraph: one meaning for EdgeOut in every tool.
+
+    With `books` (a world's), only edges of those books are read and counted,
+    and the card lists only those of the entity's books.
     """
     rows = list(kuzu.execute(
         "MATCH (e:Entity) WHERE e.id = $id"
@@ -254,9 +291,13 @@ def _entity_card(kuzu, entity_id: str, edge_cap: int) -> EntityCard:
     # b.id after the edge columns: two edges to different entities with the
     # same name and text must not tie.
     params = {"id": entity_id, "cap": edge_cap}
+    totals = {"id": entity_id}
+    if books is not None:
+        params["books"] = totals["books"] = sorted(books)
+    flt = _book_filter(books)
     edges_out = [
         _edge(row[1], row[0], r[7], r[8], r) for r in kuzu.execute(
-            f"MATCH (e:Entity)-[r:REL]->(b:Entity) WHERE e.id = $id"
+            f"MATCH (e:Entity)-[r:REL]->(b:Entity) WHERE e.id = $id{flt}"
             f" RETURN {_EDGE_COLUMNS}, b.name, b.id"
             f" ORDER BY {_EDGE_ORDER}, b.id LIMIT $cap",
             params,
@@ -264,45 +305,104 @@ def _entity_card(kuzu, entity_id: str, edge_cap: int) -> EntityCard:
     ]
     edges_in = [
         _edge(r[7], r[8], row[1], row[0], r) for r in kuzu.execute(
-            f"MATCH (b:Entity)-[r:REL]->(e:Entity) WHERE e.id = $id"
+            f"MATCH (b:Entity)-[r:REL]->(e:Entity) WHERE e.id = $id{flt}"
             f" RETURN {_EDGE_COLUMNS}, b.name, b.id"
             f" ORDER BY {_EDGE_ORDER}, b.id LIMIT $cap",
             params,
         )
     ]
     out_total = _count(kuzu, "MATCH (e:Entity)-[r:REL]->(:Entity)"
-                             " WHERE e.id = $id RETURN count(r)", entity_id)
+                             f" WHERE e.id = $id{flt} RETURN count(r)", totals)
     in_total = _count(kuzu, "MATCH (:Entity)-[r:REL]->(e:Entity)"
-                            " WHERE e.id = $id RETURN count(r)", entity_id)
+                            f" WHERE e.id = $id{flt} RETURN count(r)", totals)
     return EntityCard(id=row[0], name=row[1], kind=row[2] or "",
-                      aliases=list(row[3] or []), books=list(row[4] or []),
+                      aliases=list(row[3] or []),
+                      books=[b for b in row[4] or [] if books is None or b in books],
                       edges_out=edges_out, edges_in=edges_in,
                       edges_out_total=out_total, edges_in_total=in_total,
                       truncated=(len(edges_out) < out_total
                                  or len(edges_in) < in_total))
 
 
-def _count(kuzu, cypher: str, entity_id: str) -> int:
-    rows = list(kuzu.execute(cypher, {"id": entity_id}))
+def _count(kuzu, cypher: str, params: dict) -> int:
+    rows = list(kuzu.execute(cypher, params))
     return int(rows[0][0]) if rows else 0
 
 
+def _find_entity(kuzu, name: str, scopes: list[Scope]) -> tuple[str, Scope]:
+    """The one entity `name` means, and the scope it lives in. Each scope is
+    asked on its own, so same-named entities of different worlds are told
+    apart rather than merged: more than one match is an _Ambiguous, which
+    lists them with their worlds."""
+    if len(scopes) == 1:
+        return _resolve_one(kuzu, name, scopes[0].books), scopes[0]
+    found: list[tuple[str, Scope]] = []
+    for scope in scopes:
+        try:
+            found.append((_resolve_one(kuzu, name, scope.books), scope))
+        except _NotFound:
+            continue
+        except _Ambiguous as exc:  # several in one world: say so as it would alone
+            raise _Ambiguous(exc.candidates) from None
+    if not found:
+        raise _NotFound()
+    if len(found) > 1:
+        names = {r[0]: r[1] for r in kuzu.execute(
+            "MATCH (e:Entity) WHERE e.id IN $ids RETURN e.id, e.name ORDER BY e.id",
+            {"ids": [i for i, _ in found]})}
+        raise _Ambiguous([(i, f"{names.get(i, i)} in {sc.world or 'no world'}")
+                          for i, sc in found], across_worlds=True)
+    return found[0]
+
+
+def _scope_of(kuzu, entity_id: str, scopes: list[Scope]) -> Scope | None:
+    """The first scope holding one of the entity's books; None when it is in none."""
+    rows = list(kuzu.execute(
+        "MATCH (e:Entity) WHERE e.id = $id RETURN e.books", {"id": entity_id}))
+    if not rows:
+        return None
+    books = rows[0][0] or []
+    return next((sc for sc in scopes if sc.allows_any(books)), None)
+
+
+def _tagged(out: dict, scopes: list[Scope], scope: Scope | None) -> dict:
+    """In all-worlds mode (several scopes), stamp a card's or a graph's nodes
+    with the world they live in."""
+    if len(scopes) > 1 and scope is not None:
+        for node in out.get("nodes", [out] if "kind" in out else []):
+            node["world"] = scope.tag()
+    return out
+
+
+def _scoped(stores, world) -> list[Scope]:
+    return resolve_scopes(stores.conn, world)
+
+
 @_guarded
-def entity(config: LoreConfig, name: str) -> dict:
+def entity(config: LoreConfig, name: str, world: int | str | None = None) -> dict:
     with open_stores(config) as stores:
         try:
-            entity_id = _resolve_one(stores.kuzu, name)
+            scopes = _scoped(stores, world)
+            entity_id, scope = _find_entity(stores.kuzu, name, scopes)
             # Read at call time, so a test can monkeypatch the module value.
-            return _entity_card(stores.kuzu, entity_id,
-                                CARD_EDGE_CAP).model_dump()
+            return _tagged(_entity_card(stores.kuzu, entity_id, CARD_EDGE_CAP,
+                                        scope.books).model_dump(), scopes, scope)
+        except UnknownWorld as exc:
+            return _world_error(exc)
         except _NotFound:
-            return error("not_found", f"no entity named {name!r}")
+            return error("not_found", f"no entity named {name!r}"
+                         + _in_world(world))
         except _Ambiguous as exc:
             return _ambiguous_error(name, exc)
 
 
+def _in_world(world) -> str:
+    return f" in world {world!r}" if world is not None and str(world).strip() else ""
+
+
 def _expand(kuzu, root: str, depth: int, node_cap: int,
-            edge_cap: int = SUBGRAPH_EDGE_CAP) -> tuple[list[NodeOut], list[LinkOut], bool]:
+            edge_cap: int = SUBGRAPH_EDGE_CAP,
+            books=None) -> tuple[list[NodeOut], list[LinkOut], bool]:
     """Breadth-first from `root`: up to `depth` hops, `node_cap` nodes.
 
     Returns (nodes, links, truncated). Nodes are in discovery order (root
@@ -316,6 +416,9 @@ def _expand(kuzu, root: str, depth: int, node_cap: int,
     Kuzu's scan order or on set iteration. `seen` is a set used ONLY for
     membership, never iterated into output. It also makes cycles, and a
     walk that returns to the root, terminate.
+
+    With `books` (a world's), only edges of those books are followed and
+    linked, so the walk never leaves the world.
     """
     order = [root]
     seen = {root}
@@ -327,13 +430,15 @@ def _expand(kuzu, root: str, depth: int, node_cap: int,
         found: list[str] = []
         # No DISTINCT: it does not mix reliably with ORDER BY in this Kuzu.
         # Parallel edges give repeat rows, dropped by `seen` below.
-        for _a, b in kuzu.execute(
+        for _a, b, b_books in kuzu.execute(
             "MATCH (a:Entity)-[r:REL]-(b:Entity) WHERE a.id IN $frontier"
-            " RETURN a.id, b.id ORDER BY a.id, b.id",
-            {"frontier": frontier},
+            f"{_book_filter(books)} RETURN a.id, b.id, b.books ORDER BY a.id, b.id",
+            {"frontier": frontier} | ({} if books is None else {"books": sorted(books)}),
         ):
             if b in seen:
                 continue
+            if books is not None and not any(x in books for x in b_books or ()):
+                continue  # an entity of another world is never a neighbour
             if len(order) >= node_cap:
                 truncated = True
                 break
@@ -350,11 +455,11 @@ def _expand(kuzu, root: str, depth: int, node_cap: int,
     }
     nodes = [
         NodeOut(id=i, name=info[i][1], kind=info[i][2] or "",
-                books=list(info[i][3] or []))
+                books=_shown_books(info[i][3], books))
         for i in order if i in info
     ]
     names = {i: info[i][1] for i in info}
-    links, cut = _links_among(kuzu, order, names, edge_cap)
+    links, cut = _links_among(kuzu, order, names, edge_cap, books)
     truncated = truncated or cut
     # Keep the root and every node a kept link touches. Uncapped, this drops
     # nothing (each discovered node has the link it was discovered by); capped,
@@ -365,21 +470,26 @@ def _expand(kuzu, root: str, depth: int, node_cap: int,
     return nodes, links, truncated
 
 
+def _shown_books(entity_books, books) -> list[str]:
+    return [b for b in entity_books or [] if books is None or b in books]
+
+
 def _links_among(kuzu, ids: list[str], names: dict[str, str],
-                 edge_cap: int) -> tuple[list[LinkOut], bool]:
+                 edge_cap: int, books=None) -> tuple[list[LinkOut], bool]:
     """Every REL edge between two of `ids`, one LinkOut per directed pair,
-    strongest first, at most `edge_cap`. Returns (links, truncated)."""
+    strongest first, at most `edge_cap`. Returns (links, truncated).
+    With `books`, only edges of those books."""
     truncated = False
     # Raw rows over a TOTAL order, so grouping is deterministic: within a
     # pair, edges arrive in book/chapter/chunk order and the first are the
     # citations. Both ends are collected nodes, so no link dangles.
     rows = list(kuzu.execute(
         f"MATCH (s:Entity)-[r:REL]->(o:Entity)"
-        f" WHERE s.id IN $ids AND o.id IN $ids"
+        f" WHERE s.id IN $ids AND o.id IN $ids{_book_filter(books)}"
         f" RETURN {_EDGE_COLUMNS}, s.id, o.id"
         f" ORDER BY s.id, o.id, {_EDGE_ORDER}"
         f" LIMIT {SUBGRAPH_RAW_EDGE_LIMIT + 1}",
-        {"ids": ids},
+        {"ids": ids} | ({} if books is None else {"books": sorted(books)}),
     ))
     if len(rows) > SUBGRAPH_RAW_EDGE_LIMIT:
         truncated = True
@@ -420,12 +530,17 @@ def _link(subject: str, subject_id: str, obj: str, object_id: str,
 
 
 @_guarded
-def subgraph(config: LoreConfig, entity_name: str, depth: int = 1) -> dict:
+def subgraph(config: LoreConfig, entity_name: str, depth: int = 1,
+             world: int | str | None = None) -> dict:
     with open_stores(config) as stores:
         try:
-            root = _resolve_one(stores.kuzu, entity_name)
+            scopes = _scoped(stores, world)
+            root, scope = _find_entity(stores.kuzu, entity_name, scopes)
+        except UnknownWorld as exc:
+            return _world_error(exc)
         except _NotFound:
-            return error("not_found", f"no entity named {entity_name!r}")
+            return error("not_found", f"no entity named {entity_name!r}"
+                         + _in_world(world))
         except _Ambiguous as exc:
             return _ambiguous_error(entity_name, exc)
 
@@ -438,9 +553,10 @@ def subgraph(config: LoreConfig, entity_name: str, depth: int = 1) -> dict:
 
         nodes, edges, truncated = _expand(stores.kuzu, root, clamped,
                                           SUBGRAPH_NODE_CAP,
-                                          SUBGRAPH_EDGE_CAP)
-        return SubgraphOut(nodes=nodes, edges=edges, truncated=truncated,
-                           depth=clamped, note=note).model_dump()
+                                          SUBGRAPH_EDGE_CAP, scope.books)
+        return _tagged(SubgraphOut(nodes=nodes, edges=edges, truncated=truncated,
+                                   depth=clamped, note=note).model_dump(),
+                       scopes, scope)
 
 
 def _exists(kuzu, entity_id: str) -> bool:
@@ -448,15 +564,32 @@ def _exists(kuzu, entity_id: str) -> bool:
         "MATCH (e:Entity) WHERE e.id = $id RETURN e.id", {"id": entity_id})))
 
 
+def _entity_scope(stores, entity_id: str, world) -> tuple[list[Scope], Scope | dict]:
+    """(scopes, the scope the entity lives in) -- or an error envelope when
+    there is no such entity (in that world)."""
+    try:
+        scopes = _scoped(stores, world)
+    except UnknownWorld as exc:
+        return [], _world_error(exc)
+    scope = _scope_of(stores.kuzu, entity_id, scopes) if _exists(stores.kuzu, entity_id) else None
+    if scope is None:
+        return scopes, error("not_found", f"no entity with id {entity_id!r}"
+                             + _in_world(world))
+    return scopes, scope
+
+
 @_guarded
-def entity_by_id(config: LoreConfig, entity_id: str) -> dict:
+def entity_by_id(config: LoreConfig, entity_id: str,
+                 world: int | str | None = None) -> dict:
     """`entity`, for a caller that already holds the id (the web UI, from
     a search's edges). No name resolution, so no ambiguity."""
     with open_stores(config) as stores:
-        if not _exists(stores.kuzu, entity_id):
-            return error("not_found", f"no entity with id {entity_id!r}")
         canonical = canonical_ids(stores.kuzu, [entity_id])[0]
-        return _entity_card(stores.kuzu, canonical, CARD_EDGE_CAP).model_dump()
+        scopes, scope = _entity_scope(stores, canonical, world)
+        if isinstance(scope, dict):
+            return scope
+        return _tagged(_entity_card(stores.kuzu, canonical, CARD_EDGE_CAP,
+                                    scope.books).model_dump(), scopes, scope)
 
 
 # The web UI asks for the kinds of every node a search drew; more than a
@@ -465,33 +598,52 @@ ENTITIES_BY_IDS_CAP = 300
 
 
 @_guarded
-def entities_by_ids(config: LoreConfig, ids: list[str]) -> dict:
+def entities_by_ids(config: LoreConfig, ids: list[str],
+                    world: int | str | None = None) -> dict:
     """{id, name, kind, books} for each known id, read-only; unknown ids are
-    left out. At most ENTITIES_BY_IDS_CAP distinct ids are looked up."""
+    left out. At most ENTITIES_BY_IDS_CAP distinct ids are looked up. With a
+    `world`, only its entities; with several worlds in play (no world given),
+    each carries its `world` {id, name}."""
     wanted = list(dict.fromkeys(i for i in ids if i))[:ENTITIES_BY_IDS_CAP]
     if not wanted:
         return {"entities": []}
     with open_stores(config) as stores:
+        try:
+            scopes = _scoped(stores, world)
+        except UnknownWorld as exc:
+            return _world_error(exc)
         rows = stores.kuzu.execute(
             "MATCH (e:Entity) WHERE e.id IN $ids"
             " RETURN e.id, e.name, e.kind, e.books ORDER BY e.id",
             {"ids": wanted})
-        return {"entities": [
-            {"id": r[0], "name": r[1] or "", "kind": r[2] or "",
-             "books": list(r[3] or [])} for r in rows]}
+        out = []
+        for r in rows:
+            scope = next((sc for sc in scopes if sc.allows_any(r[3] or ())), None)
+            if scope is None:
+                continue
+            item = {"id": r[0], "name": r[1] or "", "kind": r[2] or "",
+                    "books": list(r[3] or [])}
+            if len(scopes) > 1:
+                item["world"] = scope.tag()
+            out.append(item)
+        return {"entities": out}
 
 
 @_guarded
-def subgraph_by_id(config: LoreConfig, entity_id: str, depth: int = 1) -> dict:
+def subgraph_by_id(config: LoreConfig, entity_id: str, depth: int = 1,
+                   world: int | str | None = None) -> dict:
     with open_stores(config) as stores:
-        if not _exists(stores.kuzu, entity_id):
-            return error("not_found", f"no entity with id {entity_id!r}")
         root = canonical_ids(stores.kuzu, [entity_id])[0]
+        scopes, scope = _entity_scope(stores, root, world)
+        if isinstance(scope, dict):
+            return scope
         clamped = max(1, min(depth, MAX_DEPTH))
         nodes, edges, truncated = _expand(stores.kuzu, root, clamped,
-                                          SUBGRAPH_NODE_CAP, SUBGRAPH_EDGE_CAP)
-        return SubgraphOut(nodes=nodes, edges=edges, truncated=truncated,
-                           depth=clamped, note=None).model_dump()
+                                          SUBGRAPH_NODE_CAP, SUBGRAPH_EDGE_CAP,
+                                          scope.books)
+        return _tagged(SubgraphOut(nodes=nodes, edges=edges, truncated=truncated,
+                                   depth=clamped, note=None).model_dump(),
+                       scopes, scope)
 
 
 # The library overview: what the web UI draws before any question.
@@ -501,8 +653,49 @@ OVERVIEW_LIMIT_MAX = 100
 OVERVIEW_LINK_CAP = 60
 
 
+def _overview_of(kuzu, clamped: int, books, link_cap: int) -> tuple[list, list, bool]:
+    """The `clamped` most-connected entities of `books` (None: all) and the
+    links among them: (nodes, links, truncated)."""
+    if books is not None and not books:
+        return [], [], False
+    where = "" if books is None else " WHERE r.book_id IN $books"
+    params = None if books is None else {"books": sorted(books)}
+    degree: dict[str, int] = {}
+    # Counted per direction, so a self-loop counts on both ends, as on
+    # the entity card. Ranking happens in Python over a total order.
+    for cypher in (f"MATCH (e:Entity)-[r:REL]->(:Entity){where}"
+                   " RETURN e.id, count(r) ORDER BY e.id",
+                   f"MATCH (:Entity)-[r:REL]->(e:Entity){where}"
+                   " RETURN e.id, count(r) ORDER BY e.id"):
+        for entity_id, n in kuzu.execute(cypher, params):
+            degree[entity_id] = degree.get(entity_id, 0) + int(n)
+    stubs = {row[0] for row in kuzu.execute(
+        "MATCH (a:Entity)-[:ALIAS_OF]->(:Entity) RETURN a.id ORDER BY a.id")}
+    here = set(degree) if books is None else set(_in_books(kuzu, list(degree), books))
+    ranked = sorted(((-d, i) for i, d in degree.items()
+                     if d > 0 and i not in stubs and i in here))
+    truncated = len(ranked) > clamped
+    top = [i for _d, i in ranked[:clamped]]
+    info = {
+        row[0]: row for row in kuzu.execute(
+            "MATCH (e:Entity) WHERE e.id IN $ids"
+            " RETURN e.id, e.name, e.kind, e.books ORDER BY e.id",
+            {"ids": top},
+        )
+    }
+    nodes = [
+        NodeOut(id=i, name=info[i][1] or "", kind=info[i][2] or "",
+                books=_shown_books(info[i][3], books))
+        for i in top if i in info
+    ]
+    names = {i: info[i][1] or "" for i in info}
+    links, cut = _links_among(kuzu, top, names, link_cap, books)
+    return nodes, links, truncated or cut
+
+
 @_guarded
-def overview(config: LoreConfig, limit: int = 40) -> dict:
+def overview(config: LoreConfig, limit: int = 40,
+             world: int | str | None = None) -> dict:
     """The `limit` most-connected canonical entities and the links among
     them only, read-only, SubgraphOut-shaped (depth 0).
 
@@ -510,41 +703,34 @@ def overview(config: LoreConfig, limit: int = 40) -> dict:
     ALIAS_OF) and edgeless entities are left out. Nodes are ordered by
     degree, then id; links strongest first, at most OVERVIEW_LINK_CAP.
     `truncated` says entities or links were left out.
+
+    With a `world`, only its books' edges count. With several worlds in play
+    (no world given) each world is its own cluster: it gets its share of
+    `limit` and of the link cap, its nodes carry `world` {id, name}, and no
+    link ever joins two worlds.
     """
     clamped = max(OVERVIEW_LIMIT_MIN, min(limit, OVERVIEW_LIMIT_MAX))
     with open_stores(config) as stores:
-        kuzu = stores.kuzu
-        degree: dict[str, int] = {}
-        # Counted per direction, so a self-loop counts on both ends, as on
-        # the entity card. Ranking happens in Python over a total order.
-        for cypher in ("MATCH (e:Entity)-[r:REL]->(:Entity)"
-                       " RETURN e.id, count(r) ORDER BY e.id",
-                       "MATCH (:Entity)-[r:REL]->(e:Entity)"
-                       " RETURN e.id, count(r) ORDER BY e.id"):
-            for entity_id, n in kuzu.execute(cypher):
-                degree[entity_id] = degree.get(entity_id, 0) + int(n)
-        stubs = {row[0] for row in kuzu.execute(
-            "MATCH (a:Entity)-[:ALIAS_OF]->(:Entity) RETURN a.id ORDER BY a.id")}
-        ranked = sorted(((-d, i) for i, d in degree.items()
-                         if d > 0 and i not in stubs))
-        truncated = len(ranked) > clamped
-        top = [i for _d, i in ranked[:clamped]]
-        info = {
-            row[0]: row for row in kuzu.execute(
-                "MATCH (e:Entity) WHERE e.id IN $ids"
-                " RETURN e.id, e.name, e.kind, e.books ORDER BY e.id",
-                {"ids": top},
-            )
-        }
-        nodes = [
-            NodeOut(id=i, name=info[i][1] or "", kind=info[i][2] or "",
-                    books=list(info[i][3] or []))
-            for i in top if i in info
-        ]
-        names = {i: info[i][1] or "" for i in info}
-        links, cut = _links_among(kuzu, top, names, OVERVIEW_LINK_CAP)
-        return SubgraphOut(nodes=nodes, edges=links, truncated=truncated or cut,
-                           depth=0, note=None).model_dump()
+        try:
+            scopes = _scoped(stores, world)
+        except UnknownWorld as exc:
+            return _world_error(exc)
+        share = -(-clamped // len(scopes))
+        link_cap = -(-OVERVIEW_LINK_CAP // len(scopes))
+        nodes, links, truncated = [], [], False
+        for scope in scopes:
+            got_nodes, got_links, cut = _overview_of(
+                stores.kuzu, share if len(scopes) > 1 else clamped, scope.books,
+                link_cap if len(scopes) > 1 else OVERVIEW_LINK_CAP)
+            nodes += [(n, scope) for n in got_nodes]
+            links += got_links
+            truncated = truncated or cut
+        out = SubgraphOut(nodes=[n for n, _ in nodes], edges=links, truncated=truncated,
+                          depth=0, note=None).model_dump()
+        if len(scopes) > 1:
+            for node, (_n, scope) in zip(out["nodes"], nodes):
+                node["world"] = scope.tag()
+        return out
 
 
 # --- vector_search and cypher_query ---------------------------------------------
@@ -587,8 +773,9 @@ def _finite_or_none(value) -> float | None:
 @_guarded
 async def vector_search(config: LoreConfig, query: str,
                         book_id: str | None = None, limit: int = 10,
-                        embed=None) -> dict:
+                        embed=None, world: int | str | None = None) -> dict:
     """Raw passages nearest `query` by meaning; `limit` is clamped to 1-50.
+    With a `world`, only that world's books are searched.
 
     Embeds locally, so it spends no Gemini budget and keeps working after
     the daily cap. `embed` is for tests; None builds the local embedder.
@@ -604,8 +791,13 @@ async def vector_search(config: LoreConfig, query: str,
     #    which looks the same as "no passages matched".
     with open_stores(config, kuzu=False) as stores:
         titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
-    if book_id is not None and book_id not in titles:
-        return error("not_found", f"no book with id {book_id!r}")
+        try:
+            only = world_books(stores.conn, world)
+        except UnknownWorld as exc:
+            return _world_error(exc)
+    if book_id is not None and (book_id not in titles
+                                or (only is not None and book_id not in only)):
+        return error("not_found", f"no book with id {book_id!r}" + _in_world(world))
 
     # 2. Embed, holding nothing.
     embedder = None
@@ -629,7 +821,7 @@ async def vector_search(config: LoreConfig, query: str,
     # 3. Search.
     with open_stores(config, kuzu=False) as stores:
         if book_id is None:
-            rows = search_chunks(stores.lance, vector, limit)
+            rows = search_chunks(stores.lance, vector, limit, book_ids=only)
         else:
             rows = search_chunks(stores.lance, vector, limit, book_id=book_id)
             # Chunks are embedded only by `lore graph load`. A book that was
@@ -786,14 +978,25 @@ def _upstream(exc: GeminiError) -> dict:
 
 @_guarded
 async def lore_search(config: LoreConfig, query: str,
-                      models: QueryModels | None = None, on_event=None) -> dict:
+                      models: QueryModels | None = None, on_event=None,
+                      world: int | str | None = None) -> dict:
     """The full query agent: spends Gemini requests, so it is guarded.
+
+    `world` (an id or a name) answers from that world's books only; with
+    none, a library of one world uses it and a library of several is
+    searched world by world (see answer_question).
 
     `budget_exhausted` means the shared ledger says every synthesis model is
     spent. Every other Gemini failure is `upstream_unavailable`. `models` is
     for tests; None builds the real ones, counted in the shared ledger.
     """
     with open_stores(config) as stores:
+        try:
+            resolve_scopes(stores.conn, world)  # before anything is spent
+        except UnknownWorld as exc:
+            if models is not None:
+                await models.aclose()
+            return _world_error(exc)
         refusal = _check_synthesis_budget(config)
         if refusal is not None:
             if models is not None:
@@ -811,9 +1014,11 @@ async def lore_search(config: LoreConfig, query: str,
                                  "the Gemini API key is missing or invalid:"
                                  f" {_KEY_HELP}.")
             titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
+            # `world` only when given: nothing else changes for a caller without one.
+            scope = {} if world is None else {"world": world}
             answer = await answer_question(stores.conn, stores.kuzu,
                                            stores.lance, query, models,
-                                           on_event=on_event)
+                                           on_event=on_event, **scope)
             return to_search_result(answer, titles).model_dump()
         except GeminiError as exc:
             return _upstream(exc)

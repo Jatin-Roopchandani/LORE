@@ -204,6 +204,8 @@ class BookOut(BaseModel):
     # None when the graph could not be opened (absent, or locked by a load):
     # unknown, which is not the same as zero. `library` says why in `note`.
     entity_count: int | None
+    # The world's name; None for a library from before worlds.
+    world: str | None = None
 
 
 class JobOut(BaseModel):

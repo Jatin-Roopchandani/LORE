@@ -136,3 +136,22 @@ def test_book_has_chunks(tmp_path: Path) -> None:
     assert store.book_has_chunks("o'brien")      # quoted, not broken by the '
     assert not store.book_has_chunks("b1")
     assert not store.book_has_chunks("x' OR '1'='1")  # no filter injection
+
+
+def test_search_chunks_in_books_filters_inside_the_search(tmp_path: Path) -> None:
+    store = LanceStore(tmp_path / "lancedb")
+    near = [1.0] + [0.0] * (EMBED_DIM - 1)
+    far = [0.0] * (EMBED_DIM - 1) + [1.0]
+    store.add_chunks([
+        {"vector": near, "chunk_id": "a:1", "book_id": "a", "chapter_seq": 1,
+         "text": "x", "entity_ids": []},
+        {"vector": far, "chunk_id": "b:1", "book_id": "b", "chapter_seq": 1,
+         "text": "y", "entity_ids": []},
+        {"vector": far, "chunk_id": "c:1", "book_id": "c", "chapter_seq": 1,
+         "text": "z", "entity_ids": []},
+    ])
+    # The nearest chunk is book a's, yet asking for b and c's returns theirs.
+    hits = store.search_chunks_in_books(near, ["b", "c"], limit=5)
+    assert {h["chunk_id"] for h in hits} == {"b:1", "c:1"}
+    assert store.search_chunks_in_books(near, [], limit=5) == []
+    assert [h["chunk_id"] for h in store.search_chunks_in_books(near, ["a", "it's"], 5)] == ["a:1"]

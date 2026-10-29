@@ -74,3 +74,17 @@ def test_a_keyword_hit_outside_the_candidates_scores_nothing() -> None:
     # Only candidates (chunks with a stored vector) are scored; the agent
     # makes every keyword hit a candidate before fusing.
     assert set(fused({"a": 0.9}, ["elsewhere", "a"])) == {"a"}
+
+
+def test_search_within_a_set_of_books() -> None:
+    import sqlite3
+    from lore.query.keyword import KeywordIndex
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE chunks (id, book_id, chapter_seq, text)")
+    for chunk, book in (("a1", "a"), ("b1", "b"), ("c1", "c")):
+        conn.execute("INSERT INTO chunks VALUES (?, ?, 1, 'the lighthouse keeper sailed')",
+                     (chunk, book))
+    index = KeywordIndex(conn)
+    assert {h[0] for h in index.search("lighthouse keeper", 10, book_ids={"a", "c"})} == {"a1", "c1"}
+    assert index.search("lighthouse keeper", 10, book_ids=set()) == []
+    assert len(index.search("lighthouse keeper", 10)) == 3

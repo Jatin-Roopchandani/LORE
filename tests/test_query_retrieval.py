@@ -273,3 +273,23 @@ async def test_a_scoped_part_ranks_its_own_book_before_the_other(tmp_path: Path)
                                    Lance(rows, vectors), "q", models)
     assert [p.chunk_id for p in answer.passages] == [c for c, *_ in mine]
     conn.close()
+
+
+def test_search_chunks_within_a_set_of_books_with_and_without_a_prefilter() -> None:
+    from lore.query.retrieval import search_chunks
+
+    rows = [{"chunk_id": f"{b}:{n}", "book_id": b, "text": "story"}
+            for n in range(3) for b in "abc"]
+
+    class Plain:  # no prefilter: the global ranking is filtered
+        def search_chunks(self, vector, limit=5):
+            return rows[:limit]
+
+    class Filtering(Plain):
+        def search_chunks_in_books(self, vector, book_ids, limit=5):
+            return [r for r in rows if r["book_id"] in book_ids][:limit]
+
+    for lance in (Plain(), Filtering()):
+        got = search_chunks(lance, [0.0], 3, book_ids={"b", "c"})
+        assert {r["book_id"] for r in got} == {"b", "c"} and len(got) == 3
+        assert search_chunks(lance, [0.0], 3, book_ids=set()) == []

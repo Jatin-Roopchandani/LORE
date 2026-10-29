@@ -11,7 +11,7 @@ contents). That needs no re-index.
 from __future__ import annotations
 
 import re
-from typing import Iterable, Mapping
+from typing import Collection, Iterable, Mapping
 
 from lore.resolve.entityhood import is_boilerplate_chunk
 from lore.resolve.normalize import normalize_name
@@ -28,24 +28,35 @@ def drop_boilerplate(rows: Iterable[dict]) -> list[dict]:
 
 
 def search_chunks(lance, vector: list[float], limit: int, *,
-                  book_id: str | None = None) -> list[dict]:
-    """The `limit` nearest story chunks (of one book, when `book_id` is given).
+                  book_id: str | None = None,
+                  book_ids: Collection[str] | None = None) -> list[dict]:
+    """The `limit` nearest story chunks (of one book when `book_id` is given,
+    of these books when `book_ids` is; a world's books are the usual case).
 
     Reads past `limit` and filters, widening until `limit` survive or the
     store has no more, so a licence chunk never costs a real passage its slot.
     """
     if limit <= 0:
         return []
+    if book_ids is not None and not book_ids:
+        return []
     fetch = limit + _OVERFETCH
     kept: list[dict] = []
     for _ in range(_MAX_ROUNDS):
-        if book_id is None:
+        if book_id is not None:
+            if hasattr(lance, "search_chunks_in_book"):
+                rows = lance.search_chunks_in_book(vector, book_id, limit=fetch)
+            else:  # a store without a prefilter: filter the global ranking
+                rows = [r for r in lance.search_chunks(vector, limit=fetch)
+                        if r.get("book_id") == book_id]
+        elif book_ids is not None:
+            if hasattr(lance, "search_chunks_in_books"):
+                rows = lance.search_chunks_in_books(vector, sorted(book_ids), limit=fetch)
+            else:
+                rows = [r for r in lance.search_chunks(vector, limit=fetch)
+                        if r.get("book_id") in book_ids]
+        else:
             rows = lance.search_chunks(vector, limit=fetch)
-        elif hasattr(lance, "search_chunks_in_book"):
-            rows = lance.search_chunks_in_book(vector, book_id, limit=fetch)
-        else:  # a store without a prefilter: filter the global ranking
-            rows = [r for r in lance.search_chunks(vector, limit=fetch)
-                    if r.get("book_id") == book_id]
         kept = drop_boilerplate(rows)
         if len(kept) >= limit or len(rows) < fetch:
             break

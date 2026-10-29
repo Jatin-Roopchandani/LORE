@@ -75,6 +75,21 @@ class LanceStore:
             .to_list()
         )
 
+    def search_chunks_in_books(
+        self, vector: list[float], book_ids: list[str], limit: int = 5
+    ) -> list[dict]:
+        """Nearest chunks of these books (a world's), prefiltered like
+        `search_chunks_in_book`. No books, no rows."""
+        if not book_ids:
+            return []
+        return (
+            self._db.open_table("chunks")
+            .search(vector)
+            .where(f"book_id IN ({_quoted(book_ids)})", prefilter=True)
+            .limit(limit)
+            .to_list()
+        )
+
     def book_has_chunks(self, book_id: str) -> bool:
         """Whether ONE book has any chunk rows at all.
 
