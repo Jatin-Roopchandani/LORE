@@ -551,6 +551,9 @@ async def answer_question(
     book_names = title_names(titles.values())
     scoped: list[tuple[str, str, int]] = []
     scoped_books: dict[int, list[str]] = {}  # part index -> the books it is scoped to
+    # Every part's named books, scoped or not: a part naming exactly one book
+    # answers from that book alone (subgraph.assemble_ranked).
+    named_books: list[list[str]] = [[] for _ in parts]
     named_in_question = named_entity_ids(question, names)
     rows: list[EdgeRow] = []
     templates: list[str] = []
@@ -583,6 +586,7 @@ async def answer_question(
         emit(on_event, "step", name="seeds", state="done", part=index,
              detail=f"{len(seeds)} found")
         part_books = books_named(part, titles)
+        named_books[index] = part_books
         if not seeds:
             if part_books:
                 scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
@@ -661,7 +665,7 @@ async def answer_question(
     evidence = assemble_ranked(conn, rows, extra_chunks=extra,
                                max_chars=models.evidence_chars,
                                score_lists=score_lists,
-                               book_fair=book_fair, **timelines)
+                               book_fair=book_fair, part_books=named_books, **timelines)
     emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in evidence.passages],
          edge_keys=[edge_key(e) for e in evidence.edges])
     emit(on_event, "step", name="rank", state="done", part=None,

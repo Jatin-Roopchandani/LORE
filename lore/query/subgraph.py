@@ -232,6 +232,7 @@ def assemble_ranked(
     book_fair: bool = False,
     timelines: Sequence[Sequence[TimelineBeat]] = (),
     timeline_share: float = 0.0,
+    part_books: Sequence[Sequence[str]] = (),
 ) -> Evidence:
     """Evidence from template rows plus vector passages, for one or more parts.
 
@@ -257,6 +258,12 @@ def assemble_ranked(
     exactly as they would without a timeline. A part's share also holds its
     own timeline passages, and the evidence carries the beats for the prompt.
 
+    `part_books` holds, per part, the ids of the library books its text
+    names. A part naming exactly one book answers from that book alone: no
+    other book's passage is in its ranked list or its timeline, so none is in
+    its share (retrieval v2's SCOPE_PENALTY only ranked them lower). A part
+    naming no book, or several, is unchanged.
+
     Passages are numbered in reading order, and only edges whose passage
     was kept are returned. `shares` gives each part's passage numbers: the
     ones it took, plus the ones it ranked above them that another part took.
@@ -280,14 +287,20 @@ def assemble_ranked(
     items = [(c, b, s, texts[c]) for c, (b, s) in ordered
              if c in texts and not is_boilerplate_chunk(texts[c])]
     rank_list = _by_relevance if book_fair else _pure_relevance
-    lists = [rank_list(items, scores) for scores in score_lists] or [_interleaved(items)]
+    def only_book(index: int) -> str | None:
+        books = list(dict.fromkeys(part_books[index])) if index < len(part_books) else []
+        return books[0] if len(books) == 1 else None
+
+    lists = [rank_list([i for i in items if only_book(index) in (None, i[1])], scores)
+             for index, scores in enumerate(score_lists)] or [_interleaved(items)]
     turns = _next_unseen(lists)
     by_id = {item[0]: item for item in items}
     # Each part's timeline passages, earliest-to-latest evenly (those that
     # exist and are story), and the slice they fill together, a part at a time.
     part_ids: list[list[str]] = []
-    for beats in timelines:
-        chunks = [c for c in dict.fromkeys(b.chunk_id for b in beats) if c in by_id]
+    for index, beats in enumerate(timelines):
+        chunks = [c for c in dict.fromkeys(b.chunk_id for b in beats)
+                  if c in by_id and only_book(index) in (None, by_id[c][1])]
         part_ids.append([chunks[i] for i in coverage_order(len(chunks))])
     slice_items: list[_Item] = []
     slice_used = 0
