@@ -1073,6 +1073,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
         synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE,
         synthesize_module._ATTRIBUTE_SPEECH_RULE, synthesize_module._STRICT_LINKS_RULE, synthesize_module._ROLE_COVERAGE_RULE,
         synthesize_module._CHANGE_RULE, synthesize_module._ACTIONS_RULE,
+        synthesize_module._TIMELINE_BLOCK,
         synthesize_module._READINGS_BLOCK, write_module._READINGS_RULE,
         synthesize_module._STRICT_LINKS_CHECK, __import__('lore.query.decompose', fromlist=['x'])._THEMATIC_RULE,
         write_module.WRITER_PROMPT, write_module.STORY_WRITER_PROMPT,
@@ -1399,7 +1400,7 @@ def test_prompt_rules_name_no_character_book_or_genre() -> None:
     from lore.query import decompose, synthesize as s, write as w
     text = "\n".join((s._PROMPT, s._FACTS_RULE, s._FULL_FACTS_RULE, s._NO_RESTATE_RULE,
                       s._ATTRIBUTE_SPEECH_RULE, s._STRICT_LINKS_RULE, s._STRICT_LINKS_CHECK,
-                      s._ROLE_COVERAGE_RULE, s._CHANGE_RULE, s._ACTIONS_RULE, s._READINGS_BLOCK, w._READINGS_RULE,
+                      s._ROLE_COVERAGE_RULE, s._CHANGE_RULE, s._ACTIONS_RULE, s._TIMELINE_BLOCK, s._READINGS_BLOCK, w._READINGS_RULE,
                       s._CHECK_PROMPT, s._SENTENCES_BLOCK,
                       w.WRITER_PROMPT, w.STORY_WRITER_PROMPT, s._STORY_SENTENCES_BLOCK, s._GAPS_BLOCK,
                       decompose._PROMPT, decompose._THEMATIC_RULE,

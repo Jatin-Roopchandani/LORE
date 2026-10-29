@@ -6,9 +6,10 @@ from itertools import zip_longest
 from typing import Iterable, Sequence
 
 from lore.ingest.registry import chunks_by_id
-from lore.query.models import EdgeRow, Evidence, Passage, TemplateCall
+from lore.query.models import EdgeRow, Evidence, Passage, TemplateCall, TimelineBeat
 from lore.query.retrieval import drop_boilerplate
 from lore.query.templates import MAX_EVIDENCE_CHARS, TEMPLATES
+from lore.query.timeline import coverage_order
 from lore.resolve.entityhood import is_boilerplate_chunk
 
 _Item = tuple[str, str, int, str]  # chunk_id, book_id, chapter_seq, text
@@ -229,6 +230,8 @@ def assemble_ranked(
     extra_chunks: Iterable[tuple[str, str, int]] = (),
     max_chars: int = MAX_EVIDENCE_CHARS,
     book_fair: bool = False,
+    timelines: Sequence[Sequence[TimelineBeat]] = (),
+    timeline_share: float = 0.0,
 ) -> Evidence:
     """Evidence from template rows plus vector passages, for one or more parts.
 
@@ -246,6 +249,14 @@ def assemble_ranked(
     round-robin across books within each list, as in `assemble`, for the
     no-decomposition fallback, where one part may still span books.
 
+    `timelines` holds one sequence of story beats per part (timeline.py).
+    Their passages join the candidates, and `timeline_share` of `max_chars`
+    is a slice only they fill, the earliest, the latest, then an even sample
+    between (timeline.coverage_order), a part at a time. What the slice
+    does not use goes back to the ranked passages, which fill the rest
+    exactly as they would without a timeline. A part's share also holds its
+    own timeline passages, and the evidence carries the beats for the prompt.
+
     Passages are numbered in reading order, and only edges whose passage
     was kept are returned. `shares` gives each part's passage numbers: the
     ones it took, plus the ones it ranked above them that another part took.
@@ -256,6 +267,9 @@ def assemble_ranked(
         positions.setdefault(row.chunk_id, (row.book_id, row.chapter_seq))
     for chunk_id, book_id, chapter_seq in extra_chunks:
         positions.setdefault(chunk_id, (book_id, chapter_seq))
+    for beats in timelines:
+        for beat in beats:
+            positions.setdefault(beat.chunk_id, (beat.book_id, beat.chapter_seq))
     if not positions:
         return Evidence(edges=(), passages=(), truncated=False)
 
@@ -268,9 +282,33 @@ def assemble_ranked(
     rank_list = _by_relevance if book_fair else _pure_relevance
     lists = [rank_list(items, scores) for scores in score_lists] or [_interleaved(items)]
     turns = _next_unseen(lists)
-    kept, truncated = _capped(turns.merged, max_chars)
-
+    by_id = {item[0]: item for item in items}
+    # Each part's timeline passages, earliest-to-latest evenly (those that
+    # exist and are story), and the slice they fill together, a part at a time.
+    part_ids: list[list[str]] = []
+    for beats in timelines:
+        chunks = [c for c in dict.fromkeys(b.chunk_id for b in beats) if c in by_id]
+        part_ids.append([chunks[i] for i in coverage_order(len(chunks))])
+    slice_items: list[_Item] = []
+    slice_used = 0
+    if timeline_share > 0 and any(part_ids):
+        slice_cap = int(max_chars * timeline_share)
+        for item in _next_unseen([[by_id[c] for c in ids] for ids in part_ids]).merged:
+            if slice_used + len(item[3]) > slice_cap:
+                break
+            slice_items.append(item)
+            slice_used += len(item[3])
+    slice_ids = {item[0] for item in slice_items}
+    ranked, truncated = _capped([i for i in turns.merged if i[0] not in slice_ids],
+                                max_chars - slice_used)
+    kept = ranked + slice_items
     kept_ids = {item[0] for item in kept}
+    # Every timeline passage the evidence could not hold is evidence cut too.
+    truncated = truncated or any(c not in kept_ids for ids in part_ids for c in ids)
+    # Of the ranked turns, the leading ones that were taken: a part's share
+    # counts what it took within them (_shares).
+    kept_count = next((i for i, item in enumerate(turns.merged) if item[0] not in kept_ids),
+                      len(turns.merged))
 
     def best(chunk_id: str) -> tuple[bool, float]:
         return min(_relevance_key(scores, chunk_id) for scores in score_lists) \
@@ -285,9 +323,15 @@ def assemble_ranked(
         for index, (c, b, s, t) in enumerate(kept)
     )
     number = {p.chunk_id: p.n for p in passages}
-    shares = tuple(tuple(sorted(number[c] for c in share if c in number))
-                   for share in _shares(turns, len(kept)))
-    return Evidence(edges=edges, passages=passages, truncated=truncated, shares=shares)
+    base = _shares(turns, kept_count)
+    if part_ids:
+        base = [share | {c for c in ids if c in kept_ids}
+                for share, ids in zip(base, part_ids + [[]] * len(base))]
+    shares = tuple(tuple(sorted(number[c] for c in share if c in number)) for share in base)
+    timeline = tuple(dict.fromkeys(b for beats in timelines for b in beats))
+    return Evidence(edges=edges, passages=passages, truncated=truncated, shares=shares,
+                    timeline=timeline,
+                    timelines=tuple(tuple(beats) for beats in timelines) if timeline else ())
 
 
 def passages_from_chunks(chunk_rows: list[dict]) -> tuple[Passage, ...]:

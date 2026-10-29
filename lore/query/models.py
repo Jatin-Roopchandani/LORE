@@ -94,6 +94,18 @@ class ProseSentence:
 
 
 @dataclass(frozen=True)
+class TimelineBeat:
+    """One story-beat line for the claims prompt: a moment of the subject
+    entity, and the passage (`chunk_id`) that holds its quote."""
+
+    chunk_id: str
+    book_id: str
+    chapter_seq: int
+    subject: str
+    text: str
+
+
+@dataclass(frozen=True)
 class Evidence:
     edges: tuple[EdgeRow, ...]
     passages: tuple[Passage, ...]
@@ -102,6 +114,11 @@ class Evidence:
     # sub-question order: the passages that part answers from (Task 10e).
     # Empty when the evidence was not assembled per part.
     shares: tuple[tuple[int, ...], ...] = ()
+    # Story beats (lore/query/timeline.py): every part's, deduplicated, and
+    # one tuple per part in sub-question order. Empty when no part has any,
+    # which is also what every evidence built before beats holds.
+    timeline: tuple[TimelineBeat, ...] = ()
+    timelines: tuple[tuple[TimelineBeat, ...], ...] = ()
 
 
 @dataclass(frozen=True)

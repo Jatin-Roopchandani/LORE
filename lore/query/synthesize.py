@@ -395,6 +395,38 @@ each other, not only what they say or what the narrator states.
 """
 
 
+# TIMELINE (lore/query/timeline.py): beats are short notes on moments from
+# across the whole story for the question's entities. They are a map of where
+# the passages are, never evidence: a claim still quotes a numbered passage.
+_TIMELINE_BLOCK = """
+Story timeline: short notes on moments from across the whole story, for the
+people and things the question is about, in story order. Each line gives the
+number of the passage that holds the moment, where it falls in the story and
+who it is about. The timeline is a map, not evidence. Use it to see the whole
+span of the story, from the earliest moment to the latest and what lies
+between, then read those numbered passages. A claim still needs a quote copied
+word for word from a numbered passage; never quote a timeline line, and never
+make a claim from a timeline line alone.
+{lines}
+"""
+
+
+def _timeline_block(evidence: Evidence, book_titles: dict[str, str] | None,
+                    books: dict[str, BookInfo] | None) -> str:
+    """The "Story timeline" block, or "" when no beat's passage is shown. A
+    beat whose passage the evidence cap cut is left out: it could not be cited."""
+    if not evidence.timeline:
+        return ""
+    order = order_passages(evidence.passages, write_module.book_infos(book_titles, books))
+    place = {pos.n: (index, pos) for index, pos in enumerate(order.ordered)}
+    number = {p.chunk_id: p.n for p in evidence.passages}
+    shown = [(place[number[b.chunk_id]], b) for b in evidence.timeline if b.chunk_id in number]
+    shown.sort(key=lambda item: item[0][0])  # stable: a passage's beats stay in order
+    lines = [f"- [{pos.n}] ({pos.label(detail=True)}) {b.subject}: {b.text}"
+             for (_, pos), b in shown]
+    return _TIMELINE_BLOCK.format(lines="\n".join(lines)) if lines else ""
+
+
 def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
                    books: dict[str, BookInfo] | None) -> str:
     if not write_module.STORY_ORDER:
@@ -439,7 +471,8 @@ def _build_prompt(
                           + (_ACTIONS_RULE if write_module.readings_on() else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
-                          relations=relations, passages=passages,
+                          relations=relations + _timeline_block(evidence, book_titles, books),
+                          passages=passages,
                           truncation=truncation)
 
 
@@ -954,14 +987,16 @@ async def synthesize_parts(
 
     kept: list[Claim] = []
     per_part: list[list[Claim]] = []
-    for part, share in zip(sub_questions, evidence.shares):
+    for index, (part, share) in enumerate(zip(sub_questions, evidence.shares)):
         numbers = set(share)
         passages = tuple(p for p in evidence.passages if p.n in numbers)
         if not passages:
             per_part.append([])
             continue
         own = Evidence(edges=evidence.edges, passages=passages,
-                       truncated=evidence.truncated)
+                       truncated=evidence.truncated,
+                       timeline=(evidence.timelines[index]
+                                 if len(evidence.timelines) == len(sub_questions) else ()))
         result = await generate(
             _build_prompt(part, own, book_titles, part_of=question, books=books), Synthesis)
         verified, _ = verify_claims(_capped(result), passages)

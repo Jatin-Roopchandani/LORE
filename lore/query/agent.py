@@ -38,6 +38,7 @@ from lore.query.synthesize import (
     CHECK_SKIPPED_NOTE, synthesize, synthesize_parts, validated_verdicts,
 )
 from lore.query.templates import MAX_EVIDENCE_CHARS
+from lore.query import timeline as timeline_module
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
@@ -566,6 +567,8 @@ async def answer_question(
     all_seeds: list[SeedEntity] = []
     seen_seed_ids: set[str] = set()
     seeded = False
+    # Story beats of each part's characters, factions and objects (timeline.py).
+    part_beats: list[list] = [[] for _ in parts]
     for index, (part, part_vector) in enumerate(parts):
         # A part's own names first, then the whole question's: a rewritten
         # part may have dropped a name the question gave.
@@ -590,6 +593,9 @@ async def answer_question(
             if s.id not in seen_seed_ids:
                 seen_seed_ids.add(s.id)
                 all_seeds.append(s)
+        if timeline_module.TIMELINE:
+            part_beats[index] = timeline_module.part_timeline(
+                conn, lance, seeds, part_vector, books, part_books)
         emit(on_event, "step", name="search", state="start", part=index, detail=None)
         call, model = await _select(part, seeds, models)
         if model and model not in chosen_by:
@@ -627,6 +633,9 @@ async def answer_question(
     keyword_hits = _keyword_hits(conn, [part for part, _ in parts])
     extra += [hit for hits in keyword_hits for hit in hits]
     extra += scoped
+    # A timeline's passages are candidates too: ranked like any other, and
+    # (when their part has a timeline slice) kept whatever their rank.
+    extra += [(b.chunk_id, b.book_id, b.chapter_seq) for beats in part_beats for b in beats]
     books_of = {r.chunk_id: r.book_id for r in rows} | {c: b for c, b, _ in extra}
     candidates = sorted({row.chunk_id for row in rows} | {c for c, _, _ in extra})
     stored = lance.chunk_vectors(candidates)
@@ -646,10 +655,13 @@ async def answer_question(
     # cross-book answer keeps both books survives there.
     book_fair = len(parts) == 1 and (not decomposed or "across_books" in templates)
     emit(on_event, "step", name="rank", state="start", part=None, detail=None)
+    timelines = ({"timelines": [timeline_module.timeline_beats(beats) for beats in part_beats],
+                  "timeline_share": timeline_module.TIMELINE_SHARE}
+                 if any(part_beats) else {})
     evidence = assemble_ranked(conn, rows, extra_chunks=extra,
                                max_chars=models.evidence_chars,
                                score_lists=score_lists,
-                               book_fair=book_fair)
+                               book_fair=book_fair, **timelines)
     emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in evidence.passages],
          edge_keys=[edge_key(e) for e in evidence.edges])
     emit(on_event, "step", name="rank", state="done", part=None,
