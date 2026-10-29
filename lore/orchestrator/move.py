@@ -32,6 +32,8 @@ def prepare_move(conn: sqlite3.Connection, book_id: str, world_id: int, *,
       `reassign` (or a stopped load). The job resumes where it was.
     - In another world: the move starts at `remove`, whatever an older job's
       stage says (a failed load of the book's old world must not skip it).
+    The target world is saved on the job row (jobs.move_target) until the
+    job is done.
     Raises JobRefused while another runner holds the book.
     """
     moment = now or wall_clock()
@@ -41,6 +43,12 @@ def prepare_move(conn: sqlite3.Connection, book_id: str, world_id: int, *,
     current = worlds.world_of(conn, book_id)
     if current is not None and current.id == world_id:
         return job is not None and job.state != jobs.DONE
-    if job is not None and job.stage not in _BEFORE_REASSIGN:
+    if job is None:  # a row for Continue to find, parked at the first stage
+        jobs.start_job(conn, book_id, "remove", 0, now=moment, guard=False)
         jobs.finish_stage(conn, book_id, "remove", now=moment)
+    elif job.stage not in _BEFORE_REASSIGN:
+        jobs.finish_stage(conn, book_id, "remove", now=moment)
+    # Remembered on the row, so Continue (CLI or web) reruns the move, not
+    # the ordinary stages, and knows the world it is heading for.
+    jobs.set_move_target(conn, book_id, world_id)
     return True

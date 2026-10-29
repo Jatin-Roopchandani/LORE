@@ -172,6 +172,9 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             " WHERE world_id IS NULL",
         ],
     ),
+    # Where an unfinished move is going: Continue (web or CLI) needs the
+    # target world to rerun `remove`/`reassign`. Cleared when the job is done.
+    (10, ["ALTER TABLE book_jobs ADD COLUMN move_world_id INTEGER"]),
 ]
 
 

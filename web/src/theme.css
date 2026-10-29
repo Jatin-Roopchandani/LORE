@@ -5,6 +5,7 @@
   --part-0:#1E5AA0; --part-1:#8A4FA3; --part-2:#2E7D4F; --part-3:#B0662A;
   --k-character:#2F6DB5; --k-place:#3D8B6E; --k-faction:#8A4FA3; --k-object:#B0662A; --k-concept:#6B6F1E; --k-event:#B8456B; --k-other:#6C7A87;
   --edge:#9AA7B3; --edge-faint:#CBD3DA;
+  --world-0:#C2410C; --world-1:#0E7490; --world-2:#7C3AED; --world-3:#4D7C0F; --world-4:#BE185D; --world-5:#1D4ED8;
   --f-ui:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-book:"Newsreader",Georgia,serif;
   --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
@@ -14,13 +15,15 @@
   --accent:#78AEEA; --accent-soft:#1D3047; --glow:#EBAA3C; --glow-soft:#3A2D14; --ok:#6CC596; --warn:#E3A44B; --danger:#F2867E;
   --part-0:#78AEEA; --part-1:#BC8AD3; --part-2:#6CC596; --part-3:#E19A5C;
   --k-character:#6FA4E4; --k-place:#6CC1A0; --k-faction:#BC8AD3; --k-object:#E19A5C; --k-concept:#C2C66A; --k-event:#E58AA8; --k-other:#93A2B0;
-  --edge:#5E6C79; --edge-faint:#2C3843; color-scheme:dark}}
+  --edge:#5E6C79; --edge-faint:#2C3843;
+  --world-0:#FB923C; --world-1:#22D3EE; --world-2:#A78BFA; --world-3:#A3E635; --world-4:#F472B6; --world-5:#60A5FA; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E141A; --panel:#151D25; --sunk:#1B252F; --ink:#E3E9EF; --muted:#8C99A6; --line:#26323D;
   --accent:#78AEEA; --accent-soft:#1D3047; --glow:#EBAA3C; --glow-soft:#3A2D14; --ok:#6CC596; --warn:#E3A44B; --danger:#F2867E;
   --part-0:#78AEEA; --part-1:#BC8AD3; --part-2:#6CC596; --part-3:#E19A5C;
   --k-character:#6FA4E4; --k-place:#6CC1A0; --k-faction:#BC8AD3; --k-object:#E19A5C; --k-concept:#C2C66A; --k-event:#E58AA8; --k-other:#93A2B0;
-  --edge:#5E6C79; --edge-faint:#2C3843; color-scheme:dark}
+  --edge:#5E6C79; --edge-faint:#2C3843;
+  --world-0:#FB923C; --world-1:#22D3EE; --world-2:#A78BFA; --world-3:#A3E635; --world-4:#F472B6; --world-5:#60A5FA; color-scheme:dark}
 html,body,#root{height:100%}
 body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-ui);margin:0}
 *{box-sizing:border-box}
@@ -36,6 +39,8 @@ header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:12p
 .tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .pop{position:relative}
 .tbtn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.wsel select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer;max-width:200px}
+.wsel select:hover{border-color:var(--accent)}
 .tbtn:hover{border-color:var(--accent)}
 .tbtn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel);font-weight:600}
 .tbtn.icon{padding:6px 8px;line-height:1}
@@ -126,6 +131,8 @@ svg.graph{width:100%;height:100%;display:block}
 .legend{display:flex;gap:10px;flex-wrap:wrap}
 .legend span{display:inline-flex;align-items:center;gap:4px}
 .legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.legend .wlegend{display:inline-flex;gap:10px;flex-wrap:wrap}
+.legend i.wmark{background:transparent;border:3px solid var(--world-0);width:12px;height:12px}
 .legend i.ring{background:transparent;border:2px solid var(--part-0);width:11px;height:11px}
 .replay{margin-left:auto;border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 10px;cursor:pointer}
 .edge{stroke:var(--edge);stroke-width:1.4;fill:none;transition:stroke .3s,opacity .4s,stroke-width .3s}
@@ -172,3 +179,12 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .lib-bar{flex:1 1 120px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
 .lib-bar span{display:block;height:100%;background:var(--accent)}
 .lib-foot{border-top:1px solid var(--line);padding-top:8px}
+
+.lib-world{display:flex;flex-direction:column;gap:8px}
+.lib-whead{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:4px}
+.lib-wtitle{display:flex;flex-direction:column;gap:0}
+.lib-wtitle h3{margin:0;font:600 15px var(--f-book)}
+.lib-wactions,.lib-wform{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.lib-wform input,.lib-move input,.lib-move select,.dialog select,.dialog input[type=text]{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:6px 10px;font:inherit;color:var(--ink)}
+.lib-move{display:flex;flex-direction:column;gap:8px;border-top:1px dashed var(--line);padding-top:8px}
+.addworld{display:flex;flex-direction:column;gap:6px}

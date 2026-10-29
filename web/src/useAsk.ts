@@ -11,7 +11,9 @@ function reducer(state: AskState, action: Action): AskState {
 }
 const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-export function useAsk() {
+// `world` is the selected world (an id as a string, or "all"). Replaying an item asked in another world calls
+// `onReplayWorld` with it, so the rest of the page follows.
+export function useAsk(world: string = "all", onReplayWorld?: (world: string) => void) {
   const [state, dispatch] = useReducer(reducer, initialState());
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
   const [current, setCurrent] = useState<string | null>(null);
@@ -23,12 +25,17 @@ export function useAsk() {
   const abort = useRef<AbortController | null>(null);
   const scheduler = useRef<Scheduler | null>(null);
   const last = useRef<string>("");
+  const worldRef = useRef(world);
+  worldRef.current = world;
+  const onReplayWorld_ = useRef(onReplayWorld);
+  onReplayWorld_.current = onReplayWorld;
 
   const stop = () => { abort.current?.abort(); scheduler.current?.stop(); };
   useEffect(() => stop, []);
 
   const ask = useCallback((question: string) => {
     stop();
+    const asked = worldRef.current;
     last.current = question;
     dispatch({ kind: "reset", question });
     const controller = new AbortController();
@@ -40,10 +47,10 @@ export function useAsk() {
     setRun((n) => n + 1);
     (async () => {
       const events: AskEvent[] = [];
-      for await (const event of streamAsk(question, controller.signal)) { events.push(event); sched.push(event); }
+      for await (const event of streamAsk(question, controller.signal, asked)) { events.push(event); sched.push(event); }
       if (controller.signal.aborted) return;
       if (events.some((e) => e.type === "answer"))
-        setHistory((h) => addToHistory(h, { id, question, events, askedAt: new Date().toISOString() }));
+        setHistory((h) => addToHistory(h, { id, question, events, askedAt: new Date().toISOString(), world: asked }));
     })();
   }, []);
 
@@ -51,6 +58,7 @@ export function useAsk() {
     const item = history.find((h) => h.id === id);
     if (!item) return;
     stop();
+    if (item.world && item.world !== worldRef.current) onReplayWorld_.current?.(item.world);
     setCurrent(id);
     setRun((n) => n + 1);
     dispatch({ kind: "reset", question: item.question });
@@ -59,6 +67,14 @@ export function useAsk() {
     item.events.forEach((e) => sched.push(e));
   }, [history]);
 
+  // Back to the empty state (the library overview), as when the world changes.
+  const clear = useCallback(() => {
+    stop();
+    setCurrent(null);
+    setRun((n) => n + 1);
+    dispatch({ kind: "reset", question: "" });
+  }, []);
+
   const retry = useCallback(() => { if (last.current) ask(last.current); }, [ask]);
-  return { state, history, current, run, ask, replay, retry, busy: state.status === "running" };
+  return { state, history, current, run, ask, replay, retry, clear, busy: state.status === "running" };
 }

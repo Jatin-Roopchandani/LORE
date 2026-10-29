@@ -1,4 +1,4 @@
-import { deriveGraph, unknownKinds } from "./graphView";
+import { deriveGraph, nodeLabel, unknownKinds, worldsIn } from "./graphView";
 import { askReducer, initialState } from "./askReducer";
 import two from "./fixtures/two-part.json";
 import type { AskEvent, Edge, SubgraphData } from "./types";
@@ -190,4 +190,29 @@ test("hovering several chunks marks links of each as hot", () => {
   expect(both.find((l) => l.id === a.id)!.hot).toBe(true);
   expect(both.find((l) => l.id === b.id)!.hot).toBe(true);
   expect(one.some((l) => l.id === b.id)).toBe(false);
+});
+
+const A = { id: 1, name: "Alpha Saga" }, B = { id: 2, name: "Beta Realm" };
+const subOf = (nodes: SubgraphData["nodes"]): SubgraphData => ({ nodes, edges: [], truncated: false, depth: 0 });
+
+test("all-worlds: overview nodes keep their world, so same-named characters stay two marked nodes", () => {
+  const overview = subOf([{ id: "a_zed", name: "Zed Quill", kind: "Character", books: ["a1"], world: A },
+    { id: "b_zed", name: "Zed Quill", kind: "Character", books: ["b1"], world: B }]);
+  const v = deriveGraph(stateWith([]), { ...opts, overview });
+  expect(v.nodes.map((n) => [n.id, n.world?.name])).toEqual([["a_zed", "Alpha Saga"], ["b_zed", "Beta Realm"]]);
+  expect(v.nodes.map(nodeLabel)).toEqual(["Zed Quill · Alpha Saga", "Zed Quill · Beta Realm"]);
+  expect(worldsIn(v)).toEqual([A, B]);
+});
+
+test("a single world's nodes carry no world, so nothing is marked or listed", () => {
+  const v = deriveGraph(stateWith([]), { ...opts, overview: subOf([{ id: "a_zed", name: "Zed Quill", kind: "Character", books: ["a1"] }]) });
+  expect(v.nodes[0].world).toBeUndefined();
+  expect(nodeLabel(v.nodes[0])).toBe("Zed Quill");
+  expect(worldsIn(v)).toEqual([]);
+});
+
+test("a search node learns its world from the entity lookup", () => {
+  const v = deriveGraph(stateWith(base), { ...opts, kinds: { x: { kind: "Place", books: ["b2"], world: B } } });
+  expect(v.nodes.find((n) => n.id === "x")!.world).toEqual(B);
+  expect(v.nodes.find((n) => n.id === "h")!.world).toBeUndefined();
 });

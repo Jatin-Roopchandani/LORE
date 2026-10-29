@@ -163,6 +163,21 @@ def set_needs_reload(conn: sqlite3.Connection, book_id: str,
            (1 if value else 0, book_id))
 
 
+def move_target(conn: sqlite3.Connection, book_id: str) -> int | None:
+    """The world an unfinished move is heading for; None when the job is not
+    a move (or the move is finished)."""
+    r = conn.execute("SELECT move_world_id FROM book_jobs WHERE book_id = ?",
+                     (book_id,)).fetchone()
+    return r[0] if r and r[0] is not None else None
+
+
+def set_move_target(conn: sqlite3.Connection, book_id: str,
+                    world_id: int | None) -> None:
+    _write(conn, book_id,
+           "UPDATE book_jobs SET move_world_id = ? WHERE book_id = ?",
+           (world_id, book_id))
+
+
 def advance(conn: sqlite3.Connection, book_id: str, done: int, *,
             now: datetime | None = None) -> None:
     """Record progress within the stage (an absolute count); also a heartbeat."""
@@ -213,7 +228,8 @@ def done(conn: sqlite3.Connection, book_id: str, *,
          now: datetime | None = None) -> None:
     _write(conn, book_id,
            "UPDATE book_jobs SET stage = 'ready', state = 'done',"
-           " stopped_reason = NULL, resumable_at = NULL, updated_at = ?"
+           " stopped_reason = NULL, resumable_at = NULL, move_world_id = NULL,"
+           " updated_at = ?"
            " WHERE book_id = ?", (_iso(_aware(now)), book_id))
 
 

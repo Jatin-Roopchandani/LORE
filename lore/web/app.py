@@ -30,14 +30,28 @@ from lore.mcp import tools
 from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE, day_report, today
 from lore.orchestrator.jobs import JobRefused
+from lore.orchestrator.move import prepare_move
 from lore.orchestrator.pipeline import processing_budget_left, run_book
 from lore.web.ask import ask_events
-from lore.worlds import list_worlds
+from lore.worlds import (
+    WorldError, books_in, create_world, delete_world, get_world, list_worlds,
+    rename_world,
+)
 from lore.web.security import OriginGuard, allowed_hosts, allowed_origins
 
 STATIC = Path(__file__).parent / "static"
 MCP_PORT = 8765
 MAX_QUESTION_CHARS = 2000
+
+
+class MoveBody(BaseModel):
+    # An existing world's id or name; with `create`, the new world's name.
+    world: int | str
+    create: bool = False
+
+
+class WorldBody(BaseModel):
+    name: str
 
 
 class AskBody(BaseModel):
@@ -97,6 +111,30 @@ def _default_stages(config: LoreConfig) -> list:
     return default_stages(config, resume=True)
 
 
+class _MarksGraphed:
+    """Wraps the last stage: once it succeeds the run is complete, and the
+    book is `graphed`, as `lore process` leaves it. Done before the job row
+    reads `done`, so a page that sees `done` never reads a stale status."""
+
+    def __init__(self, stage) -> None:
+        self._stage = stage
+        self.name = stage.name
+
+    def total(self, ctx) -> int:
+        return self._stage.total(ctx)
+
+    def run(self, ctx, job_ctl) -> None:
+        self._stage.run(ctx, job_ctl)
+        with ctx.conn:
+            ctx.conn.execute("UPDATE books SET status = 'graphed' WHERE id = ?",
+                             (ctx.book_id,))
+
+
+def _move_stages(config: LoreConfig, world_id: int) -> list:
+    from lore.cli import move_stages
+    return move_stages(config, world_id)
+
+
 def _job_out(job: jobs.BookJob | None, now: datetime) -> dict | None:
     if job is None:
         return None
@@ -128,10 +166,13 @@ def _api_error(status: int, code: str, message: str) -> JSONResponse:
 def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                dev: bool = False,
                stages_factory: Callable[[LoreConfig], list] | None = None,
+               move_stages_factory: Callable[[LoreConfig, int], list] | None = None,
                clock: Callable[[], datetime] | None = None):
-    """`stages_factory` and `clock` are test seams for book processing."""
+    """`stages_factory`, `move_stages_factory` and `clock` are test seams for
+    book processing."""
     api = FastAPI(title="LORE", docs_url=None, redoc_url=None)
     make_stages = stages_factory or _default_stages
+    make_move_stages = move_stages_factory or _move_stages
     now_utc = clock or (lambda: datetime.now(timezone.utc))
     runner_slot = threading.Lock()  # held while a processing job runs
 
@@ -161,16 +202,19 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             conn.close()
         return {"books": [
             {"id": b["id"], "title": b["title"], "author": b["author"],
-             "status": b["status"], "series": b["series"],
+             "status": b["status"], "world": b["world"], "series": b["series"],
              "series_index": b["series_index"],
              "job": _job_out(by_book.get(b["id"]), now)}
             for b in rows], "gemini": gemini}
 
-    def _process(book_id: str) -> None:
+    def _process(book_id: str, move_world: int | None = None) -> None:
         conn = open_db(config.sqlite_path)  # its own connection: another thread
         try:
-            run_book(conn, config, book_id, make_stages(config),
-                     clock=now_utc, claimed=True)
+            stages = (make_move_stages(config, move_world) if move_world is not None
+                      else make_stages(config))
+            if stages:
+                stages = [*stages[:-1], _MarksGraphed(stages[-1])]
+            run_book(conn, config, book_id, stages, clock=now_utc, claimed=True)
         except JobRefused:
             pass  # raced a CLI run; its row stands
         except Exception as exc:  # noqa: BLE001 - a setup failure must not kill the thread
@@ -193,21 +237,74 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             try:
                 if book_id not in {b["id"] for b in list_books(conn)}:
                     return _api_error(404, "not_found", f"no book with id {book_id!r}")
-                ok, why = jobs.can_continue(jobs.get_job(conn, book_id), now_utc())
+                job = jobs.get_job(conn, book_id)
+                ok, why = jobs.can_continue(job, now_utc())
                 if not ok:
                     return _api_error(409, "not_resumable", why)
+                # An unfinished move continues as a move: the ordinary stages
+                # would skip `remove` and `reassign`.
+                move_world = jobs.move_target(conn, book_id)
+                if move_world is not None and get_world(conn, move_world) is None:
+                    move_world = None  # the target was deleted: nothing to resume
                 try:  # the 202 implies running: mark it before the thread starts
                     jobs.claim_job(conn, book_id, now=now_utc())
                 except JobRefused as exc:
                     return _api_error(409, "not_resumable", str(exc))
             finally:
                 conn.close()
-            threading.Thread(target=_process, args=(book_id,), daemon=True).start()
+            threading.Thread(target=_process, args=(book_id, move_world),
+                             daemon=True).start()
             handed_off = True
         finally:
             if not handed_off:
                 runner_slot.release()
         return {"started": True}
+
+    @api.post("/api/books/{book_id}/move")
+    def move_book(book_id: str, body: MoveBody):
+        if not runner_slot.acquire(blocking=False):
+            return _api_error(409, "busy", "another book is being processed")
+        handed_off = False
+        created: int | None = None
+        conn = open_db(config.sqlite_path)
+        try:
+            if book_id not in {b["id"] for b in list_books(conn)}:
+                return _api_error(404, "not_found", f"no book with id {book_id!r}")
+            target = get_world(conn, body.world)
+            if target is None:
+                if not body.create:
+                    return _api_error(400, "unknown_world",
+                                      f"no world {body.world!r}")
+                if not isinstance(body.world, str):
+                    return _api_error(400, "unknown_world",
+                                      f"no world with id {body.world}")
+                try:
+                    created = create_world(conn, body.world)
+                except WorldError as exc:
+                    return _api_error(400, "invalid_world", str(exc))
+                target = get_world(conn, created)
+            try:
+                if not prepare_move(conn, book_id, target.id, now=now_utc()):
+                    return JSONResponse({"started": False})  # already there
+                jobs.claim_job(conn, book_id, now=now_utc())
+            except JobRefused as exc:
+                return _api_error(409, "busy", str(exc))
+            threading.Thread(target=_process, args=(book_id, target.id),
+                             daemon=True).start()
+            handed_off = True
+            created = None  # the world is in use now
+            return JSONResponse({"started": True,
+                                 "world": {"id": target.id, "name": target.name}},
+                                status_code=202)
+        finally:
+            if created is not None:  # refused: no stray empty world
+                try:
+                    delete_world(conn, created)
+                except (WorldError, sqlite3.Error):
+                    pass
+            conn.close()
+            if not handed_off:
+                runner_slot.release()
 
     @api.get("/api/worlds")
     def worlds():
@@ -223,6 +320,59 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                         "series_index": b["series_index"]}
                        for b in rows if b["world_id"] == w.id]}
             for w in listed]
+
+    def _world_out(w) -> dict:
+        return {"id": w.id, "name": w.name}
+
+    @api.post("/api/worlds", status_code=201)
+    def create_a_world(body: WorldBody):
+        conn = open_db(config.sqlite_path)
+        try:
+            if body.name.strip() and get_world(conn, body.name) is not None:
+                return _api_error(409, "exists",
+                                  f"a world named {body.name.strip()!r} already exists")
+            try:
+                new_id = create_world(conn, body.name)
+            except WorldError as exc:
+                return _api_error(400, "invalid_world", str(exc))
+            return _world_out(get_world(conn, new_id))
+        finally:
+            conn.close()
+
+    @api.patch("/api/worlds/{world_id}")
+    def rename_a_world(world_id: int, body: WorldBody):
+        conn = open_db(config.sqlite_path)
+        try:
+            if get_world(conn, world_id) is None:
+                return _api_error(404, "not_found", f"no world with id {world_id}")
+            clash = get_world(conn, body.name) if body.name.strip() else None
+            if clash is not None and clash.id != world_id:
+                return _api_error(409, "exists",
+                                  f"a world named {body.name.strip()!r} already exists")
+            try:
+                rename_world(conn, world_id, body.name)
+            except WorldError as exc:
+                return _api_error(400, "invalid_world", str(exc))
+            return _world_out(get_world(conn, world_id))
+        finally:
+            conn.close()
+
+    @api.delete("/api/worlds/{world_id}")
+    def delete_a_world(world_id: int):
+        conn = open_db(config.sqlite_path)
+        try:
+            if get_world(conn, world_id) is None:
+                return _api_error(404, "not_found", f"no world with id {world_id}")
+            if books_in(conn, world_id):
+                return _api_error(409, "not_empty",
+                                  "this world still has books; move them out first")
+            try:
+                delete_world(conn, world_id)
+            except WorldError as exc:
+                return _api_error(409, "not_empty", str(exc))
+            return {"deleted": True}
+        finally:
+            conn.close()
 
     @api.get("/api/library")
     def library(world: str | None = None):

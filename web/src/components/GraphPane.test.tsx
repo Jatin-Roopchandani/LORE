@@ -6,10 +6,10 @@ import { GraphPane } from "./GraphPane";
 import { UI } from "../messages";
 
 const views: GraphView[] = [];
-const entities = vi.fn((ids: string[]) => Promise.resolve({ entities: ids.filter((i) => i === "x").map((id) => ({ id, name: "X", kind: "Place", books: ["b1"] })) }));
+const entities = vi.fn((ids: string[], _world?: string) => Promise.resolve({ entities: ids.filter((i) => i === "x").map((id) => ({ id, name: "X", kind: "Place", books: ["b1"] })) }));
 vi.mock("./GraphCanvas", () => ({ GraphCanvas: ({ view }: { view: GraphView }) => { views.push(view); return <div />; } }));
 vi.mock("../api", () => ({
-  api: { entities: (ids: string[]) => entities(ids) },
+  api: { entities: (ids: string[], w?: string) => entities(ids, w) },
   isError: (x: unknown) => typeof x === "object" && x !== null && "error" in x,
 }));
 
@@ -51,4 +51,33 @@ test("with no overview the idle text and a hint show, never an error", () => {
   const { getByText } = render(<GraphPane state={initialState()} overview={null} hiddenBooks={new Set()} hoverChunks={[]} noBooks={false} />);
   expect(getByText(UI.graphIdle)).toBeInTheDocument();
   expect(getByText(UI.overviewHint)).toBeInTheDocument();
+});
+
+const A = { id: 1, name: "Alpha Saga" }, B = { id: 2, name: "Beta Realm" };
+
+test("all-worlds: the overview's nodes carry their world and the legend names each world", () => {
+  const overview = { truncated: false, depth: 0, edges: [], nodes: [
+    { id: "a_zed", name: "Zed Quill", kind: "Character", books: ["a1"], world: A },
+    { id: "b_zed", name: "Zed Quill", kind: "Character", books: ["b1"], world: B }] };
+  const props = { hiddenBooks: new Set<string>(), hoverChunks: [], noBooks: false };
+  const { getByRole } = render(<GraphPane state={initialState()} overview={overview} world="all" {...props} />);
+  expect(views.at(-1)!.nodes.map((n) => n.world?.name)).toEqual(["Alpha Saga", "Beta Realm"]);
+  const legend = getByRole("group", { name: "Worlds" });
+  expect(legend).toHaveTextContent("Alpha Saga");
+  expect(legend).toHaveTextContent("Beta Realm");
+});
+
+test("one world: no world legend", () => {
+  const overview = { truncated: false, depth: 0, edges: [], nodes: [{ id: "a_zed", name: "Zed Quill", kind: "Character", books: ["a1"] }] };
+  const props = { hiddenBooks: new Set<string>(), hoverChunks: [], noBooks: false };
+  const { queryByRole } = render(<GraphPane state={initialState()} overview={overview} world="1" {...props} />);
+  expect(queryByRole("group", { name: "Worlds" })).toBeNull();
+});
+
+test("the world is passed to the kind lookup", async () => {
+  entities.mockClear();
+  const state = events.reduce(askReducer, initialState("q"));
+  render(<GraphPane state={state} hiddenBooks={new Set()} hoverChunks={[]} noBooks={false} world="2" />);
+  await waitFor(() => expect(entities).toHaveBeenCalled());
+  expect(entities.mock.calls[0][1]).toBe("2");
 });

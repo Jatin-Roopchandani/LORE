@@ -25,14 +25,18 @@ export type AskEvent =
   | { type: "answer"; t: number; result: SearchResult }
   | { type: "error"; t: number; error: ApiError };
 export interface Book { id: string; title: string; author: string | null; status: string;
-  chunk_count: number; entity_count: number | null }
+  chunk_count: number; entity_count: number | null; world?: string | null }
+// Set on nodes and entities only when several worlds are shown together (the "all worlds" view).
+export interface WorldRef { id: number; name: string }
+export interface WorldBook { id: string; title: string; series: string | null; series_index: number | null }
+export interface World { id: number; name: string; books: WorldBook[] }
 export interface QuotaModel { model: string; count: number; limit: number; remaining: number }
 export interface Quota { provider: "gemini" | "local"; models: QuotaModel[]; resets_at: string }
 export interface McpInfo { stdio_command: string; http_command: string; http_url: string; http_running: boolean }
-export interface EntityCardData { id: string; name: string; kind: string; aliases: string[]; books: string[];
+export interface EntityCardData { id: string; name: string; kind: string; aliases: string[]; books: string[]; world?: WorldRef;
   edges_out: Edge[]; edges_in: Edge[]; edges_out_total: number; edges_in_total: number; truncated: boolean }
-export interface EntityKind { id: string; name: string; kind: string; books: string[] }
-export interface SubgraphNode { id: string; name: string; kind: string; books: string[] }
+export interface EntityKind { id: string; name: string; kind: string; books: string[]; world?: WorldRef }
+export interface SubgraphNode { id: string; name: string; kind: string; books: string[]; world?: WorldRef }
 export interface SubgraphLink { subject: string; subject_id: string; object: string; object_id: string;
   count: number; predicates: Record<string, number> }
 export interface SubgraphData { nodes: SubgraphNode[]; edges: SubgraphLink[]; truncated: boolean; depth: number }
@@ -41,6 +45,7 @@ export interface BookJob { stage: string; state: "running" | "waiting_quota" | "
   done: number; total: number; stopped_reason: string | null; resumable_at: string | null;
   can_continue: boolean; continue_reason: string }
 export interface LibraryBook { id: string; title: string; author: string | null; status: string;
-  series: string | null; series_index: number | null; job: BookJob | null }
+  world: string | null; series: string | null; series_index: number | null; job: BookJob | null }
+export type MoveResult = { started: true; world: WorldRef } | { started: false };
 export interface GeminiUse { used_today: number; limit: number; answer_reserve: number }
 export interface LibraryStatus { books: LibraryBook[]; gemini: GeminiUse }

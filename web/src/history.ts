@@ -2,7 +2,8 @@ import type { AskEvent, SearchResult } from "./types";
 
 // `answer` is not stored: the `answer` event already carries it, and the duplicate
 // doubled every item. Items saved before that may still have it; answerOf reads either.
-export interface HistoryItem { id: string; question: string; events: AskEvent[]; answer?: SearchResult | null; askedAt: string }
+// `world`: the world the question was asked in (an id as a string, or "all"); absent on items saved before worlds.
+export interface HistoryItem { id: string; question: string; events: AskEvent[]; answer?: SearchResult | null; askedAt: string; world?: string }
 export const HISTORY_KEY = "lore-history-v1";
 const MAX_ITEMS = 50;
 

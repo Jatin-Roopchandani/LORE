@@ -7,7 +7,7 @@ interface Stream { signal: AbortSignal; push(e: AskEvent): void; end(): void }
 const streams: Stream[] = [];
 const streamAsk = vi.fn();
 
-vi.mock("./api", () => ({ streamAsk: (q: string, signal: AbortSignal) => streamAsk(q, signal) }));
+vi.mock("./api", () => ({ streamAsk: (q: string, signal: AbortSignal, world?: string) => streamAsk(q, signal, world) }));
 Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
 
 function controllable(signal: AbortSignal) {
@@ -84,4 +84,56 @@ test("unmount aborts the active stream", async () => {
   expect(streams[0].signal.aborted).toBe(false);
   unmount();
   expect(streams[0].signal.aborted).toBe(true);
+});
+
+test("ask sends the selected world and records it in the history item", async () => {
+  const { useAsk } = await import("./useAsk");
+  const { result, rerender } = renderHook(({ w }) => useAsk(w), { initialProps: { w: "2" } });
+  act(() => result.current.ask("q1"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(streamAsk.mock.calls[0][2]).toBe("2");
+  expect(result.current.history[0].world).toBe("2");
+  rerender({ w: "all" });
+  act(() => result.current.ask("q2"));
+  await waitFor(() => expect(result.current.history).toHaveLength(2));
+  expect(streamAsk.mock.calls[1][2]).toBe("all");
+  expect(result.current.history[0].world).toBe("all");
+});
+
+test("replaying an item from another world switches to it; the same world does not", async () => {
+  const { useAsk } = await import("./useAsk");
+  const switched = vi.fn();
+  const item = (id: string, world: string) => ({ id, question: id, events: single, askedAt: "2026-10-01T00:00:00Z", world });
+  localStorage.setItem("lore-history-v1", JSON.stringify([item("here", "2"), item("there", "1")]));
+  const { result } = renderHook(() => useAsk("2", switched));
+  act(() => result.current.replay("here"));
+  expect(switched).not.toHaveBeenCalled();
+  act(() => result.current.replay("there"));
+  expect(switched).toHaveBeenCalledWith("1");
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(streamAsk).not.toHaveBeenCalled();
+});
+
+test("an item saved before worlds replays without switching", async () => {
+  const { useAsk } = await import("./useAsk");
+  const switched = vi.fn();
+  const item = { id: "old", question: "q", events: single, askedAt: "2026-10-01T00:00:00Z" };
+  localStorage.setItem("lore-history-v1", JSON.stringify([item]));
+  const { result } = renderHook(() => useAsk("3", switched));
+  act(() => result.current.replay("old"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(switched).not.toHaveBeenCalled();
+});
+
+test("clear returns to the empty state and aborts a running stream", async () => {
+  const { useAsk } = await import("./useAsk");
+  streamAsk.mockImplementation((_q: string, signal: AbortSignal) => controllable(signal));
+  const { result } = renderHook(() => useAsk());
+  act(() => result.current.ask("q"));
+  const run = result.current.run;
+  act(() => result.current.clear());
+  expect(streams[0].signal.aborted).toBe(true);
+  expect(result.current.state.status).toBe("idle");
+  expect(result.current.state.question).toBe("");
+  expect(result.current.run).toBe(run + 1);
 });

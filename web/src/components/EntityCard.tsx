@@ -9,10 +9,10 @@ const pretty = (p: string) => p.toLowerCase().replace(/_/g, " ");
 
 export interface EntityCardProps {
   id: string; onClose: () => void; onExpand: (d: SubgraphData) => void;
-  answerEdges?: Edge[]; seed?: boolean; bookTitles?: Map<string, string>;
+  answerEdges?: Edge[]; seed?: boolean; bookTitles?: Map<string, string>; world?: string;
 }
 
-export function EntityCard({ id, onClose, onExpand, answerEdges = [], seed = false, bookTitles }: EntityCardProps) {
+export function EntityCard({ id, onClose, onExpand, answerEdges = [], seed = false, bookTitles, world }: EntityCardProps) {
   const [card, setCard] = useState<EntityCardData | null>(null);
   const [problem, setProblem] = useState("");
   const [expanding, setExpanding] = useState(false);
@@ -22,13 +22,13 @@ export function EntityCard({ id, onClose, onExpand, answerEdges = [], seed = fal
   useEffect(() => {
     let live = true;
     setCard(null); setProblem(""); setExpanding(false);
-    api.entity(id).then((r) => { if (!live) return; if (isError(r)) setProblem(say(r.error)); else setCard(r); });
+    api.entity(id, world).then((r) => { if (!live) return; if (isError(r)) setProblem(say(r.error)); else setCard(r); });
     return () => { live = false; };
-  }, [id]);
+  }, [id, world]);
   const expand = async () => {
     const asked = id;
     setExpanding(true);
-    const r = await api.subgraph(asked);
+    const r = await api.subgraph(asked, world);
     if (current.current !== asked) return; // closed, moved to another entity, or a new ask
     setExpanding(false);
     if (isError(r)) setProblem(say(r.error)); else onExpand(r);
@@ -49,6 +49,7 @@ export function EntityCard({ id, onClose, onExpand, answerEdges = [], seed = fal
       {card && (<>
         <span className="kind">{card.kind}{seed ? " · starting entity" : ""}</span>
         <h3>{card.name}</h3>
+        {card.world && <span className="mono">{card.world.name}</span>}
         <span className="mono">{books || "—"}</span>
         <div>
           <strong style={{ fontSize: 12 }}>In this answer</strong>

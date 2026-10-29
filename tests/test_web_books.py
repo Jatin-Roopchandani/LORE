@@ -76,7 +76,8 @@ def test_get_books_shape_for_an_unprocessed_book(config):
     assert set(body) == {"books", "gemini"}
     first = body["books"][0]
     assert first == {"id": "b1", "title": "A Study in Scarlet", "author": None,
-                     "status": "registered", "series": None, "series_index": None,
+                     "status": "registered", "world": None, "series": None,
+                     "series_index": None,
                      "job": None}
     g = body["gemini"]
     assert set(g) == {"used_today", "limit", "answer_reserve"}

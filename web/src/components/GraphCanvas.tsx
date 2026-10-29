@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 import Graph from "graphology";
 import Sigma from "sigma";
 import { createNodeBorderProgram } from "@sigma/node-border";
-import type { GraphView } from "../graphView";
+import { nodeLabel, type GraphView } from "../graphView";
+import { worldSlot } from "../worlds";
 import type { Positions } from "../layout";
 
 const KIND_VAR: Record<string, string> = { Character: "--k-character", Place: "--k-place", Faction: "--k-faction", Object: "--k-object",
@@ -97,9 +98,12 @@ export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitR
       const dim = n.state === "dim";
       const seed = n.seedPart !== null;
       const color = dim ? p.faint : p.v(KIND_VAR[n.kind] ?? "--k-other");
-      const attrs = { x: at.x, y: -at.y, size: seed ? 11 : 7, label: n.label.replace(/^Mr\. /, ""), color,
-        ring: seed ? 0.3 : 0, gap: seed ? 0.12 : 0, gapColor: p.panel,
-        ringColor: seed && !dim ? p.v(`--part-${n.seedPart! % 4}`) : p.faint, zIndex: dim ? 0 : 1 };
+      // In the all-worlds view a plain node wears a ring in its world's colour (a seed keeps its part ring).
+      const ringed = seed || !!n.world;
+      const ringColor = dim ? p.faint : seed ? p.v(`--part-${n.seedPart! % 4}`) : n.world ? p.v(`--world-${worldSlot(n.world.id)}`) : p.faint;
+      const attrs = { x: at.x, y: -at.y, size: seed ? 11 : 7, label: nodeLabel({ ...n, label: n.label.replace(/^Mr\. /, "") }), color,
+        ring: seed ? 0.3 : n.world ? 0.28 : 0, gap: ringed ? 0.12 : 0, gapColor: p.panel,
+        ringColor, zIndex: dim ? 0 : 1 };
       if (g.hasNode(n.id)) g.mergeNodeAttributes(n.id, attrs); else g.addNode(n.id, attrs);
     }
     const keepEdges = new Set(v.links.map((l) => l.id));

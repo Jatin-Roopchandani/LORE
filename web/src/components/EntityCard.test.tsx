@@ -1,12 +1,14 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { api } from "../api";
 import { EntityCard } from "./EntityCard";
 import type { Edge } from "../types";
 
 vi.mock("../api", () => ({
   api: {
-    entity: () => Promise.resolve({ id: "e1", name: "Jefferson Hope", kind: "Character", aliases: [], books: ["b1"],
-      edges_out: [], edges_in: [], edges_out_total: 40, edges_in_total: 2, truncated: false }),
-    subgraph: vi.fn(),
+    entity: vi.fn((_id: string, _world?: string) => Promise.resolve({ id: "e1", name: "Jefferson Hope", kind: "Character", aliases: [], books: ["b1"],
+      edges_out: [], edges_in: [], edges_out_total: 40, edges_in_total: 2, truncated: false })),
+    subgraph: vi.fn((_id: string, _world?: string) => Promise.resolve({ nodes: [], edges: [], truncated: false, depth: 1 })),
   },
   isError: (x: unknown) => typeof x === "object" && x !== null && "error" in x,
 }));
@@ -38,4 +40,12 @@ test("an expand result that lands after the card moved on is dropped", async () 
   land({ nodes: [], edges: [], truncated: false, depth: 1 });
   await new Promise((r) => setTimeout(r, 20));
   expect(onExpand).not.toHaveBeenCalled();
+});
+
+test("the card and its expansion are fetched in the selected world", async () => {
+  render(<EntityCard id="e1" world="2" onClose={() => {}} onExpand={() => {}} />);
+  await screen.findByText("Jefferson Hope");
+  expect(api.entity).toHaveBeenLastCalledWith("e1", "2");
+  await userEvent.click(screen.getByRole("button", { name: "Expand neighbours" }));
+  await waitFor(() => expect(api.subgraph).toHaveBeenLastCalledWith("e1", "2"));
 });

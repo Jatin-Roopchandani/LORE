@@ -10,7 +10,37 @@ export const STEP_LABEL: Record<StepName, string> = {
 
 export const STAGE_LABEL: Record<string, string> = {
   chunk: "Splitting into passages", extract: "Reading passages", load: "Building the graph",
+  remove: "Taking it out of the graph", reassign: "Changing its world",
   disambiguate: "Merging duplicate entities", beats: "Finding story beats", ready: "Finishing up",
+};
+
+export const WORLDS = {
+  selectLabel: "World", all: "All worlds",
+  legendLabel: "Worlds",
+  nodeLabel: (name: string, world: string) => `${name} \u00b7 ${world}`,
+  newWorld: "New world\u2026", newWorldName: "New world name",
+  addWorldLabel: "World for this book",
+  addWorldHint: "Books in one world share characters and places; books in different worlds never mix.",
+ 
+  noBooksInWorld: "No books in this world yet.",
+  ungrouped: "No world",
+  series: (names: string[]) => `Series: ${names.join(", ")}`,
+  groupLabel: (name: string) => `World ${name}`,
+  moveOpen: "Move to world\u2026",
+  moveOpenLabel: (title: string) => `Move ${title} to another world`,
+  moveTargetLabel: (title: string) => `World to move ${title} to`,
+  moveConfirm: (title: string, world: string, isNew: boolean) =>
+    `Move \u201c${title}\u201d to ${isNew ? "a new world named " : "the world "}\u201c${world}\u201d? It is taken out of the graph and loaded into that world from the saved reading, which costs no new extraction. While it moves, questions can't use this book.`,
+  moveConfirmButton: "Confirm move", moveCancel: "Cancel",
+  moveSame: "That book is already in this world.",
+  moveFailed: "Couldn't start the move.",
+  rename: "Rename", renameLabel: (name: string) => `Rename world ${name}`,
+  renameInput: (name: string) => `New name for world ${name}`,
+  save: "Save", cancel: "Cancel",
+  delete: "Delete", deleteLabel: (name: string) => `Delete world ${name}`,
+  deleteConfirm: (name: string) => `Delete the empty world \u201c${name}\u201d?`,
+  deleteConfirmButton: "Delete world", deleteFailed: "Couldn't delete the world.",
+  changeFailed: "That change didn't go through.",
 };
 
 export const LIBRARY = {
@@ -55,6 +85,7 @@ export const UI = {
   fitGraph: "Fit to view",
   answeredIn: (seconds: number) => `Answered in ${seconds.toFixed(1)}s · cited relationships glow`,
   ingestHint: "Adding books from the browser comes next. For now, run this in a terminal:",
+  ingestWorldNote: "The command asks you to confirm before it creates a new world.",
   mcpNotRunning: "HTTP server not running",
   mcpRunning: "HTTP server running",
   wrongFileType: (name: string) => `${name} is not an EPUB or PDF. Choose a .epub or .pdf file.`,

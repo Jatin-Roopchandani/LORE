@@ -115,3 +115,15 @@ def test_can_continue() -> None:
     assert not ok and "running" in why
     # a stale running row does not block
     assert jobs.can_continue(_job(state="running", updated_at=NOW), NOW + timedelta(seconds=300))[0]
+
+
+def test_move_target_is_saved_and_cleared_when_the_job_is_done(conn) -> None:
+    jobs.start_job(conn, "b1", "remove", 1, now=NOW)
+    assert jobs.move_target(conn, "b1") is None
+    jobs.set_move_target(conn, "b1", 7)
+    assert jobs.move_target(conn, "b1") == 7
+    jobs.fail(conn, "b1", "x", now=NOW)
+    assert jobs.move_target(conn, "b1") == 7  # a failed move stays a move
+    jobs.done(conn, "b1", now=NOW)
+    assert jobs.move_target(conn, "b1") is None
+    assert jobs.move_target(conn, "nope") is None

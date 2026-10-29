@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, isError } from "../api";
 import type { AskState } from "../askReducer";
-import { deriveGraph, unknownKinds, type KindMap } from "../graphView";
+import { deriveGraph, unknownKinds, worldsIn, type KindMap } from "../graphView";
 import { place, type Positions } from "../layout";
-import { STEP_LABEL, UI } from "../messages";
+import { STEP_LABEL, UI, WORLDS } from "../messages";
 import type { SubgraphData } from "../types";
+import { worldSlot } from "../worlds";
 import { EntityCard } from "./EntityCard";
 import { GraphCanvas } from "./GraphCanvas";
 
@@ -17,9 +18,10 @@ const KIND_DELAY_MS = 150;
 // no camera pin, no positions and no kinds, and late results for the old ask land nowhere.
 // `overview` is the library overview (App fetches it once): drawn only while no question has been asked.
 // undefined = still loading; null = unavailable or empty.
-export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, bookTitles, overview }:
+// `world`: the selected world (an id as a string, or "all"), passed to every graph call.
+export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, bookTitles, overview, world }:
   { state: AskState; hiddenBooks: Set<string>; hoverChunks: string[]; noBooks: boolean; bookTitles?: Map<string, string>;
-    overview?: SubgraphData | null }) {
+    overview?: SubgraphData | null; world?: string }) {
   const [expansions, setExpansions] = useState<Expansion[]>([]);
   const [fitRequest, setFitRequest] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -47,18 +49,20 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, bookTitles
       const ids = missingKey.split(",");
       ids.forEach((id) => asked.current.add(id));
       for (let i = 0; i < ids.length; i += KIND_BATCH) {
-        api.entities(ids.slice(i, i + KIND_BATCH)).then((r) => {
+        api.entities(ids.slice(i, i + KIND_BATCH), world).then((r) => {
           if (!mounted.current || isError(r) || !r.entities.length) return;
-          setKinds((k) => ({ ...k, ...Object.fromEntries(r.entities.map((e) => [e.id, { kind: e.kind, books: e.books }])) }));
+          setKinds((k) => ({ ...k, ...Object.fromEntries(r.entities.map((e) => [e.id, { kind: e.kind, books: e.books, world: e.world }])) }));
         });
       }
     }, KIND_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [missingKey]);
+  }, [missingKey, world]);
 
   const running = state.steps.find((s) => s.state === "running");
   const stage = running ? `${STEP_LABEL[running.name]}…` : state.status === "done" ? UI.answeredIn(state.elapsed)
     : shownOverview ? UI.overviewStage : UI.graphIdle;
+  // Several worlds drawn together: each is a cluster, marked on its nodes and listed here.
+  const marked = worldsIn(view);
   const showHint = idle && overview === null && view.nodes.length === 0;
   // subgraph_by_id canonicalises the id, so the expansion's first node is the real root.
   const expand = (clicked: string) => (data: SubgraphData) =>
@@ -73,6 +77,9 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, bookTitles
           {state.subQuestions.length > 1
             ? state.subQuestions.map((q, i) => <span key={i} title={q}><i className="ring" style={{ borderColor: `var(--part-${i % 4})` }} />{UI.legendPart(i + 1)}</span>)
             : !shownOverview && <span><i className="ring" />{UI.legendStart}</span>}
+          {marked.length > 0 && <span className="wlegend" role="group" aria-label={WORLDS.legendLabel}>
+            {marked.map((w) => <span key={w.id}><i className="wmark" style={{ borderColor: `var(--world-${worldSlot(w.id)})` }} />{w.name}</span>)}
+          </span>}
           {UI.legendKinds.map(([token, label]) => <span key={token}><i style={{ background: `var(${token})` }} />{label}</span>)}
           <span><i style={{ background: "var(--glow)", borderRadius: 2, height: 3, width: 14 }} />{UI.legendCited}</span>
         </div>
@@ -83,7 +90,7 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, bookTitles
           : <GraphCanvas view={view} positions={pos} onNodeClick={setSelected} pinned={expansions.length > 0} fitRequest={fitRequest} />}
         {selected && <EntityCard key={selected} id={selected} onClose={() => setSelected(null)} onExpand={expand(selected)}
           answerEdges={state.edges.flatMap((pe) => pe?.edges ?? []).filter((e) => e.subject_id === selected || e.object_id === selected)}
-          seed={state.seeds.some((list) => list?.some((s) => s.id === selected))} bookTitles={bookTitles} />}
+          seed={state.seeds.some((list) => list?.some((s) => s.id === selected))} bookTitles={bookTitles} world={world} />}
       </div>
     </section>
   );
