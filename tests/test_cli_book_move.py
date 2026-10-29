@@ -222,3 +222,41 @@ def test_remove_from_graph_refuses_a_running_book(lib) -> None:
     conn.close()
     result = runner.invoke(app, ["book", "remove-from-graph", BOOK, "--yes"])
     assert result.exit_code == 1 and "running" in result.output
+
+
+def test_move_refused_at_the_claim_leaves_no_target_and_no_stray_world(
+    lib, monkeypatch,
+) -> None:
+    config, _old, _new = lib
+
+    def refuse(*args, **kwargs):
+        raise jobs.JobRefused("a job is already running for this book")
+
+    monkeypatch.setattr(jobs, "claim_job", refuse)
+    result, doubles = _run(
+        config, ["book", "move", BOOK, "--world", "Brand New", "--yes"])
+    assert result.exit_code == 1 and "move refused" in result.output
+    assert doubles.calls == []
+    conn = _db(config)
+    assert jobs.move_target(conn, BOOK) is None
+    assert worlds.get_world(conn, "Brand New") is None
+    conn.close()
+
+
+def test_move_to_the_own_world_with_an_unfinished_ordinary_job_is_not_a_move(
+    lib,
+) -> None:
+    config, _old, _new = lib
+    conn = _db(config)
+    jobs.start_job(conn, BOOK, "load", 1)
+    jobs.fail(conn, BOOK, "boom")
+    before = jobs.get_job(conn, BOOK)
+    conn.close()
+    result, doubles = _run(config, ["book", "move", BOOK, "--world", "Old Realm"])
+    assert result.exit_code == 0, result.output
+    assert "not a move" in result.output and "continue it instead" in result.output
+    assert doubles.calls == []  # no move stage ran over the stopped load
+    conn = _db(config)
+    assert jobs.get_job(conn, BOOK) == before
+    assert jobs.move_target(conn, BOOK) is None
+    conn.close()

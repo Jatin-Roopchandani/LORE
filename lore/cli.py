@@ -49,6 +49,7 @@ from lore.orchestrator.jobs import (
     DONE,
     FAILED,
     WAITING_QUOTA,
+    fail as fail_job,
     finish_stage,
     get_job,
     is_fresh,
@@ -482,24 +483,29 @@ def book_move(
                 typer.echo(f"move failed: {exc}")
                 raise typer.Exit(2)
             created = True
+        stages = [_Recording(s) for s in move_stages(config, found.id,
+                                                     api_key=api_key)]
         try:
-            run = prepare_move(conn, book_id, found.id)
+            run = prepare_move(conn, book_id, found.id)  # claims the row too
         except JobRefused as exc:
             if created:
                 delete_world(conn, found.id)
             typer.echo(f"move refused: {exc}")
             raise typer.Exit(1)
         if not run:
-            typer.echo(f"{target['title']} is already in world {found.name!r}"
-                       " - nothing to do")
+            if _unfinished(conn, book_id):
+                typer.echo(f"{target['title']} is already in world {found.name!r}"
+                           " with unfinished processing, which is not a move -"
+                           " continue it instead")
+            else:
+                typer.echo(f"{target['title']} is already in world {found.name!r}"
+                           " - nothing to do")
             return
-        stages = [_Recording(s) for s in move_stages(config, found.id,
-                                                     api_key=api_key)]
         try:
-            job = run_book(conn, config, book_id, stages)
-        except JobRefused as exc:
-            typer.echo(f"move refused: {exc}")
-            raise typer.Exit(1)
+            job = run_book(conn, config, book_id, stages, claimed=True)
+        except BaseException as exc:  # the claimed row must not look running
+            fail_job(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000])
+            raise
         failure = next((s.error for s in stages if s.error is not None), None)
         if job.state == FAILED:
             typer.echo(f"move failed: {failure or job.stopped_reason}")

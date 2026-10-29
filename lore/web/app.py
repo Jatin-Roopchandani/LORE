@@ -284,9 +284,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                     return _api_error(400, "invalid_world", str(exc))
                 target = get_world(conn, created)
             try:
+                # Claims the row too (the 202 implies running) and saves the
+                # target only once the claim has succeeded.
                 if not prepare_move(conn, book_id, target.id, now=now_utc()):
-                    return JSONResponse({"started": False})  # already there
-                jobs.claim_job(conn, book_id, now=now_utc())
+                    return JSONResponse({"started": False})  # nothing to move
             except JobRefused as exc:
                 return _api_error(409, "busy", str(exc))
             threading.Thread(target=_process, args=(book_id, target.id),

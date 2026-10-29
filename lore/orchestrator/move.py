@@ -23,18 +23,24 @@ _BEFORE_REASSIGN = ("remove", "reassign")
 
 def prepare_move(conn: sqlite3.Connection, book_id: str, world_id: int, *,
                  now: datetime | None = None) -> bool:
-    """Get the book's job row ready for a move to `world_id`.
+    """Get the book's job row ready for a move to `world_id`, and claim it.
 
-    False means there is nothing to do: the book is already in that world and
-    no unfinished job is waiting. Otherwise True, and `run_book` with the move
-    stages runs the move.
-    - Already in the world with an unfinished job: an interrupted move past
-      `reassign` (or a stopped load). The job resumes where it was.
+    False means there is no move to run, and nothing was changed or claimed:
+    - the book is already in that world and no job is waiting; or
+    - it is already there with an unfinished job that is not a move to this
+      world (a stopped ordinary load): a plain Continue resumes that, and
+      running the move stages over it would be the wrong stages.
+    Otherwise True: the row is claimed (running, fresh heartbeat; call
+    `run_book` with `claimed=True`) and carries the target world until the job
+    is done (jobs.move_target):
+    - Already in the world with an unfinished move to it (one that got past
+      `reassign`): the job resumes where it was.
     - In another world: the move starts at `remove`, whatever an older job's
       stage says (a failed load of the book's old world must not skip it).
-    The target world is saved on the job row (jobs.move_target) until the
-    job is done.
-    Raises JobRefused while another runner holds the book.
+    The target is saved only after the claim succeeds, so a refused claim
+    leaves no target behind to turn a later plain Continue into a move.
+    Raises JobRefused while another runner holds the book, or when a resumed
+    move is waiting for the allowance to reset.
     """
     moment = now or wall_clock()
     job = jobs.get_job(conn, book_id)
@@ -42,12 +48,18 @@ def prepare_move(conn: sqlite3.Connection, book_id: str, world_id: int, *,
         raise JobRefused("a job is already running for this book")
     current = worlds.world_of(conn, book_id)
     if current is not None and current.id == world_id:
-        return job is not None and job.state != jobs.DONE
-    if job is None:  # a row for Continue to find, parked at the first stage
+        if (job is None or job.state == jobs.DONE
+                or jobs.move_target(conn, book_id) != world_id):
+            return False
+        ok, why = jobs.can_continue(job, moment)
+        if not ok:
+            raise JobRefused(why)
+    elif job is None:  # a row for Continue to find, parked at the first stage
         jobs.start_job(conn, book_id, "remove", 0, now=moment, guard=False)
         jobs.finish_stage(conn, book_id, "remove", now=moment)
     elif job.stage not in _BEFORE_REASSIGN:
         jobs.finish_stage(conn, book_id, "remove", now=moment)
+    jobs.claim_job(conn, book_id, now=moment)
     # Remembered on the row, so Continue (CLI or web) reruns the move, not
     # the ordinary stages, and knows the world it is heading for.
     jobs.set_move_target(conn, book_id, world_id)

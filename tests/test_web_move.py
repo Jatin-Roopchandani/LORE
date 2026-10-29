@@ -372,3 +372,44 @@ def test_delete_a_non_empty_world_is_409(config) -> None:
 
 def test_delete_an_unknown_world_is_404(config) -> None:
     assert _client(config).delete("/api/worlds/99").status_code == 404
+
+
+def test_a_move_refused_at_the_claim_does_not_turn_continue_into_a_move(
+    config, monkeypatch,
+) -> None:
+    ran: list = []
+    client = _client(config, move=_fake_move(ran), stages=[Fake("load", ran)])
+
+    def refuse(*args, **kwargs):
+        raise jobs.JobRefused("a job is already running for this book")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(jobs, "claim_job", refuse)
+        r = client.post("/api/books/bb1/move", json={"world": ALPHA})
+    assert r.status_code == 409
+    conn = _db(config)
+    assert jobs.move_target(conn, "bb1") is None
+    conn.close()
+    ran.clear()
+    assert client.post("/api/books/bb1/continue").status_code == 202
+    assert _wait(config, "bb1").state == jobs.DONE
+    # The ordinary stages, from where the row is parked: no remove/reassign,
+    # so the book stays in its own world.
+    assert ran == [("load", "bb1")]
+    assert _world_of(config, "bb1") == BETA
+
+
+def test_move_to_the_own_world_with_an_unfinished_ordinary_job_does_nothing(
+    config,
+) -> None:
+    ran: list = []
+    conn = _db(config)
+    jobs.start_job(conn, "bb1", "load", 1)
+    jobs.fail(conn, "bb1", "boom")
+    before = jobs.get_job(conn, "bb1")
+    conn.close()
+    client = _client(config, move=_fake_move(ran))
+    r = client.post("/api/books/bb1/move", json={"world": BETA})
+    assert r.status_code == 200 and r.json() == {"started": False}
+    assert ran == []
+    assert _job(config, "bb1") == before

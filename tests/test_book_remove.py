@@ -156,7 +156,8 @@ def _process(config, conn, kuzu, lance, gemini, book_id):
 def _move(config, conn, kuzu, lance, gemini, book_id, world_id, **kw):
     assert prepare_move(conn, book_id, world_id)
     return run_book(conn, config, book_id,
-                    _stages(config, kuzu, lance, gemini, world_id, **kw))
+                    _stages(config, kuzu, lance, gemini, world_id, **kw),
+                    claimed=True)
 
 
 def _library(tmp_path: Path):
@@ -402,7 +403,7 @@ def test_a_move_runs_its_stages_in_order_and_ends_ready(tmp_path: Path) -> None:
 
     assert prepare_move(conn, TWO, world_b)
     job = run_book(conn, config, TWO, [Spy(s) for s in _stages(
-        config, kuzu, lance, gemini, world_b)])
+        config, kuzu, lance, gemini, world_b)], claimed=True)
     assert seen == ["remove", "reassign", "load", "beats"]
     assert (job.state, job.stage) == (jobs.DONE, "ready")
     kuzu.close()
@@ -468,7 +469,7 @@ def test_a_move_stopped_before_reassign_resumes_there(tmp_path: Path) -> None:
     assert prepare_move(conn, TWO, world_b)
     stages = _stages(config, kuzu, lance, gemini, world_b, remove=counting_remove)
     stages[1] = DyingReassign(world_b)
-    job = run_book(conn, config, TWO, stages)
+    job = run_book(conn, config, TWO, stages, claimed=True)
     assert job.state == jobs.FAILED and job.stage == "reassign"
     assert worlds.world_of(conn, TWO).id != world_b
 
@@ -488,7 +489,8 @@ def test_a_stale_job_never_makes_a_move_skip_its_remove(tmp_path: Path) -> None:
     jobs.fail(conn, TWO, "boom")
     assert prepare_move(conn, TWO, world_b) is True
     assert jobs.get_job(conn, TWO).stage == "remove"
-    job = run_book(conn, config, TWO, _stages(config, kuzu, lance, gemini, world_b))
+    job = run_book(conn, config, TWO, _stages(config, kuzu, lance, gemini, world_b),
+                   claimed=True)
     assert job.state == jobs.DONE
     check_world_invariant(conn, kuzu)  # remove did run: no entity spans worlds
     assert len(_named(kuzu, "Maren Vex")) == 2
@@ -516,4 +518,65 @@ def test_a_book_left_in_another_world_without_removal_fails_the_invariant(
     worlds.assign(conn, TWO, world_b)
     with pytest.raises(WorldInvariantError):
         check_world_invariant(conn, kuzu)
+    kuzu.close()
+
+
+# --- the move target and the claim (review fixes) -------------------------
+
+def test_a_refused_claim_leaves_no_move_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The target is saved only once the row is claimed: a refused claim must
+    not leave a target that turns a later plain Continue into a move."""
+    config, conn, kuzu, lance, gemini = _library(tmp_path)
+    world_b = worlds.create_world(conn, "World B")
+
+    def refuse(*args, **kwargs):
+        raise JobRefused("a job is already running for this book")
+
+    monkeypatch.setattr(jobs, "claim_job", refuse)
+    with pytest.raises(JobRefused):
+        prepare_move(conn, TWO, world_b)
+    assert jobs.move_target(conn, TWO) is None
+    kuzu.close()
+
+
+def test_a_refused_claim_keeps_the_target_the_other_runner_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, conn, kuzu, lance, gemini = _library(tmp_path)
+    world_b = worlds.create_world(conn, "World B")
+    world_c = worlds.create_world(conn, "World C")
+    jobs.set_move_target(conn, TWO, world_c)
+    monkeypatch.setattr(jobs, "claim_job", lambda *a, **k: (_ for _ in ()).throw(
+        JobRefused("a job is already running for this book")))
+    with pytest.raises(JobRefused):
+        prepare_move(conn, TWO, world_b)
+    assert jobs.move_target(conn, TWO) == world_c
+    kuzu.close()
+
+
+def test_a_prepared_move_is_claimed_and_carries_its_target(tmp_path: Path) -> None:
+    config, conn, kuzu, lance, gemini = _library(tmp_path)
+    world_b = worlds.create_world(conn, "World B")
+    assert prepare_move(conn, TWO, world_b) is True
+    job = jobs.get_job(conn, TWO)
+    assert job.state == jobs.RUNNING and job.stage == "remove"
+    assert jobs.move_target(conn, TWO) == world_b
+    kuzu.close()
+
+
+def test_an_unfinished_ordinary_job_in_the_target_world_is_not_a_move(
+    tmp_path: Path,
+) -> None:
+    """Already in the world with a stopped ordinary load: not a move, so the
+    caller is told False and the job is left exactly as it was."""
+    config, conn, kuzu, lance, gemini = _library(tmp_path)
+    world_a = worlds.world_of(conn, TWO).id
+    jobs.start_job(conn, TWO, "load", 1)
+    jobs.fail(conn, TWO, "boom")
+    before = jobs.get_job(conn, TWO)
+    assert prepare_move(conn, TWO, world_a) is False
+    assert jobs.move_target(conn, TWO) is None
+    assert jobs.get_job(conn, TWO) == before
     kuzu.close()
