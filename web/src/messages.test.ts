@@ -42,6 +42,10 @@ test("forbidden explains the address and offers no retry", () => {
   expect(m.retry).toBeUndefined();
 });
 
+test("the judgement note says it is an arguable case, not a statement from the book", () => {
+  expect(UI.judgementNote).toBe("A judgement weighing the cited facts: an arguable case, not a statement from the book.");
+});
+
 test("the reading note says it is an interpretation, not a statement from the book", () => {
   expect(UI.readingNote).toBe("A reading of the cited facts, not a direct statement from the book.");
 });

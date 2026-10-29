@@ -38,6 +38,7 @@ export const UI = {
   evidence: (n: number) => `Evidence (${n} ${n === 1 ? "claim" : "claims"})`,
   unanswered: "The passages found don't answer:",
   readingNote: "A reading of the cited facts, not a direct statement from the book.",
+  judgementNote: "A judgement weighing the cited facts: an arguable case, not a statement from the book.",
   proseFallback: "Showing the checked facts; the written answer didn't pass verification.",
   partial: (parts: string[]) => `Not found in the books: ${parts.join("; ")}`,
   showingEdges: (shown: number, total: number) => `Showing ${shown} of ${total} relationships`,

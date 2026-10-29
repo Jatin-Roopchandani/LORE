@@ -21,12 +21,13 @@ export function Prose({ result, onHoverChunks }: { result: SearchResult; onHover
           <p className="prose">
             {para.map(({ s, i }) => {
               const chunks = s.passages.map((n) => byN.get(n)?.chunk_id).filter(Boolean) as string[];
+              const note = s.kind === "reading" ? UI.readingNote : s.kind === "judgement" ? UI.judgementNote : undefined;
               return (
-                <span key={i} className={s.kind === "reading" ? "sentence reading" : "sentence"}
-                  title={s.kind === "reading" ? UI.readingNote : undefined}
+                <span key={i} className={s.kind === "reading" || s.kind === "judgement" ? `sentence ${s.kind}` : "sentence"}
+                  title={note}
                   onMouseEnter={() => onHoverChunks(chunks)} onMouseLeave={() => onHoverChunks([])}>
                   {s.text}{" "}
-                  {s.kind === "reading" && <span className="visually-hidden">{UI.readingNote}</span>}
+                  {note && <span className="visually-hidden">{note}</span>}
                   {s.passages.map((n) => (
                     <button key={n} className="cite" type="button" aria-expanded={open === `${i}:${n}`}
                       onClick={() => setOpen(open === `${i}:${n}` ? null : `${i}:${n}`)}>{`[${n}]`}</button>

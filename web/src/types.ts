@@ -8,8 +8,9 @@ export interface Claim { text: string; passage: number; quote: string }
 export interface Passage { n: number; chunk_id: string; book_id: string; book_title: string | null;
   chapter_seq: number; text: string }
 export interface ProseSentence { text: string; claims: number[]; passages: number[]; new_paragraph: boolean;
-  // "reading": an interpretation of the cited facts, not a direct statement (absent means "fact")
-  kind?: "fact" | "reading" }
+  // "reading": an interpretation of the cited facts, not a direct statement;
+  // "judgement": a compared, arguable case for a "who is the most ..." question (absent means "fact")
+  kind?: "fact" | "reading" | "judgement" }
 export interface SearchResult { answer: string; mode: string; template: string | null; note: string | null;
   model: string | null; selection_model: string | null; sub_questions: string[]; claims: Claim[];
   passages: Passage[]; edges: Edge[]; seeds: Seed[];

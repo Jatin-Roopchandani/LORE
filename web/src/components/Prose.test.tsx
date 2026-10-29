@@ -96,3 +96,25 @@ test("a reading still has its citation chips and hover", () => {
   expect(onHover).toHaveBeenCalledWith(["c3", "c5"]);
   expect(screen.getAllByRole("button", { name: /\[5\]/ })).toHaveLength(2);
 });
+
+const withJudgement = {
+  ...result,
+  prose: [...result.prose!, { text: "Arguably, he is the strongest case.", claims: [1, 2], passages: [3, 5], new_paragraph: false, kind: "judgement" as const }],
+} as SearchResult;
+
+test("a judgement is marked apart from a reading, with its own tooltip and hidden note", () => {
+  const { container } = render(<Prose result={withJudgement} onHoverChunks={() => {}} />);
+  const judged = container.querySelectorAll(".sentence.judgement");
+  expect(judged).toHaveLength(1);
+  expect(judged[0].textContent).toContain("Arguably, he is the strongest case.");
+  expect(judged[0]).toHaveAttribute("title", UI.judgementNote);
+  expect(judged[0].querySelector(".visually-hidden")?.textContent).toBe(UI.judgementNote);
+  expect(container.querySelector(".reading")).toBeNull();
+});
+
+test("a judgement keeps its citation chips and hover", () => {
+  const onHover = vi.fn();
+  render(<Prose result={withJudgement} onHoverChunks={onHover} />);
+  fireEvent.mouseEnter(screen.getByText(/strongest case/));
+  expect(onHover).toHaveBeenCalledWith(["c3", "c5"]);
+});
