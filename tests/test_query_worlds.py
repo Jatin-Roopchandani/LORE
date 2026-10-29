@@ -5,6 +5,8 @@ Real SQLite, Kuzu and LanceDB over a synthetic two-world library
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from lore.mcp.stores import open_stores
@@ -155,6 +157,11 @@ async def test_per_part_events_are_one_set_across_worlds(tmp_path) -> None:
 # --- one world behaves as before --------------------------------------------------
 
 async def test_with_one_world_nothing_changes(tmp_path) -> None:
+    # What this proves: the one-world scoped path and the no-worlds path
+    # (`worlds=False`, no scoping at all) give the same answer and send the
+    # same model calls. Both run the CURRENT code, so it shows the world
+    # scoping adds nothing for one world; it cannot show the current code
+    # matches the code before worlds. The golden test below does that.
     pre_worlds = build_library(tmp_path / "pre", worlds=False)
     one = build_library(tmp_path / "one", one_world=True)
     before, calls_before = await ask(pre_worlds)
@@ -162,6 +169,22 @@ async def test_with_one_world_nothing_changes(tmp_path) -> None:
         after, calls_after = await ask(one, world)
         assert after == before
         assert calls_after == calls_before
+
+
+GOLDEN_PROMPT = Path(__file__).parent / "golden" / "one_world_claims_prompt.txt"
+
+
+async def test_a_one_world_claims_prompt_matches_the_one_before_worlds(tmp_path) -> None:
+    """The claims prompt for a one-world library is byte for byte what the code
+    before world scoping (03d3c15, before the query changes) built for the same
+    library and question. The golden was dumped from that commit by running its
+    `answer_question` over this fixture, one_world=True, with the scripted
+    models; regenerate it only by doing the same."""
+    golden = GOLDEN_PROMPT.read_text()
+    one = build_library(tmp_path / "one", one_world=True)
+    for world in ("unset", ALPHA, "all"):
+        _answer, calls = await ask(one, world)
+        assert calls["synthesize"] == [golden]
 
 
 async def test_with_one_world_the_scope_filters_nothing(tmp_path) -> None:
