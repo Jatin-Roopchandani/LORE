@@ -250,9 +250,15 @@ def test_keep_alive_heartbeats_while_a_stage_runs(conn, config, tmp_path) -> Non
             return 1
 
         def run(self, ctx, job_ctl):
+            # Wait for the keep-alive to write, not a fixed time: under load
+            # (parallel suites) the thread may need longer than half a second.
             first = jobs.get_job(ctx.conn, "b1").updated_at
-            time.sleep(0.5)
-            stamps.append((first, jobs.get_job(ctx.conn, "b1").updated_at))
+            deadline = time.monotonic() + 10
+            later = first
+            while later <= first + timedelta(seconds=2) and time.monotonic() < deadline:
+                time.sleep(0.05)
+                later = jobs.get_job(ctx.conn, "b1").updated_at
+            stamps.append((first, later))
 
     run_book(conn, config, "b1", [Slow()], clock=_Ticker(NOW),
              keepalive_interval=0.05)
