@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
 
+from lore.query import judge
 from lore.query import write as write_module
 from lore.query.models import Answer, BookInfo, Claim, EdgeRow, Evidence, Passage, ProseSentence
 from lore.query.position import order_passages
@@ -395,6 +396,17 @@ each other, not only what they say or what the narrator states.
 """
 
 
+# JUDGEMENTS, claims step (lore/query/judge.py): a question that asks for a
+# judgement is answered by comparing people, and a comparison needs what each
+# of them does, wants, conceals and changes, not only how they are described.
+_JUDGEMENT_RULE = """This question asks for a judgement about people in the story. For each person
+the passages show who bears on the quality asked about, give claims about what
+they do, want, conceal and change, and the contradictions between these, not
+only how they are described. Cover more than one such person when the passages
+allow it, so that they can be compared.
+"""
+
+
 # TIMELINE (lore/query/timeline.py): beats are short notes on moments from
 # across the whole story for the question's entities. They are a map of where
 # the passages are, never evidence: a claim still quotes a numbered passage.
@@ -468,7 +480,9 @@ def _build_prompt(
                           + (_STRICT_LINKS_RULE if STRICT_LINKS else "")
                           + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else "")
                           + (_CHANGE_RULE if write_module.STORY_ORDER else "")
-                          + (_ACTIONS_RULE if write_module.readings_on() else ""),
+                          + (_ACTIONS_RULE if write_module.readings_on() else "")
+                          + (_JUDGEMENT_RULE if judge.JUDGEMENTS and judge.is_evaluative(question)
+                             else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations + _timeline_block(evidence, book_titles, books),
@@ -605,6 +619,23 @@ the claims.
 fact, or adds detail.
 """
 
+# JUDGEMENTS: a sentence marked "(judgement)" weighs the people the claims
+# cover and names the strongest case. It is not a fact and not an
+# interpretation of one thing; it gets this test.
+_JUDGEMENTS_BLOCK = """
+A sentence marked "(judgement)" compares the people its cited claims cover and
+names the strongest case among them. Judge it by this test instead of the one
+above, and give its verdict in the same sentence_judgements entry.
+"{supported}": a careful reader would agree that the cited claims, together,
+make it a fair, arguable case; it is worded visibly as a judgement ("a strong
+case can be made", "arguably", "of these ... stands out"), not as plain fact
+and not as the book's own view; and it adds no event, name, number or detail
+beyond the claims.
+"{not_supported}": the claims do not make that a fair case, it is stated as
+plain fact, it says the book itself describes someone this way when no claim
+does, or it adds detail.
+"""
+
 # Gaps are statements that the facts leave something out; code shows them
 # only if the check agrees. "supported" means the statement is true.
 _GAPS_BLOCK = """
@@ -667,13 +698,16 @@ def faithfulness_prompt(
     if order and order.note():
         prompt += "\n" + order.note() + "\n"
     if sentences:
-        # Kinds are shown, and the reading test given, only when a reading is
-        # among the sentences: an answer of facts alone is checked as before.
-        readings = write_module.readings_on() and any(
-            getattr(s, "kind", "fact") == "reading" for s in sentences)
+        # Kinds are shown, and a reading's or judgement's own test given, only
+        # when one is among the sentences: an answer of facts alone is checked
+        # as before.
+        kinds = {getattr(s, "kind", "fact") for s in sentences}
+        readings = write_module.readings_on() and "reading" in kinds
+        judgements = write_module.readings_on() and judge.JUDGEMENTS and "judgement" in kinds
+        labelled = readings or judgements
 
         def label(s) -> str:
-            return f" ({getattr(s, 'kind', 'fact')})" if readings else ""
+            return f" ({getattr(s, 'kind', 'fact')})" if labelled else ""
 
         lines = "\n".join(
             f"{i}. sentence{label(s)}: {s.text.strip()}\n"
@@ -684,6 +718,8 @@ def faithfulness_prompt(
             not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
         if readings:
             prompt += _READINGS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
+        if judgements:
+            prompt += _JUDGEMENTS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
         if story and gaps:
             prompt += _GAPS_BLOCK.format(
                 gaps="\n".join(f"{i}. gap: {g}" for i, g in enumerate(gaps, start=1)),

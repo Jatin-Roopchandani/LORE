@@ -113,6 +113,58 @@ def part_timeline(conn: sqlite3.Connection, lance, seeds: Iterable[SeedEntity],
     return select_beats(beats, part_vector, lance, books)
 
 
+# A judgement question (judge.py) weighs several candidates, so each brings a
+# few beats spread over the story, and together they stay under one cap.
+BEATS_PER_CANDIDATE = 3
+MIN_BEATS_PER_CANDIDATE = 2
+MAX_CANDIDATE_BEATS = 12
+
+
+def candidate_timeline(conn: sqlite3.Connection, candidates: Sequence[SeedEntity],
+                       books: Mapping[str, BookInfo] | None,
+                       book_ids: Sequence[str] | None = None) -> list[Beat]:
+    """A few beats of each candidate, in story order: the earliest, the latest
+    and one between (two each when many candidates share the cap). A part that
+    names books keeps only those books' beats. [] when there are no
+    candidates, no beats, or the library has no beats tables yet."""
+    if not candidates:
+        return []
+    try:
+        beats = beats_for_entities(conn, [c.id for c in candidates])
+    except sqlite3.OperationalError:  # a library not migrated to beats yet
+        return []
+    if book_ids:
+        beats = [b for b in beats if b.book_id in book_ids]
+    each = max(MIN_BEATS_PER_CANDIDATE,
+               min(BEATS_PER_CANDIDATE, MAX_CANDIDATE_BEATS // len(candidates)))
+    chosen: dict[str, Beat] = {}
+    for candidate in candidates:
+        mine = [b for b in beats if candidate.id in b.entity_ids]
+        # Beats that are about the candidate come before beats that only mention them.
+        about = [b for b in mine if b.entity_ids and b.entity_ids[0] == candidate.id]
+        ordered = order_beats(about if len(about) >= each else mine, books)
+        for i in sorted(coverage_order(len(ordered))[:each]):
+            chosen.setdefault(ordered[i].id, ordered[i])
+    picked = order_beats(list(chosen.values()), books)
+    if len(picked) <= MAX_CANDIDATE_BEATS:
+        return picked
+    # Over the cap (many candidates, two each): the cap's own even spread.
+    return [picked[i] for i in sorted(coverage_order(len(picked))[:MAX_CANDIDATE_BEATS])]
+
+
+def judgement_timeline(conn: sqlite3.Connection, lance, named: Sequence[SeedEntity],
+                       candidates: Sequence[SeedEntity], part_vector: list[float],
+                       books: Mapping[str, BookInfo] | None,
+                       book_ids: Sequence[str] | None = None) -> list[Beat]:
+    """A judgement part's beats: the question's own named characters get the
+    ordinary timeline, the graph's candidates a few spread beats each. Other
+    seeds (found by vector search, so possibly minor) bring none."""
+    beats = {b.id: b for b in part_timeline(conn, lance, named, part_vector, books, book_ids)}
+    for b in candidate_timeline(conn, candidates, books, book_ids):
+        beats.setdefault(b.id, b)
+    return order_beats(list(beats.values()), books)
+
+
 def timeline_beats(beats: Iterable[Beat]) -> tuple[TimelineBeat, ...]:
     """Beats as the lines the evidence and the prompt carry."""
     return tuple(TimelineBeat(chunk_id=b.chunk_id, book_id=b.book_id,

@@ -1162,6 +1162,18 @@ def test_search_result_carries_prose():
                                 "kind": "fact"}]
 
 
+def test_search_result_carries_a_judgement_kind():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)),
+                           ProseSentence("Arguably, A.", (1,), (1,), False, "judgement")),
+                    answer_style="prose")
+    out = to_search_result(answer, {}).model_dump()
+    assert [p["kind"] for p in out["prose"]] == ["fact", "judgement"]
+
+
 def test_search_result_maps_new_paragraph():
     from lore.mcp.shapes import to_search_result
     from lore.query.models import Answer, Claim, ProseSentence

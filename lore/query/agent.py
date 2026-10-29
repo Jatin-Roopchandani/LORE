@@ -15,6 +15,7 @@ from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
+from lore.query import judge as judge_module
 from lore.query.decompose import split
 from lore.query.events import EDGES_PER_PART_CAP, OnEvent, edge_key, emit
 from lore.query.keyword import KeywordIndex, fused
@@ -582,10 +583,18 @@ async def answer_question(
         seeds = await seed_entities(part, lance, kuzu, models.embed,
                                     vector=part_vector, named=named,
                                     exclude_names=book_names)
+        part_books = books_named(part, titles)
+        # A part that asks for a judgement ("who is the most ...") names no one
+        # to weigh: drop whoever the question excludes and add the graph's
+        # candidates for the part's books (judge.py).
+        judged = None
+        if judge_module.JUDGEMENTS and judge_module.is_evaluative(part):
+            judged = await judge_module.judge_seeds(kuzu, names, part, question, seeds, named,
+                                                    part_books, book_names)
+            seeds = judged.seeds
         emit(on_event, "seeds", part=index, entities=list(seeds))
         emit(on_event, "step", name="seeds", state="done", part=index,
              detail=f"{len(seeds)} found")
-        part_books = books_named(part, titles)
         named_books[index] = part_books
         if not seeds:
             if part_books:
@@ -598,8 +607,12 @@ async def answer_question(
                 seen_seed_ids.add(s.id)
                 all_seeds.append(s)
         if timeline_module.TIMELINE:
-            part_beats[index] = timeline_module.part_timeline(
-                conn, lance, seeds, part_vector, books, part_books)
+            if judged is not None and judged.candidates:
+                part_beats[index] = timeline_module.judgement_timeline(
+                    conn, lance, judged.named, judged.candidates, part_vector, books, part_books)
+            else:
+                part_beats[index] = timeline_module.part_timeline(
+                    conn, lance, seeds, part_vector, books, part_books)
         emit(on_event, "step", name="search", state="start", part=index, detail=None)
         call, model = await _select(part, seeds, models)
         if model and model not in chosen_by:
