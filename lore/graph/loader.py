@@ -45,6 +45,14 @@ before anything is written, which node each incoming entity may own:
     (`entity_id_chain`), so both entities survive as separate nodes with
     their own edges.
 
+Worlds — every fusion above is scoped to the loading book's world. A
+persisted entity whose `books` are not all in that world is invisible to
+steps 1, 2, 2b and 2c, so a same-named character in another world takes the
+next free slot and stays its own node; the node still OCCUPIES its id, so
+the slot is never reused. Same-book resolution is unchanged. After every
+load `check_world_invariant` confirms that no entity's books span two
+worlds, and raises `WorldInvariantError` if one does.
+
 Failure containment — the two stores have no shared transaction, so the
 write is staged in three phases and ordered so that the largest, most
 failure-prone body of work sits under the one real transaction available:
@@ -73,6 +81,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
 from itertools import islice
 
+from lore import worlds
 from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
@@ -129,6 +138,15 @@ class LoadReport:
     first_person_unresolved: int = 0
     speaker_requests: int = 0
     speaker_mismatches: int = 0
+
+
+class WorldInvariantError(RuntimeError):
+    """An entity's books are not all in one world.
+
+    Raised after a load rather than papered over: a node carrying two
+    worlds' books is exactly the cross-world fusion worlds exist to prevent,
+    and every query scoped to a world would leak through it.
+    """
 
 
 class PartialLoadError(RuntimeError):
@@ -412,8 +430,14 @@ async def _reconcile_ids(
     kuzu: KuzuStore,
     book_id: str,
     candidates: list[_NodeCandidate],
+    world_books: frozenset[str] | None = None,
 ) -> tuple[dict[str, str], dict[str, _PersistedEntity]]:
     """Decide which persisted node, if any, each candidate may own.
+
+    `world_books` is every book in the loading book's world. When given, a
+    persisted node whose books are not all in it is invisible to every
+    fusion step (it still occupies its id, so step 3 skips the slot); None
+    means unscoped, as before worlds.
 
     Read-only: it queries Kuzu but writes nothing, so it stays inside phase
     1's "no store mutated" guarantee.
@@ -445,19 +469,29 @@ async def _reconcile_ids(
         )
         for candidate in candidates
     }
-    persisted = _persisted_entities(kuzu, (c.id for c in candidates))
+    def in_world(node: _PersistedEntity) -> bool:
+        return world_books is None or set(node.books) <= world_books
+
+    # `occupied` is every node holding an id, whatever its world: step 3 may
+    # only mint a slot nobody holds. `persisted` is the subset this load may
+    # fuse into, and is what every step below looks at.
+    occupied = _persisted_entities(kuzu, (c.id for c in candidates))
     # Only a candidate whose base id is held by a *different* book can need
     # more of its chain, so the second lookup stays small.
     contested = [
         candidate for candidate in candidates
-        if candidate.id in persisted
-        and book_id not in persisted[candidate.id].books
+        if candidate.id in occupied
+        and (book_id not in occupied[candidate.id].books
+             or not in_world(occupied[candidate.id]))
     ]
     if contested:
-        persisted.update(_persisted_entities(
+        occupied.update(_persisted_entities(
             kuzu,
             (cid for candidate in contested for cid in chains[candidate.id][1:]),
         ))
+    persisted = {
+        node_id: node for node_id, node in occupied.items() if in_world(node)
+    }
 
     # Task 1i: the cross-book name VARIANT index. Every persisted node of a
     # kind this load writes, with its normalized name forms precomputed, so
@@ -465,7 +499,12 @@ async def _reconcile_ids(
     # here rather than at match time — a generic name can name two
     # different people, which is exactly what the Task 1h stoplist is for,
     # and that is true whichever side of the match it sits on.
-    searchable = _entities_of_kinds(kuzu, (c.kind for c in candidates))
+    searchable = {
+        node_id: node
+        for node_id, node in _entities_of_kinds(
+            kuzu, (c.kind for c in candidates)).items()
+        if in_world(node)
+    }
     alias_targets = _alias_targets(kuzu)
     alias_nodes = set(alias_targets)
     own_ids = {candidate.id for candidate in candidates}
@@ -622,7 +661,7 @@ async def _reconcile_ids(
         if chosen is None:
             chosen = next(
                 (cid for cid in chain
-                 if cid not in persisted and cid not in claimed),
+                 if cid not in occupied and cid not in claimed),
                 None,
             )
         if chosen is None:
@@ -651,6 +690,32 @@ def _run_in_transaction(kuzu: KuzuStore, statements: list[Statement]) -> None:
             # Either way the transaction is not committed.
             pass
         raise
+
+
+def check_world_invariant(conn: sqlite3.Connection, kuzu: KuzuStore) -> None:
+    """Raise `WorldInvariantError` unless every entity's books share a world.
+
+    Read-only, over the whole graph (one small query plus one over `books`).
+    A book the registry does not know counts as a world of its own, so an
+    entity naming it alongside a registered book is reported too.
+    """
+    world_of_book = {
+        row[0]: row[1] for row in conn.execute("SELECT id, world_id FROM books")
+    }
+    broken: list[str] = []
+    for node_id, name, books in kuzu.execute(
+        "MATCH (e:Entity) RETURN e.id, e.name, e.books"
+    ):
+        spanned = {world_of_book.get(book) for book in books or ()}
+        if len(spanned) > 1:
+            broken.append(f"{name!r} ({node_id}: books {sorted(books)})")
+    if broken:
+        raise WorldInvariantError(
+            f"{len(broken)} entit{'y' if len(broken) == 1 else 'ies'} span more"
+            " than one world: " + "; ".join(sorted(broken)[:5])
+            + ". Take the book out of the graph before moving it to another"
+            " world."
+        )
 
 
 async def load_book(
@@ -684,6 +749,14 @@ async def load_book(
     `first_person` is None, is left as extracted and drops as before.
     """
     # ---- Phase 1: read and compute. No store is mutated below this line.
+    world = worlds.world_of(conn, book_id)
+    if world is None:
+        raise ValueError(
+            f"book {book_id} is in no world; assign it to one"
+            " (`lore ingest --world`, or `lore book move`) before loading"
+        )
+    world_books = frozenset(worlds.books_in(conn, world.id))
+
     dirs = completed_unit_dirs(conn, config, book_id)
     if not dirs:
         raise ValueError(f"no completed extraction units for book {book_id}")
@@ -806,7 +879,8 @@ async def load_book(
             is_alias=True,
         ))
 
-    id_for, persisted = await _reconcile_ids(kuzu, book_id, candidates)
+    id_for, persisted = await _reconcile_ids(
+        kuzu, book_id, candidates, world_books)
 
     node_writes: dict[str, dict] = {}
     # Task 11a: nodes whose outgoing ALIAS_OF edges this load re-decides.
@@ -1124,6 +1198,7 @@ async def load_book(
             " left incomplete. Re-run the load to repair it."
         ) from exc
     report.chunks = len(lance_chunk_rows)
+    check_world_invariant(conn, kuzu)
 
     # ---- Phase 4: the questions this load could not answer.
     # Last, and outside both stores: it is a note to the user, not part of

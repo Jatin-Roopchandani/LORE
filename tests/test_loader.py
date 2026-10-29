@@ -8,6 +8,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from lore import worlds
 from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import EMBED_DIM, LanceStore
@@ -213,11 +214,20 @@ def _write_unit(config, book_id, triplet_rows, chunk_ids, firsts=None):
     return unit
 
 
+def _world_id(conn, name: str) -> int:
+    """The id of world `name`, created on first use."""
+    found = worlds.get_world(conn, name)
+    return found.id if found else worlds.create_world(conn, name)
+
+
 def _add_book(config, conn, book_id, chunks, triplet_rows, *, embedded=None,
-              title=None, firsts=None):
+              title=None, firsts=None, world="shared"):
+    """Register a book in `world`. Books default to ONE shared world, so the
+    cross-book merges these tests exercise are in scope; a test that wants
+    two worlds names them."""
     ingest_book(conn, book_id=book_id, title=title or f"title-{book_id}",
                 author="A", source="upload", file_path=f"/x/{book_id}.epub",
-                chunks=chunks)
+                chunks=chunks, world_id=_world_id(conn, world))
     ids = [c.id for c in chunks] if embedded is None else embedded
     unit = _write_unit(config, book_id, triplet_rows, ids, firsts)
     set_unit_state(conn, book_id, unit, "completed")
@@ -2218,4 +2228,205 @@ async def test_a_reload_after_reextraction_equals_a_fresh_load(tmp_path: Path) -
     _write_unit(config, BOOK, _smiths(True, "Captain"), [f"{BOOK}:1:0"])
     await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     assert _snapshot(kuzu, lance) == expected
+    conn.close(); kuzu.close()
+
+
+# --------------------------------------------------------------------------
+# Worlds, Task 2: the cross-book steps only see entities of the loading
+# book's own world. All names below are invented.
+
+
+def _two_vexes(config, conn, *, world_a: str, world_b: str,
+               name_a="Maren Vex", name_b="Maren Vex") -> None:
+    """Both books name a distinctive character, in the given worlds."""
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, name_a, "OPPOSES", "Bo",
+             [name_a, "Bo"], ["Character", "Character"]),
+    ], world=world_a)
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, name_b, "LOVES", "Zed",
+             [name_b, "Zed"], ["Character", "Character"]),
+    ], world=world_b)
+
+
+def _named(kuzu, *names) -> list[tuple]:
+    return sorted(
+        (r[0], r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(
+            kuzu,
+            f"MATCH (e:Entity) WHERE e.name IN {list(names)!r}"
+            " RETURN e.id, e.name, e.books",
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_distinctive_homonym_stays_two_entities_across_worlds(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="south")
+    spy = _AdjudicateSpy(True)  # a model that would merge; it is never asked
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert spy.calls == []
+
+    vexes = _named(kuzu, "Maren Vex")
+    assert len(vexes) == 2
+    assert {v[2] for v in vexes} == {(BOOK,), (BOOK_B,)}
+    # Each book's edge hangs on its own node, never on the other's.
+    edges = _rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
+                        " RETURN s.id, r.book_id")
+    by_book = {book: sid for sid, book in edges}
+    assert by_book[BOOK] != by_book[BOOK_B]
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_distinctive_homonym_stays_two_in_either_load_order(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="south")
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert {v[2] for v in _named(kuzu, "Maren Vex")} == {(BOOK,), (BOOK_B,)}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_distinctive_homonym_merges_within_one_world(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="north")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    vexes = _named(kuzu, "Maren Vex")
+    assert len(vexes) == 1
+    assert vexes[0][2] == tuple(sorted((BOOK, BOOK_B)))
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_cross_book_variant_does_not_fuse_across_worlds(
+    tmp_path: Path,
+) -> None:
+    """A bare surname in one world, the full name in another: two entities."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="south",
+               name_a="Dr. Maren Vex", name_b="Vex")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    found = _named(kuzu, "Dr. Maren Vex", "Vex")
+    assert len(found) == 2
+    assert {f[2] for f in found} == {(BOOK,), (BOOK_B,)}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_cross_book_variant_still_fuses_within_one_world(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="north",
+               name_a="Dr. Maren Vex", name_b="Vex")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    found = _named(kuzu, "Dr. Maren Vex", "Vex")
+    assert len(found) == 1
+    assert found[0][2] == tuple(sorted((BOOK, BOOK_B)))
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_an_alias_node_in_another_world_is_not_a_redirect_target(
+    tmp_path: Path,
+) -> None:
+    """Step 2c: a candidate may not be moved onto another world's canonical."""
+    from lore.graph.loader import _reconcile_ids
+
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "Dr. Maren Vex", "OPPOSES", "Bo",
+             ["Dr. Maren Vex", "Vex", "Bo"],
+             ["Character", "Character", "Character"]),
+    ], world="north")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    ids = {r[1]: r[0] for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.id, e.name")}
+
+    candidate = _candidate("Vex")
+    open_scope = (await _reconcile_ids(kuzu, BOOK_B, [candidate]))[0]
+    walled = (await _reconcile_ids(
+        kuzu, BOOK_B, [candidate], world_books=frozenset({BOOK_B})))[0]
+    assert open_scope[candidate.id] in ids.values()  # unscoped: fuses
+    assert walled[candidate.id] not in ids.values()  # scoped: a fresh node
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("worlds_of", [("north", "south"), ("north", "north")])
+async def test_a_reload_of_either_book_changes_nothing(
+    tmp_path: Path, worlds_of: tuple[str, str]
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a=worlds_of[0], world_b=worlds_of[1])
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    snapshot = _snapshot(kuzu, lance)
+    for book in (BOOK, BOOK_B, BOOK_B, BOOK):
+        await load_book(config, conn, kuzu, lance, book, _embed, _never)
+        assert _snapshot(kuzu, lance) == snapshot
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_the_world_invariant_holds_after_every_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lore.graph import loader
+
+    checked = []
+    real = loader.check_world_invariant
+    monkeypatch.setattr(
+        loader, "check_world_invariant",
+        lambda c, k: (checked.append(1), real(c, k))[1])
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="south")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    assert len(checked) == 2  # every load checks, and neither raised
+    real(conn, kuzu)
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_an_entity_spanning_two_worlds_is_reported_loudly(
+    tmp_path: Path,
+) -> None:
+    from lore.graph.loader import WorldInvariantError, check_world_invariant
+
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="north")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    # Re-pointing a book without taking it out of the graph first (what the
+    # move job's remove stage is for) leaves the merged entity in two worlds.
+    worlds.assign(conn, BOOK_B, _world_id(conn, "south"))
+    with pytest.raises(WorldInvariantError, match="Maren Vex"):
+        check_world_invariant(conn, kuzu)
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_book_with_no_world_cannot_be_loaded(tmp_path: Path) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="north")
+    conn.execute("UPDATE books SET world_id = NULL WHERE id = ?", (BOOK,))
+    conn.commit()
+    with pytest.raises(ValueError, match="no world"):
+        await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     conn.close(); kuzu.close()
