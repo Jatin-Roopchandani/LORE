@@ -1,0 +1,1750 @@
+[
+ {
+  "id": "W1",
+  "question": "Describe the world of A Study in Scarlet: where it is set, the places and communities in it, and what each is like.",
+  "verified": "Aspects a complete answer covers:\n- London as the great drain of the Empire's idlers\n- Watson's wartime background in Afghanistan, at Maiwand\n- The meeting at the Criterion Bar and Barts hospital laboratory\n- The rooms in Baker Street\n- The empty house at Lauriston Gardens off the Brixton Road\n- Scotland Yard's detectives and their rivalry\n- Madame Charpentier's boarding-house in Torquay Terrace, Camberwell\n- The American desert and the Sierra Blanco\n- The Mormon settlement in the Utah valley and its temple\n- The terror of the Danite Band over the settlement\n- The Nevada mountains and silver prospecting\n\nEvidence (verbatim):\n- [05ab674df048d13f:5:1] \"that great cesspool into which all the loungers and idlers of the Empire are irresistibly drained.\"\n- [05ab674df048d13f:5:0] \"I served at the fatal battle of Maiwand.\"\n- [05ab674df048d13f:5:2] \"I was standing at the Criterion Bar, when some one tapped me on the shoulder, and turning round I recognized young Stamford, who had been a dresser under me at Barts.\"\n- [05ab674df048d13f:5:10] \"I have my eye on a suite in Baker Street,” he said, “which would suit us down to the ground.\"\n- [05ab674df048d13f:7:4] \"Number 3, Lauriston Gardens wore an ill-omened and minatory look.\"\n- [05ab674df048d13f:7:2] \"Gregson is the smartest of the Scotland Yarders,” my friend remarked; “he and Lestrade are the pick of a bad lot.\"\n- [05ab674df048d13f:10:0] \"He had stayed at the boarding-house of Madame Charpentier, in Torquay Terrace, Camberwell.\"\n- [05ab674df048d13f:12:0] \"In the whole world there can be no more dreary view than that from the northern slope of the Sierra Blanco.\"\n- [05ab674df048d13f:13:0] \"Above all, the great temple which they had erected in the centre of the city grew ever taller and larger.\"\n- [05ab674df048d13f:14:2] \"To this day, in the lonely ranches of the West, the name of the Danite Band, or the Avenging Angels, is a sinister and an ill-omened one.\"\n- [05ab674df048d13f:13:8] \"He and they had been among the Nevada Mountains prospecting for silver\"",
+  "key_facts": [
+   "London as the great drain of the Empire's idlers",
+   "Watson's wartime background in Afghanistan, at Maiwand",
+   "The meeting at the Criterion Bar and Barts hospital laboratory",
+   "The rooms in Baker Street",
+   "The empty house at Lauriston Gardens off the Brixton Road",
+   "Scotland Yard's detectives and their rivalry",
+   "Madame Charpentier's boarding-house in Torquay Terrace, Camberwell",
+   "The American desert and the Sierra Blanco",
+   "The Mormon settlement in the Utah valley and its temple",
+   "The terror of the Danite Band over the settlement",
+   "The Nevada mountains and silver prospecting"
+  ],
+  "aspects": [
+   {
+    "aspect": "London as the great drain of the Empire's idlers",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:1",
+      "quote": "that great cesspool into which all the loungers and idlers of the Empire are irresistibly drained."
+     }
+    ]
+   },
+   {
+    "aspect": "Watson's wartime background in Afghanistan, at Maiwand",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:0",
+      "quote": "I served at the fatal battle of Maiwand."
+     }
+    ]
+   },
+   {
+    "aspect": "The meeting at the Criterion Bar and Barts hospital laboratory",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:2",
+      "quote": "I was standing at the Criterion Bar, when some one tapped me on the shoulder, and turning round I recognized young Stamford, who had been a dresser under me at Barts."
+     }
+    ]
+   },
+   {
+    "aspect": "The rooms in Baker Street",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:10",
+      "quote": "I have my eye on a suite in Baker Street,” he said, “which would suit us down to the ground."
+     }
+    ]
+   },
+   {
+    "aspect": "The empty house at Lauriston Gardens off the Brixton Road",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:7:4",
+      "quote": "Number 3, Lauriston Gardens wore an ill-omened and minatory look."
+     }
+    ]
+   },
+   {
+    "aspect": "Scotland Yard's detectives and their rivalry",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:7:2",
+      "quote": "Gregson is the smartest of the Scotland Yarders,” my friend remarked; “he and Lestrade are the pick of a bad lot."
+     }
+    ]
+   },
+   {
+    "aspect": "Madame Charpentier's boarding-house in Torquay Terrace, Camberwell",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:10:0",
+      "quote": "He had stayed at the boarding-house of Madame Charpentier, in Torquay Terrace, Camberwell."
+     }
+    ]
+   },
+   {
+    "aspect": "The American desert and the Sierra Blanco",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:12:0",
+      "quote": "In the whole world there can be no more dreary view than that from the northern slope of the Sierra Blanco."
+     }
+    ]
+   },
+   {
+    "aspect": "The Mormon settlement in the Utah valley and its temple",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:0",
+      "quote": "Above all, the great temple which they had erected in the centre of the city grew ever taller and larger."
+     }
+    ]
+   },
+   {
+    "aspect": "The terror of the Danite Band over the settlement",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:2",
+      "quote": "To this day, in the lonely ranches of the West, the name of the Danite Band, or the Avenging Angels, is a sinister and an ill-omened one."
+     }
+    ]
+   },
+   {
+    "aspect": "The Nevada mountains and silver prospecting",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:8",
+      "quote": "He and they had been among the Nevada Mountains prospecting for silver"
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:5:1",
+    "quote": "that great cesspool into which all the loungers and idlers of the Empire are irresistibly drained."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:0",
+    "quote": "I served at the fatal battle of Maiwand."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:2",
+    "quote": "I was standing at the Criterion Bar, when some one tapped me on the shoulder, and turning round I recognized young Stamford, who had been a dresser under me at Barts."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:10",
+    "quote": "I have my eye on a suite in Baker Street,” he said, “which would suit us down to the ground."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:4",
+    "quote": "Number 3, Lauriston Gardens wore an ill-omened and minatory look."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:2",
+    "quote": "Gregson is the smartest of the Scotland Yarders,” my friend remarked; “he and Lestrade are the pick of a bad lot."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:0",
+    "quote": "He had stayed at the boarding-house of Madame Charpentier, in Torquay Terrace, Camberwell."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:12:0",
+    "quote": "In the whole world there can be no more dreary view than that from the northern slope of the Sierra Blanco."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:0",
+    "quote": "Above all, the great temple which they had erected in the centre of the city grew ever taller and larger."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:2",
+    "quote": "To this day, in the lonely ranches of the West, the name of the Danite Band, or the Avenging Angels, is a sinister and an ill-omened one."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:8",
+    "quote": "He and they had been among the Nevada Mountains prospecting for silver"
+   }
+  ]
+ },
+ {
+  "id": "W2",
+  "question": "Describe the world of The Sign of the Four: the places, the communities and the settings of the past and the present, and what each is like.",
+  "verified": "Aspects a complete answer covers:\n- Holmes's rooms and his need for work against dull routine\n- The Lyceum Theatre rendezvous\n- Thaddeus Sholto's oriental rooms in Lambeth\n- Pinchin Lane at the water's edge in Lambeth\n- Pondicherry Lodge in Upper Norwood\n- Mrs. Cecil Forrester's house in Camberwell\n- The Thames waterside and the launch Aurora\n- The Mutiny at Muttra and the sky alight at night\n- The old fort at Agra and its many doors\n- The Andaman Islands convict settlement\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:4:2] \"But I abhor the dull routine of existence.\"\n- [0ee225a9a3b5fbc2:5:5] \"Be at the third pillar from the left outside the Lyceum Theatre to-night at seven o’clock.\"\n- [0ee225a9a3b5fbc2:7:1] \"Two great tiger-skins thrown athwart it increased the suggestion of Eastern luxury, as did a huge hookah which stood upon a mat in the corner.\"\n- [0ee225a9a3b5fbc2:9:13] \"3, Pinchin Lane, down near the water’s edge at Lambeth.\"\n- [0ee225a9a3b5fbc2:8:0] \"Pondicherry Lodge stood in its own grounds, and was girt round with a very high stone wall topped with broken glass.\"\n- [0ee225a9a3b5fbc2:9:12] \"Cecil Forrester, in Lower Camberwell: so it is not very far.\"\n- [0ee225a9a3b5fbc2:11:3] \"She’s as trim a little thing as any on the river.\"\n- [0ee225a9a3b5fbc2:15:6] \"Our plantation was at a place called Muttra, near the border of the Northwest Provinces.\"\n- [0ee225a9a3b5fbc2:15:9] \"The river washes along the front of the old fort, and so protects it, but on the sides and behind there are many doors\"\n- [0ee225a9a3b5fbc2:5:3] \"He had been one of the officers in charge of the convict-guard there.\"",
+  "key_facts": [
+   "Holmes's rooms and his need for work against dull routine",
+   "The Lyceum Theatre rendezvous",
+   "Thaddeus Sholto's oriental rooms in Lambeth",
+   "Pinchin Lane at the water's edge in Lambeth",
+   "Pondicherry Lodge in Upper Norwood",
+   "Mrs. Cecil Forrester's house in Camberwell",
+   "The Thames waterside and the launch Aurora",
+   "The Mutiny at Muttra and the sky alight at night",
+   "The old fort at Agra and its many doors",
+   "The Andaman Islands convict settlement"
+  ],
+  "aspects": [
+   {
+    "aspect": "Holmes's rooms and his need for work against dull routine",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:4:2",
+      "quote": "But I abhor the dull routine of existence."
+     }
+    ]
+   },
+   {
+    "aspect": "The Lyceum Theatre rendezvous",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:5:5",
+      "quote": "Be at the third pillar from the left outside the Lyceum Theatre to-night at seven o’clock."
+     }
+    ]
+   },
+   {
+    "aspect": "Thaddeus Sholto's oriental rooms in Lambeth",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:1",
+      "quote": "Two great tiger-skins thrown athwart it increased the suggestion of Eastern luxury, as did a huge hookah which stood upon a mat in the corner."
+     }
+    ]
+   },
+   {
+    "aspect": "Pinchin Lane at the water's edge in Lambeth",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:9:13",
+      "quote": "3, Pinchin Lane, down near the water’s edge at Lambeth."
+     }
+    ]
+   },
+   {
+    "aspect": "Pondicherry Lodge in Upper Norwood",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:8:0",
+      "quote": "Pondicherry Lodge stood in its own grounds, and was girt round with a very high stone wall topped with broken glass."
+     }
+    ]
+   },
+   {
+    "aspect": "Mrs. Cecil Forrester's house in Camberwell",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:9:12",
+      "quote": "Cecil Forrester, in Lower Camberwell: so it is not very far."
+     }
+    ]
+   },
+   {
+    "aspect": "The Thames waterside and the launch Aurora",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:11:3",
+      "quote": "She’s as trim a little thing as any on the river."
+     }
+    ]
+   },
+   {
+    "aspect": "The Mutiny at Muttra and the sky alight at night",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:6",
+      "quote": "Our plantation was at a place called Muttra, near the border of the Northwest Provinces."
+     }
+    ]
+   },
+   {
+    "aspect": "The old fort at Agra and its many doors",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:9",
+      "quote": "The river washes along the front of the old fort, and so protects it, but on the sides and behind there are many doors"
+     }
+    ]
+   },
+   {
+    "aspect": "The Andaman Islands convict settlement",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:5:3",
+      "quote": "He had been one of the officers in charge of the convict-guard there."
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:2",
+    "quote": "But I abhor the dull routine of existence."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:5",
+    "quote": "Be at the third pillar from the left outside the Lyceum Theatre to-night at seven o’clock."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:1",
+    "quote": "Two great tiger-skins thrown athwart it increased the suggestion of Eastern luxury, as did a huge hookah which stood upon a mat in the corner."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:13",
+    "quote": "3, Pinchin Lane, down near the water’s edge at Lambeth."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:8:0",
+    "quote": "Pondicherry Lodge stood in its own grounds, and was girt round with a very high stone wall topped with broken glass."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:12",
+    "quote": "Cecil Forrester, in Lower Camberwell: so it is not very far."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:3",
+    "quote": "She’s as trim a little thing as any on the river."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:6",
+    "quote": "Our plantation was at a place called Muttra, near the border of the Northwest Provinces."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:9",
+    "quote": "The river washes along the front of the old fort, and so protects it, but on the sides and behind there are many doors"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:3",
+    "quote": "He had been one of the officers in charge of the convict-guard there."
+   }
+  ]
+ },
+ {
+  "id": "W3",
+  "question": "Give a full biography of Jefferson Hope, from his early years to his end.",
+  "verified": "Aspects a complete answer covers:\n- A hunter and scout with a record of adventure\n- Silver prospecting in the Nevada mountains\n- His love for Lucy Ferrier\n- Leading the flight from Salt Lake City\n- Finding Ferrier's grave and Lucy taken\n- Taking Lucy's ring from her body\n- Attacks on Drebber and Stangerson in the mountains\n- Years of searching across America and Europe\n- Working as a cab driver in London\n- The killings of Drebber and Stangerson\n- His capture at Baker Street\n- His death before trial\n\nEvidence (verbatim):\n- [05ab674df048d13f:13:9] \"Wherever stirring adventures were to be had, Jefferson Hope had been there in search of them.\"\n- [05ab674df048d13f:13:8] \"He and they had been among the Nevada Mountains prospecting for silver\"\n- [05ab674df048d13f:13:10] \"her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own.\"\n- [05ab674df048d13f:15:12] \"while Jefferson Hope led the other along the precipitous and dangerous path.\"\n- [05ab674df048d13f:16:6] \"JOHN FERRIER, Formerly of Salt Lake City, Died August 4th, 1860.\"\n- [05ab674df048d13f:16:10] \"“She shall not be buried in that,” he cried with a fierce snarl\"\n- [05ab674df048d13f:16:11] \"Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him.\"\n- [05ab674df048d13f:16:13] \"Year passed into year, his black hair turned grizzled, but still he wandered on, a human bloodhound\"\n- [05ab674df048d13f:17:4] \"Driving and riding are as natural to me as walking, so I applied at a cabowner’s office, and soon got employment.\"\n- [05ab674df048d13f:17:15] \"In self-defence I stabbed him to the heart.\"\n- [05ab674df048d13f:17:16] \"I was standing in the yard when a ragged youngster asked if there was a cabby there called Jefferson Hope\"\n- [05ab674df048d13f:18:0] \"On the very night after his capture the aneurism burst\"",
+  "key_facts": [
+   "A hunter and scout with a record of adventure",
+   "Silver prospecting in the Nevada mountains",
+   "His love for Lucy Ferrier",
+   "Leading the flight from Salt Lake City",
+   "Finding Ferrier's grave and Lucy taken",
+   "Taking Lucy's ring from her body",
+   "Attacks on Drebber and Stangerson in the mountains",
+   "Years of searching across America and Europe",
+   "Working as a cab driver in London",
+   "The killings of Drebber and Stangerson",
+   "His capture at Baker Street",
+   "His death before trial"
+  ],
+  "aspects": [
+   {
+    "aspect": "A hunter and scout with a record of adventure",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:9",
+      "quote": "Wherever stirring adventures were to be had, Jefferson Hope had been there in search of them."
+     }
+    ]
+   },
+   {
+    "aspect": "Silver prospecting in the Nevada mountains",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:8",
+      "quote": "He and they had been among the Nevada Mountains prospecting for silver"
+     }
+    ]
+   },
+   {
+    "aspect": "His love for Lucy Ferrier",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:10",
+      "quote": "her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own."
+     }
+    ]
+   },
+   {
+    "aspect": "Leading the flight from Salt Lake City",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:15:12",
+      "quote": "while Jefferson Hope led the other along the precipitous and dangerous path."
+     }
+    ]
+   },
+   {
+    "aspect": "Finding Ferrier's grave and Lucy taken",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:16:6",
+      "quote": "JOHN FERRIER, Formerly of Salt Lake City, Died August 4th, 1860."
+     }
+    ]
+   },
+   {
+    "aspect": "Taking Lucy's ring from her body",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:16:10",
+      "quote": "“She shall not be buried in that,” he cried with a fierce snarl"
+     }
+    ]
+   },
+   {
+    "aspect": "Attacks on Drebber and Stangerson in the mountains",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:16:11",
+      "quote": "Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him."
+     }
+    ]
+   },
+   {
+    "aspect": "Years of searching across America and Europe",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:16:13",
+      "quote": "Year passed into year, his black hair turned grizzled, but still he wandered on, a human bloodhound"
+     }
+    ]
+   },
+   {
+    "aspect": "Working as a cab driver in London",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:17:4",
+      "quote": "Driving and riding are as natural to me as walking, so I applied at a cabowner’s office, and soon got employment."
+     }
+    ]
+   },
+   {
+    "aspect": "The killings of Drebber and Stangerson",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:17:15",
+      "quote": "In self-defence I stabbed him to the heart."
+     }
+    ]
+   },
+   {
+    "aspect": "His capture at Baker Street",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:17:16",
+      "quote": "I was standing in the yard when a ragged youngster asked if there was a cabby there called Jefferson Hope"
+     }
+    ]
+   },
+   {
+    "aspect": "His death before trial",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:18:0",
+      "quote": "On the very night after his capture the aneurism burst"
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:13:9",
+    "quote": "Wherever stirring adventures were to be had, Jefferson Hope had been there in search of them."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:8",
+    "quote": "He and they had been among the Nevada Mountains prospecting for silver"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:10",
+    "quote": "her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:15:12",
+    "quote": "while Jefferson Hope led the other along the precipitous and dangerous path."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:6",
+    "quote": "JOHN FERRIER, Formerly of Salt Lake City, Died August 4th, 1860."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:10",
+    "quote": "“She shall not be buried in that,” he cried with a fierce snarl"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:11",
+    "quote": "Once a bullet whistled through Stangerson’s window and flattened itself upon the wall within a foot of him."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:13",
+    "quote": "Year passed into year, his black hair turned grizzled, but still he wandered on, a human bloodhound"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:4",
+    "quote": "Driving and riding are as natural to me as walking, so I applied at a cabowner’s office, and soon got employment."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:15",
+    "quote": "In self-defence I stabbed him to the heart."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:16",
+    "quote": "I was standing in the yard when a ragged youngster asked if there was a cabby there called Jefferson Hope"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:0",
+    "quote": "On the very night after his capture the aneurism burst"
+   }
+  ]
+ },
+ {
+  "id": "W4",
+  "question": "Give a full biography of Jonathan Small, from his boyhood to his capture.",
+  "verified": "Aspects a complete answer covers:\n- His Worcestershire origins\n- Enlisting in the 3rd Buffs\n- The loss of his leg to a crocodile\n- Work as an indigo planter's overseer\n- The Mutiny and flight to Agra\n- The oath at the fort gate\n- The murder of Achmet\n- The trial and sentences\n- The deal with Major Sholto and its betrayal\n- The escape with Tonga\n- Return to England and the sign left on Sholto\n- The treasure thrown into the Thames\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:4] \"I am a Worcestershire man myself,—born near Pershore.\"\n- [0ee225a9a3b5fbc2:15:4] \"taking the Queen’s shilling and joining the 3rd Buffs, which was just starting for India\"\n- [0ee225a9a3b5fbc2:15:5] \"A crocodile took me, just as I was half-way across, and nipped off my right leg as clean as a surgeon could have done it, just above the knee.\"\n- [0ee225a9a3b5fbc2:15:6] \"altogether I was content to spend the remainder of my life in indigo-planting.\"\n- [0ee225a9a3b5fbc2:15:6] \"Suddenly, without a note of warning, the great mutiny broke upon us.\"\n- [0ee225a9a3b5fbc2:15:14] \"you shall have a quarter of the treasure which shall be equally divided among the four of us\"\n- [0ee225a9a3b5fbc2:15:20] \"I cast my firelock between his legs as he raced past, and he rolled twice over like a shot rabbit.\"\n- [0ee225a9a3b5fbc2:15:26] \"The three Sikhs got penal servitude for life, and I was condemned to death, though my sentence was afterwards commuted into the same as the others.\"\n- [0ee225a9a3b5fbc2:15:34] \"The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret.\"\n- [0ee225a9a3b5fbc2:15:35] \"He put his carbine to his shoulder, but I struck him full, and knocked the whole front of his skull in.\"\n- [0ee225a9a3b5fbc2:15:37] \"so I scrawled down the sign of the four of us, as it had been on the chart, and I pinned it on his bosom.\"\n- [0ee225a9a3b5fbc2:15:1] \"throw the treasure into the Thames rather than let it go to kith or kin of Sholto or of Morstan\"",
+  "key_facts": [
+   "His Worcestershire origins",
+   "Enlisting in the 3rd Buffs",
+   "The loss of his leg to a crocodile",
+   "Work as an indigo planter's overseer",
+   "The Mutiny and flight to Agra",
+   "The oath at the fort gate",
+   "The murder of Achmet",
+   "The trial and sentences",
+   "The deal with Major Sholto and its betrayal",
+   "The escape with Tonga",
+   "Return to England and the sign left on Sholto",
+   "The treasure thrown into the Thames"
+  ],
+  "aspects": [
+   {
+    "aspect": "His Worcestershire origins",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:4",
+      "quote": "I am a Worcestershire man myself,—born near Pershore."
+     }
+    ]
+   },
+   {
+    "aspect": "Enlisting in the 3rd Buffs",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:4",
+      "quote": "taking the Queen’s shilling and joining the 3rd Buffs, which was just starting for India"
+     }
+    ]
+   },
+   {
+    "aspect": "The loss of his leg to a crocodile",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:5",
+      "quote": "A crocodile took me, just as I was half-way across, and nipped off my right leg as clean as a surgeon could have done it, just above the knee."
+     }
+    ]
+   },
+   {
+    "aspect": "Work as an indigo planter's overseer",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:6",
+      "quote": "altogether I was content to spend the remainder of my life in indigo-planting."
+     }
+    ]
+   },
+   {
+    "aspect": "The Mutiny and flight to Agra",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:6",
+      "quote": "Suddenly, without a note of warning, the great mutiny broke upon us."
+     }
+    ]
+   },
+   {
+    "aspect": "The oath at the fort gate",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:14",
+      "quote": "you shall have a quarter of the treasure which shall be equally divided among the four of us"
+     }
+    ]
+   },
+   {
+    "aspect": "The murder of Achmet",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:20",
+      "quote": "I cast my firelock between his legs as he raced past, and he rolled twice over like a shot rabbit."
+     }
+    ]
+   },
+   {
+    "aspect": "The trial and sentences",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:26",
+      "quote": "The three Sikhs got penal servitude for life, and I was condemned to death, though my sentence was afterwards commuted into the same as the others."
+     }
+    ]
+   },
+   {
+    "aspect": "The deal with Major Sholto and its betrayal",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:34",
+      "quote": "The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret."
+     }
+    ]
+   },
+   {
+    "aspect": "The escape with Tonga",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:35",
+      "quote": "He put his carbine to his shoulder, but I struck him full, and knocked the whole front of his skull in."
+     }
+    ]
+   },
+   {
+    "aspect": "Return to England and the sign left on Sholto",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:37",
+      "quote": "so I scrawled down the sign of the four of us, as it had been on the chart, and I pinned it on his bosom."
+     }
+    ]
+   },
+   {
+    "aspect": "The treasure thrown into the Thames",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:1",
+      "quote": "throw the treasure into the Thames rather than let it go to kith or kin of Sholto or of Morstan"
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:4",
+    "quote": "I am a Worcestershire man myself,—born near Pershore."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:4",
+    "quote": "taking the Queen’s shilling and joining the 3rd Buffs, which was just starting for India"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:5",
+    "quote": "A crocodile took me, just as I was half-way across, and nipped off my right leg as clean as a surgeon could have done it, just above the knee."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:6",
+    "quote": "altogether I was content to spend the remainder of my life in indigo-planting."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:6",
+    "quote": "Suddenly, without a note of warning, the great mutiny broke upon us."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:14",
+    "quote": "you shall have a quarter of the treasure which shall be equally divided among the four of us"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:20",
+    "quote": "I cast my firelock between his legs as he raced past, and he rolled twice over like a shot rabbit."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:26",
+    "quote": "The three Sikhs got penal servitude for life, and I was condemned to death, though my sentence was afterwards commuted into the same as the others."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:35",
+    "quote": "He put his carbine to his shoulder, but I struck him full, and knocked the whole front of his skull in."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:37",
+    "quote": "so I scrawled down the sign of the four of us, as it had been on the chart, and I pinned it on his bosom."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:1",
+    "quote": "throw the treasure into the Thames rather than let it go to kith or kin of Sholto or of Morstan"
+   }
+  ]
+ },
+ {
+  "id": "W5",
+  "question": "Describe the Mormon community as A Study in Scarlet portrays it: its history, leaders, rules and the way it holds its members.",
+  "verified": "Aspects a complete answer covers:\n- The rescue and welcome of the travellers\n- The arrival in the promised valley\n- The four principal Elders\n- The rule on marriage to Gentiles\n- Polygamy and the Elders' harems\n- The secret society of the Danites\n- Fear and silence among neighbours\n- Young's authority as the voice of God\n- The Sacred Council of Four\n- The Endowment House and forced weddings\n- The schism among the Chosen People\n- The persecuted turned persecutors\n\nEvidence (verbatim):\n- [05ab674df048d13f:14:3] \"We picked you up when you were starving in the desert, we shared our food with you, led you safe to the Chosen Valley\"\n- [05ab674df048d13f:13:0] \"this was the promised land, and that these virgin acres were to be theirs for evermore.\"\n- [05ab674df048d13f:13:1] \"Stangerson, Kemball, Johnston, and Drebber, who were the four principal Elders.\"\n- [05ab674df048d13f:14:4] \"Let every maiden of the true faith marry one of the elect; for if she wed a Gentile, she commits a grievous sin.\"\n- [05ab674df048d13f:14:1] \"Fresh women appeared in the harems of the Elders\"\n- [05ab674df048d13f:14:2] \"None knew who belonged to this ruthless society.\"\n- [05ab674df048d13f:14:2] \"Hence every man feared his neighbour, and none spoke of the things which were nearest his heart.\"\n- [05ab674df048d13f:12:15] \"Brigham Young has said it, and he has spoken with the voice of Joseph Smith, which is the voice of God.\"\n- [05ab674df048d13f:14:4] \"so it has been decided in the Sacred Council of Four.\"\n- [05ab674df048d13f:16:9] \"Married yesterday—that’s what those flags are for on the Endowment House.\"\n- [05ab674df048d13f:16:13] \"There had been a schism among the Chosen People a few months before\"\n- [05ab674df048d13f:14:0] \"The victims of persecution had now turned persecutors on their own account\"",
+  "key_facts": [
+   "The rescue and welcome of the travellers",
+   "The arrival in the promised valley",
+   "The four principal Elders",
+   "The rule on marriage to Gentiles",
+   "Polygamy and the Elders' harems",
+   "The secret society of the Danites",
+   "Fear and silence among neighbours",
+   "Young's authority as the voice of God",
+   "The Sacred Council of Four",
+   "The Endowment House and forced weddings",
+   "The schism among the Chosen People",
+   "The persecuted turned persecutors"
+  ],
+  "aspects": [
+   {
+    "aspect": "The rescue and welcome of the travellers",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:3",
+      "quote": "We picked you up when you were starving in the desert, we shared our food with you, led you safe to the Chosen Valley"
+     }
+    ]
+   },
+   {
+    "aspect": "The arrival in the promised valley",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:0",
+      "quote": "this was the promised land, and that these virgin acres were to be theirs for evermore."
+     }
+    ]
+   },
+   {
+    "aspect": "The four principal Elders",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:1",
+      "quote": "Stangerson, Kemball, Johnston, and Drebber, who were the four principal Elders."
+     }
+    ]
+   },
+   {
+    "aspect": "The rule on marriage to Gentiles",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:4",
+      "quote": "Let every maiden of the true faith marry one of the elect; for if she wed a Gentile, she commits a grievous sin."
+     }
+    ]
+   },
+   {
+    "aspect": "Polygamy and the Elders' harems",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:1",
+      "quote": "Fresh women appeared in the harems of the Elders"
+     }
+    ]
+   },
+   {
+    "aspect": "The secret society of the Danites",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:2",
+      "quote": "None knew who belonged to this ruthless society."
+     }
+    ]
+   },
+   {
+    "aspect": "Fear and silence among neighbours",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:2",
+      "quote": "Hence every man feared his neighbour, and none spoke of the things which were nearest his heart."
+     }
+    ]
+   },
+   {
+    "aspect": "Young's authority as the voice of God",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:12:15",
+      "quote": "Brigham Young has said it, and he has spoken with the voice of Joseph Smith, which is the voice of God."
+     }
+    ]
+   },
+   {
+    "aspect": "The Sacred Council of Four",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:4",
+      "quote": "so it has been decided in the Sacred Council of Four."
+     }
+    ]
+   },
+   {
+    "aspect": "The Endowment House and forced weddings",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:16:9",
+      "quote": "Married yesterday—that’s what those flags are for on the Endowment House."
+     }
+    ]
+   },
+   {
+    "aspect": "The schism among the Chosen People",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:16:13",
+      "quote": "There had been a schism among the Chosen People a few months before"
+     }
+    ]
+   },
+   {
+    "aspect": "The persecuted turned persecutors",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:0",
+      "quote": "The victims of persecution had now turned persecutors on their own account"
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:14:3",
+    "quote": "We picked you up when you were starving in the desert, we shared our food with you, led you safe to the Chosen Valley"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:0",
+    "quote": "this was the promised land, and that these virgin acres were to be theirs for evermore."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:1",
+    "quote": "Stangerson, Kemball, Johnston, and Drebber, who were the four principal Elders."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:4",
+    "quote": "Let every maiden of the true faith marry one of the elect; for if she wed a Gentile, she commits a grievous sin."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:1",
+    "quote": "Fresh women appeared in the harems of the Elders"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:2",
+    "quote": "None knew who belonged to this ruthless society."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:2",
+    "quote": "Hence every man feared his neighbour, and none spoke of the things which were nearest his heart."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:12:15",
+    "quote": "Brigham Young has said it, and he has spoken with the voice of Joseph Smith, which is the voice of God."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:4",
+    "quote": "so it has been decided in the Sacred Council of Four."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:9",
+    "quote": "Married yesterday—that’s what those flags are for on the Endowment House."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:13",
+    "quote": "There had been a schism among the Chosen People a few months before"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:0",
+    "quote": "The victims of persecution had now turned persecutors on their own account"
+   }
+  ]
+ },
+ {
+  "id": "W6",
+  "question": "Trace the whole history of the Agra treasure, from its first owner to its end.",
+  "verified": "Aspects a complete answer covers:\n- The rajah who hoards his gold\n- The plan to kill the merchant Achmet and share the treasure\n- The contents of the chest\n- The hiding place in the fort and the four plans\n- The trial in which the treasure never came up\n- Small's offer to Sholto and Morstan\n- Sholto's theft\n- Sholto brings it to England and Morstan dies over the share\n- The pearls sent to Mary Morstan\n- The hunt for the hiding place and Bartholomew's find\n- The chest on the Aurora's deck\n- The end in the Thames\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:14] \"he is of a low nature and hoards his gold rather than spend it.\"\n- [0ee225a9a3b5fbc2:15:16] \"The world shall know of the merchant Achmet no more, but the great treasure of the rajah shall be divided among us.\"\n- [0ee225a9a3b5fbc2:15:23] \"There were forty carbuncles, two hundred and ten sapphires, sixty-one agates\"\n- [0ee225a9a3b5fbc2:15:24] \"We carried the box, therefore, into the same hall where we had buried the body, and there, under certain bricks in the best-preserved wall, we made a hollow and put our treasure.\"\n- [0ee225a9a3b5fbc2:15:26] \"Not a word about the jewels came out at the trial, for the rajah had been deposed and driven out of India\"\n- [0ee225a9a3b5fbc2:15:32] \"Tell me where the box is hid, and I shall get leave of absence and go back to India in the monthly relief-boat to inquire into the affair.\"\n- [0ee225a9a3b5fbc2:15:34] \"The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret.\"\n- [0ee225a9a3b5fbc2:7:8] \"Morstan had sprung out of his chair in a paroxysm of anger, when he suddenly pressed his hand to his side, his face turned a dusky hue, and he fell backwards, cutting his head against the corner of the treasure-chest.\"\n- [0ee225a9a3b5fbc2:7:13] \"send her a detached pearl at fixed intervals, so that at least she might never feel destitute.\"\n- [0ee225a9a3b5fbc2:15:38] \"The treasure had been found. It was up at the top of the house, in Mr. Bartholomew Sholto’s chemical laboratory.\"\n- [0ee225a9a3b5fbc2:13:13] \"A solid iron chest of Indian workmanship stood upon the deck.\"\n- [0ee225a9a3b5fbc2:15:0] \"Yes, I have put it away where you shall never lay hand upon it,”\"",
+  "key_facts": [
+   "The rajah who hoards his gold",
+   "The plan to kill the merchant Achmet and share the treasure",
+   "The contents of the chest",
+   "The hiding place in the fort and the four plans",
+   "The trial in which the treasure never came up",
+   "Small's offer to Sholto and Morstan",
+   "Sholto's theft",
+   "Sholto brings it to England and Morstan dies over the share",
+   "The pearls sent to Mary Morstan",
+   "The hunt for the hiding place and Bartholomew's find",
+   "The chest on the Aurora's deck",
+   "The end in the Thames"
+  ],
+  "aspects": [
+   {
+    "aspect": "The rajah who hoards his gold",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:14",
+      "quote": "he is of a low nature and hoards his gold rather than spend it."
+     }
+    ]
+   },
+   {
+    "aspect": "The plan to kill the merchant Achmet and share the treasure",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:16",
+      "quote": "The world shall know of the merchant Achmet no more, but the great treasure of the rajah shall be divided among us."
+     }
+    ]
+   },
+   {
+    "aspect": "The contents of the chest",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:23",
+      "quote": "There were forty carbuncles, two hundred and ten sapphires, sixty-one agates"
+     }
+    ]
+   },
+   {
+    "aspect": "The hiding place in the fort and the four plans",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:24",
+      "quote": "We carried the box, therefore, into the same hall where we had buried the body, and there, under certain bricks in the best-preserved wall, we made a hollow and put our treasure."
+     }
+    ]
+   },
+   {
+    "aspect": "The trial in which the treasure never came up",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:26",
+      "quote": "Not a word about the jewels came out at the trial, for the rajah had been deposed and driven out of India"
+     }
+    ]
+   },
+   {
+    "aspect": "Small's offer to Sholto and Morstan",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:32",
+      "quote": "Tell me where the box is hid, and I shall get leave of absence and go back to India in the monthly relief-boat to inquire into the affair."
+     }
+    ]
+   },
+   {
+    "aspect": "Sholto's theft",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:34",
+      "quote": "The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret."
+     }
+    ]
+   },
+   {
+    "aspect": "Sholto brings it to England and Morstan dies over the share",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:8",
+      "quote": "Morstan had sprung out of his chair in a paroxysm of anger, when he suddenly pressed his hand to his side, his face turned a dusky hue, and he fell backwards, cutting his head against the corner of the treasure-chest."
+     }
+    ]
+   },
+   {
+    "aspect": "The pearls sent to Mary Morstan",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:13",
+      "quote": "send her a detached pearl at fixed intervals, so that at least she might never feel destitute."
+     }
+    ]
+   },
+   {
+    "aspect": "The hunt for the hiding place and Bartholomew's find",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:38",
+      "quote": "The treasure had been found. It was up at the top of the house, in Mr. Bartholomew Sholto’s chemical laboratory."
+     }
+    ]
+   },
+   {
+    "aspect": "The chest on the Aurora's deck",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:13:13",
+      "quote": "A solid iron chest of Indian workmanship stood upon the deck."
+     }
+    ]
+   },
+   {
+    "aspect": "The end in the Thames",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:0",
+      "quote": "Yes, I have put it away where you shall never lay hand upon it,”"
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:14",
+    "quote": "he is of a low nature and hoards his gold rather than spend it."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:16",
+    "quote": "The world shall know of the merchant Achmet no more, but the great treasure of the rajah shall be divided among us."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:23",
+    "quote": "There were forty carbuncles, two hundred and ten sapphires, sixty-one agates"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:24",
+    "quote": "We carried the box, therefore, into the same hall where we had buried the body, and there, under certain bricks in the best-preserved wall, we made a hollow and put our treasure."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:26",
+    "quote": "Not a word about the jewels came out at the trial, for the rajah had been deposed and driven out of India"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:32",
+    "quote": "Tell me where the box is hid, and I shall get leave of absence and go back to India in the monthly relief-boat to inquire into the affair."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:8",
+    "quote": "Morstan had sprung out of his chair in a paroxysm of anger, when he suddenly pressed his hand to his side, his face turned a dusky hue, and he fell backwards, cutting his head against the corner of the treasure-chest."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:13",
+    "quote": "send her a detached pearl at fixed intervals, so that at least she might never feel destitute."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "The treasure had been found. It was up at the top of the house, in Mr. Bartholomew Sholto’s chemical laboratory."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:13",
+    "quote": "A solid iron chest of Indian workmanship stood upon the deck."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:0",
+    "quote": "Yes, I have put it away where you shall never lay hand upon it,”"
+   }
+  ]
+ },
+ {
+  "id": "W7",
+  "question": "Describe Sherlock Holmes as the two books show him: his work, his methods, his habits, his moods and his relations with others.",
+  "verified": "Aspects a complete answer covers:\n- A consulting detective, the only one of his kind\n- His own list of limits as Watson sets it down\n- His method of observation and deduction\n- The violin\n- The cycle of energy and reaction\n- Cocaine\n- Craving work against dull routine\n- His view of the official detectives\n- The street boys and Wiggins\n- Toby the dog\n- Disguise\n- Cold reason and his view of love\n\nEvidence (verbatim):\n- [05ab674df048d13f:6:13] \"I’m a consulting detective, if you can understand what that is.\"\n- [05ab674df048d13f:6:5] \"Sherlock Holmes—his limits.\"\n- [05ab674df048d13f:6:8] \"it attempted to show how much an observant man might learn by an accurate and systematic examination of all that came in his way.\"\n- [05ab674df048d13f:6:5] \"Plays the violin well.\"\n- [05ab674df048d13f:6:0] \"Nothing could exceed his energy when the working fit was upon him; but now and again a reaction would seize him\"\n- [0ee225a9a3b5fbc2:4:1] \"“It is cocaine,” he said,—“a seven-per-cent.\"\n- [0ee225a9a3b5fbc2:4:2] \"But I abhor the dull routine of existence.\"\n- [05ab674df048d13f:7:2] \"he and Lestrade are the pick of a bad lot.\"\n- [05ab674df048d13f:10:3] \"Have you found it, Wiggins?” “No, sir, we hain’t,” said one of the youths.\"\n- [0ee225a9a3b5fbc2:9:13] \"I would rather have Toby’s help than that of the whole detective force of London.\"\n- [0ee225a9a3b5fbc2:12:4] \"clad in a rude sailor dress with a pea-jacket, and a coarse red scarf round his neck.\"\n- [0ee225a9a3b5fbc2:15:42] \"But love is an emotional thing, and whatever is emotional is opposed to that true cold reason which I place above all things.\"",
+  "key_facts": [
+   "A consulting detective, the only one of his kind",
+   "His own list of limits as Watson sets it down",
+   "His method of observation and deduction",
+   "The violin",
+   "The cycle of energy and reaction",
+   "Cocaine",
+   "Craving work against dull routine",
+   "His view of the official detectives",
+   "The street boys and Wiggins",
+   "Toby the dog",
+   "Disguise",
+   "Cold reason and his view of love"
+  ],
+  "aspects": [
+   {
+    "aspect": "A consulting detective, the only one of his kind",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:6:13",
+      "quote": "I’m a consulting detective, if you can understand what that is."
+     }
+    ]
+   },
+   {
+    "aspect": "His own list of limits as Watson sets it down",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:6:5",
+      "quote": "Sherlock Holmes—his limits."
+     }
+    ]
+   },
+   {
+    "aspect": "His method of observation and deduction",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:6:8",
+      "quote": "it attempted to show how much an observant man might learn by an accurate and systematic examination of all that came in his way."
+     }
+    ]
+   },
+   {
+    "aspect": "The violin",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:6:5",
+      "quote": "Plays the violin well."
+     }
+    ]
+   },
+   {
+    "aspect": "The cycle of energy and reaction",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:6:0",
+      "quote": "Nothing could exceed his energy when the working fit was upon him; but now and again a reaction would seize him"
+     }
+    ]
+   },
+   {
+    "aspect": "Cocaine",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:4:1",
+      "quote": "“It is cocaine,” he said,—“a seven-per-cent."
+     }
+    ]
+   },
+   {
+    "aspect": "Craving work against dull routine",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:4:2",
+      "quote": "But I abhor the dull routine of existence."
+     }
+    ]
+   },
+   {
+    "aspect": "His view of the official detectives",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:7:2",
+      "quote": "he and Lestrade are the pick of a bad lot."
+     }
+    ]
+   },
+   {
+    "aspect": "The street boys and Wiggins",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:10:3",
+      "quote": "Have you found it, Wiggins?” “No, sir, we hain’t,” said one of the youths."
+     }
+    ]
+   },
+   {
+    "aspect": "Toby the dog",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:9:13",
+      "quote": "I would rather have Toby’s help than that of the whole detective force of London."
+     }
+    ]
+   },
+   {
+    "aspect": "Disguise",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:12:4",
+      "quote": "clad in a rude sailor dress with a pea-jacket, and a coarse red scarf round his neck."
+     }
+    ]
+   },
+   {
+    "aspect": "Cold reason and his view of love",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:42",
+      "quote": "But love is an emotional thing, and whatever is emotional is opposed to that true cold reason which I place above all things."
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:6:13",
+    "quote": "I’m a consulting detective, if you can understand what that is."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:5",
+    "quote": "Sherlock Holmes—his limits."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:8",
+    "quote": "it attempted to show how much an observant man might learn by an accurate and systematic examination of all that came in his way."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:5",
+    "quote": "Plays the violin well."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:0",
+    "quote": "Nothing could exceed his energy when the working fit was upon him; but now and again a reaction would seize him"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:1",
+    "quote": "“It is cocaine,” he said,—“a seven-per-cent."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:2",
+    "quote": "But I abhor the dull routine of existence."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:2",
+    "quote": "he and Lestrade are the pick of a bad lot."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:3",
+    "quote": "Have you found it, Wiggins?” “No, sir, we hain’t,” said one of the youths."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:9:13",
+    "quote": "I would rather have Toby’s help than that of the whole detective force of London."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:12:4",
+    "quote": "clad in a rude sailor dress with a pea-jacket, and a coarse red scarf round his neck."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "But love is an emotional thing, and whatever is emotional is opposed to that true cold reason which I place above all things."
+   }
+  ]
+ },
+ {
+  "id": "W8",
+  "question": "Describe Dr. Watson across both books: his past, his injuries, his place in the household and his own story.",
+  "verified": "Aspects a complete answer covers:\n- Medical training at Netley\n- The Jezail wound at Maiwand\n- Rescued by his orderly Murray\n- Drifting to London and life on his half-pay\n- Meeting Stamford and agreeing to share rooms\n- Holmes seeing Watson's Afghan service at once\n- The wounded leg in the second book\n- First sight of Mary Morstan\n- His scruple about the treasure and Mary\n- His relief when the treasure is lost\n- The engagement\n- His horror at Small\n\nEvidence (verbatim):\n- [05ab674df048d13f:5:0] \"proceeded to Netley to go through the course prescribed for surgeons in the army\"\n- [05ab674df048d13f:5:0] \"There I was struck on the shoulder by a Jezail bullet, which shattered the bone and grazed the subclavian artery.\"\n- [05ab674df048d13f:5:0] \"the devotion and courage shown by Murray, my orderly, who threw me across a pack-horse\"\n- [05ab674df048d13f:5:1] \"Under such circumstances, I naturally gravitated to London\"\n- [05ab674df048d13f:5:9] \"Sherlock Holmes seemed delighted at the idea of sharing his rooms with me.\"\n- [05ab674df048d13f:5:7] \"You have been in Afghanistan, I perceive.\"\n- [0ee225a9a3b5fbc2:4:3] \"I made no remark, however, but sat nursing my wounded leg.\"\n- [0ee225a9a3b5fbc2:5:0] \"Miss Morstan entered the room with a firm step and an outward composure of manner.\"\n- [0ee225a9a3b5fbc2:10:0] \"Might she not look upon me as a mere vulgar fortune-seeker?\"\n- [0ee225a9a3b5fbc2:14:9] \"I could realise nothing save that the golden barrier was gone from between us.\"\n- [0ee225a9a3b5fbc2:15:41] \"Miss Morstan has done me the honour to accept me as a husband in prospective.\"\n- [0ee225a9a3b5fbc2:15:22] \"I had now conceived the utmost horror of the man\"",
+  "key_facts": [
+   "Medical training at Netley",
+   "The Jezail wound at Maiwand",
+   "Rescued by his orderly Murray",
+   "Drifting to London and life on his half-pay",
+   "Meeting Stamford and agreeing to share rooms",
+   "Holmes seeing Watson's Afghan service at once",
+   "The wounded leg in the second book",
+   "First sight of Mary Morstan",
+   "His scruple about the treasure and Mary",
+   "His relief when the treasure is lost",
+   "The engagement",
+   "His horror at Small"
+  ],
+  "aspects": [
+   {
+    "aspect": "Medical training at Netley",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:0",
+      "quote": "proceeded to Netley to go through the course prescribed for surgeons in the army"
+     }
+    ]
+   },
+   {
+    "aspect": "The Jezail wound at Maiwand",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:0",
+      "quote": "There I was struck on the shoulder by a Jezail bullet, which shattered the bone and grazed the subclavian artery."
+     }
+    ]
+   },
+   {
+    "aspect": "Rescued by his orderly Murray",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:0",
+      "quote": "the devotion and courage shown by Murray, my orderly, who threw me across a pack-horse"
+     }
+    ]
+   },
+   {
+    "aspect": "Drifting to London and life on his half-pay",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:1",
+      "quote": "Under such circumstances, I naturally gravitated to London"
+     }
+    ]
+   },
+   {
+    "aspect": "Meeting Stamford and agreeing to share rooms",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:9",
+      "quote": "Sherlock Holmes seemed delighted at the idea of sharing his rooms with me."
+     }
+    ]
+   },
+   {
+    "aspect": "Holmes seeing Watson's Afghan service at once",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:5:7",
+      "quote": "You have been in Afghanistan, I perceive."
+     }
+    ]
+   },
+   {
+    "aspect": "The wounded leg in the second book",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:4:3",
+      "quote": "I made no remark, however, but sat nursing my wounded leg."
+     }
+    ]
+   },
+   {
+    "aspect": "First sight of Mary Morstan",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:5:0",
+      "quote": "Miss Morstan entered the room with a firm step and an outward composure of manner."
+     }
+    ]
+   },
+   {
+    "aspect": "His scruple about the treasure and Mary",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:10:0",
+      "quote": "Might she not look upon me as a mere vulgar fortune-seeker?"
+     }
+    ]
+   },
+   {
+    "aspect": "His relief when the treasure is lost",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:14:9",
+      "quote": "I could realise nothing save that the golden barrier was gone from between us."
+     }
+    ]
+   },
+   {
+    "aspect": "The engagement",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:41",
+      "quote": "Miss Morstan has done me the honour to accept me as a husband in prospective."
+     }
+    ]
+   },
+   {
+    "aspect": "His horror at Small",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:22",
+      "quote": "I had now conceived the utmost horror of the man"
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:5:0",
+    "quote": "proceeded to Netley to go through the course prescribed for surgeons in the army"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:0",
+    "quote": "There I was struck on the shoulder by a Jezail bullet, which shattered the bone and grazed the subclavian artery."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:0",
+    "quote": "the devotion and courage shown by Murray, my orderly, who threw me across a pack-horse"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:1",
+    "quote": "Under such circumstances, I naturally gravitated to London"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:9",
+    "quote": "Sherlock Holmes seemed delighted at the idea of sharing his rooms with me."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:7",
+    "quote": "You have been in Afghanistan, I perceive."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:3",
+    "quote": "I made no remark, however, but sat nursing my wounded leg."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:5:0",
+    "quote": "Miss Morstan entered the room with a firm step and an outward composure of manner."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:0",
+    "quote": "Might she not look upon me as a mere vulgar fortune-seeker?"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:9",
+    "quote": "I could realise nothing save that the golden barrier was gone from between us."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:41",
+    "quote": "Miss Morstan has done me the honour to accept me as a husband in prospective."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:22",
+    "quote": "I had now conceived the utmost horror of the man"
+   }
+  ]
+ },
+ {
+  "id": "W9",
+  "question": "Describe the Sholto family and its history: Major Sholto, his sons and what bound them to the treasure.",
+  "verified": "Aspects a complete answer covers:\n- The Major's command on the Andamans with Morstan\n- The card losses of the soldiers\n- The deal with Small\n- The cheat on the conditions\n- Retirement to Pondicherry Lodge\n- Morstan's death in the quarrel\n- The letter from India and his decline\n- The deathbed confession of greed\n- The twins differ over the share\n- Thaddeus's oddness and fragile health\n- Bartholomew's death\n- Lal Chowdar, the Major's servant, who helped hide Morstan\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:6:2] \"He and papa were in command of the troops at the Andaman Islands, so they were thrown a great deal together.\"\n- [0ee225a9a3b5fbc2:15:28] \"Night after night the soldiers got up poorer men, and the poorer they got the more keen they were to play.\"\n- [0ee225a9a3b5fbc2:15:30] \"I want you just to let Captain Morstan hear that story from your own lips, Small,\"\n- [0ee225a9a3b5fbc2:15:34] \"The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret.\"\n- [0ee225a9a3b5fbc2:7:5] \"He retired some eleven years ago, and came to live at Pondicherry Lodge in Upper Norwood.\"\n- [0ee225a9a3b5fbc2:7:8] \"Morstan and I had a difference of opinion as to the division of the treasure, and we came to heated words.\"\n- [0ee225a9a3b5fbc2:7:6] \"He nearly fainted at the breakfast-table when he opened it, and from that day he sickened to his death.\"\n- [0ee225a9a3b5fbc2:7:7] \"The cursed greed which has been my besetting sin through life has withheld from her the treasure, half at least of which should have been hers.\"\n- [0ee225a9a3b5fbc2:7:13] \"for, between friends, my brother was himself a little inclined to my father’s fault.\"\n- [0ee225a9a3b5fbc2:7:15] \"My health is somewhat fragile,” he remarked, as he led the way down the passage.\"\n- [0ee225a9a3b5fbc2:15:38] \"Bartholomew Sholto was still in the room, to his cost.\"\n- [0ee225a9a3b5fbc2:7:9] \"“Do not fear, Sahib,” he said. “No one need know that you have killed him.\"",
+  "key_facts": [
+   "The Major's command on the Andamans with Morstan",
+   "The card losses of the soldiers",
+   "The deal with Small",
+   "The cheat on the conditions",
+   "Retirement to Pondicherry Lodge",
+   "Morstan's death in the quarrel",
+   "The letter from India and his decline",
+   "The deathbed confession of greed",
+   "The twins differ over the share",
+   "Thaddeus's oddness and fragile health",
+   "Bartholomew's death",
+   "Lal Chowdar, the Major's servant, who helped hide Morstan"
+  ],
+  "aspects": [
+   {
+    "aspect": "The Major's command on the Andamans with Morstan",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:6:2",
+      "quote": "He and papa were in command of the troops at the Andaman Islands, so they were thrown a great deal together."
+     }
+    ]
+   },
+   {
+    "aspect": "The card losses of the soldiers",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:28",
+      "quote": "Night after night the soldiers got up poorer men, and the poorer they got the more keen they were to play."
+     }
+    ]
+   },
+   {
+    "aspect": "The deal with Small",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:30",
+      "quote": "I want you just to let Captain Morstan hear that story from your own lips, Small,"
+     }
+    ]
+   },
+   {
+    "aspect": "The cheat on the conditions",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:34",
+      "quote": "The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret."
+     }
+    ]
+   },
+   {
+    "aspect": "Retirement to Pondicherry Lodge",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:5",
+      "quote": "He retired some eleven years ago, and came to live at Pondicherry Lodge in Upper Norwood."
+     }
+    ]
+   },
+   {
+    "aspect": "Morstan's death in the quarrel",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:8",
+      "quote": "Morstan and I had a difference of opinion as to the division of the treasure, and we came to heated words."
+     }
+    ]
+   },
+   {
+    "aspect": "The letter from India and his decline",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:6",
+      "quote": "He nearly fainted at the breakfast-table when he opened it, and from that day he sickened to his death."
+     }
+    ]
+   },
+   {
+    "aspect": "The deathbed confession of greed",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:7",
+      "quote": "The cursed greed which has been my besetting sin through life has withheld from her the treasure, half at least of which should have been hers."
+     }
+    ]
+   },
+   {
+    "aspect": "The twins differ over the share",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:13",
+      "quote": "for, between friends, my brother was himself a little inclined to my father’s fault."
+     }
+    ]
+   },
+   {
+    "aspect": "Thaddeus's oddness and fragile health",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:15",
+      "quote": "My health is somewhat fragile,” he remarked, as he led the way down the passage."
+     }
+    ]
+   },
+   {
+    "aspect": "Bartholomew's death",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:38",
+      "quote": "Bartholomew Sholto was still in the room, to his cost."
+     }
+    ]
+   },
+   {
+    "aspect": "Lal Chowdar, the Major's servant, who helped hide Morstan",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:9",
+      "quote": "“Do not fear, Sahib,” he said. “No one need know that you have killed him."
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:6:2",
+    "quote": "He and papa were in command of the troops at the Andaman Islands, so they were thrown a great deal together."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:28",
+    "quote": "Night after night the soldiers got up poorer men, and the poorer they got the more keen they were to play."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:30",
+    "quote": "I want you just to let Captain Morstan hear that story from your own lips, Small,"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:5",
+    "quote": "He retired some eleven years ago, and came to live at Pondicherry Lodge in Upper Norwood."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:8",
+    "quote": "Morstan and I had a difference of opinion as to the division of the treasure, and we came to heated words."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:6",
+    "quote": "He nearly fainted at the breakfast-table when he opened it, and from that day he sickened to his death."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:7",
+    "quote": "The cursed greed which has been my besetting sin through life has withheld from her the treasure, half at least of which should have been hers."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:13",
+    "quote": "for, between friends, my brother was himself a little inclined to my father’s fault."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:15",
+    "quote": "My health is somewhat fragile,” he remarked, as he led the way down the passage."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "Bartholomew Sholto was still in the room, to his cost."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:9",
+    "quote": "“Do not fear, Sahib,” he said. “No one need know that you have killed him."
+   }
+  ]
+ },
+ {
+  "id": "W10",
+  "question": "Across both books, how are love, marriage and family bonds shown, and what do they cost the people who hold them?",
+  "verified": "Aspects a complete answer covers:\n- Hope and Lucy\n- Ferrier's adoption of Lucy\n- Ferrier's own old love\n- Young's demand that Lucy choose\n- The forced marriage and Lucy's death\n- Polygamy and the Elders' households\n- Hope's vow over Lucy's ring\n- Drebber's conduct toward Alice Charpentier\n- Mary Morstan and Watson's engagement\n- Holmes's view of marriage\n- The Major's guilt over Morstan's orphan\n- Small's family at home\n\nEvidence (verbatim):\n- [05ab674df048d13f:13:10] \"her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own.\"\n- [05ab674df048d13f:13:1] \"The two castaways, John Ferrier and the little girl who had shared his fortunes and had been adopted as his daughter\"\n- [05ab674df048d13f:13:3] \"Others, again, spoke of some early love affair, and of a fair-haired girl who had pined away on the shores of the Atlantic.\"\n- [05ab674df048d13f:14:4] \"Stangerson has a son, and Drebber has a son, and either of them would gladly welcome your daughter to their house.\"\n- [05ab674df048d13f:16:9] \"poor Lucy never held up her head again, but pined away and died within a month.\"\n- [05ab674df048d13f:14:1] \"Fresh women appeared in the harems of the Elders\"\n- [05ab674df048d13f:17:4] \"I took the marriage ring from her dead finger, and I vowed that his dying eyes should rest upon that very ring\"\n- [05ab674df048d13f:10:8] \"Worst of all, he speedily assumed the same attitude towards my daughter, Alice\"\n- [0ee225a9a3b5fbc2:15:41] \"Miss Morstan has done me the honour to accept me as a husband in prospective.\"\n- [0ee225a9a3b5fbc2:15:42] \"I should never marry myself, lest I bias my judgment.\"\n- [0ee225a9a3b5fbc2:7:7] \"It is my treatment of poor Morstan’s orphan.\"\n- [0ee225a9a3b5fbc2:15:16] \"how my folk would stare when they saw their ne’er-do-well coming back with his pockets full of gold moidores\"",
+  "key_facts": [
+   "Hope and Lucy",
+   "Ferrier's adoption of Lucy",
+   "Ferrier's own old love",
+   "Young's demand that Lucy choose",
+   "The forced marriage and Lucy's death",
+   "Polygamy and the Elders' households",
+   "Hope's vow over Lucy's ring",
+   "Drebber's conduct toward Alice Charpentier",
+   "Mary Morstan and Watson's engagement",
+   "Holmes's view of marriage",
+   "The Major's guilt over Morstan's orphan",
+   "Small's family at home"
+  ],
+  "aspects": [
+   {
+    "aspect": "Hope and Lucy",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:10",
+      "quote": "her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own."
+     }
+    ]
+   },
+   {
+    "aspect": "Ferrier's adoption of Lucy",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:1",
+      "quote": "The two castaways, John Ferrier and the little girl who had shared his fortunes and had been adopted as his daughter"
+     }
+    ]
+   },
+   {
+    "aspect": "Ferrier's own old love",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:13:3",
+      "quote": "Others, again, spoke of some early love affair, and of a fair-haired girl who had pined away on the shores of the Atlantic."
+     }
+    ]
+   },
+   {
+    "aspect": "Young's demand that Lucy choose",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:4",
+      "quote": "Stangerson has a son, and Drebber has a son, and either of them would gladly welcome your daughter to their house."
+     }
+    ]
+   },
+   {
+    "aspect": "The forced marriage and Lucy's death",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:16:9",
+      "quote": "poor Lucy never held up her head again, but pined away and died within a month."
+     }
+    ]
+   },
+   {
+    "aspect": "Polygamy and the Elders' households",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:14:1",
+      "quote": "Fresh women appeared in the harems of the Elders"
+     }
+    ]
+   },
+   {
+    "aspect": "Hope's vow over Lucy's ring",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:17:4",
+      "quote": "I took the marriage ring from her dead finger, and I vowed that his dying eyes should rest upon that very ring"
+     }
+    ]
+   },
+   {
+    "aspect": "Drebber's conduct toward Alice Charpentier",
+    "evidence": [
+     {
+      "chunk_id": "05ab674df048d13f:10:8",
+      "quote": "Worst of all, he speedily assumed the same attitude towards my daughter, Alice"
+     }
+    ]
+   },
+   {
+    "aspect": "Mary Morstan and Watson's engagement",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:41",
+      "quote": "Miss Morstan has done me the honour to accept me as a husband in prospective."
+     }
+    ]
+   },
+   {
+    "aspect": "Holmes's view of marriage",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:42",
+      "quote": "I should never marry myself, lest I bias my judgment."
+     }
+    ]
+   },
+   {
+    "aspect": "The Major's guilt over Morstan's orphan",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:7:7",
+      "quote": "It is my treatment of poor Morstan’s orphan."
+     }
+    ]
+   },
+   {
+    "aspect": "Small's family at home",
+    "evidence": [
+     {
+      "chunk_id": "0ee225a9a3b5fbc2:15:16",
+      "quote": "how my folk would stare when they saw their ne’er-do-well coming back with his pockets full of gold moidores"
+     }
+    ]
+   }
+  ],
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:13:10",
+    "quote": "her blushing cheek and her bright, happy eyes, showed only too clearly that her young heart was no longer her own."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:1",
+    "quote": "The two castaways, John Ferrier and the little girl who had shared his fortunes and had been adopted as his daughter"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:3",
+    "quote": "Others, again, spoke of some early love affair, and of a fair-haired girl who had pined away on the shores of the Atlantic."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:4",
+    "quote": "Stangerson has a son, and Drebber has a son, and either of them would gladly welcome your daughter to their house."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:9",
+    "quote": "poor Lucy never held up her head again, but pined away and died within a month."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:1",
+    "quote": "Fresh women appeared in the harems of the Elders"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:4",
+    "quote": "I took the marriage ring from her dead finger, and I vowed that his dying eyes should rest upon that very ring"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:10:8",
+    "quote": "Worst of all, he speedily assumed the same attitude towards my daughter, Alice"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:41",
+    "quote": "Miss Morstan has done me the honour to accept me as a husband in prospective."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "I should never marry myself, lest I bias my judgment."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:7",
+    "quote": "It is my treatment of poor Morstan’s orphan."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:16",
+    "quote": "how my folk would stare when they saw their ne’er-do-well coming back with his pockets full of gold moidores"
+   }
+  ]
+ }
+]
