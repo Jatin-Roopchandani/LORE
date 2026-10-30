@@ -23,7 +23,7 @@ def _chunks(n: int) -> list[Chunk]:
 
 def test_migration_v2_applies(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "lore.db")
-    assert schema_version(conn) == 11
+    assert schema_version(conn) == 12
     tables = {
         r[0]
         for r in conn.execute(

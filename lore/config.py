@@ -155,6 +155,13 @@ class BeatsConfig(BaseModel):
     enabled: bool = True
 
 
+class CodexConfig(BaseModel):
+    """The codex (the `codex` pipeline stage): quote-verified entity profiles.
+    On by default; when False the stage does nothing and no entry is built."""
+
+    enabled: bool = True
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
     # "kaggle": free T4 burst. "ollama": fully local, zero egress.
@@ -173,6 +180,7 @@ class LoreConfig(BaseModel):
     web: WebConfig = Field(default_factory=WebConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     beats: BeatsConfig = Field(default_factory=BeatsConfig)
+    codex: CodexConfig = Field(default_factory=CodexConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
@@ -220,6 +228,11 @@ class LoreConfig(BaseModel):
     def beats_dir(self) -> Path:
         """Cached beat answers, per book. Never created eagerly."""
         return self.data_dir / "beats"
+
+    @property
+    def codex_dir(self) -> Path:
+        """Cached codex answers, per entity. Never created eagerly."""
+        return self.data_dir / "codex"
 
     @property
     def adjudication_dir(self) -> Path:

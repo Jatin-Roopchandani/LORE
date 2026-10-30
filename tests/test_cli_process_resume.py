@@ -173,7 +173,7 @@ def test_extract_stage_seam_accepts_a_replacement(tmp_path, monkeypatch) -> None
 
     stages = default_stages(LoreConfig.load(), extract_stage=Mine())
     assert [s.name for s in stages] == [
-        "chunk", "extract", "load", "disambiguate", "beats"]
+        "chunk", "extract", "load", "disambiguate", "beats", "codex"]
     assert any(isinstance(s, Mine) for s in stages)
     skipped = default_stages(LoreConfig.load(), skip_extract=True, extract_stage=Mine())
     assert "extract" not in [s.name for s in skipped]

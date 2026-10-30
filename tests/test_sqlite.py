@@ -14,14 +14,14 @@ def _tables(conn: sqlite3.Connection) -> set[str]:
 def test_open_db_creates_schema(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "lore.db")
     assert {"schema_migrations", "books", "jobs", "quota_ledger", "chunks", "gemini_ledger"} <= _tables(conn)
-    assert schema_version(conn) == 11
+    assert schema_version(conn) == 12
     conn.close()
 
 
 def test_open_db_is_idempotent(tmp_path: Path) -> None:
     open_db(tmp_path / "lore.db").close()
     conn = open_db(tmp_path / "lore.db")  # second open must not re-apply v1
-    assert schema_version(conn) == 11
+    assert schema_version(conn) == 12
     conn.close()
 
 
@@ -49,13 +49,13 @@ def test_migration_atomicity(tmp_path: Path, monkeypatch) -> None:
 
     # First, create the database successfully at v1 to v6
     conn = open_db(db_path)
-    assert schema_version(conn) == 11
+    assert schema_version(conn) == 12
     conn.close()
 
     # Now simulate a failed migration with a statement that succeeds followed by one that fails
     # This tests that partial migrations are rolled back entirely
     broken_migration = (
-        12,
+        13,
         [
             "CREATE TABLE extra_table (x INTEGER)",
             "THIS IS NOT VALID SQL",
@@ -70,10 +70,10 @@ def test_migration_atomicity(tmp_path: Path, monkeypatch) -> None:
     # Remove the broken migration to restore normal behavior
     monkeypatch.setattr("lore.db.sqlite.MIGRATIONS", MIGRATIONS)
 
-    # Verify that open_db() works again and schema_version is still 11
+    # Verify that open_db() works again and schema_version is still 12
     # (the failed migration should have left nothing behind due to atomicity)
     conn = open_db(db_path)
-    assert schema_version(conn) == 11
+    assert schema_version(conn) == 12
     assert {"schema_migrations", "books", "jobs", "quota_ledger", "chunks", "gemini_ledger"} <= _tables(conn)
 
     # Most importantly: verify that extra_table does NOT exist
@@ -100,7 +100,7 @@ def test_migration_v5_keeps_existing_books(tmp_path: Path, monkeypatch) -> None:
     conn.close()
     monkeypatch.setattr("lore.db.sqlite.MIGRATIONS", MIGRATIONS)
     conn = open_db(path)
-    assert schema_version(conn) == 11
+    assert schema_version(conn) == 12
     assert conn.execute("SELECT title, series, series_index FROM books").fetchall() == [
         ("Old Book", None, None)]
     conn.close()
@@ -112,4 +112,16 @@ def test_migration_v6_creates_book_jobs(tmp_path: Path) -> None:
     assert cols == ["book_id", "stage", "state", "done_items", "total_items",
                     "stopped_reason", "resumable_at", "updated_at", "needs_reload",
                     "move_world_id"]
+    conn.close()
+
+
+def test_migration_v12_creates_the_codex_tables(tmp_path: Path) -> None:
+    conn = open_db(tmp_path / "lore.db")
+    assert {"codex_summaries", "codex_entries"} <= _tables(conn)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(codex_entries)")}
+    assert {"id", "entity_id", "world_id", "aspect", "position", "statement",
+            "quote", "chunk_id"} <= cols
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(codex_summaries)")}
+    assert {"entity_id", "world_id", "name", "kind", "summary", "prompt_hash",
+            "evidence_hash"} <= cols
     conn.close()

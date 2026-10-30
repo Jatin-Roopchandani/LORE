@@ -31,6 +31,12 @@ _BEATS_SCHEMA = pa.schema([
 ])
 
 
+_CODEX_SCHEMA = pa.schema([
+    pa.field("vector", pa.list_(pa.float32(), EMBED_DIM)),
+    pa.field("id", pa.string()),
+])
+
+
 def _quoted(values) -> str:
     return ", ".join("'" + v.replace("'", "''") + "'" for v in sorted(set(values)))
 
@@ -46,6 +52,8 @@ class LanceStore:
             self._db.create_table("entities", schema=_ENTITIES_SCHEMA)
         if "beats" not in existing:
             self._db.create_table("beats", schema=_BEATS_SCHEMA)
+        if "codex" not in existing:
+            self._db.create_table("codex", schema=_CODEX_SCHEMA)
 
     def table_names(self) -> set[str]:
         return set(self._db.list_tables().tables)
@@ -192,6 +200,36 @@ class LanceStore:
             self._db.open_table("beats")
             .search(vector)
             .where(f"id IN ({_quoted(beat_ids)})", prefilter=True)
+            .limit(k)
+            .to_list()
+        )
+
+    def upsert_codex(self, rows: list[dict]) -> None:
+        """Rows {id, vector}, one per codex statement; an existing id is
+        replaced."""
+        if not rows:
+            return
+        self.delete_codex([r["id"] for r in rows])
+        self._db.open_table("codex").add(rows)
+
+    def delete_codex(self, statement_ids: list[str]) -> None:
+        if statement_ids:
+            self._db.open_table("codex").delete(
+                f"id IN ({_quoted(statement_ids)})")
+
+    def search_codex(
+        self, vector: list[float], statement_ids: list[str], k: int
+    ) -> list[dict]:
+        """The `k` nearest of THESE codex statements. Like `search_beats`, the
+        caller passes the ids it got from SQLite (an entry's entity link moves
+        on relink, so the vector rows carry none). The filter runs inside the
+        search."""
+        if not statement_ids or k <= 0:
+            return []
+        return (
+            self._db.open_table("codex")
+            .search(vector)
+            .where(f"id IN ({_quoted(statement_ids)})", prefilter=True)
             .limit(k)
             .to_list()
         )

@@ -64,6 +64,7 @@ from lore.orchestrator.run import run_extraction
 from lore.orchestrator.stages import (
     BeatsStage,
     ChunkStage,
+    CodexStage,
     DisambiguateStage,
     LoadStage,
     ReassignStage,
@@ -759,13 +760,15 @@ class _RunExtractionStage:
 
 def _load_and_relink(config: LoreConfig, conn, book_id: str,
                      api_key: str | None):
-    """A graph load, then the beats' entity names re-pointed at the new ids.
+    """A graph load, then the beats' entity names (and the codex's entity
+    ids) re-pointed at the new ids.
 
     Beats store names, so a load that merges or splits entities moves them
     without any request. Both lookups are at call time (tests patch them).
     """
     report = _load_book_sync(config, conn, book_id, api_key=api_key)
     _relink_beats(config, conn)
+    _relink_codex(config, conn)
     return report
 
 
@@ -775,6 +778,20 @@ def _relink_beats(config: LoreConfig, conn) -> None:
     path = config.kuzu_dir / "graph"
     if not path.exists() or conn.execute(
             "SELECT 1 FROM beats LIMIT 1").fetchone() is None:
+        return
+    graph = KuzuStore(path, read_only=True)
+    try:
+        relink(conn, graph)
+    finally:
+        graph.close()
+
+
+def _relink_codex(config: LoreConfig, conn) -> None:
+    from lore.codex.store import relink
+
+    path = config.kuzu_dir / "graph"
+    if not path.exists() or conn.execute(
+            "SELECT 1 FROM codex_summaries LIMIT 1").fetchone() is None:
         return
     graph = KuzuStore(path, read_only=True)
     try:
@@ -808,20 +825,23 @@ def default_stages(config: LoreConfig, *, skip_extract: bool = False,
     # New answers apply on one more (free) load, right after the request.
     stages.append(DisambiguateStage(reload=load_stage.reload))
     stages.append(BeatsStage())
+    stages.append(CodexStage())
     return stages
 
 
 def move_stages(config: LoreConfig, world_id: int, *,
                 api_key: str | None = None) -> list:
     """The stages of a move to `world_id`: out of the graph, new world, load
-    into it, beats rebuilt from their cache (see orchestrator/move.py)."""
+    into it, beats rebuilt from their cache, the codex of both worlds rebuilt
+    (see orchestrator/move.py)."""
 
     def load(cfg, conn, book_id):
         report = _load_and_relink(cfg, conn, book_id, api_key)
         _set_status(conn, book_id, "graphed")
         return report
 
-    return [RemoveStage(), ReassignStage(world_id), LoadStage(load), BeatsStage()]
+    return [RemoveStage(), ReassignStage(world_id), LoadStage(load), BeatsStage(),
+            CodexStage(all_worlds=True)]
 
 
 def _set_status(conn, book_id: str, status: str) -> None:

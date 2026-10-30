@@ -196,6 +196,44 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
         ],
     ),
+    # Codex (2026-10-30): quote-verified profiles of significant entities,
+    # built at ingest per world. `codex_summaries` has one row per entity (the
+    # hashes say what the entry was built from); `codex_entries` its statements,
+    # each pinned to the chunk that holds its quote. Entity ids are filled in
+    # by the build and moved by `codex.store.relink` when the resolver merges.
+    (
+        12,
+        [
+            """
+            CREATE TABLE codex_summaries (
+                entity_id     TEXT PRIMARY KEY,
+                world_id      INTEGER NOT NULL,
+                name          TEXT NOT NULL,
+                kind          TEXT NOT NULL,
+                summary       TEXT NOT NULL,
+                prompt_hash   TEXT NOT NULL,
+                evidence_hash TEXT NOT NULL,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            "CREATE INDEX idx_codex_summaries_world ON codex_summaries(world_id)",
+            """
+            CREATE TABLE codex_entries (
+                id        TEXT PRIMARY KEY,
+                entity_id TEXT NOT NULL,
+                world_id  INTEGER NOT NULL,
+                aspect    TEXT NOT NULL,
+                position  INTEGER NOT NULL,
+                statement TEXT NOT NULL,
+                quote     TEXT NOT NULL,
+                chunk_id  TEXT NOT NULL,
+                UNIQUE (entity_id, position)
+            )
+            """,
+            "CREATE INDEX idx_codex_entries_entity ON codex_entries(entity_id)",
+            "CREATE INDEX idx_codex_entries_world ON codex_entries(world_id)",
+        ],
+    ),
 ]
 
 

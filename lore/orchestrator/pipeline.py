@@ -20,12 +20,13 @@ from lore.inference.gemini import limits_for
 from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import calls_today, today
 
-# Order matters. `beats` needs the loaded graph (its entities), so it follows load.
+# Order matters. `beats` needs the loaded graph (its entities), so it follows load;
+# `codex` profiles entities from their beats and passages, so it follows beats.
 # `remove` and `reassign` belong to moving a book to another world (see
 # move.py): take it out of the graph, change its world, then load and
 # beats as usual. Only a move runs them, ahead of `load`.
 STAGES = ("chunk", "extract", "remove", "reassign", "load", "disambiguate",
-          "beats", "ready")
+          "beats", "codex", "ready")
 
 
 class QuotaStop(Exception):

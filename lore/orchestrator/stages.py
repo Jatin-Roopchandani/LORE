@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 from lore.beats import build as beats_build
 from lore.beats.store import relink as relink_beats, save_beats
+from lore.codex import build as codex_build
+from lore.codex import store as codex_store
 from lore.inference.gemini import (
     GeminiClient,
     GeminiOutputError,
@@ -268,6 +270,16 @@ def _beats_client(config) -> GeminiClient:
                         recorder=recorder_for(config.sqlite_path))
 
 
+def _codex_client(config) -> GeminiClient:
+    api_key = resolve_api_key(key_file=default_key_file())
+    if api_key is None:
+        raise RuntimeError(
+            "the codex needs a Gemini API key (GEMINI_API_KEY or"
+            " ~/.config/lore/gemini.env)")
+    return GeminiClient(api_key, models=config.extraction.gemini_models,
+                        recorder=recorder_for(config.sqlite_path))
+
+
 def _local_embedder(config):
     """(embed, aclose) on the local Ollama embedder, as the loader uses."""
     from lore.graph.adjudicate import _embedder
@@ -432,6 +444,216 @@ class BeatsStage:
                     lance.delete_beats(sorted(existing - ids))
                 # SQLite last: a part is done once its rows are saved.
                 save_beats(ctx.conn, ctx.book_id, part.chapter, part.index, beats)
+                if fresh:
+                    done += 1
+                    job_ctl.advance(done)
+        finally:
+            try:
+                if client is not None:
+                    await client.aclose()
+            finally:
+                if embed_close is not None:
+                    await embed_close()
+
+
+@dataclass(frozen=True)
+class _CodexItem:
+    world_id: int
+    entity: codex_build.CodexEntity
+    evidence: codex_build.Evidence
+    evidence_hash: str
+
+
+class _DeferredLance:
+    """A Lance store opened only if something is deleted from it."""
+
+    def __init__(self, factory: Callable) -> None:
+        self._factory = factory
+
+    def delete_codex(self, ids: list[str]) -> None:
+        self._factory().delete_codex(ids)
+
+
+class CodexStage:
+    """Build the codex of the book's world: one profile per significant
+    entity, one request each.
+
+    A no-op unless `[lore.codex] enabled`. Items are the world's significant
+    entities (kinds Concept, Faction, Place, Object, Character, mentioned by
+    enough chunks, at most CODEX_MAX_PER_BOOK per book of the world). Each
+    entity's raw answer is cached on disk (`data/codex/<entity>-<evidence
+    hash>.json`, also keyed by the prompt hash) the moment it arrives, so a
+    stop keeps every answer already paid for and a resume requests only the
+    rest; an entity whose evidence is unchanged since its entry was saved
+    costs nothing. An entry is stored (embedded, written to LanceDB, then
+    saved to SQLite, which marks it done) from its verified statements, and
+    entity links are relinked to the current ids when the run ends, however it
+    ends.
+
+    `all_worlds` also visits every other world that already has a codex, so a
+    move, which changes the evidence of the world the book left, rebuilds
+    that world's dropped entries too (from the cache when their evidence is
+    back to what it was).
+
+    The factories are the seams for tests, as for BeatsStage: `client_factory`
+    (generate_json, aclose), `embed_factory` (embed, aclose), `kuzu_factory`
+    (execute, close; None for "no graph") and `lance_factory` (upsert_codex,
+    delete_codex).
+    """
+
+    name = "codex"
+
+    def __init__(self, client_factory: Callable | None = None,
+                 embed_factory: Callable | None = None,
+                 kuzu_factory: Callable | None = None,
+                 lance_factory: Callable | None = None,
+                 all_worlds: bool = False) -> None:
+        self._client_factory = client_factory or _codex_client
+        self._embed_factory = embed_factory or _local_embedder
+        self._kuzu_factory = kuzu_factory or _open_graph
+        self._lance_factory = lance_factory or _open_vectors
+        self._all_worlds = all_worlds
+        self.skipped: list[str] = []
+
+    def _worlds(self, ctx: StageContext) -> list[int]:
+        from lore import worlds
+
+        own = worlds.world_of(ctx.conn, ctx.book_id)
+        ids = [own.id] if own is not None else []
+        if self._all_worlds:
+            ids += [w for w in codex_store.world_ids_with_codex(ctx.conn)
+                    if w not in ids]
+        return ids
+
+    def _plan(self, ctx: StageContext, kuzu) -> list[_CodexItem]:
+        from lore import worlds
+        from lore.ingest.registry import book_rows
+
+        if kuzu is None:
+            return []
+        books = book_rows(ctx.conn)
+        plan: list[_CodexItem] = []
+        for world_id in self._worlds(ctx):
+            book_ids = worlds.books_in(ctx.conn, world_id)
+            entities = codex_build.significant_entities(
+                kuzu, book_ids, codex_build.CODEX_MAX_PER_BOOK * len(book_ids))
+            for entity in entities:
+                evidence = codex_build.evidence_pack(
+                    ctx.conn, kuzu, entity, book_ids, books)
+                if not evidence.passages:
+                    continue
+                plan.append(_CodexItem(
+                    world_id, entity, evidence,
+                    codex_build.evidence_hash(entity, evidence)))
+        return plan
+
+    def _plan_for(self, ctx: StageContext) -> list[_CodexItem]:
+        if not ctx.config.codex.enabled:
+            return []
+        kuzu = self._kuzu_factory(ctx.config)
+        try:
+            return self._plan(ctx, kuzu)
+        finally:
+            if kuzu is not None:
+                kuzu.close()
+
+    def total(self, ctx: StageContext) -> int:
+        return len(self._plan_for(ctx))
+
+    @staticmethod
+    def _saved_current(ctx: StageContext, item: _CodexItem) -> bool:
+        saved = codex_store.summary_for(ctx.conn, item.entity.id)
+        return (saved is not None
+                and saved.prompt_hash == codex_build.prompt_hash()
+                and saved.evidence_hash == item.evidence_hash
+                and saved.world_id == item.world_id)
+
+    @staticmethod
+    def _cache(ctx: StageContext, item: _CodexItem):
+        return codex_build.cache_path(ctx.config.codex_dir, item.entity.id,
+                                      item.evidence_hash)
+
+    def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
+        self.skipped = []
+        if not ctx.config.codex.enabled:
+            job_ctl.advance(0)
+            return
+        kuzu = self._kuzu_factory(ctx.config)
+        try:
+            plan = self._plan(ctx, kuzu)
+            cached = {i.entity.id: codex_build.read_cached(
+                self._cache(ctx, i), i.evidence_hash) for i in plan}
+            current = {i.entity.id for i in plan if self._saved_current(ctx, i)}
+            done = sum(cached[i.entity.id] is not None or i.entity.id in current
+                       for i in plan)
+            job_ctl.advance(done)
+            if not plan:
+                return
+            try:
+                asyncio.run(self._run(ctx, job_ctl, plan, cached, current, done))
+            except GeminiQuotaError as exc:
+                raise quota_stop_from(exc) from exc
+        finally:
+            try:
+                if kuzu is not None:
+                    codex_store.relink(ctx.conn, kuzu,
+                                       _DeferredLance(self._lance_factory))
+            finally:
+                if kuzu is not None:
+                    kuzu.close()
+
+    async def _run(self, ctx, job_ctl, plan, cached, current, done: int) -> None:
+        client = embed = embed_close = lance = None
+        try:
+            # One loop for the requests, the embeds and the closes: httpx
+            # binds its sockets to the loop that opened them.
+            for item in plan:
+                entity = item.entity
+                if entity.id in current:
+                    continue
+                answer = cached[entity.id]
+                fresh = answer is None
+                if fresh:
+                    job_ctl.spend_check()
+                    if client is None:
+                        client = self._client_factory(ctx.config)
+                    try:
+                        answer = await client.generate_json(
+                            codex_build.render_prompt(entity, item.evidence),
+                            codex_build.CodexAnswer,
+                            exhausted_hint="Continue the job when a daily"
+                                           " budget resets.")
+                    except GeminiOutputError:
+                        # Not cached: the next run asks this entity again.
+                        self.skipped.append(f"{entity.name}: unusable answer")
+                        done += 1
+                        job_ctl.advance(done)
+                        continue
+                    codex_build.write_cached(self._cache(ctx, item),
+                                             item.evidence_hash, answer)
+                entry = codex_build.verify_entry(
+                    answer, entity, item.world_id, item.evidence, item.evidence_hash)
+                old = codex_store.statement_ids(ctx.conn, [entity.id])
+                if lance is None and (entry is not None or old):
+                    lance = self._lance_factory(ctx.config)
+                new: list[str] = []
+                if entry is not None:
+                    if embed is None:
+                        embed, embed_close = self._embed_factory(ctx.config)
+                    new = [codex_store.statement_id(entity.id, i, s.text)
+                           for i, s in enumerate(entry.statements)]
+                    vectors = await embed(
+                        [f"{entity.name} ({s.aspect}): {s.text}"
+                         for s in entry.statements])
+                    lance.upsert_codex([{"id": i, "vector": v}
+                                        for i, v in zip(new, vectors)])
+                if set(old) - set(new):
+                    lance.delete_codex(sorted(set(old) - set(new)))
+                # SQLite last: an entity is done once its rows are saved.
+                if entry is not None:
+                    codex_store.save_entry(ctx.conn, entry)
+                elif old:
+                    codex_store.delete_entities(ctx.conn, [entity.id])
                 if fresh:
                     done += 1
                     job_ctl.advance(done)

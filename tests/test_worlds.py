@@ -45,7 +45,7 @@ def test_migration_version_and_backfill(tmp_path: Path) -> None:
     conn.close()
 
     conn = open_db(path)
-    assert schema_version(conn) == 11
+    assert schema_version(conn) == 12
     w = {b: world_of(conn, b) for b in "abcde"}
     assert all(v is not None for v in w.values())
     assert w["a"].id == w["b"].id and w["a"].name == "Saga"

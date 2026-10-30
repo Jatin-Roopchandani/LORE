@@ -1,9 +1,12 @@
 """Take one book out of the graph and the vector indexes.
 
 The inverse of `load_book` for the stores it writes (Kuzu and LanceDB), plus
-the book's story beats. What the registry holds stays: the chunks in SQLite
-and every cache (extraction artifacts, adjudication, speakers, disambiguation
-answers, beats JSON), so loading the book again asks nothing new.
+the book's story beats and the codex entries of every entity it touches
+(their evidence changes with the book gone; the codex stage rebuilds them,
+from its cache when the evidence is what it was before). What the registry
+holds stays: the chunks in SQLite and every cache (extraction artifacts,
+adjudication, speakers, disambiguation answers, beats and codex JSON), so
+loading the book again asks nothing new.
 
 Entities are shared between books, so nothing is deleted just because this
 book mentions it: the book is dropped from `Entity.books`, and the node goes
@@ -24,6 +27,7 @@ from dataclasses import dataclass
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore import worlds
+from lore.codex import store as codex_store
 from lore.graph.loader import (
     Statement, _centroid, _note_reconciled, _run_in_transaction)
 from lore.resolve.normalize import normalize_name
@@ -40,6 +44,7 @@ class RemovalReport:
     aliases_pruned: int = 0  # surface forms dropped from a kept entity
     vector_chunks: int = 0  # Lance chunk rows deleted
     beats: int = 0
+    codex: int = 0  # entities whose codex entry was dropped
     shared_with: tuple[str, ...] = ()  # the other books of the kept entities
 
 
@@ -110,9 +115,14 @@ def remove_book_from_graph(
     beat_ids = [r[0] for r in conn.execute(
         "SELECT id FROM beats WHERE book_id = ? ORDER BY id", (book_id,))]
     report.beats = len(beat_ids)
+    # Every entity that lists the book is touched: its evidence changes (or
+    # the entity goes). Drop its entry; the codex stage writes it again.
+    codex_statements = codex_store.statement_ids(conn, sorted(owned))
+    report.codex = len(codex_store.with_entries(conn, sorted(owned)))
 
     # ---- Vectors first (see the module docstring).
     lance.delete_beats(beat_ids)
+    lance.delete_codex(codex_statements)
     before = lance.count("chunks")
     lance.delete_chunks_for_book(book_id)
     report.vector_chunks = before - lance.count("chunks")
@@ -157,6 +167,7 @@ def remove_book_from_graph(
     _run_in_transaction(kuzu, statements)
 
     # ---- SQLite last: the beats' ids were read before anything was deleted.
+    codex_store.delete_entities(conn, sorted(owned))
     with conn:
         conn.execute(
             "DELETE FROM beat_entities WHERE beat_id IN"
