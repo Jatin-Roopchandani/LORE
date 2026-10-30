@@ -1162,16 +1162,19 @@ def test_search_result_carries_prose():
                                 "kind": "fact"}]
 
 
-def test_search_result_carries_a_judgement_kind():
+def test_search_result_carries_the_interpretive_kinds():
     from lore.mcp.shapes import to_search_result
     from lore.query.models import Answer, Claim, ProseSentence
     answer = Answer(text="A. [1]", passages=(), mode="graph", template=None, note=None,
                     claims=(Claim(text="A", passage=1, quote="a b c d"),),
                     prose=(ProseSentence("A.", (1,), (1,)),
-                           ProseSentence("Arguably, A.", (1,), (1,), False, "judgement")),
+                           ProseSentence("On balance, A.", (1,), (1,), True, "reading"),
+                           ProseSentence("Against that, B.", (1,), (1,), False, "counter"),
+                           ProseSentence("The books don't settle: C.", (), (), True, "limit")),
                     answer_style="prose")
     out = to_search_result(answer, {}).model_dump()
-    assert [p["kind"] for p in out["prose"]] == ["fact", "judgement"]
+    assert [p["kind"] for p in out["prose"]] == ["fact", "reading", "counter", "limit"]
+    assert out["prose"][3]["claims"] == [] and out["prose"][3]["passages"] == []
 
 
 def test_search_result_maps_new_paragraph():

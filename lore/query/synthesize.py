@@ -32,7 +32,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
 
-from lore.query import judge
+from lore.query import interpret
 from lore.query import write as write_module
 from lore.query.models import Answer, BookInfo, Claim, EdgeRow, Evidence, Passage, ProseSentence
 from lore.query.position import order_passages
@@ -396,17 +396,6 @@ each other, not only what they say or what the narrator states.
 """
 
 
-# JUDGEMENTS, claims step (lore/query/judge.py): a question that asks for a
-# judgement is answered by comparing people, and a comparison needs what each
-# of them does, wants, conceals and changes, not only how they are described.
-_JUDGEMENT_RULE = """This question asks for a judgement about people in the story. For each person
-the passages show who bears on the quality asked about, give claims about what
-they do, want, conceal and change, and the contradictions between these, not
-only how they are described. Cover more than one such person when the passages
-allow it, so that they can be compared.
-"""
-
-
 # TIMELINE (lore/query/timeline.py): beats are short notes on moments from
 # across the whole story for the question's entities. They are a map of where
 # the passages are, never evidence: a claim still quotes a numbered passage.
@@ -457,7 +446,10 @@ def _build_prompt(
     question: str, evidence: Evidence, book_titles: dict[str, str] | None = None,
     checklist: Sequence[str] = (), part_of: str | None = None,
     books: dict[str, BookInfo] | None = None,
+    role: str = "part",
 ) -> str:
+    """`role`: what the part is for an interpretive answer (interpret.py): a
+    "lens" of an interpretive part, a "beyond" part, or an ordinary "part"."""
     lines = _relation_lines(evidence, book_titles)
     relations = _RELATIONS.format(lines="\n".join(lines)) if lines else ""
     passages = _passage_block(evidence, book_titles, books)
@@ -473,6 +465,10 @@ def _build_prompt(
         (_FULL_PART_CONTEXT if FULL_ANSWERS else _PART_CONTEXT).format(part_of=part_of)
         if part_of else ""
     )
+    if part_of and role == "lens":
+        context = interpret.LENS_CONTEXT.format(part_of=part_of)
+    elif part_of and role == "beyond":
+        context = interpret.BEYOND_CONTEXT.format(part_of=part_of)
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
                           facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
@@ -480,9 +476,7 @@ def _build_prompt(
                           + (_STRICT_LINKS_RULE if STRICT_LINKS else "")
                           + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else "")
                           + (_CHANGE_RULE if write_module.STORY_ORDER else "")
-                          + (_ACTIONS_RULE if write_module.readings_on() else "")
-                          + (_JUDGEMENT_RULE if judge.JUDGEMENTS and judge.is_evaluative(question)
-                             else ""),
+                          + (_ACTIONS_RULE if write_module.readings_on() else ""),
                           max_claims=MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
                           relations=relations + _timeline_block(evidence, book_titles, books),
@@ -619,23 +613,6 @@ the claims.
 fact, or adds detail.
 """
 
-# JUDGEMENTS: a sentence marked "(judgement)" weighs the people the claims
-# cover and names the strongest case. It is not a fact and not an
-# interpretation of one thing; it gets this test.
-_JUDGEMENTS_BLOCK = """
-A sentence marked "(judgement)" compares the people its cited claims cover and
-names the strongest case among them. Judge it by this test instead of the one
-above, and give its verdict in the same sentence_judgements entry.
-"{supported}": a careful reader would agree that the cited claims, together,
-make it a fair, arguable case; it is worded visibly as a judgement ("a strong
-case can be made", "arguably", "of these ... stands out"), not as plain fact
-and not as the book's own view; and it adds no event, name, number or detail
-beyond the claims.
-"{not_supported}": the claims do not make that a fair case, it is stated as
-plain fact, it says the book itself describes someone this way when no claim
-does, or it adds detail.
-"""
-
 # Gaps are statements that the facts leave something out; code shows them
 # only if the check agrees. "supported" means the statement is true.
 _GAPS_BLOCK = """
@@ -659,8 +636,13 @@ def faithfulness_prompt(
     sentences: Sequence["Sentence"] | None = None,
     books: dict[str, BookInfo] | None = None,
     gaps: Sequence[str] | None = None,
+    shape: "interpret.Shape | None" = None,
 ) -> str:
     """The one batched prompt: the cited passages, then the numbered claims.
+
+    `shape`: the interpretive answer's shape (interpret.py). A reading or a
+    counter-case among the sentences is then labelled and given its own test,
+    quoting the viewpoint lines that apply.
 
     PASSAGE BUDGET: every passage some claim cites, once, in full -- and no
     other. Deduplicating matters (several claims usually cite one passage);
@@ -698,13 +680,16 @@ def faithfulness_prompt(
     if order and order.note():
         prompt += "\n" + order.note() + "\n"
     if sentences:
-        # Kinds are shown, and a reading's or judgement's own test given, only
-        # when one is among the sentences: an answer of facts alone is checked
-        # as before.
+        # Kinds are shown, and a reading's or counter-case's own test given,
+        # only when one is among the sentences: an answer of facts alone is
+        # checked as before.
         kinds = {getattr(s, "kind", "fact") for s in sentences}
-        readings = write_module.readings_on() and "reading" in kinds
-        judgements = write_module.readings_on() and judge.JUDGEMENTS and "judgement" in kinds
-        labelled = readings or judgements
+        if shape is not None:
+            readings = False
+            labelled = bool(kinds & {"reading", "counter"})
+        else:
+            readings = write_module.readings_on() and "reading" in kinds
+            labelled = readings
 
         def label(s) -> str:
             return f" ({getattr(s, 'kind', 'fact')})" if labelled else ""
@@ -718,8 +703,8 @@ def faithfulness_prompt(
             not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
         if readings:
             prompt += _READINGS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
-        if judgements:
-            prompt += _JUDGEMENTS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
+        if shape is not None:
+            prompt += interpret.check_blocks(shape, kinds, SUPPORTED, NOT_SUPPORTED)
         if story and gaps:
             prompt += _GAPS_BLOCK.format(
                 gaps="\n".join(f"{i}. gap: {g}" for i, g in enumerate(gaps, start=1)),
@@ -801,6 +786,7 @@ async def check_answer(
     sentences: Sequence["Sentence"] | None = None,
     books: dict[str, BookInfo] | None = None,
     gaps: Sequence[str] | None = None,
+    shape: "interpret.Shape | None" = None,
 ) -> CheckOutcome:
     """`check_claims`, plus one verdict per prose sentence in the same call.
 
@@ -815,7 +801,7 @@ async def check_answer(
     gap_ok = None
     try:
         result = await check(
-            faithfulness_prompt(claims, passages, book_titles, sentences, books, gaps),
+            faithfulness_prompt(claims, passages, book_titles, sentences, books, gaps, shape),
             Faithfulness if write_module.STORY_ORDER else _PlainFaithfulness)
         verdicts = validated_verdicts(result, len(claims))
         sentence_ok = (validated_sentence_verdicts(result, len(sentences))
@@ -859,23 +845,31 @@ PROSE_FALLBACK_NOTE = "the written answer did not pass verification; showing the
 
 
 async def _finish(question, sub_questions, kept, evidence, check, write, book_titles,
-                  part_claims=None, books=None):
+                  part_claims=None, books=None, shape=None):
     """Writer (when it applies) and the faithfulness check, in one place for
-    both synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note,
-    unanswered part texts, gaps -- both set only when the prose is shown)."""
+    all synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note,
+    unanswered part texts, gaps -- both set only when the prose is shown).
+
+    `shape` (interpret.Shape): the answer has an interpretive or beyond part.
+    The writer and the check then follow it, and code closes the prose with
+    its lines (interpret.close_answer); the shown gaps join the limits line
+    and so are not returned separately."""
     try_prose = (write_module.PROSE_ANSWERS and write is not None and check is not None
                  and len(kept) >= 2)
     sentences, written, prose_note, missing, gaps = None, 0, None, [], []
     if try_prose:
         drafted = await write_answer(question, sub_questions, kept, evidence.passages, write,
-                                     book_titles=book_titles, books=books)
+                                     book_titles=book_titles, books=books, shape=shape)
         if drafted is None:
             prose_note = PROSE_FALLBACK_NOTE
         else:
             texts = [c.text for c in kept]
-            sentences, written = verify_prose(drafted, len(kept), texts), len(split_items(drafted))
+            sentences, written = (verify_prose(drafted, len(kept), texts, shape),
+                                  len(split_items(drafted)))
             parts = part_texts(question, sub_questions)
             missing = [parts[k - 1] for k in valid_unanswered(drafted, len(parts))]
+            if shape is not None:  # a part the books cannot settle is a limit, said by code
+                missing = [m for m in missing if m not in shape.beyond]
             if write_module.STORY_ORDER:
                 gaps = [g for g in clean_gaps(drafted.gaps)
                         if g.casefold() not in {m.casefold() for m in missing}]
@@ -884,7 +878,7 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     passage_of = [c.passage for c in kept]
     outcome = await check_answer(kept, evidence.passages, check, book_titles=book_titles,
                                  sentences=sentences or None, books=books,
-                                 gaps=gaps if sentences else None)
+                                 gaps=gaps if sentences else None, shape=shape)
     skipped = None if outcome.ran else CHECK_SKIPPED_NOTE
     prose: tuple[ProseSentence, ...] = ()
     if sentences is not None:
@@ -896,13 +890,20 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
             if coverage_gaps(built, numbered):
                 built = None  # one-sided prose: the claim list covers every part
         if built:
-            prose = paragraphs_by_book(built, {p.n: p.book_id for p in evidence.passages})
+            book_of = {p.n: p.book_id for p in evidence.passages}
+            if shape is None:
+                prose = paragraphs_by_book(built, book_of)
+            else:  # the interpretation keeps the paragraphs the guards gave it
+                prose = (paragraphs_by_book([s for s in built if s.kind == "fact"], book_of)
+                         + tuple(s for s in built if s.kind != "fact"))
         else:
             prose_note = PROSE_FALLBACK_NOTE
     # A gap is shown only if the check ran over it and agreed: an unchecked
     # "the passages don't say" is a claim like any other.
     shown_gaps = (tuple(g for g, ok in zip(gaps, outcome.gap_ok) if ok)
                   if prose and outcome.gap_ok is not None and len(outcome.gap_ok) == len(gaps) else ())
+    if shape is not None and prose:
+        prose, shown_gaps = interpret.close_answer(prose, shape, shown_gaps), ()
     return (outcome.kept, [c for c, _ in outcome.dropped], prose, skipped, prose_note,
             tuple(missing) if prose else (), shown_gaps)
 
@@ -978,6 +979,9 @@ async def synthesize_parts(
     check: Generate | None = None,
     write: Generate | None = None,
     books: dict[str, BookInfo] | None = None,
+    plan: Sequence | None = None,
+    retrieval: Sequence | None = None,
+    viewpoint: str | None = None,
 ) -> Answer:
     """One synthesis call per sub-question, over that part's share, merged.
 
@@ -1005,7 +1009,20 @@ async def synthesize_parts(
 
     With one sub-question, or evidence that carries no shares, this is
     `synthesize` exactly: one call over everything.
+
+    `plan` (decompose.Part per part of the question), `retrieval`
+    (decompose.RetrievalPart per entry of `sub_questions`, which are then the
+    retrieval parts: parts and the lenses of interpretive parts) and
+    `viewpoint`: an answer with an interpretive or beyond part takes the
+    interpretive shape (`synthesize_shaped`). Without them, or without such a
+    part, nothing here differs.
     """
+    if (plan is not None and retrieval is not None and len(retrieval) == len(sub_questions)
+            and interpret.shaped([part.kind for part in plan])):
+        return await synthesize_shaped(
+            question, plan, retrieval, evidence, generate, mode=mode, template=template,
+            note=note, book_titles=book_titles, check=check, write=write, books=books,
+            viewpoint=viewpoint)
     if len(sub_questions) < 2 or len(evidence.shares) != len(sub_questions):
         return await synthesize(question, evidence, generate, mode=mode, template=template,
                                 note=note, book_titles=book_titles,
@@ -1056,3 +1073,116 @@ async def synthesize_parts(
         return replace(answer(compose_text(prose, unanswered, gaps), partial, skipped, claims=tuple(kept)),
                        prose=prose, answer_style="prose", unanswered=unanswered, gaps=gaps)
     return answer(_compose(kept), partial, skipped, prose_note, claims=tuple(kept))
+
+
+def _representative(claim: Claim, kept: Sequence[Claim]) -> int | None:
+    """The index in `kept` of the claim that stands for `claim` after the
+    near-duplicate collapse: itself, or the earlier claim it duplicates."""
+    for i, other in enumerate(kept):
+        if other == claim or _sentence(other) == _sentence(claim) or _near_duplicate(other, claim):
+            return i
+    return None
+
+
+async def synthesize_shaped(
+    question: str,
+    plan: Sequence,
+    retrieval: Sequence,
+    evidence: Evidence,
+    generate: Generate,
+    *,
+    mode: str,
+    template: str | None = None,
+    note: str | None = None,
+    book_titles: dict[str, str] | None = None,
+    check: Generate | None = None,
+    write: Generate | None = None,
+    books: dict[str, BookInfo] | None = None,
+    viewpoint: str | None = None,
+) -> Answer:
+    """An answer with an interpretive or beyond part (interpret.py).
+
+    One claims call per retrieval part, over its own share of the evidence: a
+    lens gathers one aspect of its interpretive part, a beyond part gathers
+    what the books do say. The interpretive part's evidence is the union of its
+    lenses'. The writer then answers the plan's parts (not the lenses): the
+    evidence grouped by lens, a reading, a counter-case; code adds the limits.
+    Without prose (no writer, or the prose failed) the checked claims are the
+    answer, and the closing lines are added to its text.
+    """
+    from lore.query.viewpoint import load_viewpoint
+
+    def answer(text: str, *extra_notes: str | None,
+               claims: tuple[Claim, ...] = ()) -> Answer:
+        notes = "; ".join(n for n in (note, *extra_notes) if n) or None
+        return Answer(text=text, passages=evidence.passages, mode=mode,
+                      template=template, note=notes, claims=claims)
+
+    if not evidence.passages:
+        return answer(REFUSAL)
+
+    n = len(retrieval)
+    everything = tuple(p.n for p in evidence.passages)
+    shares = evidence.shares if len(evidence.shares) == n else (everything,) * n
+    timelines = (evidence.timelines if len(evidence.timelines) == n
+                 else (evidence.timeline,) * n if n == 1 else ((),) * n)
+    kept: list[Claim] = []
+    per_part: list[list[Claim]] = []
+    for index, (part, share) in enumerate(zip(retrieval, shares)):
+        numbers = set(share)
+        passages = tuple(p for p in evidence.passages if p.n in numbers)
+        if not passages:
+            per_part.append([])
+            continue
+        own = Evidence(edges=evidence.edges, passages=passages, truncated=evidence.truncated,
+                       timeline=timelines[index])
+        served = plan[part.part]
+        role = ("lens" if part.lens else "beyond" if served.kind == "beyond" else "part")
+        result = await generate(
+            _build_prompt(part.question, own, book_titles,
+                          part_of=served.question if part.lens else question,
+                          books=books, role=role), Synthesis)
+        verified, _ = verify_claims(_capped(result), passages)
+        per_part.append(verified)
+        kept.extend(c for c in verified if c not in kept)
+
+    kept = _collapse(kept)
+    shape = interpret.Shape(
+        viewpoint=viewpoint if viewpoint is not None else load_viewpoint(),
+        parts=tuple(p.question for p in plan), kinds=tuple(p.kind for p in plan),
+        retrieval=tuple((r.question, r.part, r.lens) for r in retrieval))
+    found: list[set[int]] = [set() for _ in kept]
+    for ri, claims in enumerate(per_part):
+        for claim in claims:
+            at = _representative(claim, kept)
+            if at is not None:
+                found[at].add(ri)
+    shape = shape.with_claims([frozenset(f) for f in found])
+    # Per part of the plan, the claims its retrieval parts found.
+    by_part: list[list[Claim]] = [[] for _ in plan]
+    for ri, claims in enumerate(per_part):
+        by_part[retrieval[ri].part].extend(c for c in claims if c not in by_part[retrieval[ri].part])
+    kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
+        question, list(shape.parts), kept, evidence, check, write, book_titles,
+        part_claims=by_part, books=books, shape=shape)
+    missing = [part.question for part, claims in zip(plan, by_part)
+               if part.kind != "beyond" and (not claims or all(c in cut for c in claims))]
+    if not kept:
+        return answer(REFUSAL)
+    partial = (PARTIAL_NOTE + "; " + "; ".join(NOT_FOUND + m for m in missing)
+               if missing else None)
+    if prose:
+        return replace(answer(compose_text(prose, unanswered, gaps), partial, skipped,
+                              claims=tuple(kept)),
+                       prose=prose, answer_style="prose", unanswered=unanswered, gaps=gaps)
+    text = _compose(kept)
+    # The writer was never asked, or its prose did not pass: the facts are the
+    # answer, and it still says what the evidence and the books do not settle.
+    configured = write_module.PROSE_ANSWERS and write is not None and check is not None
+    lines = []
+    if shape.interpretive and configured:
+        lines.append(interpret.NO_POSITION_LINE)
+    lines += interpret.limit_text(shape)
+    if lines:
+        text += "\n\n" + " ".join(lines)
+    return answer(text, partial, skipped, prose_note, claims=tuple(kept))

@@ -88,8 +88,10 @@ class ProseSentence:
     claims: tuple[int, ...]
     passages: tuple[int, ...]
     new_paragraph: bool = False
-    # "fact", or "reading": an interpretation of what the cited claims show
-    # together, not a direct statement (write.READINGS).
+    # "fact"; "reading": an interpretation of what the cited claims show
+    # together, not a direct statement; "counter": the strongest opposing
+    # reading; "limit": a line written by code (no claims) saying what the
+    # evidence or the books do not settle (lore/query/interpret.py).
     kind: str = "fact"
 
 

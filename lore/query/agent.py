@@ -16,9 +16,12 @@ from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
+from lore.query import interpret as interpret_module
 from lore.query import judge as judge_module
 from lore.query import decompose as decompose_module
-from lore.query.decompose import DEPTHS, plan as decompose_plan, resolve_depth
+from lore.query.decompose import (
+    DEPTHS, plan as decompose_plan, resolve_depth, retrieval_parts,
+)
 from lore.query.events import EDGES_PER_PART_CAP, OnEvent, edge_key, emit
 from lore.query.keyword import KeywordIndex, fused
 from lore.query.models import Answer, EdgeRow, Evidence, SeedEntity
@@ -42,6 +45,7 @@ from lore.query.synthesize import (
     CHECK_SKIPPED_NOTE, synthesize, synthesize_parts, validated_verdicts,
 )
 from lore.query.templates import MAX_EVIDENCE_CHARS
+from lore.query.viewpoint import load_viewpoint
 from lore.query import timeline as timeline_module
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
@@ -176,6 +180,9 @@ class QueryModels:
     evidence_chars: int = MAX_EVIDENCE_CHARS
     check: Generate | None = field(default=None)
     write: Generate | None = field(default=None)
+    # The viewpoint text (lore/query/viewpoint.py) an interpretive answer
+    # follows. None: the packaged default is read when it is needed.
+    viewpoint: str | None = field(default=None)
 
 
 @dataclass(frozen=True)
@@ -307,8 +314,12 @@ def make_query_models(
         finally:
             await local.aclose()
 
+    # Loaded now, so a missing or empty file is an error before any request is
+    # spent; only an interpretive answer reads it.
+    viewpoint = (load_viewpoint(config.answers.viewpoint)
+                 if decompose_module.INTERPRETIVE else None)
     return QueryModels(embed, select, synthesize_with, synthesis_model, aclose,
-                       selection_model, decompose=decompose_with,
+                       selection_model, decompose=decompose_with, viewpoint=viewpoint,
                        evidence_chars=evidence_budget(config.synthesis.provider),
                        # The same callable as synthesis: same provider, same
                        # client, same cascade, same temperature 0, and so the
@@ -414,13 +425,24 @@ def _cosine(row: dict) -> float:
     return 1 - float(row.get("_distance", float("inf"))) / 2
 
 
+def _retrieval(plan) -> list:
+    """What the question retrieves for (decompose.retrieval_parts): each part,
+    and for an interpretive part its lenses in place of itself, within the
+    part budget. [] without a plan, or with INTERPRETIVE off."""
+    if plan is None or not decompose_module.INTERPRETIVE:
+        return []
+    return retrieval_parts(plan.parts)
+
+
 async def _parts(question, vector, models: QueryModels, kuzu,
                  book_ids: Collection[str] | None = None):
-    """(sub-question, its vector) pairs, whether decomposition succeeded, and
+    """(retrieval part, its vector) pairs, whether decomposition succeeded, and
     the Plan (each part's kind and lenses, and the planned depth). The plan is
     None when decomposition did not run or failed: every part is then factual
-    and the depth is `focused`. A part identical to the question reuses its
-    vector; the others are embedded together in one call."""
+    and the depth is `focused`. A retrieval part is a part of the question, or
+    a lens of an interpretive part (which has no retrieval of its own). A part
+    identical to the question reuses its vector; the others are embedded
+    together in one call."""
     planned = None
     if models.decompose is not None:
         # The graph's books, not the registry's: only those can be searched,
@@ -434,7 +456,9 @@ async def _parts(question, vector, models: QueryModels, kuzu,
                 if row[1] and row[0] in book_ids})
         planned = await decompose_plan(question, models.decompose, book_titles=graphed)
     decomposed = planned is not None
-    parts = planned.questions if planned is not None else [question]
+    rparts = _retrieval(planned)
+    parts = ([r.question for r in rparts] if rparts
+             else planned.questions if planned is not None else [question])
     fresh = [part for part in parts if part != question]
     vectors = {question: vector}
     if fresh:
@@ -608,6 +632,7 @@ async def answer_question(
     emit(on_event, "step", name="split", state="start", part=None, detail=None)
     parts, decomposed, plan = await _parts(question, vector, models, kuzu, union(scopes))
     sub_questions = tuple(part for part, _ in parts)
+    rparts = _retrieval(plan)  # parallel to `parts`; [] unless INTERPRETIVE
     depth = resolve_depth(depth, plan.depth if plan is not None else "focused")
     # `kinds`, `lenses` and `depth` only when a switch is on: with both off
     # the event is what it always was.
@@ -617,6 +642,12 @@ async def answer_question(
               else [[] for _ in parts],
               "depth": depth}
              if decompose_module.INTERPRETIVE or decompose_module.DEEP else {})
+    if any(r.lens for r in rparts):
+        # `sub_questions` is then the retrieval parts, the index space of every
+        # per-part event: lens_of says which plan part (of plan_questions) each
+        # one is a lens of, or null.
+        extra["lens_of"] = [r.part if r.lens else None for r in rparts]
+        extra["plan_questions"] = [p.question for p in plan.parts]
     emit(on_event, "parts", sub_questions=list(sub_questions), **extra)
     emit(on_event, "step", name="split", state="done", part=None,
          detail=f"{len(parts)} part" + ("s" if len(parts) != 1 else ""))
@@ -684,14 +715,15 @@ async def answer_question(
                                         exclude_names=ctx.book_names,
                                         book_ids=ctx.scope.books)
             part_books = books_named(part, ctx.titles)
-            # A part that asks for a judgement ("who is the most ...") names no one
-            # to weigh: drop whoever the question excludes and add the graph's
-            # candidates for the part's books (judge.py).
+            # A lens about a set of people that names none: drop whoever the
+            # question excludes and add the graph's candidates for the part's
+            # books, ranked by beat variety (judge.py).
             judged = None
-            if judge_module.JUDGEMENTS and judge_module.is_evaluative(part):
+            if (index < len(rparts) and rparts[index].lens
+                    and judge_module.wants_candidates(seeds, named)):
                 judged = await judge_module.judge_seeds(
                     kuzu, ctx.names, part, question, seeds, named,
-                    part_books or ctx.scope.book_ids(), ctx.book_names)
+                    part_books or ctx.scope.book_ids(), ctx.book_names, conn=conn)
                 seeds = judged.seeds
             found_in[si] = (seeds, judged, part_books)
         shown = [s for si in running for s in found_in[si][0]]
@@ -814,15 +846,18 @@ async def answer_question(
     emit(on_event, "step", name="write", state="start", part=None, detail=None)
     # One synthesis call per part, over its own share (synthesize_parts).
     answer = None
+    # An interpretive or beyond part: its answer takes the interpretive shape.
+    shaped = ({"plan": plan.parts, "retrieval": rparts, "viewpoint": models.viewpoint}
+              if rparts and interpret_module.shaped([p.kind for p in plan.parts]) else {})
     try:
         if rows:
             answer = await _synthesize(question, evidence, models, mode="graph",
                                        template="+".join(templates), book_titles=titles,
-                                       books=books, sub_questions=sub_questions)
+                                       books=books, sub_questions=sub_questions, **shaped)
         else:
             answer = await _synthesize(question, evidence, models, mode="vector-fallback",
                                        note=GRAPH_EMPTY_NOTE, book_titles=titles,
-                                       books=books, sub_questions=sub_questions)
+                                       books=books, sub_questions=sub_questions, **shaped)
     finally:
         if check_steps is not None:
             check_steps.close(answer)

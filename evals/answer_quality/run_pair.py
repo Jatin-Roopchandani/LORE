@@ -61,10 +61,10 @@ ARM_SETTINGS = {
     # Labelled, checked readings of what actions show (write.READINGS).
     "readings": ("lore.query.write", "READINGS",
                  lambda v: v.lower() in ("1", "true", "yes", "on")),
-    # Candidates, claims rule and one judgement sentence for "who is the most ..."
-    # questions (lore/query/judge.py).
-    "judgements": ("lore.query.judge", "JUDGEMENTS",
-                   lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Kinds, lenses and the interpretive answer (reading, counter-case, limits):
+    # lore/query/decompose.py, interpret.py.
+    "interpretive": ("lore.query.decompose", "INTERPRETIVE",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
     # The story timeline of the question's entities (lore/query/timeline.py).
     "timeline": ("lore.query.timeline", "TIMELINE",
                  lambda v: v.lower() in ("1", "true", "yes", "on")),

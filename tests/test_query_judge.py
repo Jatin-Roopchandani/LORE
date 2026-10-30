@@ -1,11 +1,10 @@
-"""JUDGEMENTS: questions that ask for a judgement ("who is the most ...").
+"""Candidates for a lens about a set of people that names none (judge.py).
 
-Detection is a question-form rule; candidates come from the graph for the
-part's books; the claims step looks for what each candidate does, wants,
-conceals and changes; the writer may add ONE labelled judgement sentence,
-and the check judges it by its own test. With the switch off every prompt,
-schema and output is what it was before (tests/golden/judgements_off.json,
-dumped from 23602b6).
+Exclusions ("except X"), graph candidates, their beats and the beat-variety
+ranking are kept from the JUDGEMENTS work; detecting a judgement question by
+its wording is gone (decompose.py classifies each part, interpret.py answers
+it). The prompts and schemas that mode used to change are what they were
+before it existed (tests/golden/judgements_off.json, dumped from 23602b6).
 
 Every fixture uses invented books and names. No test reaches a model.
 """
@@ -16,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from lore.query import judge, synthesize as synth, timeline as tl, write as w
-from lore.query.models import Evidence, ProseSentence
-from lore.query.synthesize import Faithfulness, Judgement, Synthesis, _build_prompt, faithfulness_prompt, synthesize
-from lore.query.write import Prose, Sentence, assemble, compose_text, split_items, verify_prose, writer_prompt
+from lore.query import judge, timeline as tl, write as w
+from lore.query.synthesize import Faithfulness, _build_prompt, faithfulness_prompt
+from lore.query.models import Evidence
+from lore.query.write import Sentence, writer_prompt
 from tests.test_query_story import BOOKS, CS, PS, TITLES
 
 GOLDEN = json.loads((Path(__file__).parent / "golden" / "judgements_off.json").read_text())
@@ -27,54 +26,6 @@ Q = "Who is the most compelling figure in the Second Volume, except Rin?"
 PARTS = ["Who is the most compelling figure in the First Volume, except Rin?",
          "Who is the most compelling figure in the Second Volume, except Rin?"]
 EV = Evidence(edges=(), passages=PS, truncated=False)
-TEXTS = [c.text for c in CS]
-
-
-def S(text, claims, kind="fact"):
-    return Sentence(text=text, claims=claims, kind=kind)
-
-
-def J(text, claims):
-    return S(text, claims, kind="judgement")
-
-
-# ---- detection ------------------------------------------------------------------
-
-@pytest.mark.parametrize("question", [
-    "Who is the most complex character in Alpha Tale?",
-    "which character is the least trustworthy",
-    "Who do you think is the bravest of them?",
-    "What is the best decision Zed makes?",
-    "Who was the cleverest figure in Beta Tale, in your opinion?",
-    "Who is the most interesting person in the story except Zed and Yan?",
-    "Which character is most tragic?",
-    "Who is your favourite character?",
-    "who is the worst of the crew",
-    "Who deserves the most credit for the voyage?",
-    "Rank the crew from the most to the least loyal.",
-    "Would you say Zed is the most reliable narrator?",
-])
-def test_evaluative_questions_are_detected(question):
-    assert judge.is_evaluative(question)
-
-
-@pytest.mark.parametrize("question", [
-    "Who is Zed?",
-    "What did Zed do in chapter three?",
-    "How did Zed change over the story?",
-    "Which character appears most often?",
-    "Who arrived at the earliest hour?",
-    "Who was the priest at the harbour?",
-    "Most of the story takes place where?",
-    "What happened in the latest chapter?",
-    "Who is the oldest member of the crew?",
-    "Where is the forest the crew crosses?",
-    "Why did Yan leave the harbour?",
-    "Who is the most recent visitor?",
-    "",
-])
-def test_plain_questions_are_not_evaluative(question):
-    assert not judge.is_evaluative(question)
 
 
 # ---- exclusions -----------------------------------------------------------------
@@ -288,56 +239,72 @@ BOOKS_AB = {"ba": BookInfo(title="Alpha Tale", series="Cycle", series_index=1),
             "bb": BookInfo(title="Beta Tale", series="Cycle", series_index=2)}
 
 
-# ---- the claims step -------------------------------------------------------------
 
-def test_the_switch_defaults_on_and_the_rule_is_named():
-    assert judge.JUDGEMENTS is True
-    assert "what they do, want, conceal and change" in " ".join(synth._JUDGEMENT_RULE.split())
+# ---- the seeds of a lens ----------------------------------------------------------
 
-
-def test_an_evaluative_part_gets_the_claims_rule(monkeypatch):
-    prompt = _build_prompt(PARTS[0], EV, TITLES, part_of=Q, books=BOOKS)
-    assert synth._JUDGEMENT_RULE in prompt
-    plain = _build_prompt("Who is Rin?", EV, TITLES, books=BOOKS)
-    assert synth._JUDGEMENT_RULE not in plain
+def test_the_regex_detection_and_the_switch_are_gone():
+    assert not hasattr(judge, "is_evaluative") and not hasattr(judge, "JUDGEMENTS")
+    assert not hasattr(w, "judgement_asked") and not hasattr(w, "MAX_JUDGEMENTS")
 
 
-def test_with_the_switch_off_the_claims_prompt_is_what_it_was(monkeypatch):
-    monkeypatch.setattr(judge, "JUDGEMENTS", False)
-    assert _build_prompt(Q, EV, TITLES, books=BOOKS) == GOLDEN["claims_whole"]
-    assert _build_prompt(PARTS[0], EV, TITLES, part_of=Q, books=BOOKS) == GOLDEN["claims_part"]
+def test_a_lens_wants_candidates_when_it_names_nobody_and_is_about_people():
+    people = [_seed("a"), _seed("b"), _seed("c", kind="Place")]
+    assert judge.wants_candidates(people, [])
+    assert not judge.wants_candidates(people, [_seed("a", score=0.0)])
+    assert not judge.wants_candidates([_seed("p", kind="Place"), _seed("q", kind="Object"),
+                                       _seed("a")], [])
+    assert not judge.wants_candidates([], [])
 
 
-def test_a_plain_question_prompt_is_the_same_with_the_switch_on_or_off(monkeypatch):
-    on = _build_prompt("Who is Rin?", EV, TITLES, part_of="Who is Rin, and why?", books=BOOKS)
-    monkeypatch.setattr(judge, "JUDGEMENTS", False)
-    assert on == _build_prompt("Who is Rin?", EV, TITLES, part_of="Who is Rin, and why?", books=BOOKS)
+async def test_candidates_are_ranked_by_beat_variety_when_beats_exist(tmp_path):
+    from lore.beats.store import Beat, beat_id, save_beats
+    from lore.db.sqlite import open_db
+    k = _graph(tmp_path)
+    conn = open_db(tmp_path / "lore.db")
+    conn.execute("INSERT INTO books (id, title, file_path) VALUES ('ba', 'Alpha Tale', 'x')")
+    # Wex has the arc: every kind, many chapters. Yan, who spans more chapters in
+    # the text, only acts, in one chapter.
+    kinds = ("action", "decision", "feeling", "treatment", "change")
+    for i, kind in enumerate(kinds):
+        q = f"wex {i}"
+        save_beats(conn, "ba", i + 1, 0, [Beat(id=beat_id("ba", i + 1, ("Wex",), q), book_id="ba",
+                                              chapter_seq=i + 1, chunk_id=f"ba:{i + 1}:0",
+                                              entities=("Wex",), kind=kind, text="t", quote=q)])
+    for i in range(3):
+        q = f"yan {i}"
+        save_beats(conn, "ba", 1, 10 + i, [Beat(id=beat_id("ba", 1, ("Yan",), q), book_id="ba",
+                                               chapter_seq=1, chunk_id="ba:1:0",
+                                               entities=("Yan",), kind="action", text="t", quote=q)])
+    conn.execute("UPDATE beat_entities SET entity_id='ey' WHERE name='Yan'")
+    conn.execute("UPDATE beat_entities SET entity_id='ew' WHERE name='Wex'")
+    conn.commit()
+    plain = await judge.candidate_seeds(k, ["ba"], ["Zed"], frozenset(), limit=2)
+    ranked = await judge.candidate_seeds(k, ["ba"], ["Zed"], frozenset(), limit=2, conn=conn)
+    assert [s.id for s in plain] == ["ey", "ew"]
+    assert [s.id for s in ranked] == ["ew", "ey"]
+    assert judge.beat_variety(conn, "ew") == (5, 5) and judge.beat_variety(conn, "ey") == (1, 1)
+    conn.close()
+    k.close()
 
 
-# ---- the writer ------------------------------------------------------------------
-
-def test_the_writer_rule_is_added_for_an_evaluative_question_only():
-    prompt = writer_prompt(Q, PARTS, CS, PS, TITLES, books=BOOKS)
-    assert w._JUDGEMENT_RULE in prompt and '"judgement"' in prompt
-    plain = writer_prompt("How did Rin grow?", ["How did Rin grow?"], CS, PS, TITLES, books=BOOKS)
-    assert w._JUDGEMENT_RULE not in plain
-
-
-def test_any_evaluative_part_is_enough_for_the_writer_rule():
-    prompt = writer_prompt("Who is Rin and who is best?", ["Who is Rin?", "Who is the best sailor?"],
-                           CS, PS, TITLES, books=BOOKS)
-    assert w._JUDGEMENT_RULE in prompt
+def test_without_beats_the_given_order_stands(tmp_path):
+    conn = _beat_conn(tmp_path)
+    conn.execute("DROP TABLE beat_entities")
+    conn.execute("DROP TABLE beats")
+    conn.commit()
+    seeds = [_seed("ey"), _seed("ew")]
+    assert judge.rank_by_variety(conn, seeds) == seeds
+    assert judge.rank_by_variety(None, seeds) == seeds
+    conn.close()
 
 
-def test_the_writer_rule_needs_readings(monkeypatch):
-    monkeypatch.setattr(w, "READINGS", False)
-    assert w._JUDGEMENT_RULE not in writer_prompt(Q, PARTS, CS, PS, TITLES, books=BOOKS)
+# ---- what the removed switch used to change is what it was before ----------------
 
-
-def test_with_the_switch_off_every_prompt_and_schema_is_what_it_was(monkeypatch):
-    monkeypatch.setattr(judge, "JUDGEMENTS", False)
+def test_the_prompts_and_schemas_are_the_pre_judgement_ones():
     sents = [Sentence(text="Rin met a teacher.", claims=[1, 2]),
              Sentence(text="This suggests commitment.", claims=[2, 3], kind="reading")]
+    assert _build_prompt(Q, EV, TITLES, books=BOOKS) == GOLDEN["claims_whole"]
+    assert _build_prompt(PARTS[0], EV, TITLES, part_of=Q, books=BOOKS) == GOLDEN["claims_part"]
     assert writer_prompt(Q, PARTS, CS, PS, TITLES, books=BOOKS) == GOLDEN["writer"]
     assert writer_prompt(Q, [], CS, PS, TITLES, books=BOOKS) == GOLDEN["writer_one_part"]
     assert faithfulness_prompt(CS, PS, TITLES, books=BOOKS) == GOLDEN["check_plain"]
@@ -346,240 +313,15 @@ def test_with_the_switch_off_every_prompt_and_schema_is_what_it_was(monkeypatch)
     assert json.dumps(Faithfulness.model_json_schema()) == GOLDEN["schema_faithfulness"]
 
 
-def test_the_schemas_are_unchanged_even_with_the_switch_on():
-    assert json.dumps(w.Prose.model_json_schema()) == GOLDEN["schema_prose"]
-    assert json.dumps(Faithfulness.model_json_schema()) == GOLDEN["schema_faithfulness"]
+def test_a_stray_judgement_kind_is_a_reading():
+    assert w._kind(Sentence(text="x", claims=[1], kind="judgement")) == "reading"
+    assert w._kind(Sentence(text="x", claims=[1], kind="reading")) == "reading"
+    assert w._kind(Sentence(text="x", claims=[1], kind="counter")) == "fact"  # not asked for
 
 
-def test_a_judgement_kind_is_kept_only_when_judgements_are_asked_for(monkeypatch):
-    assert w._kind(J("x", [1]), allow_judgement=True) == "judgement"
-    assert w._kind(J("x", [1]), allow_judgement=False) == "fact"
-    assert w._kind(S("x", [1], "reading"), allow_judgement=False) == "reading"
-
-
-async def test_write_answer_keeps_a_judgement_for_an_evaluative_question_only():
-    prose = Prose(sentences=[S("Rin trained.", [1]), J("Arguably, Rin stands out.", [1, 2])])
-
-    async def generate(prompt, schema):
-        return prose
-    kept = await w.write_answer(Q, PARTS, CS, PS, generate, book_titles=TITLES, books=BOOKS)
-    assert [s.kind for s in kept.sentences] == ["fact", "judgement"]
-    plain = await w.write_answer("How did Rin grow?", [], CS, PS, generate, book_titles=TITLES, books=BOOKS)
-    assert [s.kind for s in plain.sentences] == ["fact", "fact"]
-
-
-# ---- the code guards -------------------------------------------------------------
-
-def _verified(items):
-    return verify_prose(Prose(sentences=items), 3, TEXTS)
-
-
-def test_a_judgement_is_never_split():
-    items = split_items(Prose(sentences=[J("Arguably, Rin stands out. It is close.", [1, 2])]), TEXTS)
-    assert len(items) == 1 and items[0].kind == "judgement"
-
-
-def test_a_worded_judgement_citing_two_facts_survives():
-    out = _verified([S("Rin trained.", [1]), J("A strong case can be made for Rin.", [1, 2])])
-    assert [s.kind for s in out] == ["fact", "judgement"]
-
-
-@pytest.mark.parametrize("text", [
-    "Rin is the most complex.",            # plain fact: no judgement wording
-    "Rin trained. Rin met a teacher.",     # two sentences
-])
-def test_an_unworded_or_multi_sentence_judgement_is_dropped(text):
-    out = _verified([S("Rin trained.", [1]), J(text, [1, 2])])
-    assert [s.kind for s in out] == ["fact"]
-
-
-def test_a_judgement_on_one_fact_is_dropped():
-    out = _verified([S("Rin trained.", [1]), J("Arguably, Rin stands out.", [1, 1])])
-    assert [s.kind for s in out] == ["fact"]
-
-
-def test_only_one_judgement_is_kept():
-    out = _verified([S("Rin trained.", [1]), J("Arguably, Rin stands out.", [1, 2]),
-                     J("Of these, Rin stands out most.", [2, 3])])
-    assert [s.kind for s in out].count("judgement") == 1
-    assert out[1].text == "Arguably, Rin stands out."
-
-
-def test_judgement_wording_variants_are_accepted():
-    for text in ("Of these, Rin stands out because of the training.",
-                 "One could argue that Rin is the strongest case.",
-                 "Rin seems the strongest case.",
-                 "On balance, the case for Rin is strongest."):
-        assert [s.kind for s in _verified([S("Rin trained.", [1]), J(text, [1, 2])])] == ["fact", "judgement"], text
-
-
-def test_prose_of_judgement_and_readings_alone_falls_back():
-    items = [J("Arguably, Rin stands out.", [1, 2])]
-    assert assemble(items, 1, [True] * 3, [True], [1, 2, 3]) is None
-    mixed = [S("Rin trained.", [1]), J("Arguably, Rin stands out.", [1, 2])]
-    out = assemble(mixed, 2, [True] * 3, [True, True], [1, 2, 3])
-    assert [s.kind for s in out] == ["fact", "judgement"]
-
-
-def test_kind_judgement_reaches_the_prose_sentence_and_the_text():
-    out = assemble([S("Rin trained.", [1]), J("Arguably, Rin stands out.", [1, 2])], 2, [True] * 3,
-                   [True, True], [1, 2, 3])
-    text = compose_text(out)
-    assert "Arguably, Rin stands out. [1][2]" in text
-    assert isinstance(out[1], ProseSentence) and out[1].kind == "judgement"
-
-
-# ---- the check -------------------------------------------------------------------
-
-def test_the_check_labels_and_tests_a_judgement():
-    prompt = faithfulness_prompt(CS, PS, TITLES, [S("Rin trained.", [1]), J("Arguably, Rin stands out.", [1, 2])],
-                                 books=BOOKS)
-    assert "(judgement)" in prompt and synth._JUDGEMENTS_BLOCK.split("{")[0].strip() in prompt
-    assert "(reading)" not in prompt
-
-
-def test_the_check_prompt_of_facts_alone_is_unchanged():
-    facts = [S("Rin trained.", [1])]
-    assert "judgement" not in faithfulness_prompt(CS, PS, TITLES, facts, books=BOOKS).lower().replace(
-        "judgements", "")
-
-
-def test_the_check_gives_the_reading_test_only_with_a_reading():
-    prompt = faithfulness_prompt(CS, PS, TITLES, [J("Arguably, Rin stands out.", [1, 2])], books=BOOKS)
-    assert "interprets what its cited claims show" not in prompt
-
-
-# ---- end to end through synthesize -----------------------------------------------
-
-def _j(n, v):
-    return Judgement(claim=n, verdict=v, reason="r")
-
-
-async def _ask(question, prose, sentence_verdicts, prompts=None):
-    async def generate(prompt, schema):
-        return Synthesis(can_answer=True, claims=[
-            {"text": c.text, "passage": c.passage, "quote": c.quote} for c in CS])
-
-    async def write(prompt, schema):
-        return prose
-
-    async def check(prompt, schema):
-        if prompts is not None:
-            prompts.append(prompt)
-        return Faithfulness(judgements=[_j(i, "supported") for i in (1, 2, 3)],
-                            sentence_judgements=[_j(i + 1, v) for i, v in enumerate(sentence_verdicts)])
-    evidence = Evidence(edges=(), passages=PS[:3], truncated=False)
-    return await synthesize(question, evidence, generate, mode="graph", check=check, write=write,
-                            book_titles=TITLES, books=BOOKS)
-
-
-async def test_a_supported_judgement_reaches_the_answer_marked():
-    prose = Prose(sentences=[S("Rin met a teacher.", [2]), S("Rin trained with the sword.", [3]),
-                             J("Arguably, Rin's path stands out.", [2, 3])])
-    prompts = []
-    a = await _ask("Who is the most dedicated figure?", prose, ("supported",) * 3, prompts)
-    assert a.answer_style == "prose"
-    assert [s.kind for s in a.prose] == ["fact", "fact", "judgement"]
-    assert "Arguably, Rin's path stands out." in a.text
-    assert "(judgement)" in prompts[0]
-
-
-async def test_an_unsupported_judgement_is_removed_and_the_facts_stay():
-    prose = Prose(sentences=[S("Rin met a teacher.", [2]), S("Rin trained with the sword.", [3]),
-                             J("Arguably, Rin's path stands out.", [2, 3])])
-    a = await _ask("Who is the most dedicated figure?", prose, ("supported", "supported", "not_supported"))
-    assert [s.kind for s in a.prose] == ["fact", "fact"]
-
-
-async def test_a_judgement_kind_on_a_plain_question_is_just_a_fact_and_is_checked_as_one():
-    prose = Prose(sentences=[S("Rin met a teacher.", [2]), S("Rin trained with the sword.", [3]),
-                             J("Arguably, Rin's path stands out.", [2, 3])])
-    prompts = []
-    a = await _ask("How did Rin change?", prose, ("supported", "supported", "not_supported"), prompts)
-    assert [s.kind for s in a.prose] == ["fact", "fact"]
-    assert "(judgement)" not in prompts[0]
-
-
-# ---- through the agent -----------------------------------------------------------
-
-from lore.extract.embed import QUERY_PREFIX  # noqa: E402
-from lore.query.agent import answer_question  # noqa: E402
-from lore.query.select import TemplateChoice  # noqa: E402
-from tests.test_query_agent import A, Q as QV, VectorLance, _scripted  # noqa: E402
-
-EVAL_Q = "Who is the most complex character in Alpha Tale, except Zed Quill?"
-
-
-async def _agent(tmp_path, *, question=EVAL_Q):
-    from lore.beats.store import Beat, beat_id, save_beats
-    k = _graph(tmp_path)
-    conn = _beat_conn(tmp_path)
-    # Alpha Tale has six chapters of text; the beats of _beat_conn (chapters 1-10) cover them.
-    for ch in range(1, 11):
-        conn.execute("INSERT INTO chunks (id, book_id, chapter_seq, scene_seq, seq, text)"
-                     " VALUES (?, 'ba', ?, 0, 0, ?)", (f"ba:{ch}:0", ch, f"MARK{ch} the crew sailed on. " * 5))
-    # Zed has beats too: they must never reach the answer.
-    for ch in (1, 5, 9):
-        quote = f"zed quote {ch}"
-        save_beats(conn, "ba", ch, 2, [Beat(id=beat_id("ba", ch, ("Zed Quill",), quote), book_id="ba",
-                                            chapter_seq=ch, chunk_id=f"ba:{ch}:0", entities=("Zed Quill",),
-                                            kind="action", text=f"Zed Quill acts in {ch}.", quote=quote)])
-    conn.execute("UPDATE beat_entities SET entity_id='ez' WHERE name='Zed Quill'")
-    conn.commit()
-    vectors = {f"ba:{ch}:0": [0.9, 0.01 * ch, 0.0] for ch in range(1, 11)}
-    row = {"chunk_id": "ba:1:0", "entity_ids": ["ev"], "_distance": 0.1, "book_id": "ba",
-           "chapter_seq": 1, "text": ""}
-    lance = VectorLance({tuple(QV): [row]}, vectors)
-    models, calls = _scripted({QUERY_PREFIX + question: QV}, [question],
-                              [TemplateChoice(template="neighbours", entities=[1])],
-                              Synthesis(claims=[], can_answer=False))
-    answer = await answer_question(conn, k, lance, question, models)
-    conn.close()
-    k.close()
-    return answer, calls
-
-
-async def test_an_evaluative_part_starts_from_the_graphs_candidates(tmp_path):
-    answer, calls = await _agent(tmp_path)
-    ids = [s.id for s in answer.seeds]
-    assert ids[:2] == ["ey", "ew"] and "ez" not in ids  # Yan, Wex; Zed is excluded
-    prompt = calls["synthesize"][0]
-    assert synth._JUDGEMENT_RULE in prompt
-    # Beats of the candidates (a few each, spread), and none of the excluded person's.
-    assert "Yan acts in" in prompt and "Wex acts in" in prompt and "Zed Quill acts" not in prompt
-    for subject in ("Yan", "Wex"):
-        assert sum(f"{subject} acts in" in line for line in prompt.splitlines()) == tl.BEATS_PER_CANDIDATE
-
-
-async def test_with_the_switch_off_the_part_is_seeded_as_before(tmp_path, monkeypatch):
-    monkeypatch.setattr(judge, "JUDGEMENTS", False)
-    answer, calls = await _agent(tmp_path)
-    assert [s.id for s in answer.seeds][0] != "ey"
-    assert synth._JUDGEMENT_RULE not in calls["synthesize"][0]
-
-
-async def test_a_plain_question_is_seeded_as_before(tmp_path):
-    answer, calls = await _agent(tmp_path, question="Who is Vo Pell in Alpha Tale?")
-    assert synth._JUDGEMENT_RULE not in calls["synthesize"][0]
-    assert not any(s.id == "ey" for s in answer.seeds[:1])
-
-
-# ---- the run_pair arm --------------------------------------------------------------
-
-def test_there_is_a_judgements_arm():
-    import sys
-    sys.path.insert(0, str(Path(__file__).parents[1] / "evals" / "answer_quality"))
-    import run_pair
-    assert run_pair.ARM_SETTINGS["judgements"][:2] == ("lore.query.judge", "JUDGEMENTS")
-    assert run_pair.parse_arm("judgements=false") == {("lore.query.judge", "JUDGEMENTS"): False}
-
-
-def test_the_code_and_prompts_name_no_character_book_or_genre():
-    """Detection and candidate code must hold for any book a user uploads."""
+def test_the_candidate_code_names_no_character_book_or_genre():
     import re
     source = (Path(__file__).parents[1] / "lore" / "query" / "judge.py").read_text().lower()
     banned = r"\b(holmes|watson|sherlock|small|hope|drebber|darcy|bennet|wizard|dragon|magic|kingdom|" \
              r"elf|elves|quest|sword|detective|murder|crime|villain|treasure|mormon)\b"
     assert not re.findall(banned, source)
-    text = "\n".join((synth._JUDGEMENT_RULE, synth._JUDGEMENTS_BLOCK, w._JUDGEMENT_RULE)).lower()
-    assert not re.findall(banned, text)

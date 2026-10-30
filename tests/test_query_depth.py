@@ -67,7 +67,12 @@ def config(tmp_path):
 
 async def test_the_parts_event_carries_kinds_lenses_and_the_planned_depth(config) -> None:
     event, calls = await parts_event(config, INTERPRETIVE_PLAN)
-    assert event["sub_questions"] == ["Who is Zed Quill?", "Was Zed Quill right?"]
+    # sub_questions are the retrieval parts: a part, or the lenses of an
+    # interpretive part (which has no retrieval of its own).
+    assert event["sub_questions"] == ["Who is Zed Quill?", "What did Zed Quill do?",
+                                      "Why did Zed Quill do it?"]
+    assert event["lens_of"] == [None, 1, 1]
+    assert event["plan_questions"] == ["Who is Zed Quill?", "Was Zed Quill right?"]
     assert event["kinds"] == ["factual", "interpretive"]
     assert event["lenses"] == [[], ["What did Zed Quill do?", "Why did Zed Quill do it?"]]
     assert event["depth"] == "deep"

@@ -15,7 +15,7 @@ from typing import Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel, ConfigDict, create_model
 
-from lore.query import judge
+from lore.query import interpret
 from lore.query.models import BookInfo, Claim, Passage, ProseSentence
 from lore.query.position import order_passages
 
@@ -41,7 +41,9 @@ STORY_ORDER = True
 # their own test in the check, guarded by code (`limit_readings`), and shown
 # distinctly. It lives in the story writer and check, so it needs STORY_ORDER
 # (`readings_on`). Off gives every prompt, schema and output as before, byte
-# for byte.
+# for byte. An answer with an interpretive part (lore/query/interpret.py,
+# INTERPRETIVE) has its own shape and guards in place of this rule; this is
+# what every other answer gets.
 READINGS = True
 MAX_READINGS = 2
 MIN_READING_CLAIMS = 2
@@ -49,26 +51,6 @@ MIN_READING_CLAIMS = 2
 
 def readings_on() -> bool:
     return READINGS and STORY_ORDER
-
-
-# JUDGEMENTS (lore/query/judge.py): for a question that asks for a judgement
-# ("who is the most ..."), the writer may add ONE sentence of kind
-# "judgement" -- a third kind beside "fact" and "reading", with its own rule,
-# guard and check test. It is a separate kind, not a reading, because a
-# reading interprets what a few facts show about one thing, while a judgement
-# weighs several people and names the strongest case: different wording,
-# different citation need (facts about more than one person), different check
-# test, and the limits (two readings, one judgement) must not trade off.
-# It needs the `kind` field, so it needs readings_on().
-MAX_JUDGEMENTS = 1
-MIN_JUDGEMENT_CLAIMS = 2
-
-
-def judgement_asked(question: str, sub_questions: Sequence[str] = ()) -> bool:
-    """Whether a judgement sentence may be asked for and kept: the switch is
-    on, kinds exist, and the question or one of its parts is evaluative."""
-    return (judge.JUDGEMENTS and readings_on()
-            and any(judge.is_evaluative(t) for t in (question, *sub_questions)))
 
 
 # The sentence as the model was asked for it before READINGS (and still is
@@ -81,7 +63,8 @@ _PlainSentence = create_model(
 
 class Sentence(_PlainSentence):
     # "fact": stated by the cited facts. "reading": an interpretation of what
-    # they show together (see READINGS).
+    # they show together (see READINGS); "counter": the strongest case for the
+    # other side of a reading (interpret.py). Code adds "limit" sentences.
     kind: str = "fact"
 
 
@@ -244,25 +227,6 @@ _READINGS_RULE = """- Each sentence has a `kind`: "fact" (the default) or "readi
 """.format(max_readings=MAX_READINGS, min_claims=MIN_READING_CLAIMS)
 
 
-# The judgement rule, added to the story writer prompt after the readings rule
-# only for an evaluative question under JUDGEMENTS.
-_JUDGEMENT_RULE = """- This question asks for a judgement. In addition to facts and readings, you
-  may add ONE sentence of kind "judgement" that compares the people the facts
-  cover and names the strongest case among them. The sentences around it give
-  the cited evidence for each person it compares. A judgement must:
-  - be worded visibly as a judgement, for example "a strong case can be made
-    for ...", "arguably, ..." or "of these, ... stands out because ...";
-  - list at least {min_claims} facts it rests on, in `claims`, and where the
-    facts allow, facts about more than one person;
-  - give its reasons only from those facts, never adding an event, name,
-    number or detail they do not contain;
-  - never say or imply that the book itself calls anyone this unless a fact
-    says so.
-  A judgement is a single sentence. At most one judgement; every other
-  sentence is a fact or a reading.
-""".format(min_claims=MIN_JUDGEMENT_CLAIMS)
-
-
 def _title(book_id: str, book_titles: dict[str, str] | None) -> str:
     return (book_titles or {}).get(book_id) or book_id
 
@@ -277,15 +241,26 @@ def book_infos(book_titles: dict[str, str] | None,
 
 
 def story_plan(claims: Sequence[Claim], passages: Iterable[Passage],
-               book_titles: dict[str, str] | None, books: dict[str, BookInfo] | None):
+               book_titles: dict[str, str] | None, books: dict[str, BookInfo] | None,
+               groups: Sequence[Sequence[int]] | None = None):
     """(claims' indices in story order, each claim's position or None, the
     unknown-order line). Claims are ordered by their passage's position; one
-    whose passage is not among `passages` goes last, in its given order."""
+    whose passage is not among `passages` goes last, in its given order.
+
+    With `groups` (lists of claim indices, 0-based) the claims are listed group
+    by group, each in story order: a claim goes in the first group that has it,
+    and any in no group come last."""
     by_number = {p.n: p for p in passages}
     cited = [by_number[n] for n in dict.fromkeys(c.passage for c in claims) if n in by_number]
     order = order_passages(cited, book_infos(book_titles, books))
     rank = {pos.n: i for i, pos in enumerate(order.ordered)}
     indices = sorted(range(len(claims)), key=lambda i: (rank.get(claims[i].passage, len(rank)), i))
+    if groups:
+        placed: list[int] = []
+        for group in groups:
+            members = set(group)
+            placed += [i for i in indices if i in members and i not in placed]
+        indices = placed + [i for i in indices if i not in placed]
     return indices, [order.positions.get(c.passage) for c in claims], order.note()
 
 
@@ -296,20 +271,32 @@ def part_texts(question: str, sub_questions: Sequence[str]) -> list[str]:
 
 def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[Claim],
                   passages: Iterable[Passage], book_titles: dict[str, str] | None,
-                  books: dict[str, BookInfo] | None = None) -> str:
+                  books: dict[str, BookInfo] | None = None,
+                  shape: "interpret.Shape | None" = None) -> str:
+    """`shape`: the interpretive answer's shape (interpret.py), only with
+    STORY_ORDER. The facts are then listed under an "Evidence for:" heading per
+    lens, and the shape's rule and the viewpoint replace the readings rule."""
     passages = list(passages)
     parts = "\n".join(f"{i}. {s}" for i, s in enumerate(part_texts(question, sub_questions), start=1))
     if STORY_ORDER:
-        indices, positions, note = story_plan(claims, passages, book_titles, books)
-        lines = []
+        groups = shape.groups() if shape is not None else []
+        indices, positions, note = story_plan(claims, passages, book_titles, books,
+                                              [members for _, members in groups] or None)
+        heading = {k: question_of for question_of, members in reversed(groups) for k in members}
+        lines, last = [], None
         for shown, i in enumerate(indices, start=1):
+            if heading and heading.get(i) != last and i in heading:
+                last = heading[i]
+                lines.append(f"Evidence for: {last}")
             where = f" ({positions[i].label()})" if positions[i] else ""
             lines.append(f"{shown}. {claims[i].text.strip()}{where}\n   quote: {claims[i].quote.strip()}")
+        if shape is not None:
+            parts = "\n".join(interpret.part_labels(shape))
+            rules = interpret.writer_rule(shape)
+        else:
+            rules = _READINGS_RULE if readings_on() else ""
         return STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
-                                          order_note=note,
-                                          readings=(_READINGS_RULE if readings_on() else "")
-                                          + (_JUDGEMENT_RULE if judgement_asked(question, sub_questions)
-                                             else ""))
+                                          order_note=note, readings=rules)
     by_number = {p.n: p for p in passages}
     lines = []
     for number, claim in enumerate(claims, start=1):
@@ -319,19 +306,21 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
     return WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines))
 
 
-def _kind(sentence, allow_judgement: bool = False) -> str:
-    """"reading", or "judgement" when one is asked for, only when the writer
-    said so; anything else is a fact."""
+def _kind(sentence, shape: "interpret.Shape | None" = None) -> str:
+    """"reading" (a stray "judgement" is one: it folded into reading), or
+    "counter" when the answer has an interpretive part, only when the writer
+    said so; anything else is a fact. "limit" is never the writer's."""
     kind = str(getattr(sentence, "kind", "")).strip().lower()
-    if kind == "judgement" and allow_judgement:
-        return "judgement"
-    return "reading" if kind == "reading" else "fact"
+    if kind in ("reading", "judgement"):
+        return "reading"
+    return "counter" if kind == "counter" and shape is not None and shape.interpretive else "fact"
 
 
 async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequence[Claim],
                        passages: Iterable[Passage], generate: Generate, *,
                        book_titles: dict[str, str] | None = None,
-                       books: dict[str, BookInfo] | None = None) -> Prose | None:
+                       books: dict[str, BookInfo] | None = None,
+                       shape: "interpret.Shape | None" = None) -> Prose | None:
     """The writer's prose, or None on any failure: a failed extra step must
     never cost the user the checked claims (they are the fallback).
 
@@ -341,25 +330,27 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     outside the list becomes 0, which `verify_prose` drops with its
     sentence, as it drops any out-of-range citation."""
     passages = list(passages)
+    kinds = readings_on() or shape is not None
     try:
         reply = await generate(
-            writer_prompt(question, sub_questions, claims, passages, book_titles, books),
-            (Prose if readings_on() else _StoryProse) if STORY_ORDER else _PlainProse)
+            writer_prompt(question, sub_questions, claims, passages, book_titles, books, shape),
+            (Prose if kinds else _StoryProse) if STORY_ORDER else _PlainProse)
     except Exception:  # noqa: BLE001 -- see the docstring
         return None
     if not (isinstance(reply, _PlainProse) and reply.sentences):
         return None
     back = None
     if STORY_ORDER:
-        indices = story_plan(claims, passages, book_titles, books)[0]
+        groups = shape.groups() if shape is not None else []
+        indices = story_plan(claims, passages, book_titles, books,
+                             [members for _, members in groups] or None)[0]
         back = {shown: i + 1 for shown, i in enumerate(indices, start=1)}
     # Every sentence leaves here as a `Sentence` with a kind; a reply asked
     # for without readings (or a model that gave none) is all facts.
-    allow = judgement_asked(question, sub_questions)
     sentences = [
         Sentence(text=s.text, new_paragraph=s.new_paragraph,
                  claims=[back.get(k, 0) for k in s.claims] if back else list(s.claims),
-                 kind=_kind(s, allow) if readings_on() else "fact")
+                 kind=_kind(s, shape) if kinds else "fact")
         for s in reply.sentences]
     return Prose(sentences=sentences, unanswered=reply.unanswered, gaps=getattr(reply, "gaps", []))
 
@@ -423,10 +414,10 @@ def split_items(prose: Prose, claim_texts: Sequence[str] | None = None) -> list[
         if _FLAG_IN_TEXT.match(text):
             text, flag = _FLAG_IN_TEXT.sub("", text), True
         pieces = [p.strip() for p in _SENTENCE_END.split(text.strip()) if p.strip()]
-        if readings_on() and getattr(item, "kind", "fact") in ("reading", "judgement"):
-            # Never split a reading or judgement: its pieces would lose the
-            # hedge and the citations that make it one. `limit_readings` drops
-            # one that is more than a single sentence.
+        if (readings_on() or interpret.active()) and getattr(item, "kind", "fact") == "reading":
+            # Never split a reading: its pieces would lose the hedge and the
+            # citations that make it one. `limit_readings` drops one that is
+            # more than a single sentence.
             out.append(item.model_copy(update={"text": text.strip(), "new_paragraph": flag}))
             continue
         narrow = claim_texts is not None and len(pieces) > 1 and all(
@@ -439,10 +430,12 @@ def split_items(prose: Prose, claim_texts: Sequence[str] | None = None) -> list[
 
 
 def verify_prose(prose: Prose, n_claims: int,
-                 claim_texts: Sequence[str] | None = None) -> list[Sentence]:
+                 claim_texts: Sequence[str] | None = None,
+                 shape: "interpret.Shape | None" = None) -> list[Sentence]:
     """Sentences (one per item, see split_items) that cite at least one
     claim, all within 1..n_claims, with stray citation residue stripped from
-    the text (a sentence left with no words is dropped)."""
+    the text (a sentence left with no words is dropped). With the shape of an
+    interpretive answer, its guards apply (interpret.limit_interpretive)."""
     out = []
     for s in split_items(prose, claim_texts):
         if not (s.claims and all(1 <= k <= n_claims for k in s.claims)):
@@ -450,6 +443,8 @@ def verify_prose(prose: Prose, n_claims: int,
         text = strip_residue(s.text)
         if re.search(r"\w", text):
             out.append(s.model_copy(update={"text": text}))
+    if shape is not None and shape.interpretive:
+        return interpret.limit_interpretive(out, shape)
     return limit_readings(out) if readings_on() else out
 
 
@@ -460,40 +455,21 @@ _HEDGE = re.compile(r"\b(?:suggest|show|seem|appear|reflect|reveal|hint)(?:s|ed|
                     r"|\bindicat(?:e|es|ed|ing)\b|\bimpl(?:y|ies|ied|ying)\b", re.I)
 
 
-# A judgement is worded visibly as one: any reading hedge above, or one of
-# these stems ("a strong case", "arguably", "stands out", "of these", "one
-# could argue", "on balance", "perhaps").
-_JUDGE_WORDING = re.compile(
-    r"\barguabl[ye]\b|\b(?:a|the)\s+(?:\w+\s+)?case\b.{0,30}\b(?:made|argued|for)\b"
-    r"|\b(?:can|could|might|may)\s+be\s+(?:made|argued)\b|\bone\s+(?:could|might|can)\s+argue\b"
-    r"|\bstands?\s+out\b|\bof\s+(?:these|them)\b|\bon\s+balance\b|\bperhaps\b"
-    r"|\bi\s+would\s+say\b", re.I)
-
-
 def limit_readings(sentences: Sequence[Sentence]) -> list[Sentence]:
-    """The sentences with the readings and judgements that break a rule
-    removed: one with no hedge word (a judgement: no hedge or judgement
-    wording), one citing fewer than MIN_READING_CLAIMS (MIN_JUDGEMENT_CLAIMS)
-    distinct claims, one that is more than a single sentence, and any past
-    the first MAX_READINGS readings or the first MAX_JUDGEMENTS judgement.
-    Facts are never touched."""
-    out, kept, judged = [], 0, 0
+    """The sentences with the readings that break a rule removed: one with no
+    hedge word, one citing fewer than MIN_READING_CLAIMS distinct claims, one
+    that is more than a single sentence, and any past the first MAX_READINGS.
+    Facts are never touched. (An interpretive answer has its own guards:
+    interpret.limit_interpretive.)"""
+    out, kept = [], 0
     for s in sentences:
-        kind = getattr(s, "kind", "fact")
-        if kind in ("reading", "judgement"):
+        if getattr(s, "kind", "fact") == "reading":
             single = len([p for p in _SENTENCE_END.split(s.text.strip()) if p.strip()]) == 1
-            if kind == "reading":
-                sound = (bool(_HEDGE.search(s.text))
-                         and len(set(s.claims)) >= MIN_READING_CLAIMS and single)
-                if not sound or kept >= MAX_READINGS:
-                    continue
-                kept += 1
-            else:
-                sound = (bool(_HEDGE.search(s.text) or _JUDGE_WORDING.search(s.text))
-                         and len(set(s.claims)) >= MIN_JUDGEMENT_CLAIMS and single)
-                if not sound or judged >= MAX_JUDGEMENTS:
-                    continue
-                judged += 1
+            sound = (bool(_HEDGE.search(s.text))
+                     and len(set(s.claims)) >= MIN_READING_CLAIMS and single)
+            if not sound or kept >= MAX_READINGS:
+                continue
+            kept += 1
         out.append(s)
     return out
 
@@ -544,7 +520,7 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
     # One unsupported sentence is removed; more falls back -- except that a
     # long answer may lose one in five (amended 2026-10-28 with the longer
     # answers: one weak clause in ten sentences should not cost the prose).
-    # Only facts count: a reading or judgement is an optional extra, and one
+    # Only facts count: a reading or counter-case is an optional extra, and one
     # the check rejects is simply dropped (2026-10-29).
     facts = [ok for s, ok in standing if getattr(s, "kind", "fact") == "fact"]
     if sum(not ok for ok in facts) > max(1, len(facts) // 5):
@@ -553,7 +529,7 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
     if not kept or 2 * len(kept) < written:
         return None
     if all(getattr(s, "kind", "fact") != "fact" for s in kept):
-        return None  # prose of readings and judgements alone: the facts are what it rests on
+        return None  # prose of interpretation alone: the facts are what it rests on
     return tuple(
         ProseSentence(text=s.text.strip(),
                       claims=tuple(survivors_index[k] for k in s.claims),
@@ -594,7 +570,9 @@ def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = (),
     for s in prose:
         if s.new_paragraph and paragraphs[-1]:
             paragraphs.append([])
-        paragraphs[-1].append(s.text + " " + "".join(f"[{n}]" for n in s.passages))
+        # A sentence code wrote (kind "limit") cites nothing.
+        cites = "".join(f"[{n}]" for n in s.passages)
+        paragraphs[-1].append(s.text + (" " + cites if cites or s.kind != "limit" else ""))
     text = "\n\n".join(" ".join(p) for p in paragraphs)
     closing = [*unanswered, *(g for g in gaps if g not in unanswered)]
     if closing:

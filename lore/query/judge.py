@@ -1,75 +1,46 @@
-"""Judgement questions: "who is the most ...", "which is best", "who do you
-think ...". They ask for a verdict, not a fact, and nothing in the question
-names the people to weigh, so retrieval started from near-random minor
-characters and the answer had nothing to compare.
+"""Candidates for a lens about a set of people that names none.
 
-With JUDGEMENTS on, an evaluative part of a question:
-  - is recognised by its form alone (`is_evaluative`: superlatives and
-    opinion phrases; no word of any book or genre);
-  - gets candidates from the graph when it names few characters
-    (`candidate_seeds`): the characters whose mentions span the most
-    chapters of the part's books, minus whoever the question excludes
-    ("except X and Y", `exclusions`, `is_excluded`);
-  - gets 2-3 beats per candidate spread over the story
-    (timeline.candidate_timeline);
-  - is read by the claims step for what each candidate does, wants,
-    conceals and changes (synthesize._JUDGEMENT_RULE);
-  - may close the written answer with ONE labelled judgement sentence
-    (write._JUDGEMENT_RULE), judged by its own test in the check.
+An interpretive question such as a comparison or an evaluation ("who is the
+most ...") often has a lens about people in general, and nothing in it names
+the people to weigh, so retrieval started from near-random minor characters.
+For such a lens (`wants_candidates`: it names no entity of its own, and the
+entities nearest to it are mostly characters) the agent:
+  - drops whoever the question excludes ("except X and Y", `exclusions`,
+    `is_excluded`);
+  - adds candidates from the graph (`candidate_seeds`): the characters whose
+    mentions span the most chapters of the part's books, re-ranked by beat
+    variety (`rank_by_variety`): characters with many kinds of moment, in
+    many chapters, come before characters who are merely present;
+  - gives each candidate a few beats spread over the story
+    (timeline.candidate_timeline).
 
-Off, every prompt, schema and output is what it was before.
+This module no longer decides whether a question asks for a judgement:
+decompose.py classifies each part, and the interpretive answer (interpret.py)
+replaces the old judgement sentence with a reading. Nothing here looks at the
+wording of a question except the exclusion phrases, and nothing refers to any
+library.
 """
 from __future__ import annotations
 
 import re
+import sqlite3
 from dataclasses import dataclass, field
 from typing import Iterable, Sequence
 
+from lore.beats.store import beats_for_entities
 from lore.query.models import SeedEntity
 from lore.query.seed import NameIndex, canonical_ids, named_entity_ids, named_seeds
 from lore.resolve.normalize import normalize_name
 
-JUDGEMENTS = True
-# Candidates gathered for an evaluative part, and the number of named
-# characters at or above which the question has already chosen its people.
+# Candidates gathered for a lens, and the number of named characters at or
+# above which the question has already chosen its people.
 JUDGE_CANDIDATES = 5
 FEW_NAMED = 2
 # Rows read before exclusions and book-title nodes are removed.
 _OVERFETCH = 40
-
-# --- detection --------------------------------------------------------------
-
-# "most"/"least" followed by one of these is a quantity or a frequency, not
-# an opinion ("most of the story", "appears most often", "the most recent").
-_QUANTITY = (r"of|often|frequently|commonly|usually|typically|recent|recently|many|much|money|"
-             r"time|times|part|parts|people|days|years|chapters|scenes|number|mentions|words|"
-             r"pages|books|likely|probably|certainly|everyone|everybody")
-_MOST = rf"\b(?:most|least)\b(?!\s+(?:{_QUANTITY})\b)\s+[a-z]"
-_BEST = r"\b(?:best|worst)\b"
-# "the bravest": a superlative in -est after "the". Position, time and
-# ordinary nouns that end in -est are not opinions.
-_EST_NOT = frozenset("""earliest latest nearest farthest furthest eldest oldest youngest forest priest
-harvest request interest honest modest contest protest suggest invest arrest digest tempest behest
-bequest unrest northwest southwest northeast southeast manifest""".split())
-_EST = re.compile(r"\bthe\s+([a-z]{3,}est)\b")
-_OPINION = re.compile(
-    r"\b(?:do|would|did|will|can|could)\s+you\s+(?:think|say|consider|believe|reckon|feel|judge)\b"
-    r"|\bin\s+your\s+(?:opinion|view|judg(?:e)?ment|eyes|book)\b"
-    r"|\byour\s+(?:favou?rite|pick|choice)\b|\bfavou?rite\b"
-    r"|\brank(?:s|ed|ing)?\b|\bdeserv(?:e|es|ed|ing)\b", re.I)
-_SUPERLATIVE = re.compile(rf"{_MOST}|{_BEST}", re.I)
-
-
-def is_evaluative(text: str) -> bool:
-    """Whether the question (or part) asks for a judgement: a superlative
-    ("the most complex", "the best", "the bravest") or an opinion phrase
-    ("who do you think", "in your opinion", "your favourite", "rank")."""
-    if not text or not text.strip():
-        return False
-    if _SUPERLATIVE.search(text) or _OPINION.search(text):
-        return True
-    return any(m.group(1) not in _EST_NOT for m in _EST.finditer(text.lower()))
-
+# Candidates ranked by chapter span are taken this many times over before beat
+# variety picks the final ones.
+VARIETY_POOL = 3
 
 # --- exclusions -------------------------------------------------------------
 
@@ -124,15 +95,37 @@ _CANDIDATES = (
     "ORDER BY chapters DESC, mentions DESC, e.name LIMIT $limit")
 
 
+def beat_variety(conn, entity_id: str) -> tuple[int, int]:
+    """(distinct beat kinds, distinct (book, chapter) places) over the entity's
+    beats: a character with an arc has many of both."""
+    beats = beats_for_entities(conn, [entity_id])
+    return (len({b.kind for b in beats}), len({(b.book_id, b.chapter_seq) for b in beats}))
+
+
+def rank_by_variety(conn, seeds: Sequence[SeedEntity]) -> list[SeedEntity]:
+    """The seeds with the most varied beats first (kinds, then chapters); ties
+    keep their given order. Without beats, or with no usable `conn`, the given
+    order: this is a refinement, never a reason to fail the question."""
+    if conn is None or len(seeds) < 2:
+        return list(seeds)
+    try:
+        scores = {s.id: beat_variety(conn, s.id) for s in seeds}
+    except sqlite3.Error:
+        return list(seeds)
+    return sorted(seeds, key=lambda s: scores[s.id], reverse=True)
+
+
 async def candidate_seeds(kuzu, book_ids: Sequence[str], phrases: Sequence[str],
                           exclude_names: frozenset[str], *,
-                          limit: int = JUDGE_CANDIDATES) -> list[SeedEntity]:
+                          limit: int = JUDGE_CANDIDATES, conn=None) -> list[SeedEntity]:
     """The `limit` Character entities that span the most of the story, most
     first: distinct (book, chapter) places whose chunks mention them, then
-    the number of mentions. Restricted to `book_ids` when given. Anyone the
-    question excludes (`phrases`, matched on name and aliases) and any node
-    named like a book title is skipped. A graph that cannot answer gives []:
-    this is an extra, never a reason to fail the question."""
+    the number of mentions. With `conn`, the top `limit` x VARIETY_POOL by that
+    are re-ranked by beat variety (`rank_by_variety`) and the best `limit` kept.
+    Restricted to `book_ids` when given. Anyone the question excludes
+    (`phrases`, matched on name and aliases) and any node named like a book
+    title is skipped. A graph that cannot answer gives []: this is an extra,
+    never a reason to fail the question."""
     params: dict = {"limit": max(limit, 1) + _OVERFETCH}
     if book_ids:
         params["books"] = list(book_ids)
@@ -144,7 +137,18 @@ async def candidate_seeds(kuzu, book_ids: Sequence[str], phrases: Sequence[str],
         seeds = await named_seeds(kuzu, canonical_ids(kuzu, ids), exclude_names=exclude_names)
     except Exception:  # noqa: BLE001 -- see the docstring
         return []
+    if conn is not None:
+        return rank_by_variety(conn, seeds[:max(limit, 1) * VARIETY_POOL])[:limit]
     return seeds[:limit]
+
+
+def wants_candidates(seeds: Sequence[SeedEntity], named: Sequence[SeedEntity]) -> bool:
+    """Whether a lens is about a set of people and names none: no entity of its
+    own is named (in the lens or the question) and at least half of the
+    entities nearest to it are characters. A structural test, never about the
+    wording of a question."""
+    return (not named and bool(seeds)
+            and 2 * sum(s.kind == "Character" for s in seeds) >= len(seeds))
 
 
 @dataclass
@@ -161,10 +165,11 @@ class JudgeSeeds:
 async def judge_seeds(kuzu, names: NameIndex, part: str, question: str,
                       seeds: Sequence[SeedEntity], named: Sequence[SeedEntity],
                       book_ids: Sequence[str], exclude_names: frozenset[str], *,
-                      limit: int = JUDGE_CANDIDATES) -> JudgeSeeds:
-    """The seeds of an evaluative part: whoever the question (or the part, if
-    it was rewritten) excludes is removed; with fewer than FEW_NAMED named
-    characters left, the top candidates of the part's books are added."""
+                      limit: int = JUDGE_CANDIDATES, conn=None) -> JudgeSeeds:
+    """The seeds of a lens about a set of people: whoever the question (or the
+    lens, if it was rewritten) excludes is removed; with fewer than FEW_NAMED
+    named characters left, the top candidates of the part's books are added
+    (re-ranked by beat variety when `conn` is given)."""
     phrases = list(dict.fromkeys([*exclusions(part), *exclusions(question)]))
     gone: set[str] = set()
     for phrase in phrases:
@@ -177,7 +182,7 @@ async def judge_seeds(kuzu, names: NameIndex, part: str, question: str,
     others = [s for s in seeds if kept(s) and s.id not in {n.id for n in named_left}]
     candidates: list[SeedEntity] = []
     if sum(s.kind == "Character" for s in named_left) < FEW_NAMED:
-        candidates = [s for s in await candidate_seeds(kuzu, book_ids, phrases, exclude_names, limit=limit)
+        candidates = [s for s in await candidate_seeds(kuzu, book_ids, phrases, exclude_names, limit=limit, conn=conn)
                       if s.id not in {n.id for n in named_left}]
     ordered = list(dict.fromkeys(s.id for s in [*named_left, *candidates, *others]))
     by_id = {s.id: s for s in [*others, *candidates, *named_left]}

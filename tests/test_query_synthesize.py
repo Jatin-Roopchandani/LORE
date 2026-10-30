@@ -1035,10 +1035,15 @@ def test_claim_is_importable_from_both_modules():
 def _new_prompt_texts() -> str:
     """The deep/interpretive prompt texts and the viewpoint policy: the
     banned-word and leak tests cover each as it is added."""
-    from lore.query import decompose
+    from lore.query import decompose, interpret
     from lore.query.viewpoint import load_viewpoint
     return "\n".join((decompose._ITEM_RULE, decompose._KIND_RULE,
-                      decompose._DEPTH_RULE, load_viewpoint()))
+                      decompose._DEPTH_RULE, load_viewpoint(),
+                      interpret.LENS_CONTEXT, interpret.BEYOND_CONTEXT,
+                      interpret.WRITER_SHAPE_RULE, interpret.WRITER_BEYOND_RULE,
+                      interpret.VIEWPOINT_LEAD, interpret.READING_CHECK_BLOCK,
+                      interpret.COUNTER_CHECK_BLOCK, interpret.NO_POSITION_LINE,
+                      interpret.NO_COUNTER_LINE, interpret.LIMITS_LEAD))
 
 
 def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
@@ -1085,8 +1090,6 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
         synthesize_module._CHANGE_RULE, synthesize_module._ACTIONS_RULE,
         synthesize_module._TIMELINE_BLOCK,
         synthesize_module._READINGS_BLOCK, write_module._READINGS_RULE,
-        synthesize_module._JUDGEMENT_RULE, synthesize_module._JUDGEMENTS_BLOCK,
-        write_module._JUDGEMENT_RULE,
         synthesize_module._STRICT_LINKS_CHECK, __import__('lore.query.decompose', fromlist=['x'])._THEMATIC_RULE,
         _new_prompt_texts(),
         write_module.WRITER_PROMPT, write_module.STORY_WRITER_PROMPT,
@@ -1415,7 +1418,6 @@ def test_prompt_rules_name_no_character_book_or_genre() -> None:
     text = "\n".join((s._PROMPT, s._FACTS_RULE, s._FULL_FACTS_RULE, s._NO_RESTATE_RULE,
                       s._ATTRIBUTE_SPEECH_RULE, s._STRICT_LINKS_RULE, s._STRICT_LINKS_CHECK,
                       s._ROLE_COVERAGE_RULE, s._CHANGE_RULE, s._ACTIONS_RULE, s._TIMELINE_BLOCK, s._READINGS_BLOCK, w._READINGS_RULE,
-                      s._JUDGEMENT_RULE, s._JUDGEMENTS_BLOCK, w._JUDGEMENT_RULE,
                       s._CHECK_PROMPT, s._SENTENCES_BLOCK,
                       w.WRITER_PROMPT, w.STORY_WRITER_PROMPT, s._STORY_SENTENCES_BLOCK, s._GAPS_BLOCK,
                       decompose._PROMPT, decompose._THEMATIC_RULE, _new_prompt_texts(),
