@@ -162,6 +162,13 @@ class CodexConfig(BaseModel):
     enabled: bool = True
 
 
+class AnswersConfig(BaseModel):
+    """How answers are written. `viewpoint` is the path of an editorial policy
+    that replaces the packaged `lore/query/viewpoint.md`; empty uses it."""
+
+    viewpoint: Path | None = None
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
     # "kaggle": free T4 burst. "ollama": fully local, zero egress.
@@ -180,6 +187,7 @@ class LoreConfig(BaseModel):
     web: WebConfig = Field(default_factory=WebConfig)
     processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
     beats: BeatsConfig = Field(default_factory=BeatsConfig)
+    answers: AnswersConfig = Field(default_factory=AnswersConfig)
     codex: CodexConfig = Field(default_factory=CodexConfig)
 
     @classmethod

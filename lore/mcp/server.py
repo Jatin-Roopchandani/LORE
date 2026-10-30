@@ -15,7 +15,7 @@ a supervisor that restarts it. There is deliberately no per-query isolation.
 from __future__ import annotations
 
 import ipaddress
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -28,7 +28,8 @@ def build_server(config: LoreConfig) -> MCPServer:
     mcp = MCPServer("lore")
 
     @mcp.tool()
-    async def lore_search(query: str, world: str | None = None) -> dict[str, Any]:
+    async def lore_search(query: str, world: str | None = None,
+                          depth: Literal["auto", "deep", "focused"] = "auto") -> dict[str, Any]:
         """Answer a question from the knowledge graph, with quoted citations.
 
         This is the only tool that spends Gemini budget (the other six never
@@ -41,8 +42,11 @@ def build_server(config: LoreConfig) -> MCPServer:
         Without it, every world is searched, each on its own, so two
         same-named characters from different worlds stay different people;
         the answer names the book when facts come from more than one.
+
+        `depth` is "auto" (the default: LORE judges whether the question
+        needs a full, sectioned answer), "deep" or "focused".
         """
-        return await tools.lore_search(config, query, world=world)
+        return await tools.lore_search(config, query, world=world, depth=depth)
 
     @mcp.tool()
     async def vector_search(query: str, book_id: str | None = None,

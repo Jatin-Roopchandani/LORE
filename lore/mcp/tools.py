@@ -979,12 +979,16 @@ def _upstream(exc: GeminiError) -> dict:
 @_guarded
 async def lore_search(config: LoreConfig, query: str,
                       models: QueryModels | None = None, on_event=None,
-                      world: int | str | None = None) -> dict:
+                      world: int | str | None = None,
+                      depth: str | None = None) -> dict:
     """The full query agent: spends Gemini requests, so it is guarded.
 
     `world` (an id or a name) answers from that world's books only; with
     none, a library of one world uses it and a library of several is
     searched world by world (see answer_question).
+
+    `depth` is `auto`, `deep` or `focused`; none is `auto`, which takes the
+    decomposer's judgement (see answer_question).
 
     `budget_exhausted` means the shared ledger says every synthesis model is
     spent. Every other Gemini failure is `upstream_unavailable`. `models` is
@@ -1016,6 +1020,8 @@ async def lore_search(config: LoreConfig, query: str,
             titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
             # `world` only when given: nothing else changes for a caller without one.
             scope = {} if world is None else {"world": world}
+            if depth is not None:
+                scope["depth"] = depth
             answer = await answer_question(stores.conn, stores.kuzu,
                                            stores.lance, query, models,
                                            on_event=on_event, **scope)

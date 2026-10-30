@@ -1032,6 +1032,15 @@ def test_claim_is_importable_from_both_modules():
     assert FromModels is FromSynthesize
 
 
+def _new_prompt_texts() -> str:
+    """The deep/interpretive prompt texts and the viewpoint policy: the
+    banned-word and leak tests cover each as it is added."""
+    from lore.query import decompose
+    from lore.query.viewpoint import load_viewpoint
+    return "\n".join((decompose._ITEM_RULE, decompose._KIND_RULE,
+                      decompose._DEPTH_RULE, load_viewpoint()))
+
+
 def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
     """No distinctive 3-word phrase of a dev or held-out question or verified
     answer may appear in the synthesis prompt. An early round-1 draft used
@@ -1079,6 +1088,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
         synthesize_module._JUDGEMENT_RULE, synthesize_module._JUDGEMENTS_BLOCK,
         write_module._JUDGEMENT_RULE,
         synthesize_module._STRICT_LINKS_CHECK, __import__('lore.query.decompose', fromlist=['x'])._THEMATIC_RULE,
+        _new_prompt_texts(),
         write_module.WRITER_PROMPT, write_module.STORY_WRITER_PROMPT,
         synthesize_module._STORY_SENTENCES_BLOCK, synthesize_module._GAPS_BLOCK,
         __import__('lore.beats.build', fromlist=['x']).BEATS_PROMPT,
@@ -1408,7 +1418,7 @@ def test_prompt_rules_name_no_character_book_or_genre() -> None:
                       s._JUDGEMENT_RULE, s._JUDGEMENTS_BLOCK, w._JUDGEMENT_RULE,
                       s._CHECK_PROMPT, s._SENTENCES_BLOCK,
                       w.WRITER_PROMPT, w.STORY_WRITER_PROMPT, s._STORY_SENTENCES_BLOCK, s._GAPS_BLOCK,
-                      decompose._PROMPT, decompose._THEMATIC_RULE,
+                      decompose._PROMPT, decompose._THEMATIC_RULE, _new_prompt_texts(),
                       __import__('lore.beats.build', fromlist=['x']).BEATS_PROMPT,
                       __import__('lore.codex.build', fromlist=['x']).CODEX_PROMPT))
     banned = r"\b(holmes|watson|sherlock|small|hope|drebber|stangerson|sholto|ferrier|tonga|" \

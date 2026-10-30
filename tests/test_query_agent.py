@@ -21,7 +21,7 @@ from lore.query.agent import (
     answer_question,
     make_query_models,
 )
-from lore.query.decompose import SubQuestions
+from lore.query.decompose import Decomposition, SubQuestions
 from lore.query.models import Answer
 from lore.query.select import TemplateChoice
 from lore.query.synthesize import (
@@ -330,7 +330,9 @@ async def test_gemini_answers_while_selection_stays_local(tmp_path: Path) -> Non
     # Task 12 changed this. It was `== [SubQuestions, Synthesis]` and failed
     # with "Left contains one more item: Faithfulness": the faithfulness
     # check is a third call on the same synthesis client.
-    assert [schema for _, schema in gemini.prompts] == [SubQuestions, Synthesis,
+    # Deep/interpretive Task 1: the decomposition's schema is Decomposition
+    # while a switch is on (SubQuestions only when both are off).
+    assert [schema for _, schema in gemini.prompts] == [Decomposition, Synthesis,
                                                         Faithfulness]
     prompt = gemini.prompts[1][0]
     assert f"({TITLE}, chapter 1," in prompt
@@ -499,10 +501,10 @@ async def test_both_steps_on_gemini_share_one_client_and_name_each_model(
                                 "gemini-3.5-flash-lite"])
     models = make_query_models(BOTH_GEMINI_CONFIG, ollama=ollama, gemini=gemini)
     answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
-    # Task 12 changed this. It was `== [SubQuestions, TemplateChoice,
+    # Task 12 changed this. It was `== [Decomposition, TemplateChoice,
     # Synthesis]` and failed with "Left contains one more item:
     # Faithfulness": the check is a fourth call on the shared client.
-    assert [schema for _, schema in gemini.prompts] == [SubQuestions, TemplateChoice,
+    assert [schema for _, schema in gemini.prompts] == [Decomposition, TemplateChoice,
                                                         Synthesis, Faithfulness]
     assert ollama.generated == []
     assert answer.selection_model == "gemini-3.1-flash-lite"
@@ -834,15 +836,15 @@ async def test_decomposition_runs_on_the_synthesis_provider_deterministically(
     conn = _conn(tmp_path)
     ollama, models = _local()
     await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
-    (_, _, options), = [c for c in ollama.generated if c[1] is SubQuestions]
+    (_, _, options), = [c for c in ollama.generated if c[1] is Decomposition]
     assert options == SELECTION_OPTIONS
 
     ollama = FakeOllama(CHOICE)
     gemini = FakeGemini()
     models = make_query_models(GEMINI_CONFIG, ollama=ollama, gemini=gemini)
     await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
-    assert [s for _, s in gemini.prompts][0] is SubQuestions
-    assert not [c for c in ollama.generated if c[1] is SubQuestions]
+    assert [s for _, s in gemini.prompts][0] is Decomposition
+    assert not [c for c in ollama.generated if c[1] is Decomposition]
     conn.close()
 
 
@@ -1003,7 +1005,7 @@ async def test_baseline_stays_undecomposed(tmp_path: Path) -> None:
     ollama, models = _local()
     answer = await answer_question(conn, ExplodingKuzu(), FakeLance([SEED_ROW]), "q", models,
                                    baseline=True)
-    assert not [c for c in ollama.generated if c[1] is SubQuestions]
+    assert not [c for c in ollama.generated if c[1] is Decomposition]
     assert answer.sub_questions == ()
     conn.close()
 

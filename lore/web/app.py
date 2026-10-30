@@ -17,6 +17,7 @@ import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
@@ -58,6 +59,8 @@ class AskBody(BaseModel):
     question: str
     # A world's id or name; none (or "all") searches every world.
     world: int | str | None = None
+    # auto lets the decomposer decide; deep or focused overrides it.
+    depth: Literal["auto", "deep", "focused"] = "auto"
 
     @field_validator("question")
     @classmethod
@@ -435,7 +438,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             raise HTTPException(400, str(exc)) from None
         return StreamingResponse(
             ask_events(config, body.question, lock, search=tools.lore_search,
-                       world=body.world),
+                       world=body.world, depth=body.depth),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 

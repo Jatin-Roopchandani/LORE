@@ -17,7 +17,8 @@ from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
 from lore.query import judge as judge_module
-from lore.query.decompose import split
+from lore.query import decompose as decompose_module
+from lore.query.decompose import DEPTHS, plan as decompose_plan, resolve_depth
 from lore.query.events import EDGES_PER_PART_CAP, OnEvent, edge_key, emit
 from lore.query.keyword import KeywordIndex, fused
 from lore.query.models import Answer, EdgeRow, Evidence, SeedEntity
@@ -415,10 +416,12 @@ def _cosine(row: dict) -> float:
 
 async def _parts(question, vector, models: QueryModels, kuzu,
                  book_ids: Collection[str] | None = None):
-    """(sub-question, its vector) pairs, and whether decomposition succeeded.
-    A part identical to the question reuses its vector; the others are
-    embedded together in one call."""
-    parts = None
+    """(sub-question, its vector) pairs, whether decomposition succeeded, and
+    the Plan (each part's kind and lenses, and the planned depth). The plan is
+    None when decomposition did not run or failed: every part is then factual
+    and the depth is `focused`. A part identical to the question reuses its
+    vector; the others are embedded together in one call."""
+    planned = None
     if models.decompose is not None:
         # The graph's books, not the registry's: only those can be searched,
         # and "in each novel" should split into exactly those.
@@ -429,14 +432,14 @@ async def _parts(question, vector, models: QueryModels, kuzu,
             graphed = sorted({str(row[1]) for row in kuzu.execute(
                 "MATCH (b:Book) RETURN b.id, b.title")
                 if row[1] and row[0] in book_ids})
-        parts = await split(question, models.decompose, book_titles=graphed)
-    decomposed = parts is not None
-    parts = parts or [question]
+        planned = await decompose_plan(question, models.decompose, book_titles=graphed)
+    decomposed = planned is not None
+    parts = planned.questions if planned is not None else [question]
     fresh = [part for part in parts if part != question]
     vectors = {question: vector}
     if fresh:
         vectors.update(zip(fresh, await models.embed([QUERY_PREFIX + p for p in fresh])))
-    return [(part, vectors[part]) for part in parts], decomposed
+    return [(part, vectors[part]) for part in parts], decomposed, planned
 
 
 # The check step's detail when its verdicts were not applied: the call
@@ -550,6 +553,7 @@ async def answer_question(
     baseline: bool = False,
     on_event: OnEvent | None = None,
     world: int | str | None = None,
+    depth: str = "auto",
 ) -> Answer:
     """Answer `question` from the library.
 
@@ -560,7 +564,14 @@ async def answer_question(
     worlds": each world is searched on its own and the evidence pooled, so an
     entity is never matched, selected or judged against another world's.
     A library of one world (or none) takes exactly the unscoped path.
+
+    `depth` is `auto`, `deep` or `focused`: `auto` takes the decomposer's
+    judgement, the others override it. The decomposition's per-part kinds and
+    lenses (`plan`) and the resolved `depth` are what the interpretive and
+    deep answer paths read; they are in the `parts` event.
     """
+    if depth not in ("auto", *DEPTHS):
+        raise ValueError(f"depth must be auto, deep or focused, not {depth!r}")
     scopes = resolve_scopes(conn, world)
     titles = {book["id"]: book["title"] for book in list_books(conn)}
     # Story position (series, index) per book, for the writer and the check.
@@ -595,9 +606,18 @@ async def answer_question(
                                  book_titles=titles, books=books)
 
     emit(on_event, "step", name="split", state="start", part=None, detail=None)
-    parts, decomposed = await _parts(question, vector, models, kuzu, union(scopes))
+    parts, decomposed, plan = await _parts(question, vector, models, kuzu, union(scopes))
     sub_questions = tuple(part for part, _ in parts)
-    emit(on_event, "parts", sub_questions=list(sub_questions))
+    depth = resolve_depth(depth, plan.depth if plan is not None else "focused")
+    # `kinds`, `lenses` and `depth` only when a switch is on: with both off
+    # the event is what it always was.
+    extra = ({"kinds": [p.kind for p in plan.parts] if plan is not None
+              else ["factual"] * len(parts),
+              "lenses": [list(p.lenses) for p in plan.parts] if plan is not None
+              else [[] for _ in parts],
+              "depth": depth}
+             if decompose_module.INTERPRETIVE or decompose_module.DEEP else {})
+    emit(on_event, "parts", sub_questions=list(sub_questions), **extra)
     emit(on_event, "step", name="split", state="done", part=None,
          detail=f"{len(parts)} part" + ("s" if len(parts) != 1 else ""))
     for si in range(len(scopes)):
