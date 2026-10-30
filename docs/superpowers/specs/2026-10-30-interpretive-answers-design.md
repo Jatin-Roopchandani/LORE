@@ -1,6 +1,8 @@
-# Interpretive answers: argued from evidence, in LORE's own voice
+# Deep and interpretive answers: detailed, argued from evidence, in LORE's own voice
 
-**Status:** draft, 2026-10-30. Decisions taken in chat; awaiting the user's review.
+**Status:** draft, 2026-10-30. Decisions taken in chat; awaiting the user's review. §§1–8 cover interpretation; §§9–13 (added the same day) cover depth: an outline planner, sectioned answers and a codex built at ingest.
+
+**Why depth matters.** Shallow answers are available from any general chatbot. People come to LORE to understand what they are reading in detail. A broad question ("tell me about the world of <series>") should get an encyclopedic, sourced chapter that covers every major aspect the books establish: its cosmology, systems of power, peoples, places, institutions and history. It should not get a paragraph.
 
 **Goal.** Many questions are not answered by any sentence in a book:
 - evaluation ("Was X a villain or a victim?");
@@ -132,3 +134,70 @@ The banned-word test covers this file too.
 - **Over-hedging.** Policy A asks for a stated strength, and grading checks for a position where one is warranted.
 - **Cost.** Lens parts reuse the existing per-part budget, capped at 6 parts.
 - **Viewpoint drift between writer and check.** Both read the same policy file.
+
+
+---
+
+## 9. Depth: when an answer goes deep (decision C: automatic, plus a toggle)
+
+- **The decomposer decides depth.** It gains `depth: "focused" | "deep"`. A question is `deep` when it asks about a whole world, system, institution, people, character's life, theme across a series, or anything else whose full answer spans many entities or much of the story.
+- **The user can override it.** The UI gets a **Deep dive** toggle next to the question box with three states: auto (the default), on and off. The API and MCP take `depth: "auto" | "deep" | "focused"`.
+- **A deep question can be interpretive too.** "What does the series say about power?" is both deep and interpretive. Each section then follows the interpretive shape in §4.
+
+## 10. The outline planner, built from the graph
+
+For a deep answer, the planner builds a table of contents from what the world's graph and codex actually hold. It does not use the model's general knowledge.
+
+1. **Candidates.** The most significant entities in the question's scope (its world, books or named entity's neighbourhood). Significance is ranked by story span and beat or codex richness, and the candidates are grouped by kind: Concept, Faction, Place, Object, Character and Event. For a question about one entity, the candidates are that entity's facets: its codex entry's aspects, its relationships and its timeline periods.
+2. **One planner call.** Given the question and the candidate list (names, kinds, one-line codex summaries), the model groups the candidates into **sections**, between 3 and `DEEP_MAX_SECTIONS` (default 12). Each section has a heading, an order and the entities and aspects it covers, plus a one-sentence overview of the whole answer's scope. The rules are general: cover every major aspect present, put foundations before details, group related things, and add nothing that is not in the candidates.
+3. **Code checks.** Every entity the plan names must be in the candidate list, and any other entity is dropped. Sections with no entities are dropped. The plan is capped at the maximum number of sections.
+
+## 11. Sectioned answers
+
+- **One part per section.** Each section is answered as a part with its own scope: the section's entities as seeds, their timelines, their codex entries and its own evidence share. It has its own claims step, its own check and its own writer, which produces that section's prose with **no word cap**. Length follows the evidence, and each section gets a heading.
+- **Assembly.** The answer is a short overview (cited facts only), a table of contents, then the sections in order. Where the question is interpretive, a closing section gives LORE's reading, the counter-case and the limits, as in §4.
+- **Streaming.** Sections are written in order and stream to the UI as each one passes its check, so the reader starts on section 1 while later sections are still being written. A section whose prose fails falls back to its claim list without affecting the others.
+- **Faithfulness is unchanged.** Every sentence cites checked claims, and every claim quotes a passage.
+- **Cost.** With a codex, a section usually needs its claims call and its writer and check. That is about 2 requests per section; codex entries cut retrieval misses rather than calls. Including the planner call, a 10-section deep answer costs about 20–25 requests. Deep answers show their request cost in the UI's "How this was answered" panel and respect the answer reserve.
+
+## 12. The codex: entity profiles built at ingest
+
+**What it is.** A **codex entry** is a quote-verified profile of one significant entity. It covers what the books establish about the entity, organised by aspect (nature, history, abilities or rules, relationships, role in events), and how the entity changes across the story or series. Each aspect is a short list of statements. Every statement carries a verbatim quote that code verifies, exactly as story beats do. An entry stores no interpretation.
+
+**How it is built.** A new resumable pipeline stage, `codex`, runs after `beats`:
+- It picks the significant entities: those of kind Concept, Faction, Place, Object or Character above a significance threshold, at most `CODEX_MAX_PER_BOOK` (default 150).
+- It makes one Gemini call per entity. The input is that entity's beats and its top passages within the world, in story order.
+- It verifies every quote, pins each statement to its chunk and caches the result per entity. The cache key is the prompt hash plus the hash of the passages used.
+- The stage stops on quota and continues with the Library panel's Continue button, like beats.
+- Entries are rebuilt when a book is added to or moved out of the world, because their evidence changes. The cache makes unchanged entries free.
+
+**Storage.** A migration adds the tables `codex_entries` (entity id, world, aspect, statement, quote, chunk id, position) and `codex_summaries` (a one-line summary per entity, for the planner). Statements also go into a LanceDB `codex` table for vector search. Entity links are refreshed with the existing relink logic.
+
+**How it is used.**
+- The planner uses the summaries to build the outline.
+- In a deep or interpretive section, the section's entities' codex statements are added to its evidence the way timeline beats are: their chunks join the evidence through a capped slice, and a compact "Codex" block is added to the claims prompt.
+- The codex block is only a map. A claim must quote a numbered passage, as with the timeline.
+
+**Cost.** One request per significant entity, once. For example, two short novels have about 40–60 significant entities. A long multi-book series can have a few hundred, spread over days using Continue.
+
+## 13. UI
+
+- **Deep dive toggle.** It sits next to the question box, with three states: auto, on and off. It shows a short note about the request cost when it is on.
+- **Sectioned answer.** The answer has a contents list with jump links and a heading per section. Sections appear as they stream in, and a section still being written shows its heading with a "writing…" state.
+- **Steps list.** It shows the planner step and one row per section.
+- **Library panel.** It shows the codex stage's progress and Continue, like beats.
+- **Strings.** All strings go in messages.ts.
+
+## Evaluation additions
+
+A **deep set**, `evals/answer_quality/deep.json`, holds about 10 broad questions across the graphed books, for example "the world", a whole character's life, a whole institution or a theme across both books. For each question it lists, ahead of time, the aspects a complete answer must cover, with verbatim evidence. It is written before any results are seen.
+
+Grading criteria:
+- **Coverage:** the share of listed aspects the answer covers.
+- **False facts:** sentence by sentence.
+- **Organisation and readability:** a preference judgement against control.
+
+Bar, pre-registered:
+- false facts no higher than control;
+- coverage at least 70% on average and higher than control on at least 8 of 10 questions;
+- readers prefer the deep answer (sign test p < 0.05).
