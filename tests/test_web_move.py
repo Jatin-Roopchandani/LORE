@@ -143,7 +143,9 @@ def test_move_is_marked_running_before_the_202(config) -> None:
     try:
         assert client.post("/api/books/bb1/move",
                            json={"world": ALPHA}).status_code == 202
-        assert _wait_running(config, "bb1").state == jobs.RUNNING
+        # The 202 implies running: read the row once, straight after it (the gated
+        # stage holds the job for up to 60s, so this is not a race under load).
+        assert _job(config, "bb1").state == jobs.RUNNING
     finally:
         gate.set()
     _wait(config, "bb1")
