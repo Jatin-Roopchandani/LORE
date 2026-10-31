@@ -243,15 +243,16 @@ def check_blocks(shape: Shape, kinds: set[str], supported: str, not_supported: s
 # --- guards ------------------------------------------------------------------
 
 # A reading is worded visibly as interpretation. A short general list of stems,
-# as whole words: "suggests", "shows", "seems", "appears", "reflects", "reveals",
+# as whole words ("shown" is a plain statement, as in "as shown in", so it does
+# not count): "suggests", "shows", "seems", "appears", "reflects", "reveals",
 # "hints", "indicates", "implies", "arguably", "a strong case can be made",
 # "on balance", "stands out", "the evidence is split", "perhaps".
 INTERPRETIVE_WORDING = re.compile(
-    r"\b(?:suggest|show|seem|appear|reflect|reveal|hint)(?:s|ed|ing|n)?\b"
+    r"\b(?:suggest|seem|appear|reflect|reveal|hint)(?:s|ed|ing)?\b|\bshow(?:s|ing)?\b"
     r"|\bindicat(?:e|es|ed|ing)\b|\bimpl(?:y|ies|ied|ying)\b"
     r"|\barguabl[ye]\b|\b(?:a|the)\s+(?:\w+\s+)?case\b.{0,30}\b(?:made|argued|for)\b"
     r"|\b(?:can|could|might|may)\s+be\s+(?:made|argued)\b|\bone\s+(?:could|might|can)\s+argue\b"
-    r"|\bstands?\s+out\b|\bof\s+(?:these|them)\b|\bon\s+balance\b|\bperhaps\b"
+    r"|\bstands?\s+out\b|\bon\s+balance\b|\bperhaps\b"
     r"|\bevidence\s+(?:is|leans|points)\b|\bi\s+would\s+say\b", re.I)
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z“\"'])")

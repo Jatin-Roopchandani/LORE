@@ -138,6 +138,20 @@ def test_interpretive_wording_variants_pass(text):
     assert _kinds(_verify([S("Rin trained.", [1]), S(text, [1, 3], "reading")])) == ["fact", "reading"]
 
 
+@pytest.mark.parametrize("text", [
+    "Rin kept the letters, as shown in the third chapter.",     # a participle states, it does not interpret
+    "Rin trained with both of these.", "Rin spoke of them."])   # a pronoun phrase is no hedge
+def test_wording_that_only_states_or_points_is_not_interpretive(text):
+    assert not interpret.INTERPRETIVE_WORDING.search(text)
+    assert _kinds(_verify([S("Rin trained.", [1]), S(text, [1, 3], "reading")])) == ["fact"]
+
+
+@pytest.mark.parametrize("text", ["The record shows Rin was committed.",
+                                  "Rin's habits suggest a quiet pride.", "It seems Rin was ready."])
+def test_real_hedges_still_count(text):
+    assert interpret.INTERPRETIVE_WORDING.search(text)
+
+
 @pytest.mark.parametrize("text, claims", [
     ("Rin was committed.", [1, 2]),                             # plain statement
     ("The evidence suggests it. Rin was committed.", [1, 2]),   # two sentences
