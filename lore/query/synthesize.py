@@ -34,7 +34,9 @@ from pydantic import BaseModel
 
 from lore.query import interpret
 from lore.query import write as write_module
-from lore.query.models import Answer, BookInfo, Claim, EdgeRow, Evidence, Passage, ProseSentence
+from lore.query.models import (
+    Answer, BookInfo, Claim, EdgeRow, Evidence, Passage, ProseSentence, SectionSpec,
+)
 from lore.query.position import order_passages
 from lore.query.write import (
     assemble, book_infos, clean_gaps, compose_text, coverage_gaps, paragraphs_by_book, part_texts, split_items,
@@ -260,13 +262,14 @@ def verify_claims(
     return kept, dropped
 
 
-def _capped(synthesis: Synthesis) -> Synthesis:
-    """The first MAX_CLAIMS claims the model wrote; the rest are ignored.
+def _capped(synthesis: Synthesis, limit: int | None = None) -> Synthesis:
+    """The first MAX_CLAIMS claims the model wrote (`limit` of them for a deep
+    answer's section); the rest are ignored.
 
     Applied before verification, so the bound is on what the model proposed
     and the choice never depends on which quotes happen to verify.
     """
-    return synthesis.model_copy(update={"claims": synthesis.claims[:MAX_CLAIMS]})
+    return synthesis.model_copy(update={"claims": synthesis.claims[:limit or MAX_CLAIMS]})
 
 
 # Near-duplicate claims (Task 11b). Per-part synthesis lets two sub-questions
@@ -428,6 +431,47 @@ def _timeline_block(evidence: Evidence, book_titles: dict[str, str] | None,
     return _TIMELINE_BLOCK.format(lines="\n".join(lines)) if lines else ""
 
 
+# CODEX (lore/query/codexslice.py): the same kind of map as the timeline, from
+# the codex entries of the question's entities, grouped by aspect.
+_CODEX_BLOCK = """
+Codex: short notes on what the books establish about the people and things the
+question is about, each under the aspect it belongs to, in story order. Each
+line gives the number of the passage that holds the statement, where it falls
+in the story, who it is about and the aspect. The codex is a map, not
+evidence. Use it to see which aspects exist and where the passages are, then
+read those numbered passages. A claim still needs a quote copied word for word
+from a numbered passage; never quote a codex line, and never make a claim from
+a codex line alone.
+{lines}
+"""
+MAX_CODEX_LINES = 40
+
+
+def _codex_block(evidence: Evidence, book_titles: dict[str, str] | None,
+                 books: dict[str, BookInfo] | None) -> str:
+    """The "Codex" block, or "" when no line's passage is shown. A line whose
+    passage the evidence cap cut is left out: it could not be cited."""
+    if not evidence.codex:
+        return ""
+    order = order_passages(evidence.passages, write_module.book_infos(book_titles, books))
+    place = {pos.n: (index, pos) for index, pos in enumerate(order.ordered)}
+    number = {p.chunk_id: p.n for p in evidence.passages}
+    shown = [(place[number[l.chunk_id]], l) for l in evidence.codex if l.chunk_id in number]
+    shown.sort(key=lambda item: item[0][0])
+    lines = [f"- [{pos.n}] ({pos.label(detail=True)}) {l.subject}, {l.aspect}: {l.text}"
+             for (_, pos), l in shown[:MAX_CODEX_LINES]]
+    return _CODEX_BLOCK.format(lines="\n".join(lines)) if lines else ""
+
+
+# A deep answer's section (lore/query/deep.py): one part of a long answer, asked
+# for in full.
+_SECTION_CONTEXT = ("This is one section of a long, detailed answer to the larger question: "
+                    "{part_of}\n"
+                    "Cover this section fully, with every distinct fact the passages establish "
+                    "about it, in as many claims as they support; the other sections are "
+                    "written separately.\n")
+
+
 def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
                    books: dict[str, BookInfo] | None) -> str:
     if not write_module.STORY_ORDER:
@@ -447,9 +491,11 @@ def _build_prompt(
     checklist: Sequence[str] = (), part_of: str | None = None,
     books: dict[str, BookInfo] | None = None,
     role: str = "part",
+    section: SectionSpec | None = None,
 ) -> str:
     """`role`: what the part is for an interpretive answer (interpret.py): a
-    "lens" of an interpretive part, a "beyond" part, or an ordinary "part"."""
+    "lens" of an interpretive part, a "beyond" part, or an ordinary "part".
+    `section`: the part is a section of a deep answer (deep.py)."""
     lines = _relation_lines(evidence, book_titles)
     relations = _RELATIONS.format(lines="\n".join(lines)) if lines else ""
     passages = _passage_block(evidence, book_titles, books)
@@ -469,6 +515,8 @@ def _build_prompt(
         context = interpret.LENS_CONTEXT.format(part_of=part_of)
     elif part_of and role == "beyond":
         context = interpret.BEYOND_CONTEXT.format(part_of=part_of)
+    elif section is not None:
+        context = _SECTION_CONTEXT.format(part_of=section.part_of)
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
                           facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
@@ -477,9 +525,10 @@ def _build_prompt(
                           + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else "")
                           + (_CHANGE_RULE if write_module.STORY_ORDER else "")
                           + (_ACTIONS_RULE if write_module.readings_on() else ""),
-                          max_claims=MAX_CLAIMS,
+                          max_claims=section.max_claims if section is not None else MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
-                          relations=relations + _timeline_block(evidence, book_titles, books),
+                          relations=(relations + _timeline_block(evidence, book_titles, books)
+                                     + _codex_block(evidence, book_titles, books)),
                           passages=passages,
                           truncation=truncation)
 
@@ -845,7 +894,7 @@ PROSE_FALLBACK_NOTE = "the written answer did not pass verification; showing the
 
 
 async def _finish(question, sub_questions, kept, evidence, check, write, book_titles,
-                  part_claims=None, books=None, shape=None):
+                  part_claims=None, books=None, shape=None, length=None):
     """Writer (when it applies) and the faithfulness check, in one place for
     all synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note,
     unanswered part texts, gaps -- both set only when the prose is shown).
@@ -853,13 +902,17 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     `shape` (interpret.Shape): the answer has an interpretive or beyond part.
     The writer and the check then follow it, and code closes the prose with
     its lines (interpret.close_answer); the shown gaps join the limits line
-    and so are not returned separately."""
+    and so are not returned separately.
+
+    `length` ("section" or "overview"): the writer sizes the prose for a deep
+    answer's section or its overview (write.py) instead of the default cap."""
     try_prose = (write_module.PROSE_ANSWERS and write is not None and check is not None
                  and len(kept) >= 2)
     sentences, written, prose_note, missing, gaps = None, 0, None, [], []
     if try_prose:
         drafted = await write_answer(question, sub_questions, kept, evidence.passages, write,
-                                     book_titles=book_titles, books=books, shape=shape)
+                                     book_titles=book_titles, books=books, shape=shape,
+                                     length=length)
         if drafted is None:
             prose_note = PROSE_FALLBACK_NOTE
         else:
@@ -921,9 +974,13 @@ async def synthesize(
     check: Generate | None = None,
     write: Generate | None = None,
     books: dict[str, BookInfo] | None = None,
+    section: SectionSpec | None = None,
 ) -> Answer:
     """`checklist`: the question's sub-questions; shown only when there are
     several, so a partial answer is visible as partial.
+
+    `section`: the answer is one section of a deep answer (deep.py): its claims
+    step may keep more claims and its writer has no word cap.
 
     `check`: the faithfulness judge (`check_claims`). None means the pass is
     not part of this answer at all, which is what every caller that predates
@@ -939,17 +996,18 @@ async def synthesize(
         return answer(REFUSAL)
 
     result = await generate(
-        _build_prompt(question, evidence, book_titles, checklist, books=books), Synthesis)
+        _build_prompt(question, evidence, book_titles, checklist, books=books,
+                      section=section), Synthesis)
 
     # The answer is written by code, from claims whose quotes were found in
     # the passage they cite. Nothing the model wrote outside a kept claim
     # reaches the user, so there is no free text to carry a stray claim.
-    result = _capped(result)
+    result = _capped(result, section.max_claims if section is not None else None)
     verified, _ = verify_claims(result, evidence.passages)
     kept = _collapse(verified)
     kept, _cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         question, list(checklist) or [question], kept, evidence, check, write, book_titles,
-        books=books)
+        books=books, length=section.length if section is not None else None)
     if not kept:
         return answer(REFUSAL)
     # can_answer=false with verified claims is a partial answer, not a
@@ -1049,7 +1107,9 @@ async def synthesize_parts(
         own = Evidence(edges=evidence.edges, passages=passages,
                        truncated=evidence.truncated,
                        timeline=(evidence.timelines[index]
-                                 if len(evidence.timelines) == len(sub_questions) else ()))
+                                 if len(evidence.timelines) == len(sub_questions) else ()),
+                       codex=(evidence.codexes[index]
+                              if len(evidence.codexes) == len(sub_questions) else ()))
         result = await generate(
             _build_prompt(part, own, book_titles, part_of=question, books=books), Synthesis)
         verified, _ = verify_claims(_capped(result), passages)
@@ -1126,6 +1186,8 @@ async def synthesize_shaped(
     shares = evidence.shares if len(evidence.shares) == n else (everything,) * n
     timelines = (evidence.timelines if len(evidence.timelines) == n
                  else (evidence.timeline,) * n if n == 1 else ((),) * n)
+    codexes = (evidence.codexes if len(evidence.codexes) == n
+               else (evidence.codex,) * n if n == 1 else ((),) * n)
     kept: list[Claim] = []
     per_part: list[list[Claim]] = []
     for index, (part, share) in enumerate(zip(retrieval, shares)):
@@ -1135,7 +1197,7 @@ async def synthesize_shaped(
             per_part.append([])
             continue
         own = Evidence(edges=evidence.edges, passages=passages, truncated=evidence.truncated,
-                       timeline=timelines[index])
+                       timeline=timelines[index], codex=codexes[index])
         served = plan[part.part]
         role = ("lens" if part.lens else "beyond" if served.kind == "beyond" else "part")
         result = await generate(

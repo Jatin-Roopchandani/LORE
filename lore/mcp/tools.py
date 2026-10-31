@@ -6,6 +6,7 @@ read, either the tool's shape or an `error(...)` envelope.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import functools
 import inspect
@@ -1017,6 +1018,11 @@ async def lore_search(config: LoreConfig, query: str,
                     return error("upstream_unavailable",
                                  "the Gemini API key is missing or invalid:"
                                  f" {_KEY_HELP}.")
+                # A deep answer starts no further section once the ledger says
+                # every synthesis model is spent (query/deep.py).
+                if dataclasses.is_dataclass(models):
+                    models = dataclasses.replace(
+                        models, spend_ok=lambda: _check_synthesis_budget(config) is None)
             titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
             # `world` only when given: nothing else changes for a caller without one.
             scope = {} if world is None else {"world": world}

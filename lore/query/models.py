@@ -108,6 +108,20 @@ class TimelineBeat:
 
 
 @dataclass(frozen=True)
+class CodexLine:
+    """One codex line for the claims prompt: a statement the books establish
+    about the subject entity, under an aspect, and the passage (`chunk_id`)
+    that holds its quote. Like a timeline beat it is a map, never evidence."""
+
+    chunk_id: str
+    book_id: str
+    chapter_seq: int
+    subject: str
+    aspect: str
+    text: str
+
+
+@dataclass(frozen=True)
 class Evidence:
     edges: tuple[EdgeRow, ...]
     passages: tuple[Passage, ...]
@@ -121,6 +135,41 @@ class Evidence:
     # which is also what every evidence built before beats holds.
     timeline: tuple[TimelineBeat, ...] = ()
     timelines: tuple[tuple[TimelineBeat, ...], ...] = ()
+    # Codex lines (lore/query/codexslice.py), the same way: every part's, and
+    # one tuple per part. Empty when no part has an entity with an entry.
+    codex: tuple[CodexLine, ...] = ()
+    codexes: tuple[tuple[CodexLine, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class SectionSpec:
+    """How a deep answer's section is asked for (lore/query/deep.py): the
+    whole question it is a section of, how many claims it may keep, and how
+    its writer is told to size it ("section" or "overview")."""
+
+    part_of: str
+    max_claims: int
+    length: str = "section"
+
+
+@dataclass(frozen=True)
+class AnswerSection:
+    """One section of a deep answer. `prose` sentences cite the answer's own
+    claims (1-based, as in Answer.claims); `claims_start`..`claims_end` are the
+    section's claims in that numbering (inclusive; 0 and -1 when it has none).
+    `style` is "prose" or "claims" (the written section did not pass its check,
+    so `text` is the claim list). `kind` is "section", or "close" for the
+    interpretive close (reading, counter-case, limits)."""
+
+    heading: str
+    prose: tuple[ProseSentence, ...]
+    text: str
+    claims_start: int
+    claims_end: int
+    style: str = "prose"
+    kind: str = "section"
+    entities: tuple[str, ...] = ()
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -168,3 +217,9 @@ class Answer:
     # Aspects of the question, inside a part the prose does answer, that the
     # facts do not cover (checked); shown with `unanswered` in one line.
     gaps: tuple[str, ...] = ()
+    # A deep answer (lore/query/deep.py): the cited overview, then the
+    # sections in order; `answer_style` is "sectioned". `requests` is the
+    # number of model requests the deep path made (planner, sections, overview).
+    sections: tuple[AnswerSection, ...] = ()
+    overview: tuple[ProseSentence, ...] = ()
+    requests: int = 0

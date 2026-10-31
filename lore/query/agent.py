@@ -16,6 +16,7 @@ from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
+from lore.query import deep as deep_module
 from lore.query import interpret as interpret_module
 from lore.query import judge as judge_module
 from lore.query import decompose as decompose_module
@@ -47,6 +48,7 @@ from lore.query.synthesize import (
 from lore.query.templates import MAX_EVIDENCE_CHARS
 from lore.query.viewpoint import load_viewpoint
 from lore.query import timeline as timeline_module
+from lore.query import codexslice
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
@@ -183,6 +185,9 @@ class QueryModels:
     # The viewpoint text (lore/query/viewpoint.py) an interpretive answer
     # follows. None: the packaged default is read when it is needed.
     viewpoint: str | None = field(default=None)
+    # Deep answers (deep.py): False when the day's requests have reached the
+    # answer reserve, so no further section is started. None: never asked.
+    spend_ok: Callable[[], bool] | None = field(default=None)
 
 
 @dataclass(frozen=True)
@@ -567,6 +572,25 @@ def _dedupe(items) -> list:
     return list(dict.fromkeys(items))
 
 
+async def _deep(conn, kuzu, lance, question, models, vector, plan, scopes, nearest, titles,
+                books, on_event) -> Answer | None:
+    """The deep answer (deep.py), or None when it does not apply: the question
+    is about more than one world (or none), or the planner gave no section. The
+    caller then answers in the ordinary way."""
+    live = [si for si in range(len(scopes))
+            if max((_cosine(row) for row in nearest[(si, tuple(vector))]),
+                   default=float("-inf")) >= RELEVANCE_FLOOR]
+    if len(live) != 1:
+        return None
+    scope = scopes[live[0]]
+    ctx = _scope_context(scope, kuzu, question, titles)
+    named = books_named(question, ctx.titles)
+    return await deep_module.answer_deep(
+        conn, kuzu, lance, question, models, scope=scope, titles=ctx.titles, books=books,
+        vector=vector, plan=plan, named_ids=ctx.named_in_question, book_names=ctx.book_names,
+        book_ids=frozenset(named) if named else None, on_event=on_event)
+
+
 async def answer_question(
     conn: sqlite3.Connection,
     kuzu,
@@ -611,6 +635,7 @@ async def answer_question(
                                     mode="vector-baseline", note=None, books=books,
                                     book_ids=union(scopes))
 
+    plain_models = models  # a deep answer announces its own steps
     check_steps = _AnswerSteps(on_event) if on_event is not None else None
     if check_steps is not None:
         models = check_steps.wrap(models)
@@ -651,6 +676,11 @@ async def answer_question(
     emit(on_event, "parts", sub_questions=list(sub_questions), **extra)
     emit(on_event, "step", name="split", state="done", part=None,
          detail=f"{len(parts)} part" + ("s" if len(parts) != 1 else ""))
+    if decompose_module.DEEP and depth == "deep":
+        deeper = await _deep(conn, kuzu, lance, question, plain_models, vector, plan,
+                             scopes, nearest, titles, books, on_event)
+        if deeper is not None:
+            return deeper
     for si in range(len(scopes)):
         for v in (v for _, v in parts):
             if (si, tuple(v)) not in nearest:
@@ -697,6 +727,8 @@ async def answer_question(
     seeded = False
     # Story beats of each part's characters, factions and objects (timeline.py).
     part_beats: list[list] = [[] for _ in parts]
+    # The codex lines of each part's entities (codexslice.py); only with DEEP on.
+    part_codex: list[list] = [[] for _ in parts]
     running_in: list[list[int]] = [[] for _ in parts]  # part index -> scope indexes
     for index, (part, part_vector) in enumerate(parts):
         running = [si for si in active if runs_in(si, part)]
@@ -759,6 +791,9 @@ async def answer_question(
                 else:
                     part_beats[index] += timeline_module.part_timeline(
                         conn, lance, seeds, part_vector, books, beat_books)
+            if codexslice.active():
+                part_codex[index] += codexslice.part_codex(
+                    conn, lance, seeds, part_vector, books, part_books or scope.book_ids())
             if not searched:
                 searched = True
                 emit(on_event, "step", name="search", state="start", part=index, detail=None)
@@ -813,6 +848,7 @@ async def answer_question(
     # A timeline's passages are candidates too: ranked like any other, and
     # (when their part has a timeline slice) kept whatever their rank.
     extra += [(b.chunk_id, b.book_id, b.chapter_seq) for beats in part_beats for b in beats]
+    extra += [(l.chunk_id, l.book_id, l.chapter_seq) for lines in part_codex for l in lines]
     books_of = {r.chunk_id: r.book_id for r in rows} | {c: b for c, b, _ in extra}
     candidates = sorted({row.chunk_id for row in rows} | {c for c, _, _ in extra})
     stored = lance.chunk_vectors(candidates)
@@ -835,6 +871,9 @@ async def answer_question(
     timelines = ({"timelines": [timeline_module.timeline_beats(beats) for beats in part_beats],
                   "timeline_share": timeline_module.TIMELINE_SHARE}
                  if any(part_beats) else {})
+    if any(part_codex):
+        timelines |= {"codexes": [tuple(dict.fromkeys(lines)) for lines in part_codex],
+                      "codex_share": codexslice.CODEX_SHARE}
     evidence = assemble_ranked(conn, rows, extra_chunks=extra,
                                max_chars=models.evidence_chars,
                                score_lists=score_lists,

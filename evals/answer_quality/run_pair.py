@@ -65,6 +65,11 @@ ARM_SETTINGS = {
     # lore/query/decompose.py, interpret.py.
     "interpretive": ("lore.query.decompose", "INTERPRETIVE",
                      lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # The deep answer: an outline planned from the graph and codex, one section
+    # per entry (lore/query/deep.py). `deep=true` also asks every question at
+    # depth "deep"; `deep=false` is the code before it existed.
+    "deep": ("lore.query.decompose", "DEEP",
+             lambda v: v.lower() in ("1", "true", "yes", "on")),
     # The story timeline of the question's entities (lore/query/timeline.py).
     "timeline": ("lore.query.timeline", "TIMELINE",
                  lambda v: v.lower() in ("1", "true", "yes", "on")),
@@ -109,11 +114,14 @@ def _pinned(config, model: str):
 
 
 async def ask(config, question: str, overrides, trace: list | None):
+    # The `deep` arm asks at depth "deep"; any other arm lets the decomposer decide.
+    depth = "deep" if overrides.get(("lore.query.decompose", "DEEP")) is True else None
+    kw = {"depth": depth} if depth else {}
     with _Applied(overrides):
         models = _real_models(config)
         if trace is not None:
             models = _traced(models, trace)
-        result = await tools.lore_search(config, question, models=models)
+        result = await tools.lore_search(config, question, models=models, **kw)
         for _ in range(2):  # transient refusals are not a quality signal
             err = result.get("error")
             if not err or err["code"] != "upstream_unavailable":
@@ -123,7 +131,7 @@ async def ask(config, question: str, overrides, trace: list | None):
             if trace is not None:
                 trace.clear()
                 models = _traced(models, trace)
-            result = await tools.lore_search(config, question, models=models)
+            result = await tools.lore_search(config, question, models=models, **kw)
     return result
 
 

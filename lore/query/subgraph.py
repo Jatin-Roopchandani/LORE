@@ -6,7 +6,7 @@ from itertools import zip_longest
 from typing import Iterable, Sequence
 
 from lore.ingest.registry import chunks_by_id
-from lore.query.models import EdgeRow, Evidence, Passage, TemplateCall, TimelineBeat
+from lore.query.models import CodexLine, EdgeRow, Evidence, Passage, TemplateCall, TimelineBeat
 from lore.query.retrieval import drop_boilerplate
 from lore.query.templates import MAX_EVIDENCE_CHARS, TEMPLATES
 from lore.query.timeline import coverage_order
@@ -233,6 +233,8 @@ def assemble_ranked(
     timelines: Sequence[Sequence[TimelineBeat]] = (),
     timeline_share: float = 0.0,
     part_books: Sequence[Sequence[str]] = (),
+    codexes: Sequence[Sequence[CodexLine]] = (),
+    codex_share: float = 0.0,
 ) -> Evidence:
     """Evidence from template rows plus vector passages, for one or more parts.
 
@@ -264,6 +266,10 @@ def assemble_ranked(
     its share (retrieval v2's SCOPE_PENALTY only ranked them lower). A part
     naming no book, or several, is unchanged.
 
+    `codexes` and `codex_share` do the same for codex lines (codexslice.py): a
+    second slice, filled after the timeline's, from the passages the timeline
+    slice did not already take.
+
     Passages are numbered in reading order, and only edges whose passage
     was kept are returned. `shares` gives each part's passage numbers: the
     ones it took, plus the ones it ranked above them that another part took.
@@ -277,6 +283,9 @@ def assemble_ranked(
     for beats in timelines:
         for beat in beats:
             positions.setdefault(beat.chunk_id, (beat.book_id, beat.chapter_seq))
+    for lines in codexes:
+        for line in lines:
+            positions.setdefault(line.chunk_id, (line.book_id, line.chapter_seq))
     if not positions:
         return Evidence(edges=(), passages=(), truncated=False)
 
@@ -311,6 +320,25 @@ def assemble_ranked(
                 continue  # one oversized passage must not empty the slice
             slice_items.append(item)
             slice_used += len(item[3])
+    # The codex slice: the same, over the passages the timeline did not take.
+    codex_ids: list[list[str]] = []
+    for index, lines in enumerate(codexes):
+        chunks = [c for c in dict.fromkeys(l.chunk_id for l in lines)
+                  if c in by_id and only_book(index) in (None, by_id[c][1])]
+        codex_ids.append([chunks[i] for i in coverage_order(len(chunks))])
+    if codex_share > 0 and any(codex_ids):
+        codex_cap = int(max_chars * codex_share)
+        codex_used = 0
+        taken = {item[0] for item in slice_items}
+        for item in _next_unseen([[by_id[c] for c in ids] for ids in codex_ids]).merged:
+            if item[0] in taken:
+                continue
+            if codex_used + len(item[3]) > codex_cap:
+                continue
+            slice_items.append(item)
+            taken.add(item[0])
+            codex_used += len(item[3])
+            slice_used += len(item[3])
     slice_ids = {item[0] for item in slice_items}
     ranked, truncated = _capped([i for i in turns.merged if i[0] not in slice_ids],
                                 max_chars - slice_used)
@@ -318,6 +346,7 @@ def assemble_ranked(
     kept_ids = {item[0] for item in kept}
     # Every timeline passage the evidence could not hold is evidence cut too.
     truncated = truncated or any(c not in kept_ids for ids in part_ids for c in ids)
+    truncated = truncated or any(c not in kept_ids for ids in codex_ids for c in ids)
     # Of the ranked turns, the leading ones that were taken: a part's share
     # counts what it took within them (_shares).
     kept_count = next((i for i, item in enumerate(turns.merged) if item[0] not in kept_ids),
@@ -340,11 +369,17 @@ def assemble_ranked(
     if part_ids:
         base = [share | {c for c in ids if c in kept_ids}
                 for share, ids in zip(base, part_ids + [[]] * len(base))]
+    if codex_ids:
+        base = [share | {c for c in ids if c in kept_ids}
+                for share, ids in zip(base, codex_ids + [[]] * len(base))]
     shares = tuple(tuple(sorted(number[c] for c in share if c in number)) for share in base)
     timeline = tuple(dict.fromkeys(b for beats in timelines for b in beats))
+    codex = tuple(dict.fromkeys(l for lines in codexes for l in lines))
     return Evidence(edges=edges, passages=passages, truncated=truncated, shares=shares,
                     timeline=timeline,
-                    timelines=tuple(tuple(beats) for beats in timelines) if timeline else ())
+                    timelines=tuple(tuple(beats) for beats in timelines) if timeline else (),
+                    codex=codex,
+                    codexes=tuple(tuple(lines) for lines in codexes) if codex else ())
 
 
 def passages_from_chunks(chunk_rows: list[dict]) -> tuple[Passage, ...]:

@@ -101,6 +101,21 @@ class ProseOut(BaseModel):
     kind: str = "fact"
 
 
+class SectionOut(BaseModel):
+    """One section of a deep answer. `prose` cites the answer's own `claims`
+    (1-based) and `passages`; `claims_range` is the section's claims in that
+    numbering, [first, last] inclusive, or null when it has none (the close)."""
+
+    heading: str
+    kind: str = "section"
+    style: str = "prose"
+    text: str
+    prose: list[ProseOut] = []
+    claims_range: list[int] | None = None
+    entities: list[str] = []
+    note: str | None = None
+
+
 class SearchResult(BaseModel):
     answer: str
     mode: str
@@ -117,6 +132,10 @@ class SearchResult(BaseModel):
     answer_style: str = "claims"
     unanswered: list[str] = []
     gaps: list[str] = []
+    # A deep answer (answer_style "sectioned"): the cited overview, then the sections.
+    overview: list[ProseOut] = []
+    sections: list[SectionOut] = []
+    requests: int = 0
 
 
 class ChunkHit(BaseModel):
@@ -257,9 +276,21 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
         seeds=[SeedOut(id=s.id, name=s.name, kind=s.kind, books=list(s.books),
                        score=s.score if math.isfinite(s.score) else None)
                for s in answer.seeds],
-        prose=[ProseOut(text=s.text, claims=list(s.claims), passages=list(s.passages),
-                        new_paragraph=s.new_paragraph, kind=s.kind) for s in answer.prose],
+        prose=[_prose_out(s) for s in answer.prose],
         answer_style=answer.answer_style,
         unanswered=list(answer.unanswered),
         gaps=list(answer.gaps),
+        overview=[_prose_out(s) for s in answer.overview],
+        sections=[SectionOut(
+            heading=x.heading, kind=x.kind, style=x.style, text=x.text,
+            prose=[_prose_out(s) for s in x.prose],
+            claims_range=([x.claims_start, x.claims_end]
+                          if x.claims_end >= x.claims_start else None),
+            entities=list(x.entities), note=x.note) for x in answer.sections],
+        requests=answer.requests,
     )
+
+
+def _prose_out(s) -> "ProseOut":
+    return ProseOut(text=s.text, claims=list(s.claims), passages=list(s.passages),
+                    new_paragraph=s.new_paragraph, kind=s.kind)

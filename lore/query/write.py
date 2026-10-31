@@ -144,6 +144,28 @@ Facts:
 """
 
 
+# The length rule of the story writer prompt, and its replacements for the
+# parts of a deep answer (deep.py): a section has no word cap, the overview is
+# short. Kept apart so the prompt reads exactly as before when none is asked for.
+_LENGTH_RULE = """- Length: a narrow question gets two to four sentences. A broad, abstract
+  or multi-part question gets a detailed answer of up to four short
+  paragraphs, about 400 words at most. Start a new paragraph for each part
+  or theme: mark its first sentence with new_paragraph.
+"""
+SECTION_LENGTH_RULE = """- Length: this is one section of a long, detailed answer, and its question is the
+  section's subject. Use every fact given, and say as much as the facts
+  support; there is no word limit. Start a new paragraph for each theme: mark
+  its first sentence with new_paragraph.
+"""
+OVERVIEW_LENGTH_RULE = """- Length: this is the short overview that opens a long answer, and the facts are
+  a few of the most important ones from each section that follows. Write two
+  to five sentences that say in brief what the answer covers, in the order of
+  the facts. Make no claim the facts do not support.
+"""
+LENGTH_RULES = {None: _LENGTH_RULE, "section": SECTION_LENGTH_RULE,
+                "overview": OVERVIEW_LENGTH_RULE}
+
+
 STORY_WRITER_PROMPT = """Write the answer to the question from the numbered facts below.
 
 Each fact was checked against the book it cites. The facts are listed in
@@ -198,11 +220,7 @@ Every sentence lists the numbers of the facts it uses, in `claims`.
   she or they where it is clear who is meant, instead of repeating the name.
 - Each item in `sentences` is exactly one sentence; a paragraph is several
   items. Set new_paragraph as the field; never write it in the text.
-- Length: a narrow question gets two to four sentences. A broad, abstract
-  or multi-part question gets a detailed answer of up to four short
-  paragraphs, about 400 words at most. Start a new paragraph for each part
-  or theme: mark its first sentence with new_paragraph.
-{readings}
+{length}{readings}
 Question: {question}
 Parts:
 {parts}
@@ -272,10 +290,13 @@ def part_texts(question: str, sub_questions: Sequence[str]) -> list[str]:
 def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[Claim],
                   passages: Iterable[Passage], book_titles: dict[str, str] | None,
                   books: dict[str, BookInfo] | None = None,
-                  shape: "interpret.Shape | None" = None) -> str:
+                  shape: "interpret.Shape | None" = None,
+                  length: str | None = None) -> str:
     """`shape`: the interpretive answer's shape (interpret.py), only with
     STORY_ORDER. The facts are then listed under an "Evidence for:" heading per
-    lens, and the shape's rule and the viewpoint replace the readings rule."""
+    lens, and the shape's rule and the viewpoint replace the readings rule.
+    `length` ("section" or "overview", only with STORY_ORDER): the part of a
+    deep answer this writes, which sizes its prose (LENGTH_RULES)."""
     passages = list(passages)
     parts = "\n".join(f"{i}. {s}" for i, s in enumerate(part_texts(question, sub_questions), start=1))
     if STORY_ORDER:
@@ -296,7 +317,8 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
         else:
             rules = _READINGS_RULE if readings_on() else ""
         return STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
-                                          order_note=note, readings=rules)
+                                          order_note=note, readings=rules,
+                                          length=LENGTH_RULES[length])
     by_number = {p.n: p for p in passages}
     lines = []
     for number, claim in enumerate(claims, start=1):
@@ -320,7 +342,8 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
                        passages: Iterable[Passage], generate: Generate, *,
                        book_titles: dict[str, str] | None = None,
                        books: dict[str, BookInfo] | None = None,
-                       shape: "interpret.Shape | None" = None) -> Prose | None:
+                       shape: "interpret.Shape | None" = None,
+                       length: str | None = None) -> Prose | None:
     """The writer's prose, or None on any failure: a failed extra step must
     never cost the user the checked claims (they are the fallback).
 
@@ -333,7 +356,8 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     kinds = readings_on() or shape is not None
     try:
         reply = await generate(
-            writer_prompt(question, sub_questions, claims, passages, book_titles, books, shape),
+            writer_prompt(question, sub_questions, claims, passages, book_titles, books, shape,
+                          length),
             (Prose if kinds else _StoryProse) if STORY_ORDER else _PlainProse)
     except Exception:  # noqa: BLE001 -- see the docstring
         return None
@@ -578,3 +602,19 @@ def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = (),
     if closing:
         text += f"\n\n{UNANSWERED_LEAD} " + "; ".join(closing)
     return text
+
+
+CONTENTS_HEADING = "Contents"
+
+
+def compose_sections(overview: Sequence[ProseSentence], sections: Sequence) -> str:
+    """A deep answer as text: the overview, a numbered contents list, then each
+    section under a markdown heading (`## heading`). A section is anything with
+    `heading` and `text` (models.AnswerSection); the text of each is its own
+    prose with its citations, or its claim list when the prose did not pass."""
+    blocks = [compose_text(overview)] if overview else []
+    if len(sections) > 1:
+        blocks.append(CONTENTS_HEADING + "\n" + "\n".join(
+            f"{i}. {s.heading}" for i, s in enumerate(sections, start=1)))
+    blocks += [f"## {s.heading}\n\n{s.text}" for s in sections]
+    return "\n\n".join(blocks)

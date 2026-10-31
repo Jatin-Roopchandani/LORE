@@ -1035,9 +1035,15 @@ def test_claim_is_importable_from_both_modules():
 def _new_prompt_texts() -> str:
     """The deep/interpretive prompt texts and the viewpoint policy: the
     banned-word and leak tests cover each as it is added."""
-    from lore.query import decompose, interpret
+    from lore.query import decompose, deep, interpret
+    from lore.query import synthesize as synthesize_module
+    from lore.query import write as write_module
     from lore.query.viewpoint import load_viewpoint
-    return "\n".join((decompose._ITEM_RULE, decompose._KIND_RULE,
+    return "\n".join((deep.PLANNER_PROMPT, deep.CLOSE_HEADING, synthesize_module._CODEX_BLOCK,
+                      synthesize_module._SECTION_CONTEXT, write_module._LENGTH_RULE,
+                      write_module.SECTION_LENGTH_RULE, write_module.OVERVIEW_LENGTH_RULE,
+                      write_module.CONTENTS_HEADING,
+                      decompose._ITEM_RULE, decompose._KIND_RULE,
                       decompose._DEPTH_RULE, load_viewpoint(),
                       interpret.LENS_CONTEXT, interpret.BEYOND_CONTEXT,
                       interpret.WRITER_SHAPE_RULE, interpret.WRITER_BEYOND_RULE,
