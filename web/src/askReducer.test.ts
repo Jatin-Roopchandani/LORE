@@ -71,3 +71,38 @@ test("compose and check run at the same time", () => {
   s = askReducer(s, { ...ev("compose", "done", 6), detail: "3 sentences" } as AskEvent);
   expect(st("compose")).toBe("done");
 });
+
+import * as deep from "./fixtures/deep";
+
+test("a deep answer builds the plan, sections, overview and live citations as events arrive", () => {
+  let s = initialState("q");
+  for (const e of [...deep.head, ...deep.sec0, deep.sec1[0], deep.sec1[1]]) s = askReducer(s, e);
+  expect(s.plan?.sections.map((x) => x.heading)).toEqual(["The council", "The guild"]);
+  expect(s.sections.map((x) => [x.index, x.state])).toEqual([[0, "done"], [1, "writing"]]);
+  expect(s.liveClaims.map((c) => c.text)).toEqual(deep.claims.slice(0, 2).map((c) => c.text));
+  expect(s.livePassages.map((p) => p.n)).toEqual([1]);
+  expect(s.overview).toBeNull();
+  expect(s.deepSteps.map((d) => [d.kind, d.part, d.state])).toEqual([["plan", null, "done"], ["section", 0, "done"], ["section", 1, "running"]]);
+  expect(s.steps.find((x) => x.name === "split")!.state).toBe("done");
+  for (const e of [deep.sec1[2], deep.sec1[3], ...deep.tail]) s = askReducer(s, e);
+  expect(s.overview?.length).toBe(1);
+  expect(s.liveClaims).toHaveLength(3);
+  expect(s.sections.map((x) => x.kind)).toEqual(["section", "section", "close"]);
+  expect(s.status).toBe("done");
+});
+
+test("a skipped section is kept with its reason; an interrupted stream fails the one being written", () => {
+  let s = initialState("q");
+  s = askReducer(s, deep.start(0, "A"));
+  s = askReducer(s, { type: "section", t: 1, index: 1, state: "skipped", kind: "section", heading: "B", reason: "reserve" });
+  expect(s.sections[1]).toMatchObject({ state: "skipped", reason: "reserve" });
+  s = askReducer(s, { type: "error", t: 2, error: { code: "interrupted", message: "" } });
+  expect(s.sections[0].state).toBe("failed");
+});
+
+test("the parts event keeps lens_of and the plan's questions", () => {
+  const s = askReducer(initialState("q"), { type: "parts", t: 0, sub_questions: ["l1", "l2", "f"], lens_of: [0, 0, null], plan_questions: ["P"] });
+  expect(s.lensOf).toEqual([0, 0, null]);
+  expect(s.planQuestions).toEqual(["P"]);
+  expect(askReducer(initialState("q"), { type: "parts", t: 0, sub_questions: ["a"] }).lensOf).toEqual([]);
+});

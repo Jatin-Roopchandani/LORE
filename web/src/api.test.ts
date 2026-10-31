@@ -95,3 +95,11 @@ test("world calls use the right verbs and bodies", async () => {
   await api.createWorld("Z");
   expect([lastCall()[0], lastCall()[1]!.method]).toEqual(["/api/worlds", "POST"]);
 });
+
+test("ask sends the depth in its body, and leaves it out when not given", async () => {
+  jsonFetch({}, 400);
+  for await (const _ of streamAsk("who?", new AbortController().signal, "2", "deep")) { /* drain */ }
+  expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ question: "who?", world: "2", depth: "deep" });
+  for await (const _ of streamAsk("who?", new AbortController().signal, undefined, "focused")) { /* drain */ }
+  expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ question: "who?", depth: "focused" });
+});

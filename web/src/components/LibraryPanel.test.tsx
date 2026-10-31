@@ -1,6 +1,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LibraryPanel } from "./LibraryPanel";
+import { STAGE_LABEL } from "../messages";
 
 const gemini = { used_today: 120, limit: 500, answer_reserve: 50 };
 const job = (o: object) => ({ stage: "extract", state: "running", done: 3, total: 10, stopped_reason: null, resumable_at: null,
@@ -267,4 +268,15 @@ test("changes tell the page so it can refetch the worlds and the graph", async (
   await click(screen.getByRole("button", { name: "Delete world Empty Isle" }));
   await click(screen.getByRole("button", { name: "Delete world" }));
   expect(changed).toHaveBeenCalledTimes(1);
+});
+
+test("the codex stage has its own label and progress bar, beside remove and reassign", async () => {
+  status = { gemini, books: [book("a", job({ stage: "codex", done: 4, total: 9 }), "ingested")] };
+  await open();
+  expect(screen.getByText("Writing entity profiles")).toBeInTheDocument();
+  expect(screen.getByRole("progressbar", { name: "Writing entity profiles progress" })).toHaveAttribute("aria-valuenow", "4");
+  expect(STAGE_LABEL.codex).toBe("Writing entity profiles");
+  expect(STAGE_LABEL.remove).toBe("Taking it out of the graph");
+  expect(STAGE_LABEL.reassign).toBe("Changing its world");
+  vi.clearAllTimers();
 });

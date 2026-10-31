@@ -2,7 +2,7 @@ import { useState } from "react";
 import { highlightQuote } from "../highlight";
 import type { SearchResult } from "../types";
 
-const short = (title: string | null) => (title ?? "Book").replace(/^(A|An|The) /, "").split(" ")[0];
+const short = (title: string | null | undefined) => (title ?? "Book").replace(/^(A|An|The) /, "").split(" ")[0];
 
 export function Claims({ result, onHoverChunks }: { result: SearchResult; onHoverChunks: (chunks: string[]) => void }) {
   const [open, setOpen] = useState<number | null>(null);

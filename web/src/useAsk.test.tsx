@@ -7,7 +7,7 @@ interface Stream { signal: AbortSignal; push(e: AskEvent): void; end(): void }
 const streams: Stream[] = [];
 const streamAsk = vi.fn();
 
-vi.mock("./api", () => ({ streamAsk: (q: string, signal: AbortSignal, world?: string) => streamAsk(q, signal, world) }));
+vi.mock("./api", () => ({ streamAsk: (q: string, signal: AbortSignal, world?: string, depth?: string) => streamAsk(q, signal, world, depth) }));
 Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
 
 function controllable(signal: AbortSignal) {
@@ -136,4 +136,25 @@ test("clear returns to the empty state and aborts a running stream", async () =>
   expect(result.current.state.status).toBe("idle");
   expect(result.current.state.question).toBe("");
   expect(result.current.run).toBe(run + 1);
+});
+
+test("the Deep dive choice defaults to auto, is sent with every question and is remembered", async () => {
+  const { useAsk } = await import("./useAsk");
+  const { result, unmount } = renderHook(() => useAsk());
+  expect(result.current.depth).toBe("auto");
+  act(() => result.current.ask("q1"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(streamAsk.mock.calls[0][3]).toBe("auto");
+  act(() => result.current.setDepth("deep"));
+  expect(localStorage.getItem("lore-depth-v1")).toBe("deep");
+  act(() => result.current.ask("q2"));
+  await waitFor(() => expect(streamAsk).toHaveBeenCalledTimes(2));
+  expect(streamAsk.mock.calls[1][3]).toBe("deep");
+  act(() => result.current.setDepth("focused"));
+  act(() => result.current.retry());
+  await waitFor(() => expect(streamAsk).toHaveBeenCalledTimes(3));
+  expect(streamAsk.mock.calls[2][3]).toBe("focused");
+  unmount();
+  const again = renderHook(() => useAsk());
+  expect(again.result.current.depth).toBe("focused");
 });

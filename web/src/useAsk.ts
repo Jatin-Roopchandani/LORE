@@ -2,8 +2,9 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { streamAsk } from "./api";
 import { askReducer, initialState, type AskState } from "./askReducer";
 import { addToHistory, loadHistory, saveHistory, type HistoryItem } from "./history";
+import { loadDepth, saveDepth } from "./depth";
 import { createScheduler, type Scheduler } from "./scheduler";
-import type { AskEvent } from "./types";
+import type { AskEvent, Depth } from "./types";
 
 type Action = { kind: "reset"; question: string } | { kind: "event"; event: AskEvent };
 function reducer(state: AskState, action: Action): AskState {
@@ -25,6 +26,11 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   const abort = useRef<AbortController | null>(null);
   const scheduler = useRef<Scheduler | null>(null);
   const last = useRef<string>("");
+  // The Deep dive choice (auto, deep or focused), remembered across visits and sent with every question.
+  const [depth, setDepthState] = useState<Depth>(() => loadDepth());
+  const depthRef = useRef(depth);
+  depthRef.current = depth;
+  const setDepth = useCallback((d: Depth) => { setDepthState(d); saveDepth(d); }, []);
   const worldRef = useRef(world);
   worldRef.current = world;
   const onReplayWorld_ = useRef(onReplayWorld);
@@ -47,7 +53,7 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
     setRun((n) => n + 1);
     (async () => {
       const events: AskEvent[] = [];
-      for await (const event of streamAsk(question, controller.signal, asked)) { events.push(event); sched.push(event); }
+      for await (const event of streamAsk(question, controller.signal, asked, depthRef.current)) { events.push(event); sched.push(event); }
       if (controller.signal.aborted) return;
       if (events.some((e) => e.type === "answer"))
         setHistory((h) => addToHistory(h, { id, question, events, askedAt: new Date().toISOString(), world: asked }));
@@ -76,5 +82,5 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   }, []);
 
   const retry = useCallback(() => { if (last.current) ask(last.current); }, [ask]);
-  return { state, history, current, run, ask, replay, retry, clear, busy: state.status === "running" };
+  return { state, history, current, run, ask, replay, retry, clear, depth, setDepth, busy: state.status === "running" };
 }

@@ -5,6 +5,7 @@ import { Prose } from "./Prose";
 import { HistoryBar } from "./HistoryBar";
 import { HowPanel } from "./HowPanel";
 import { AskBox } from "./AskBox";
+import { Sections } from "./Sections";
 import { StepList } from "./StepList";
 import { Snip } from "./SettingsMenu";
 import { exampleQuestions } from "../examples";
@@ -22,6 +23,9 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
   const r = state.result;
   const err = state.error ? errorMessage(state.error, { showInternals, resetsAt }) : null;
   const notFound = missingParts(r?.note);
+  // A deep answer: the plan or a section has arrived, or the result says so. (A deep question that fell back
+  // to the ordinary path has a plan step but no plan, so it renders as before.)
+  const sectioned = state.plan !== null || state.sections.length > 0 || r?.answer_style === "sectioned";
   const examples = state.question ? [] : exampleQuestions(overview);
   return (
     <section className="pane chat" aria-label="Conversation">
@@ -40,7 +44,7 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
         {state.question && <div className="q">{state.question}</div>}
         {state.question && (
           <div className="a">
-            <StepList steps={state.steps} />
+            <StepList state={state} />
             {err && (
               <div className="note" role="alert">
                 <p>{err.text}</p>
@@ -49,7 +53,8 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
               </div>
             )}
             {r && r.claims.length === 0 && <p className="note">{UI.refusal}</p>}
-            {r && r.claims.length > 0 && r.answer_style === "prose" && (r.prose?.length ?? 0) > 0 ? (
+            {sectioned && <Sections key={ask.run} state={state} onHoverChunks={onHoverChunks} />}
+            {!sectioned && r && r.claims.length > 0 && r.answer_style === "prose" && (r.prose?.length ?? 0) > 0 ? (
               <>
                 <Prose key={ask.run} result={r} onHoverChunks={onHoverChunks} />
                 <details className="evidence">
@@ -57,7 +62,7 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
                   <Claims key={ask.run} result={r} onHoverChunks={onHoverChunks} />
                 </details>
               </>
-            ) : r && r.claims.length > 0 && (
+            ) : !sectioned && r && r.claims.length > 0 && (
               <>
                 {(r.note ?? "").includes("written answer did not pass verification") && <p className="note">{UI.proseFallback}</p>}
                 <Claims key={ask.run} result={r} onHoverChunks={onHoverChunks} />
@@ -68,7 +73,7 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
           </div>
         )}
       </div>
-      <AskBox onAsk={ask.ask} busy={ask.busy} />
+      <AskBox onAsk={ask.ask} busy={ask.busy} depth={ask.depth} onDepth={ask.setDepth} />
     </section>
   );
 }

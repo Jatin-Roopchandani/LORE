@@ -1,4 +1,4 @@
-import type { ApiError, StepName } from "./types";
+import type { ApiError, Depth, StepName } from "./types";
 
 export interface Msg { text: string; retry?: boolean; command?: string }
 export const OLLAMA_START = "CUDA_VISIBLE_DEVICES=-1 OLLAMA_VULKAN=0 ~/.local/ollama/bin/ollama serve";
@@ -11,7 +11,37 @@ export const STEP_LABEL: Record<StepName, string> = {
 export const STAGE_LABEL: Record<string, string> = {
   chunk: "Splitting into passages", extract: "Reading passages", load: "Building the graph",
   remove: "Taking it out of the graph", reassign: "Changing its world",
-  disambiguate: "Merging duplicate entities", beats: "Finding story beats", ready: "Finishing up",
+  disambiguate: "Merging duplicate entities", beats: "Finding story beats", codex: "Writing entity profiles", ready: "Finishing up",
+};
+
+// Deep answers: the Deep dive toggle, the sectioned answer and its steps.
+export const DEEP = {
+  toggleLabel: "Deep dive",
+  options: { auto: "Auto", deep: "On", focused: "Off" } as Record<Depth, string>,
+  toggleHint: {
+    auto: "LORE decides whether a question needs a long, sectioned answer.",
+    deep: "Every question gets a long, sectioned answer.",
+    focused: "Every question gets a short answer.",
+  } as Record<Depth, string>,
+  costNote: "A deep answer can take a few dozen requests from the daily allowance.",
+  overview: "Overview",
+  contents: "Contents",
+  writing: "Writing…",
+  claimsOnly: "Showing the checked facts; the written section didn't pass verification.",
+  failed: "This section couldn't be written.",
+  skipped: { budget: "Not written: the request limit for one answer was reached.",
+    reserve: "Not written: the rest of today's allowance is kept for answering other questions." },
+  requests: "Requests used",
+  requestCount: (n: number) => `${n} ${n === 1 ? "request" : "requests"}`,
+};
+
+export const STEPS_DEEP = {
+  plan: "Planning the sections",
+  section: (n: number, heading: string | null) => heading ? `Section ${n}: ${heading}` : `Section ${n}`,
+  group: (question: string) => question,
+  lensDetail: (entities: number, relationships: number) =>
+    `${entities} ${entities === 1 ? "entity" : "entities"} \u00b7 ${relationships} relationships`,
+  partsLabel: "Parts of the question",
 };
 
 export const WORLDS = {
@@ -68,7 +98,10 @@ export const UI = {
   evidence: (n: number) => `Evidence (${n} ${n === 1 ? "claim" : "claims"})`,
   unanswered: "The passages found don't answer:",
   readingNote: "A reading of the cited facts, not a direct statement from the book.",
-  judgementNote: "A judgement weighing the cited facts: an arguable case, not a statement from the book.",
+  counterNote: "The strongest case for the other side, drawn from the cited facts: an interpretation, not a statement from the book.",
+  limitNote: "What the passages found can't settle.",
+  // The label above a run of interpretive sentences (readings, the other side, and what the books leave open).
+  kindLabel: { reading: "LORE's reading", counter: "The other side", limit: "What the books don't settle" },
   proseFallback: "Showing the checked facts; the written answer didn't pass verification.",
   partial: (parts: string[]) => `Not found in the books: ${parts.join("; ")}`,
   showingEdges: (shown: number, total: number) => `Showing ${shown} of ${total} relationships`,

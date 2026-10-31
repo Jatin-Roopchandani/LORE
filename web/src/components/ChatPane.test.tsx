@@ -8,7 +8,7 @@ import type { AskEvent } from "../types";
 
 const askWith = (events: AskEvent[], extra = {}) => ({
   state: events.reduce(askReducer, initialState("q")), history: [], current: null, run: 1,
-  ask: vi.fn(), replay: vi.fn(), retry: vi.fn(), clear: vi.fn(), busy: false, ...extra });
+  ask: vi.fn(), replay: vi.fn(), retry: vi.fn(), clear: vi.fn(), depth: "auto" as const, setDepth: vi.fn(), busy: false, ...extra });
 
 test("renders steps, claims and the how panel for a recorded answer", () => {
   render(<ChatPane ask={askWith(single as AskEvent[])} showInternals onHoverChunks={() => {}} />);
@@ -46,7 +46,7 @@ test("re-asking the same question resets the open claim passage", () => {
 const overview = { truncated: false, depth: 0, edges: [], nodes: [
   { id: "h", name: "Holmes", kind: "Character", books: ["b1"] }, { id: "w", name: "Watson", kind: "Character", books: ["b1"] }] };
 const idle = (extra = {}) => ({ state: initialState(), history: [], current: null, run: 0,
-  ask: vi.fn(), replay: vi.fn(), retry: vi.fn(), clear: vi.fn(), busy: false, ...extra });
+  ask: vi.fn(), replay: vi.fn(), retry: vi.fn(), clear: vi.fn(), depth: "auto" as const, setDepth: vi.fn(), busy: false, ...extra });
 
 test("with no question the thread explains itself and offers example questions", () => {
   const ask = idle();

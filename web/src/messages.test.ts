@@ -42,8 +42,10 @@ test("forbidden explains the address and offers no retry", () => {
   expect(m.retry).toBeUndefined();
 });
 
-test("the judgement note says it is an arguable case, not a statement from the book", () => {
-  expect(UI.judgementNote).toBe("A judgement weighing the cited facts: an arguable case, not a statement from the book.");
+test("the interpretive kinds are labelled and have tooltips, with no judgement string left", () => {
+  expect(UI.kindLabel).toEqual({ reading: "LORE's reading", counter: "The other side", limit: "What the books don't settle" });
+  expect(UI.counterNote).toMatch(/other side/);
+  expect(UI).not.toHaveProperty("judgementNote");
 });
 
 test("the reading note says it is an interpretation, not a statement from the book", () => {

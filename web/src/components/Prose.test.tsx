@@ -97,24 +97,50 @@ test("a reading still has its citation chips and hover", () => {
   expect(screen.getAllByRole("button", { name: /\[5\]/ })).toHaveLength(2);
 });
 
-const withJudgement = {
+const withKinds = {
   ...result,
-  prose: [...result.prose!, { text: "Arguably, he is the strongest case.", claims: [1, 2], passages: [3, 5], new_paragraph: false, kind: "judgement" as const }],
+  prose: [...result.prose!,
+    { text: "On balance he never forgave.", claims: [1, 2], passages: [3, 5], new_paragraph: false, kind: "reading" as const },
+    { text: "Yet he spared Lucy's father once.", claims: [1], passages: [3], new_paragraph: false, kind: "counter" as const },
+    { text: "The books don't settle: what became of the ring.", claims: [], passages: [], new_paragraph: false, kind: "limit" as const }],
 } as SearchResult;
 
-test("a judgement is marked apart from a reading, with its own tooltip and hidden note", () => {
-  const { container } = render(<Prose result={withJudgement} onHoverChunks={() => {}} />);
-  const judged = container.querySelectorAll(".sentence.judgement");
-  expect(judged).toHaveLength(1);
-  expect(judged[0].textContent).toContain("Arguably, he is the strongest case.");
-  expect(judged[0]).toHaveAttribute("title", UI.judgementNote);
-  expect(judged[0].querySelector(".visually-hidden")?.textContent).toBe(UI.judgementNote);
-  expect(container.querySelector(".reading")).toBeNull();
+test("a reading, the other side and a limit each get a label, a style and a tooltip", () => {
+  const { container } = render(<Prose result={withKinds} onHoverChunks={() => {}} />);
+  const labels = [...container.querySelectorAll(".kind-label")].map((n) => n.textContent);
+  expect(labels).toEqual(["LORE's reading", "The other side", "What the books don't settle"]);
+  expect(labels).toEqual([UI.kindLabel.reading, UI.kindLabel.counter, UI.kindLabel.limit]);
+  expect(container.querySelector(".sentence.reading")).toHaveAttribute("title", UI.readingNote);
+  expect(container.querySelector(".sentence.counter")).toHaveAttribute("title", UI.counterNote);
+  expect(container.querySelector(".sentence.limit")).toHaveAttribute("title", UI.limitNote);
+  expect(container.querySelector(".sentence.counter .visually-hidden")?.textContent).toBe(UI.counterNote);
+  expect(container.querySelector("p.prose.limit")).not.toBeNull();   // the muted line
 });
 
-test("a judgement keeps its citation chips and hover", () => {
+test("each kind opens its own paragraph so the label sits at the start of its run", () => {
+  const { container } = render(<Prose result={withKinds} onHoverChunks={() => {}} />);
+  expect([...container.querySelectorAll("p.prose")].map((p) => p.className)).toEqual(["prose", "prose", "prose reading", "prose counter", "prose limit"]);
+});
+
+test("a counter keeps its citation chips and hover; a limit has none", () => {
   const onHover = vi.fn();
-  render(<Prose result={withJudgement} onHoverChunks={onHover} />);
-  fireEvent.mouseEnter(screen.getByText(/strongest case/));
-  expect(onHover).toHaveBeenCalledWith(["c3", "c5"]);
+  const { container } = render(<Prose result={withKinds} onHoverChunks={onHover} />);
+  fireEvent.mouseEnter(screen.getByText(/spared Lucy/));
+  expect(onHover).toHaveBeenCalledWith(["c3"]);
+  expect(container.querySelector(".sentence.limit .cite")).toBeNull();
+  expect(container.querySelector(".sentence.counter .cite")).not.toBeNull();
+});
+
+test("an old saved judgement is shown as a reading", () => {
+  const old = { ...result, prose: [{ ...result.prose![0], kind: "judgement" }] } as unknown as SearchResult;
+  const { container } = render(<Prose result={old} onHoverChunks={() => {}} />);
+  expect(container.querySelector(".sentence.reading")).not.toBeNull();
+  expect(container.querySelector(".judgement")).toBeNull();
+});
+
+test("a section's own sentences are cited from the result and show no unanswered line", () => {
+  const { container } = render(<Prose result={{ ...result, unanswered: ["x"] }} prose={[result.prose![1]]} showMissing={false} onHoverChunks={() => {}} />);
+  expect(container.querySelectorAll("p.prose")).toHaveLength(1);
+  expect(container.querySelector(".unanswered")).toBeNull();
+  expect(screen.getByRole("button", { name: /\[3\]/ })).toBeInTheDocument();
 });

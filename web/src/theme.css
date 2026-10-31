@@ -120,9 +120,18 @@ details.how summary{cursor:pointer;font-weight:600}
 .examples{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .example{text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 12px;cursor:pointer;transition:border-color .15s,background .15s}
 .example:hover{border-color:var(--accent);background:var(--accent-soft)}
-form.ask{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
-form.ask input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font:inherit;color:var(--ink)}
+form.ask{display:flex;flex-wrap:wrap;gap:8px;padding:12px;border-top:1px solid var(--line)}
+form.ask input:not([type=radio]){flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font:inherit;color:var(--ink)}
 form.ask button{border:0;background:var(--accent);color:var(--panel);border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer}
+.ask-opts{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12px;color:var(--muted)}
+fieldset.depth{display:inline-flex;align-items:center;gap:2px;margin:0;padding:0;border:0;min-width:0}
+fieldset.depth legend{float:left;padding:0 8px 0 0;font-weight:600;color:var(--ink)}
+fieldset.depth label{position:relative;border:1px solid var(--line);background:var(--bg);padding:3px 10px;cursor:pointer;color:var(--ink)}
+fieldset.depth label:first-of-type{border-radius:6px 0 0 6px} fieldset.depth label:last-of-type{border-radius:0 6px 6px 0}
+fieldset.depth label.on{background:var(--accent);border-color:var(--accent);color:var(--panel);font-weight:600}
+fieldset.depth input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+fieldset.depth label:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.depth-hint{flex:1 1 14rem}
 /* graph */
 .gwrap{position:relative;flex:1;min-height:0}
 .gcanvas{position:absolute;inset:0}
@@ -168,8 +177,27 @@ svg.graph{width:100%;height:100%;display:block}
 .prose{font:17px/1.6 var(--f-book);margin:0 0 .6em} .prose .sentence:hover{background:var(--glow-soft)}
 .prose .sentence.reading{font-style:italic;color:var(--muted);text-decoration:underline dotted;text-decoration-color:var(--muted);text-underline-offset:4px;cursor:help}
 .prose .sentence.reading .cite{font-style:normal}
-.prose .sentence.judgement{font-style:italic;color:var(--ink);text-decoration:underline dashed;text-decoration-color:var(--accent);text-underline-offset:4px;cursor:help}
-.prose .sentence.judgement .cite{font-style:normal}
+.prose .sentence.counter{font-style:italic;color:var(--ink);text-decoration:underline dashed;text-decoration-color:var(--accent);text-underline-offset:4px;cursor:help}
+.prose .sentence.counter .cite{font-style:normal}
+.prose.reading,.prose.counter{border-left:3px solid var(--accent);padding-left:12px}
+.prose.counter{border-left-style:dashed}
+.prose .kind-label{display:block;font:600 11px var(--f-sans,inherit);letter-spacing:.04em;text-transform:uppercase;color:var(--accent);margin-bottom:2px;font-style:normal}
+.prose.limit{font-size:15px;color:var(--muted);border-top:1px solid var(--line);padding-top:6px}
+.prose.limit .kind-label{color:var(--muted)}
+.prose .sentence.limit{cursor:help}
+.sectioned{display:flex;flex-direction:column;gap:14px}
+.sectioned h3{font:600 17px/1.3 var(--f-sans,inherit);margin:0 0 6px;outline-offset:3px}
+.sectioned .overview h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.sectioned nav.contents{background:var(--sunk);border-radius:8px;padding:10px 14px;font-size:14px}
+.contents-title{margin:0 0 4px;font-size:13px;font-weight:600;color:var(--muted)}
+.contents ol{margin:0;padding-left:1.4em} .contents a{color:var(--accent)} .contents .pending{color:var(--muted)}
+.answer-section{border-top:1px solid var(--line);padding-top:10px;scroll-margin-top:8px}
+.answer-section .writing{margin:0;color:var(--muted);font-size:14px}
+.steps li.section-step{padding-left:14px}
+.steps li.lens-groups,.steps li.lens-groups ul{display:block;list-style:none;margin:0;padding:0}
+.steps .lens-group{display:block;padding-left:22px;color:var(--ink)}
+.steps .lens-group ul{padding-left:14px;color:var(--muted)}
+.steps li.lens{display:flex}
 details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px} details.evidence summary{cursor:pointer;color:var(--muted);font-size:13px}
 .dialog.library{width:min(620px,100%);max-height:85vh;overflow:auto}
 .lib-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}

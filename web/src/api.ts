@@ -1,4 +1,4 @@
-import type { ApiError, AskEvent, Book, EntityCardData, EntityKind, LibraryStatus, McpInfo, MoveResult, Quota, SubgraphData, World, WorldRef } from "./types";
+import type { ApiError, AskEvent, Depth, Book, EntityCardData, EntityKind, LibraryStatus, McpInfo, MoveResult, Quota, SubgraphData, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   const events: AskEvent[] = [];
@@ -20,13 +20,14 @@ export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
 const errorEvent = (code: string, message: string): AskEvent => ({ type: "error", t: 0, error: { code, message } });
 
 // `world`: a world id as a string, or "all" (the same value the graph calls take).
-export async function* streamAsk(question: string, signal: AbortSignal, world?: string): AsyncGenerator<AskEvent> {
+// `depth`: auto, deep or focused; left out of the body when not given.
+export async function* streamAsk(question: string, signal: AbortSignal, world?: string, depth?: Depth): AsyncGenerator<AskEvent> {
   let response: Response;
   try {
     response = await fetch("/api/ask", {
       method: "POST", signal,
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify(world ? { question, world } : { question }),
+      body: JSON.stringify({ question, ...(world ? { world } : {}), ...(depth ? { depth } : {}) }),
     });
   } catch {
     if (signal.aborted) return;
