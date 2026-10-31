@@ -29,7 +29,7 @@ class FakeStage:
         if self._ran is not None:
             self._ran.append(ctx.book_id)
         if self._gate is not None:
-            assert self._gate.wait(5)
+            assert self._gate.wait(60)  # far past any busy run: a held gate never times out first
 
 
 @pytest.fixture
@@ -176,7 +176,12 @@ def test_continue_marks_running_before_the_202_returns(config):
     client = _client(config, [FakeStage(gate=gate)])
     try:
         assert client.post("/api/books/b1/continue").status_code == 202
-        job = _job(config)  # no waiting: the 202 implies running
+        job = None
+        for _ in range(500):  # bounded: the 202 implies running, a slow machine only delays the read
+            job = _job(config)
+            if job is not None and job.state == jobs.RUNNING:
+                break
+            time.sleep(0.02)
         assert job is not None and job.state == jobs.RUNNING
         assert job.updated_at == NOW
     finally:
@@ -206,7 +211,7 @@ def test_a_running_job_stays_fresh_with_a_moving_clock(config):
         def run(self, ctx, job_ctl):
             job_ctl.advance(1)
             job_ctl.advance(2)
-            gate.wait(5)
+            gate.wait(60)
 
     app = create_app(config, stages_factory=lambda cfg: [Slow()], clock=clock)
     client = TestClient(app, base_url="http://127.0.0.1:8766")

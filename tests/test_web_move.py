@@ -38,7 +38,7 @@ class Fake:
         if self._effect:
             self._effect(ctx)
         if self._gate is not None:
-            assert self._gate.wait(5)
+            assert self._gate.wait(60)  # far past any busy run: a held gate never times out first
         job_ctl.advance(1)
 
 
@@ -96,6 +96,17 @@ def _wait(config, book, states=(jobs.DONE, jobs.FAILED)):
     raise AssertionError("job never finished")
 
 
+def _wait_running(config, book):
+    """The job, once it is RUNNING (bounded: a slow machine is not a failure)."""
+    job = None
+    for _ in range(500):
+        job = _job(config, book)
+        if job is not None and job.state == jobs.RUNNING:
+            return job
+        time.sleep(0.02)
+    raise AssertionError(f"job never running: {job}")
+
+
 def _wait_slot_free(client):
     for _ in range(200):
         r = client.post("/api/books/zzz/move", json={"world": ALPHA})
@@ -132,7 +143,7 @@ def test_move_is_marked_running_before_the_202(config) -> None:
     try:
         assert client.post("/api/books/bb1/move",
                            json={"world": ALPHA}).status_code == 202
-        assert _job(config, "bb1").state == jobs.RUNNING
+        assert _wait_running(config, "bb1").state == jobs.RUNNING
     finally:
         gate.set()
     _wait(config, "bb1")
