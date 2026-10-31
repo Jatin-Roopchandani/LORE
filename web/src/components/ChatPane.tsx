@@ -23,9 +23,12 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
   const r = state.result;
   const err = state.error ? errorMessage(state.error, { showInternals, resetsAt }) : null;
   const notFound = missingParts(r?.note);
-  // A deep answer: the plan or a section has arrived, or the result says so. (A deep question that fell back
-  // to the ordinary path has a plan step but no plan, so it renders as before.)
-  const sectioned = state.plan !== null || state.sections.length > 0 || r?.answer_style === "sectioned";
+  // A deep answer: once the answer has landed, the result says so (a deep question that fell back to the
+  // ordinary path has a plan but a prose or claims answer, and must show that). Until then the stream does:
+  // a plan or a written section, unless every planned section has come back empty (the ordinary path is next).
+  const written = state.sections.some((s) => s.state !== "empty");
+  const abandoned = state.plan !== null && state.sections.length > 0 && !written;
+  const sectioned = r ? r.answer_style === "sectioned" : written || (state.plan !== null && !abandoned);
   const examples = state.question ? [] : exampleQuestions(overview);
   return (
     <section className="pane chat" aria-label="Conversation">

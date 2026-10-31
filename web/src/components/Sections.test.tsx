@@ -129,6 +129,34 @@ test("a deep ask that fell back to the ordinary path renders the ordinary answer
   expect(screen.getByText(/^Evidence \(/)).toBeInTheDocument();
 });
 
+test("a plan whose sections all came back empty, then an ordinary answer, renders the ordinary prose", () => {
+  const final = deep.tail[deep.tail.length - 1];
+  if (final.type !== "answer") throw new Error("fixture");
+  const result = { ...final.result, answer_style: "prose" as const, sections: [], overview: [], requests: 0, prose: deep.s2 };
+  const empties = [0, 1].map((i) => deep.done(i, `S${i}`, [], [], null, [], { style: "empty" }));
+  view([...deep.head, ...empties, { type: "answer", t: 2, result }]);
+  expect(screen.queryByRole("navigation", { name: DEEP.contents })).toBeNull();
+  expect(document.querySelector("p.prose")).toHaveTextContent("The guild trains the pilots.");
+  expect(screen.getByText(/^Evidence \(/)).toBeInTheDocument();
+});
+
+test("a plan alone, then an ordinary answer, renders the ordinary prose", () => {
+  const final = deep.tail[deep.tail.length - 1];
+  if (final.type !== "answer") throw new Error("fixture");
+  const result = { ...final.result, answer_style: "prose" as const, sections: [], overview: [], requests: 0, prose: deep.s2 };
+  view([...deep.head, { type: "answer", t: 2, result }]);
+  expect(document.querySelector("p.prose")).toHaveTextContent("The guild trains the pilots.");
+});
+
+test("while streaming, a plan whose sections all came back empty shows no contents list to strand the reader", () => {
+  const empties = [0, 1].map((i) => deep.done(i, `S${i}`, [], [], null, [], { style: "empty" }));
+  const { unmount } = view([...deep.head, ...empties]);
+  expect(document.querySelector(".sectioned")).toBeNull();
+  unmount();
+  view([...deep.head]);
+  expect(screen.getAllByRole("navigation", { name: DEEP.contents }).length).toBe(1); // a plan alone still shows its contents
+});
+
 test("the steps list has a planner row and one row per section", () => {
   view([...deep.head, ...deep.sec0, deep.sec1[0]]);
   const steps = document.querySelector("ol.steps") as HTMLElement;
