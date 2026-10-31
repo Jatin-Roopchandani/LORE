@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import math
 import sqlite3
 import tempfile
@@ -1215,6 +1216,12 @@ def ask(
     baseline: bool = typer.Option(
         False, "--baseline", help="answer from vector search alone, no graph"
     ),
+    depth: str = typer.Option(
+        "auto", "--depth",
+        help="auto (the question decides), deep (a sectioned chapter: many"
+             " requests) or focused (one short answer)"),
+    world: str | None = typer.Option(
+        None, "--world", help="answer from this world only (a name or an id)"),
 ) -> None:
     """Answer a question from the knowledge graph, with citations.
 
@@ -1234,6 +1241,9 @@ def ask(
         # question still embeds to a vector, and Task 9's `lore ask ""`
         # came back with a confident answer about Jonathan Small.
         typer.echo("ask failed: the question is blank; ask a question in words.")
+        raise typer.Exit(2)
+    if depth not in ("auto", "deep", "focused"):
+        typer.echo("ask failed: --depth is one of auto, deep or focused.")
         raise typer.Exit(2)
     config = LoreConfig.load()
 
@@ -1296,6 +1306,15 @@ def ask(
         lance = LanceStore(config.lancedb_dir)
         models = make_query_models(config, api_key,
                                    recorder=recorder_for(config.sqlite_path))
+        # A deep answer starts no further section once the ledger says every
+        # synthesis model is spent: the same check lore_search gives it.
+        from lore.mcp import tools as mcp_tools
+        models = dataclasses.replace(
+            models, spend_ok=lambda: mcp_tools._check_synthesis_budget(config) is None)
+        # Only what was asked for, so a plain `lore ask` is what it was.
+        scope = {} if world is None else {"world": world}
+        if depth != "auto":
+            scope["depth"] = depth
 
         async def _run():
             # The close MUST share the loop the requests ran on (see
@@ -1303,7 +1322,7 @@ def ask(
             # raises "Event loop is closed" after a successful answer.
             try:
                 return await answer_question(conn, kuzu, lance, question, models,
-                                             baseline=baseline)
+                                             baseline=baseline, **scope)
             finally:
                 await models.aclose()
 
