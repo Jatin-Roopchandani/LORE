@@ -549,8 +549,64 @@ def test_an_unusable_answer_skips_the_entity_without_caching(env) -> None:
     client = _Client(ANSWERS, bad_on={1})
     stage, _lance = _stage(env, client)
     assert run_book(conn, config, BOOK, [stage]).state == jobs.DONE
-    assert len(list(config.codex_dir.iterdir())) == 2
+    assert len(list(config.codex_dir.glob("*.json"))) == 2  # no answer cached for it (only a count of tries)
     assert "Mira Voss" in "".join(stage.skipped)
+
+
+class _Stubborn(_Client):
+    """Never gives usable output for the subjects in `bad_for`."""
+
+    def __init__(self, answers, bad_for=()):
+        super().__init__(answers)
+        self.bad_for = tuple(bad_for)
+
+    async def generate_json(self, prompt, schema, **kw):
+        if any(f"Subject: {m}" in prompt for m in self.bad_for):
+            self.calls += 1
+            self.prompts.append(prompt)
+            raise GeminiOutputError("not json", "")
+        return await super().generate_json(prompt, schema, **kw)
+
+
+def _asked(client, name):
+    return sum(f"Subject: {name}" in p for p in client.prompts)
+
+
+def test_an_entity_that_keeps_failing_is_cached_as_failed_after_two_attempts(env, monkeypatch) -> None:
+    config, conn, _t, _w = env
+    first = _Stubborn(ANSWERS, bad_for=["Mira Voss"])
+    stage, _ = _stage(env, first)
+    run_book(conn, config, BOOK, [stage], force=True)
+    assert _asked(first, "Mira Voss") == 1 and "Mira Voss" in "".join(stage.skipped)
+    second = _Stubborn(ANSWERS, bad_for=["Mira Voss"])
+    stage2, _ = _stage(env, second)
+    run_book(conn, config, BOOK, [stage2], force=True)
+    assert _asked(second, "Mira Voss") == 1  # the second and last try
+    marked = [json.loads(f.read_text()) for f in config.codex_dir.glob("*.json")
+              if json.loads(f.read_text()).get("failed")]
+    assert len(marked) == 1 and marked[0]["answer"] == {"summary": "", "statements": []}
+    # From now on a Continue does not ask again, and the entity is counted done.
+    third = _Stubborn(ANSWERS, bad_for=["Mira Voss"])
+    stage3, _ = _stage(env, third)
+    job = run_book(conn, config, BOOK, [stage3], force=True)
+    assert third.calls == 0 and job.done_items == job.total_items
+    assert store.with_entries(conn, ["e1"]) == []
+    # A new prompt invalidates the marker.
+    monkeypatch.setattr(build, "CODEX_PROMPT", build.CODEX_PROMPT + "\n- Be brief.")
+    fourth = _Stubborn(ANSWERS, bad_for=["Mira Voss"])
+    stage4, _ = _stage(env, fourth)
+    run_book(conn, config, BOOK, [stage4], force=True)
+    assert _asked(fourth, "Mira Voss") == 1
+
+
+def test_a_success_after_a_failed_attempt_is_cached_normally(env) -> None:
+    config, conn, _t, _w = env
+    run_book(conn, config, BOOK, [_stage(env, _Client(ANSWERS, bad_on={1}))[0]], force=True)
+    again = _Client(ANSWERS)
+    run_book(conn, config, BOOK, [_stage(env, again)[0]], force=True)
+    assert _asked(again, "Mira Voss") == 1
+    assert store.with_entries(conn, ["e1"]) == ["e1"]
+    assert not any(json.loads(f.read_text()).get("failed") for f in config.codex_dir.glob("*.json"))
 
 
 def test_a_book_with_no_graph_has_nothing_to_do(env) -> None:

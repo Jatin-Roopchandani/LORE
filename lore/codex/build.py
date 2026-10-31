@@ -290,10 +290,48 @@ def read_cached(path: Path, evidence_hash_: str) -> CodexAnswer | None:
         return None
 
 
-def write_cached(path: Path, evidence_hash_: str, answer: CodexAnswer) -> None:
+def write_cached(path: Path, evidence_hash_: str, answer: CodexAnswer,
+                 failed: bool = False) -> None:
+    """Save `answer`. `failed` marks the empty answer kept for an entity whose
+    output was unusable MAX_ATTEMPTS times: it is read like any answer (so the
+    entity is not asked again), and, keyed by the prompt and evidence hashes
+    like any other, goes stale with either."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({
-        "prompt_hash": prompt_hash(), "evidence_hash": evidence_hash_,
-        "answer": answer.model_dump()}))
+    data = {"prompt_hash": prompt_hash(), "evidence_hash": evidence_hash_,
+            "answer": answer.model_dump()}
+    if failed:
+        data["failed"] = True
+    tmp.write_text(json.dumps(data))
     tmp.replace(path)
+
+
+# An entity whose answer is unusable is asked again on the next run, up to this
+# many attempts in all; then an empty, `failed` answer is cached for it.
+MAX_ATTEMPTS = 2
+
+
+def _attempts_path(path: Path) -> Path:
+    return path.with_suffix(".attempts")
+
+
+def read_attempts(path: Path, evidence_hash_: str) -> int:
+    """How many unusable answers this entity has given for this prompt and
+    evidence (0 if none, or if they were for another prompt or other evidence)."""
+    try:
+        data = json.loads(_attempts_path(path).read_text())
+        if (data["prompt_hash"] != prompt_hash()
+                or data["evidence_hash"] != evidence_hash_):
+            return 0
+        return max(int(data["attempts"]), 0)
+    except (OSError, ValueError, KeyError, TypeError):
+        return 0
+
+
+def write_attempts(path: Path, evidence_hash_: str, attempts: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    target = _attempts_path(path)
+    tmp = target.with_suffix(".attempts.tmp")
+    tmp.write_text(json.dumps({"prompt_hash": prompt_hash(),
+                               "evidence_hash": evidence_hash_, "attempts": attempts}))
+    tmp.replace(target)

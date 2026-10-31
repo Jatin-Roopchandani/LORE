@@ -624,8 +624,22 @@ class CodexStage:
                             exhausted_hint="Continue the job when a daily"
                                            " budget resets.")
                     except GeminiOutputError:
-                        # Not cached: the next run asks this entity again.
-                        self.skipped.append(f"{entity.name}: unusable answer")
+                        # Not cached: the next run asks this entity again, until
+                        # it has failed MAX_ATTEMPTS times; then an empty answer
+                        # marked failed is cached (a new prompt or new evidence
+                        # still invalidates it).
+                        path = self._cache(ctx, item)
+                        tries = codex_build.read_attempts(path, item.evidence_hash) + 1
+                        if tries >= codex_build.MAX_ATTEMPTS:
+                            codex_build.write_cached(
+                                path, item.evidence_hash,
+                                codex_build.CodexAnswer(summary="", statements=[]),
+                                failed=True)
+                            self.skipped.append(
+                                f"{entity.name}: unusable answer, given up after {tries} attempts")
+                        else:
+                            codex_build.write_attempts(path, item.evidence_hash, tries)
+                            self.skipped.append(f"{entity.name}: unusable answer")
                         done += 1
                         job_ctl.advance(done)
                         continue
