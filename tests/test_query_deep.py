@@ -441,6 +441,62 @@ async def test_an_interpretive_close_never_goes_silent(config):
     assert [s.text for s in close.prose] == [interpret.NO_POSITION_LINE]
 
 
+# ---- readings belong to the close, not to sections or the overview -----------------------------------
+
+async def test_sections_and_the_overview_keep_only_facts_and_ask_for_no_readings(config):
+    from lore.query import write as write_module
+    assert write_module.readings_on()  # the legacy readings rule is live elsewhere
+    scripted = deep_models(write_kinds=True)  # the writer offers a "reading" whenever it can
+    answer, _ = await ask(config, scripted)
+    for prompt in scripted.prompts("write"):
+        assert write_module._READINGS_RULE not in prompt
+    assert all(s.kind == "fact" for s in answer.overview)
+    for section in answer.sections:
+        assert section.prose and all(s.kind == "fact" for s in section.prose)
+    assert "suggests a pattern" not in answer.text
+
+
+async def test_an_interpretive_deep_answer_still_puts_its_reading_in_the_close(config):
+    plan = Decomposition(sub_questions=[
+        PartSpec(question="Was the road right?", kind="interpretive",
+                 lenses=["What did the road cost?", "What did the road give?"])], depth="deep")
+    answer, _ = await ask(config, Scripted(plan, planner=TWO, tagged=True, write_kinds=True),
+                          "Was the road right?")
+    body, close = answer.sections[:-1], answer.sections[-1]
+    assert all(s.kind == "fact" for sec in body for s in sec.prose)
+    assert any(s.kind == "reading" for s in close.prose)
+
+
+# ---- the registry and the headings ---------------------------------------------------------------------
+
+def test_the_registry_refuses_a_claim_whose_passage_is_not_in_the_section():
+    from lore.query.models import Claim
+    registry = deep.Registry()
+    passage = Passage(n=1, chunk_id="c1", book_id="b", chapter_seq=1, text="Rin walked.")
+    ok = Claim(text="Rin walked.", passage=1, quote="Rin walked")
+    stray = Claim(text="Rin ran.", passage=7, quote="Rin ran")
+    with pytest.raises(ValueError):
+        registry.add([ok, stray], {1: passage})
+    assert registry.claims == [] and registry.passages == []  # nothing half-added
+    mapped, offset, added = registry.add([ok], {1: passage})
+    assert len(mapped) == 1 and offset == 0 and [p.n for p in added] == [1]
+
+
+def test_headings_are_cleaned_capped_and_fall_back_to_a_name():
+    raw = DeepPlan(sections=[
+        PlanSection(heading="## **The  road** [3] [1, 2]", entities=["a"]),
+        PlanSection(heading="`Rin` [link](http://x.example/y) _later_", entities=["b"]),
+        PlanSection(heading="x" * 200, entities=["c"]),
+        PlanSection(heading="[4] ** ##", entities=["b", "a"])])
+    got = deep.validate_plan(raw, candidates())
+    heads = [s.heading for s in got]
+    assert heads[0] == "The road"
+    assert "[" not in "".join(heads) and "*" not in "".join(heads) and "`" not in "".join(heads)
+    assert heads[1] == "Rin link later"
+    assert len(heads[2]) <= deep.MAX_HEADING_CHARS + 3 and heads[2].startswith("xxx")
+    assert heads[3] == "Beta"  # blank after cleaning: the section's first entity
+
+
 # ---- the codex block of focused parts -------------------------------------------------------------
 
 async def test_a_focused_part_gets_a_codex_block_when_its_entities_have_entries(config):
@@ -657,9 +713,15 @@ def test_the_deep_code_and_prompts_name_no_character_book_or_genre():
     lib = Path(__file__).parents[1] / "lore" / "query"
     for name in ("deep.py", "codexslice.py"):
         assert not re.findall(banned, (lib / name).read_text().lower()), name
-    texts = "\n".join((deep.PLANNER_PROMPT, deep.CLOSE_HEADING, synthesize_module._CODEX_BLOCK,
-                       synthesize_module._SECTION_CONTEXT, write_module.SECTION_LENGTH_RULE,
-                       write_module.OVERVIEW_LENGTH_RULE, write_module.CONTENTS_HEADING))
+    from tests.test_query_synthesize import _new_prompt_texts
+    texts = "\n".join((_new_prompt_texts(), deep.PLANNER_PROMPT, deep.CLOSE_HEADING,
+                       synthesize_module._CODEX_BLOCK, synthesize_module._SECTION_CONTEXT,
+                       write_module.SECTION_LENGTH_RULE, write_module.OVERVIEW_LENGTH_RULE,
+                       write_module.CONTENTS_HEADING))
+    from lore.query.viewpoint import load_viewpoint
+    for text in (decompose_module._KIND_RULE, decompose_module._DEPTH_RULE,
+                 decompose_module._ITEM_RULE, load_viewpoint()):
+        assert text.strip() and text in texts  # nothing new is left out of the check
     assert not re.findall(banned, texts.lower())
 
 

@@ -26,6 +26,7 @@ Gated by `decompose.DEEP`. Nothing here knows any library or any question.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from dataclasses import dataclass, field, replace
 from typing import Mapping, Sequence
@@ -167,6 +168,20 @@ def _batches(items: Sequence[str], size: int = 500):
 def _one_line(text: str, limit: int) -> str:
     text = " ".join(str(text or "").split())
     return text if len(text) <= limit else text[:limit].rstrip() + "..."
+
+
+_CITATION = re.compile(r"\[\s*\d+(?:\s*[,;\u2013-]\s*\d+)*\s*\]")
+_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MARKUP = re.compile(r"[*`~#>|]+|(?<!\w)_+|_+(?!\w)")
+
+
+def clean_heading(text, limit: int = MAX_HEADING_CHARS) -> str:
+    """A planner's heading as a heading: citations ("[3]") and markup (emphasis,
+    code, links, "#") removed, on one line, at most about `limit` characters.
+    It is planner text, never a claim, so it is not trusted to be clean."""
+    text = _LINK.sub(r"\1", str(text or ""))
+    text = _MARKUP.sub("", _CITATION.sub("", text))
+    return _one_line(text, limit).strip(" :.-")
 
 
 def _counts(conn: sqlite3.Connection, sql: str, ids: Sequence[str]) -> dict[str, int]:
@@ -342,7 +357,7 @@ def validate_plan(raw, candidates: Sequence[Candidate],
         if not ids:
             continue
         members = [known[i] for i in ids]
-        heading = _one_line(getattr(item, "heading", ""), MAX_HEADING_CHARS).strip(" #*:.") or members[0].name
+        heading = clean_heading(getattr(item, "heading", "")) or clean_heading(members[0].name) or members[0].name
         mine = sections.setdefault(heading.casefold(), (heading, []))[1]
         mine += [c for c in members if c not in mine]
     return [PlannedSection(h, tuple(cs)) for h, cs in list(sections.values())[:max(cap, 0)]]
@@ -382,10 +397,13 @@ class Registry:
         """Add one section's claims (their passage numbers local). Returns the
         remapped claims, the local-to-answer claim number map and the passages
         this added."""
+        stray = [c.passage for c in claims if c.passage not in local]
+        if stray:  # dropping one would shift the claim numbers the prose cites
+            raise ValueError(f"claims cite passages outside their section: {sorted(set(stray))}")
         before = len(self.passages)
         offset = len(self.claims)
         mapped = [c.model_copy(update={"passage": self.passage(local[c.passage])})
-                  for c in claims if c.passage in local]
+                  for c in claims]
         self.claims += mapped
         return mapped, offset, self.passages[before:]
 

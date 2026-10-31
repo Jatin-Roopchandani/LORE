@@ -314,8 +314,8 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
         if shape is not None:
             parts = "\n".join(interpret.part_labels(shape))
             rules = interpret.writer_rule(shape)
-        else:
-            rules = _READINGS_RULE if readings_on() else ""
+        else:  # a deep answer's section or overview states facts: readings are the close's
+            rules = _READINGS_RULE if readings_on() and length is None else ""
         return STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
                                           order_note=note, readings=rules,
                                           length=LENGTH_RULES[length])
@@ -353,7 +353,10 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     outside the list becomes 0, which `verify_prose` drops with its
     sentence, as it drops any out-of-range citation."""
     passages = list(passages)
-    kinds = readings_on() or shape is not None
+    # A deep answer's section or overview (`length`) states facts only: no readings
+    # rule, no kinds in the reply, and a stray reading is dropped, not relabelled.
+    part = length is not None
+    kinds = (readings_on() and not part) or shape is not None
     try:
         reply = await generate(
             writer_prompt(question, sub_questions, claims, passages, book_titles, books, shape,
@@ -375,7 +378,10 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
         Sentence(text=s.text, new_paragraph=s.new_paragraph,
                  claims=[back.get(k, 0) for k in s.claims] if back else list(s.claims),
                  kind=_kind(s, shape) if kinds else "fact")
-        for s in reply.sentences]
+        for s in reply.sentences
+        if not (part and str(getattr(s, "kind", "fact")).strip().lower() != "fact")]
+    if not sentences:
+        return None
     return Prose(sentences=sentences, unanswered=reply.unanswered, gaps=getattr(reply, "gaps", []))
 
 
