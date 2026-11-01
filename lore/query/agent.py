@@ -676,7 +676,10 @@ async def answer_question(
     emit(on_event, "parts", sub_questions=list(sub_questions), **extra)
     emit(on_event, "step", name="split", state="done", part=None,
          detail=f"{len(parts)} part" + ("s" if len(parts) != 1 else ""))
-    if decompose_module.DEEP and depth == "deep":
+    # A question with an interpretive (or beyond) part is organised by its own parts and
+    # lenses (deep.answer_lenses), never by the topical outline.
+    shaped_plan = bool(rparts) and interpret_module.shaped([p.kind for p in plan.parts])
+    if decompose_module.DEEP and depth == "deep" and not shaped_plan:
         deeper = await _deep(conn, kuzu, lance, question, plain_models, vector, plan,
                              scopes, nearest, titles, books, on_event)
         if deeper is not None:
@@ -887,9 +890,18 @@ async def answer_question(
     answer = None
     # An interpretive or beyond part: its answer takes the interpretive shape.
     shaped = ({"plan": plan.parts, "retrieval": rparts, "viewpoint": models.viewpoint}
-              if rparts and interpret_module.shaped([p.kind for p in plan.parts]) else {})
+              if shaped_plan else {})
     try:
-        if rows:
+        if shaped_plan and decompose_module.DEEP and depth == "deep":
+            # One section per lens, each written in full; plain models: this path
+            # announces its own steps.
+            answer = await deep_module.answer_lenses(
+                question, plan.parts, rparts, evidence, plain_models,
+                mode="graph" if rows else "vector-fallback",
+                template="+".join(templates) if rows else None,
+                note=None if rows else GRAPH_EMPTY_NOTE, book_titles=titles,
+                books=books, on_event=on_event)
+        elif rows:
             answer = await _synthesize(question, evidence, models, mode="graph",
                                        template="+".join(templates), book_titles=titles,
                                        books=books, sub_questions=sub_questions, **shaped)

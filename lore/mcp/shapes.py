@@ -114,6 +114,8 @@ class SectionOut(BaseModel):
     claims_range: list[int] | None = None
     entities: list[str] = []
     note: str | None = None
+    # The interpretive part this section's lens belongs to ("" unless the question has several parts).
+    group: str = ""
 
 
 class SearchResult(BaseModel):
@@ -136,6 +138,12 @@ class SearchResult(BaseModel):
     overview: list[ProseOut] = []
     sections: list[SectionOut] = []
     requests: int = 0
+    # An interpretive answer opens with this: one sentence (kind "reading", or "limit" for code's
+    # "no clear position" line) per interpretive part, each also cited like any prose. `prose` and
+    # `sections` are the argument below it. [] for every other answer.
+    short_answer: list[ProseOut] = []
+    # Sections of a sectioned answer that failed or found nothing: left out of `sections`, counted here.
+    unwritten_sections: int = 0
 
 
 class ChunkHit(BaseModel):
@@ -286,8 +294,10 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
             prose=[_prose_out(s) for s in x.prose],
             claims_range=([x.claims_start, x.claims_end]
                           if x.claims_end >= x.claims_start else None),
-            entities=list(x.entities), note=x.note) for x in answer.sections],
+            entities=list(x.entities), note=x.note, group=x.group) for x in answer.sections],
         requests=answer.requests,
+        short_answer=[_prose_out(s) for s in answer.short_answer],
+        unwritten_sections=answer.unwritten,
     )
 
 

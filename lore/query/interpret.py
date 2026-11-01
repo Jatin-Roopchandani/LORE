@@ -32,7 +32,9 @@ from typing import Sequence
 from lore.query import decompose
 from lore.query.models import ProseSentence
 
-MAX_READINGS = 3
+# A reading per interpretive part is the short answer. Before the check a part
+# may have a spare (the check may drop the first); after it, one is kept.
+MAX_READINGS_PER_PART = 2
 MAX_COUNTERS = 2
 # A reading cites facts from at least this many of an interpretive part's lenses
 # (fewer when the part had fewer lenses).
@@ -123,7 +125,11 @@ LENS_CONTEXT = ("This part gathers evidence for one side of a larger interpretiv
                 "{part_of}\n"
                 "Answer only this aspect of it. Include what characters do, choose, hide and "
                 "change, and how others treat them, not only how they are described. Other "
-                "aspects are gathered separately: give the facts and argue no position.\n")
+                "aspects are gathered separately: give the facts and argue no position.\n"
+                "Keep only facts that bear on this aspect and on the larger question: motives, "
+                "choices, contradictions, change, and consequences for the quality the larger "
+                "question asks about. Skip plot detail that does not bear on them, however "
+                "vivid.\n")
 # Claims step, for a part the books may not settle.
 BEYOND_CONTEXT = ("This part may ask for something the books cannot settle: {part_of}\n"
                   "Give claims for whatever the passages do say that bears on it. Make no "
@@ -136,21 +142,29 @@ WRITER_SHAPE_RULE = """- Part of this question is marked (interpretive): the boo
   default), "reading" or "counter". Write the answer in this order.
   First, sentences of kind "fact": the evidence, in story order, each saying
   only what its cited facts say, as above.
-  Then {max_readings} sentences at most of kind "reading": your position on the
-  interpretive part. A reading must:
+  Then the readings: for EACH part marked (interpretive), in the order of the
+  parts, exactly one sentence of kind "reading" giving your position on that
+  part. When there are several such parts (one for each book, say) every one
+  needs its own reading, and each reading says in its own words which part it
+  answers, so that it makes sense alone. A reading must:
   - take the position the evidence leans towards and say how strongly, in words
     that mark it as interpretation, such as "the evidence suggests", "on
     balance", "a strong case can be made that" or "the evidence is split";
+  - when the part asks which of several candidates best fits some quality,
+    name the candidate you choose and say why, resting on facts about that
+    candidate's own nature, choices and changes that bear on the quality the
+    question asks about, not on plot events that happen around them;
   - list in `claims` the facts it rests on, drawn from at least {min_lenses}
     different "Evidence for:" headings of that part;
   - never add an event, name, number or detail that the facts do not state, and
     never present an inference as something a book says;
   - be a single sentence.
-  Then one or two sentences of kind "counter": the strongest case for the other
-  side, resting on at least one fact it lists in `claims`, and a fair reading of
-  those facts. If the facts give no real case for the other side, write no
-  counter; code will say so. If the facts are too thin for any position, write
-  no reading; code will say so, and the facts stay.
+  Then one or two sentences of kind "counter" for each such part: the strongest
+  case for the other side, resting on at least one fact it lists in `claims`,
+  and a fair reading of those facts. If the facts give no real case for the
+  other side, write no counter; code will say so. If the facts are too thin for
+  a position on a part, write no reading for it; code will say so, and the facts
+  stay.
   Never write a sentence of kind "limit": code writes the closing lines.
 """
 WRITER_BEYOND_RULE = """- A part marked (beyond the books) is one the books cannot settle. Say only what
@@ -165,8 +179,7 @@ def writer_rule(shape: Shape) -> str:
     viewpoint text included verbatim."""
     out = ""
     if shape.interpretive:
-        out += WRITER_SHAPE_RULE.format(max_readings=MAX_READINGS,
-                                        min_lenses=MIN_READING_LENSES)
+        out += WRITER_SHAPE_RULE.format(min_lenses=MIN_READING_LENSES)
     if shape.beyond:
         out += WRITER_BEYOND_RULE
     return out + VIEWPOINT_LEAD + shape.viewpoint + "\n"
@@ -262,76 +275,128 @@ def _single(text: str) -> bool:
     return len([p for p in _SENTENCE_END.split(text.strip()) if p.strip()]) == 1
 
 
-def reading_sound(sentence, shape: Shape) -> bool:
-    """A reading needs interpretive wording, one sentence, and citations from
-    enough of one interpretive part's lenses."""
-    if not (INTERPRETIVE_WORDING.search(sentence.text) and _single(sentence.text)):
-        return False
+def supported_parts(claims: Sequence[int], shape: Shape) -> dict[int, int]:
+    """The interpretive parts a reading citing `claims` (1-based, in the numbering
+    of `shape.claim_parts`) can answer, each with the number of that part's
+    lenses the claims come from: a part needs `shape.need(part)` of them."""
     if not shape.claim_parts:
-        return False
-    found = set().union(*(shape.claim_parts[k - 1] for k in sentence.claims
+        return {}
+    found = set().union(*(shape.claim_parts[k - 1] for k in claims
                           if 1 <= k <= len(shape.claim_parts)))
+    out: dict[int, int] = {}
     for part, kind in enumerate(shape.kinds):
         if kind == "interpretive":
             lenses = set(shape.lenses_of(part))
             if lenses and len(found & lenses) >= shape.need(part):
-                return True
-    return False
+                out[part] = len(found & lenses)
+    return out
+
+
+def part_for(claims: Sequence[int], shape: Shape, taken: dict[int, int], cap: int) -> int | None:
+    """The part a reading answers: among the parts its citations support that
+    hold fewer than `cap` readings (`taken`), the one it draws most lenses
+    from, the earlier on a tie. None when no part fits."""
+    open_ = {p: n for p, n in supported_parts(claims, shape).items() if taken.get(p, 0) < cap}
+    return min(open_, key=lambda p: (-open_[p], p)) if open_ else None
+
+
+def reading_sound(sentence, shape: Shape) -> bool:
+    """A reading needs interpretive wording, one sentence, and citations from
+    enough of one interpretive part's lenses."""
+    return bool(INTERPRETIVE_WORDING.search(sentence.text) and _single(sentence.text)
+                and supported_parts(sentence.claims, shape))
+
+
+def interpretive_parts(shape: Shape) -> list[int]:
+    return [i for i, kind in enumerate(shape.kinds) if kind == "interpretive"]
 
 
 def limit_interpretive(sentences: Sequence, shape: Shape) -> list:
     """The sentences in the answer's order (facts, readings, counter-cases) with
-    the ones that break a rule removed: a reading that fails `reading_sound`, a
-    counter-case citing fewer than MIN_COUNTER_CLAIMS claims, anything past the
-    first MAX_READINGS readings or MAX_COUNTERS counter-cases, and any kind the
-    writer may not write (code writes "limit"). Facts are never touched. The
-    first reading opens a paragraph, and the counter-cases follow it in it."""
+    the ones that break a rule removed: a reading that fails `reading_sound` or
+    that no interpretive part has room for (MAX_READINGS_PER_PART each), a
+    counter-case citing fewer than MIN_COUNTER_CLAIMS claims, anything past
+    MAX_COUNTERS counter-cases per interpretive part, and any kind the writer
+    may not write (code writes "limit"). Facts are never touched."""
     facts, readings, counters = [], [], []
+    taken: dict[int, int] = {}
+    counter_cap = MAX_COUNTERS * max(1, len(interpretive_parts(shape)))
     for s in sentences:
         kind = getattr(s, "kind", "fact")
         if kind == "reading":
-            if reading_sound(s, shape) and len(readings) < MAX_READINGS:
+            part = (part_for(s.claims, shape, taken, MAX_READINGS_PER_PART)
+                    if reading_sound(s, shape) else None)
+            if part is not None:
+                taken[part] = taken.get(part, 0) + 1
                 readings.append(s)
         elif kind == "counter":
-            if len(set(s.claims)) >= MIN_COUNTER_CLAIMS and len(counters) < MAX_COUNTERS:
+            if len(set(s.claims)) >= MIN_COUNTER_CLAIMS and len(counters) < counter_cap:
                 counters.append(s)
         elif kind == "fact":
             facts.append(s)
-    # A fact keeps its place in the paragraphs; the interpretation closes them.
-    readings = [s.model_copy(update={"new_paragraph": i == 0}) for i, s in enumerate(readings)]
-    counters = [s.model_copy(update={"new_paragraph": False}) for s in counters]
     return [*facts, *readings, *counters]
 
 
 # --- closing lines (code) ----------------------------------------------------
 
-def _limit(text: str, first: bool) -> ProseSentence:
-    return ProseSentence(text=text, claims=(), passages=(), new_paragraph=first, kind="limit")
+def _limit(text: str, first: bool, short: bool = False) -> ProseSentence:
+    return ProseSentence(text=text, claims=(), passages=(), new_paragraph=first,
+                         kind="limit", short=short)
 
 
-def close_answer(prose: Sequence[ProseSentence], shape: Shape,
-                 gaps: Sequence[str] = ()) -> tuple[ProseSentence, ...]:
-    """The prose with what code says about it added.
+def no_position(shape: Shape, part: int) -> str:
+    """Code's line for an interpretive part whose reading did not stand. With
+    several interpretive parts (one per book, say) it names the part."""
+    if len(interpretive_parts(shape)) < 2:
+        return NO_POSITION_LINE
+    question = shape.parts[part].strip()
+    return f"{question}{' ' if question.endswith(('?', '.', '!')) else ': '}{NO_POSITION_LINE}"
 
-    A counter-case with no reading to oppose is dropped. An interpretive answer
-    with no reading says the evidence did not support a clear position; one
-    with a reading but no counter-case says it found no strong opposing
-    reading. The books' limits (the beyond parts, and the checked gaps) close
-    the answer in one line. The facts always stay."""
-    readings = any(s.kind == "reading" for s in prose)
-    out = [s for s in prose if readings or s.kind != "counter"]
+
+def short_answer(shape: Shape, readings: dict[int, ProseSentence] | None = None) -> tuple[ProseSentence, ...]:
+    """The short answer: per interpretive part, its reading, or code's line when
+    it has none. Each is its own paragraph and marked `short`."""
+    readings = readings or {}
+    return tuple(
+        replace(readings[part], new_paragraph=True, short=True) if part in readings
+        else _limit(no_position(shape, part), True, True)
+        for part in interpretive_parts(shape))
+
+
+def close_answer(prose: Sequence[ProseSentence], shape: Shape, gaps: Sequence[str] = (),
+                 originals: Sequence[int] | None = None) -> tuple[ProseSentence, ...]:
+    """The answer's prose with the short answer first and what code says added.
+
+    The short answer (sentences marked `short`) holds one reading per
+    interpretive part, found among the readings the check kept: a reading is
+    the one for the part its citations support (`part_for`), the first for each
+    part. A part with no reading says the evidence did not support a clear
+    position, in code's words. The rest is the argument: the facts, the
+    counter-cases (dropped when no part has a reading to oppose), a line saying
+    no strong opposing reading was found when there is a reading but no
+    counter-case, and the books' limits (the beyond parts and the checked
+    gaps) in one line. The facts always stay.
+
+    `originals` maps a sentence's claim number to the number `shape.claim_parts`
+    uses (the survivors of the check); without it they are the same."""
+    def numbers(s) -> list[int]:
+        return [originals[k - 1] if originals and 1 <= k <= len(originals) else k
+                for k in s.claims]
+    placed: dict[int, ProseSentence] = {}
+    for s in prose:
+        if s.kind == "reading":
+            part = part_for(numbers(s), shape, {p: 1 for p in placed}, 1)
+            if part is not None:
+                placed[part] = s
+    out = [s for s in prose if s.kind == "fact"]
+    counters = [s for s in prose if s.kind == "counter"] if placed else []
+    out += [replace(s, new_paragraph=i == 0) for i, s in enumerate(counters)]
     lines: list[str] = []
-    if shape.interpretive:
-        if not readings:
-            lines.append(NO_POSITION_LINE)
-        elif not any(s.kind == "counter" for s in out):
-            lines.append(NO_COUNTER_LINE)
+    if placed and not counters:
+        lines.append(NO_COUNTER_LINE)
     lines += limit_text(shape, gaps)
-    first = next((i for i, s in enumerate(out) if s.kind == "reading"), None)
-    if first is not None:  # the interpretation opens its own paragraph
-        out[first] = replace(out[first], new_paragraph=True)
     out += [_limit(line, i == 0) for i, line in enumerate(lines)]
-    return tuple(out)
+    return (*short_answer(shape, placed), *out)
 
 
 def limit_text(shape: Shape, gaps: Sequence[str] = ()) -> list[str]:

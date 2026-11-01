@@ -166,15 +166,26 @@ def test_readings_and_counters_are_capped_and_follow_the_facts():
     items = [S("Rin trained.", [1]),
              S("Arguably one.", [1, 2], "reading"), S("Against that, a.", [2], "counter"),
              S("Arguably two.", [1, 2], "reading"), S("Arguably three.", [1, 3], "reading"),
-             S("Arguably four.", [1, 2], "reading"),
              S("Against that, b.", [3], "counter"), S("Against that, c.", [3], "counter"),
+             S("Against that, d.", [3], "counter"),
              S("Rin met a teacher.", [2])]
     out = _verify(items)
+    # One interpretive part: a reading and one spare (the check may drop the first),
+    # two counter-cases.
     assert [s.text for s in out] == [
-        "Rin trained.", "Rin met a teacher.", "Arguably one.", "Arguably two.", "Arguably three.",
+        "Rin trained.", "Rin met a teacher.", "Arguably one.", "Arguably two.",
         "Against that, a.", "Against that, b."]
-    assert [s.new_paragraph for s in out if s.kind == "reading"] == [True, False, False]
-    assert [s.new_paragraph for s in out if s.kind == "counter"] == [False, False]
+
+
+def test_each_interpretive_part_has_room_for_its_own_readings():
+    shape = Shape(VP, ("p1", "p2"), ("interpretive", "interpretive"),
+                  (("a", 0, True), ("b", 0, True), ("c", 1, True), ("d", 1, True)),
+                  (frozenset({0}), frozenset({1}), frozenset({2}), frozenset({3})))
+    items = [S("F.", [1]), S("Arguably a.", [1, 2], "reading"), S("Arguably b.", [1, 2], "reading"),
+             S("Arguably c.", [1, 2], "reading"),                      # part 0 is full
+             S("Arguably d.", [3, 4], "reading")]
+    out = verify_prose(Prose(sentences=items), 4, TEXTS + ["x"], shape)
+    assert [s.text for s in out if s.kind == "reading"] == ["Arguably a.", "Arguably b.", "Arguably d."]
 
 
 def test_a_counter_case_needs_a_citation():
@@ -210,34 +221,45 @@ def test_without_a_shape_the_old_reading_guard_applies():
 
 def _prose(*kinds):
     texts = {"fact": "Rin trained.", "reading": "The evidence suggests it.", "counter": "Against that."}
-    return tuple(ProseSentence(texts[k], (1,), (1,), False, k) for k in kinds)
+    # A reading cites facts from both lenses (claims 1 and 2).
+    return tuple(ProseSentence(texts[k], (1, 2) if k == "reading" else (1,), (1,), False, k)
+                 for k in kinds)
 
 
-def test_a_dropped_reading_says_the_evidence_did_not_support_a_position_and_drops_the_counter():
+def _split(prose):
+    return [s for s in prose if s.short], [s for s in prose if not s.short]
+
+
+def test_a_dropped_reading_is_a_short_answer_line_from_code_and_the_counter_goes():
     out = interpret.close_answer(_prose("fact", "fact", "counter"), SHAPE)
-    assert [s.kind for s in out] == ["fact", "fact", "limit"]
-    assert out[-1].text == interpret.NO_POSITION_LINE == "The evidence found doesn't support a clear position."
-    assert out[-1].claims == () and out[-1].passages == () and out[-1].new_paragraph
+    short, body = _split(out)
+    assert [s.kind for s in short] == ["limit"]
+    assert short[0].text == interpret.NO_POSITION_LINE == "The evidence found doesn't support a clear position."
+    assert short[0].claims == () and short[0].passages == () and short[0].new_paragraph
+    assert [s.kind for s in body] == ["fact", "fact"]  # a counter-case with nothing to oppose is dropped
+    assert out[0].short  # the short answer comes first
 
 
-def test_a_reading_with_no_counter_says_there_was_no_strong_opposing_reading():
+def test_the_reading_is_the_short_answer_and_a_missing_counter_is_said_in_the_argument():
     out = interpret.close_answer(_prose("fact", "reading"), SHAPE)
-    assert out[-1].kind == "limit" and out[-1].text == interpret.NO_COUNTER_LINE
+    short, body = _split(out)
+    assert [(s.kind, s.text) for s in short] == [("reading", "The evidence suggests it.")]
+    assert short[0].new_paragraph
+    assert [s.kind for s in body] == ["fact", "limit"] and body[-1].text == interpret.NO_COUNTER_LINE
 
 
 def test_a_full_answer_needs_no_closing_line():
     out = interpret.close_answer(_prose("fact", "reading", "counter"), SHAPE)
-    assert [s.kind for s in out] == ["fact", "reading", "counter"]
-    assert out[1].new_paragraph
+    assert [(s.kind, s.short) for s in out] == [("reading", True), ("fact", False), ("counter", False)]
+    assert out[2].new_paragraph
 
 
 def test_limits_come_from_the_beyond_parts_and_the_checked_gaps():
     shape = Shape(VP, ("Was Rin right?", "Why did the author write it?"), ("interpretive", "beyond"),
                   SHAPE.retrieval, SHAPE.claim_parts)
     out = interpret.close_answer(_prose("fact", "reading", "counter"), shape, ["the cause of the quarrel"])
-    assert out[-1].text == ("The books don't settle: Why did the author write it?; "
-                            "the cause of the quarrel.".replace("it?;", "it?;"))
-    assert out[-1].kind == "limit"
+    assert out[-1].text == "The books don't settle: Why did the author write it?; the cause of the quarrel."
+    assert out[-1].kind == "limit" and not out[-1].short
     # Gaps alone: a sentence ending in a stop.
     plain = interpret.close_answer(_prose("fact", "reading", "counter"), SHAPE, ["the cause"])
     assert plain[-1].text == "The books don't settle: the cause."
@@ -245,11 +267,47 @@ def test_limits_come_from_the_beyond_parts_and_the_checked_gaps():
     assert interpret.limit_text(SHAPE) == []
 
 
-def test_a_beyond_only_answer_adds_only_its_limit_line():
+def test_a_beyond_only_answer_adds_only_its_limit_line_and_no_short_answer():
     shape = Shape(VP, ("Why did the author write it?",), ("beyond",), (), ())
     out = interpret.close_answer(_prose("fact", "fact"), shape)
-    assert [s.kind for s in out] == ["fact", "fact", "limit"]
+    assert [s.kind for s in out] == ["fact", "fact", "limit"] and not any(s.short for s in out)
     assert out[-1].text.startswith(interpret.LIMITS_LEAD)
+
+
+TWO = Shape(VP, ("In book A, who is bravest?", "In book B, who is bravest?"),
+            ("interpretive", "interpretive"),
+            (("a1", 0, True), ("a2", 0, True), ("b1", 1, True), ("b2", 1, True)),
+            (frozenset({0}), frozenset({1}), frozenset({2}), frozenset({3})))
+
+
+def _reading(text, claims):
+    return ProseSentence(text, tuple(claims), (1,), False, "reading")
+
+
+def test_each_interpretive_part_gets_its_own_reading_in_the_short_answer():
+    prose = (ProseSentence("A fact.", (1,), (1,)),
+             _reading("On balance, B's Tam is bravest.", [3, 4]),
+             _reading("On balance, A's Rin is bravest.", [1, 2]))
+    short, _ = _split(interpret.close_answer(prose, TWO))
+    # In the order of the parts, whatever order the writer used.
+    assert [s.text for s in short] == ["On balance, A's Rin is bravest.", "On balance, B's Tam is bravest."]
+    assert all(s.kind == "reading" for s in short)
+
+
+def test_a_part_whose_reading_failed_gets_the_line_naming_it_when_there_are_several():
+    prose = (ProseSentence("A fact.", (1,), (1,)), _reading("On balance, A's Rin is bravest.", [1, 2]))
+    short, _ = _split(interpret.close_answer(prose, TWO))
+    assert short[0].kind == "reading"
+    assert short[1].kind == "limit"
+    assert short[1].text == f"In book B, who is bravest? {interpret.NO_POSITION_LINE}"
+
+
+def test_readings_are_placed_by_the_survivors_numbering():
+    # The check dropped claim 1: survivors 1..3 are the original claims 2, 3, 4.
+    prose = (ProseSentence("A fact.", (1,), (1,)), _reading("On balance, B is bravest.", [2, 3]))
+    short, _ = _split(interpret.close_answer(prose, TWO, originals=[2, 3, 4]))
+    assert short[0].kind == "limit"  # originals 3 and 4 are part 1's lenses
+    assert short[1].text == "On balance, B is bravest."
 
 
 def test_prose_of_interpretation_alone_falls_back_and_only_facts_count_toward_the_limit():
@@ -334,6 +392,10 @@ def test_a_lens_part_is_told_it_gathers_one_side_and_a_beyond_part_what_the_text
     assert "gathers evidence for one side of a larger interpretive question: Was Rin right?" in lens
     assert "what characters do, choose, hide and change" in " ".join(lens.split())
     assert "Answer this part fully" not in lens
+    # Only facts that bear on the lens and on the larger question stay.
+    flat = " ".join(lens.split())
+    assert "Keep only facts that bear on this aspect and on the larger question" in flat
+    assert "motives, choices, contradictions, change" in flat and "Skip plot detail" in flat
     beyond = _build_prompt("Why?", ev, TITLES, part_of="Why? and more", books=BOOKS, role="beyond")
     assert "cannot settle" in beyond and "Answer this part fully" not in beyond
     plain = _build_prompt("Who?", ev, TITLES, part_of="Who? and why?", books=BOOKS)
@@ -399,13 +461,19 @@ async def _answer(script, plan=PLAN, *, write=True, check=True, viewpoint=None):
         plan=plan, retrieval=rparts, viewpoint=viewpoint)
 
 
-async def test_an_interpretive_answer_has_evidence_a_reading_a_counter_case():
+async def test_an_interpretive_answer_opens_with_its_short_answer_then_the_argument():
     script = Script(LENS_CLAIMS, FULL, ["supported"] * 5)
     a = await _answer(script)
     assert a.answer_style == "prose"
-    assert [s.kind for s in a.prose] == ["fact", "fact", "fact", "reading", "counter"]
-    assert a.prose[3].new_paragraph and not a.prose[4].new_paragraph
-    assert "The evidence suggests Rin was committed." in a.text
+    # The reading is the short answer; the argument below is the facts and the counter-case.
+    assert [(s.kind, s.short) for s in a.short_answer] == [("reading", True)]
+    assert a.short_answer[0].text == "The evidence suggests Rin was committed."
+    assert [s.kind for s in a.prose] == ["fact", "fact", "fact", "counter"]
+    assert not any(s.short for s in a.prose)
+    assert a.prose[3].new_paragraph
+    # The text puts the short answer first, under its heading, with its citations.
+    assert a.text.startswith(f"{w.SHORT_ANSWER_HEADING}\nThe evidence suggests Rin was committed. [")
+    assert a.text.index("The evidence suggests") < a.text.index("Rin met a teacher.")
     assert len(a.claims) == 3
     # One claims call per lens, over that lens's question, with the lens context.
     assert len(script.prompts["claims"]) == 2
@@ -419,19 +487,20 @@ async def test_an_interpretive_answer_has_evidence_a_reading_a_counter_case():
     assert "2. What did Rin do?" not in script.prompts["write"][0]
 
 
-async def test_the_reading_dropped_by_the_check_leaves_the_facts_and_a_line_from_code():
+async def test_the_reading_dropped_by_the_check_leaves_the_facts_and_a_short_answer_line_from_code():
     script = Script(LENS_CLAIMS, FULL, ["supported"] * 3 + ["not_supported", "supported"])
     a = await _answer(script)
-    assert [s.kind for s in a.prose] == ["fact", "fact", "fact", "limit"]
-    assert a.prose[-1].text == interpret.NO_POSITION_LINE
-    assert a.text.endswith(interpret.NO_POSITION_LINE)
+    assert [s.kind for s in a.prose] == ["fact", "fact", "fact"]
+    assert [(s.kind, s.text) for s in a.short_answer] == [("limit", interpret.NO_POSITION_LINE)]
+    assert a.text.startswith(f"{w.SHORT_ANSWER_HEADING}\n{interpret.NO_POSITION_LINE}")
     assert "Against that" not in a.text  # a counter-case with nothing to oppose is dropped
 
 
 async def test_a_counter_case_dropped_by_the_check_is_said_to_be_missing():
     script = Script(LENS_CLAIMS, FULL, ["supported"] * 4 + ["not_supported"])
     a = await _answer(script)
-    assert [s.kind for s in a.prose] == ["fact", "fact", "fact", "reading", "limit"]
+    assert [s.kind for s in a.short_answer] == ["reading"]
+    assert [s.kind for s in a.prose] == ["fact", "fact", "fact", "limit"]
     assert a.prose[-1].text == interpret.NO_COUNTER_LINE
 
 
@@ -440,8 +509,8 @@ async def test_a_reading_from_one_lens_only_is_dropped_by_code():
                              S("The evidence suggests Rin was committed.", [1, 2], "reading")])
     script = Script(LENS_CLAIMS, prose, ["supported"] * 2)
     a = await _answer(script)
-    assert [s.kind for s in a.prose] == ["fact", "fact", "limit"]
-    assert a.prose[-1].text == interpret.NO_POSITION_LINE
+    assert [s.kind for s in a.prose] == ["fact", "fact"]
+    assert [s.text for s in a.short_answer] == [interpret.NO_POSITION_LINE]
 
 
 async def test_one_failed_fact_does_not_cost_the_prose_but_more_than_a_fifth_does():
@@ -453,28 +522,66 @@ async def test_one_failed_fact_does_not_cost_the_prose_but_more_than_a_fifth_doe
     assert two.answer_style == "claims"
 
 
-async def test_failed_prose_falls_back_to_the_facts_and_says_there_is_no_position():
+async def test_failed_prose_falls_back_to_the_facts_and_a_short_answer_says_there_is_no_position():
     a = await _answer(Script(LENS_CLAIMS, FULL, ["not_supported"] * 5))
     assert a.answer_style == "claims" and len(a.claims) == 3
     assert a.note and "did not pass verification" in a.note
-    assert a.text.endswith(interpret.NO_POSITION_LINE)
+    assert [s.text for s in a.short_answer] == [interpret.NO_POSITION_LINE]
+    assert a.text.startswith(f"{w.SHORT_ANSWER_HEADING}\n{interpret.NO_POSITION_LINE}")
     assert "Rin met the old teacher." in a.text  # the facts are still shown
 
 
-async def test_a_writer_that_raises_falls_back_to_the_facts_and_the_line():
+async def test_a_writer_that_raises_falls_back_to_the_facts_and_the_short_line():
     a = await _answer(Script(LENS_CLAIMS, RuntimeError("boom")))
-    assert a.answer_style == "claims" and a.text.endswith(interpret.NO_POSITION_LINE)
+    assert a.answer_style == "claims"
+    assert [s.text for s in a.short_answer] == [interpret.NO_POSITION_LINE]
+    assert a.text.startswith(w.SHORT_ANSWER_HEADING)
 
 
 async def test_with_no_writer_configured_the_facts_stand_with_no_claim_about_position():
     a = await _answer(Script(LENS_CLAIMS, FULL), write=False, check=False)
     assert a.answer_style == "claims" and interpret.NO_POSITION_LINE not in a.text
+    assert a.short_answer == ()
 
 
 async def test_a_prose_of_only_a_reading_falls_back():
     prose = Prose(sentences=[S("The evidence suggests Rin was committed.", [1, 3], "reading")])
     a = await _answer(Script(LENS_CLAIMS, prose, ["supported"]))
-    assert a.answer_style == "claims" and a.text.endswith(interpret.NO_POSITION_LINE)
+    assert a.answer_style == "claims"
+    assert [s.text for s in a.short_answer] == [interpret.NO_POSITION_LINE]
+
+
+async def test_every_interpretive_part_gets_a_verdict_when_the_parts_are_per_book():
+    plan = (Part("In book A, who is boldest?", "interpretive", ("What did Rin do?", "How did it end?")),
+            Part("In book B, who is boldest?", "interpretive", ("What did Tam do?", "How did Tam end?")))
+    lens = {**LENS_CLAIMS,
+            "What did Tam do?": [_claim(1, "Tam sailed.", "Rin trained with the sword")],
+            "How did Tam end?": [_claim(2, "Tam returned.", "Rin met the old teacher")]}
+    prose = Prose(sentences=[
+        S("Rin met a teacher.", [1]), S("Rin trained with the sword.", [2]), S("Rin learned maps.", [3]),
+        S("In book A, the evidence suggests Rin is boldest.", [1, 3], "reading"),
+        S("In book B, on balance Tam is boldest.", [4, 5], "reading")])
+    script = Script(lens, prose, ["supported"] * 5)
+    a = await _answer(script, plan)
+    assert [s.kind for s in a.short_answer] == ["reading", "reading"]
+    assert [s.text for s in a.short_answer] == [
+        "In book A, the evidence suggests Rin is boldest.", "In book B, on balance Tam is boldest."]
+    # The writer is told to write one reading for each such part.
+    assert "EACH part marked (interpretive)" in script.prompts["write"][0]
+
+
+async def test_a_part_without_a_reading_gets_the_line_that_names_it_beside_a_part_that_has_one():
+    plan = (Part("In book A, who is boldest?", "interpretive", ("What did Rin do?", "How did it end?")),
+            Part("In book B, who is boldest?", "interpretive", ("What did Tam do?", "How did Tam end?")))
+    lens = {**LENS_CLAIMS,
+            "What did Tam do?": [_claim(1, "Tam sailed.", "Rin trained with the sword")],
+            "How did Tam end?": [_claim(2, "Tam returned.", "Rin met the old teacher")]}
+    prose = Prose(sentences=[
+        S("Rin met a teacher.", [1]), S("Rin learned maps.", [3]), S("Tam returned.", [4]),
+        S("In book A, the evidence suggests Rin is boldest.", [1, 3], "reading")])
+    a = await _answer(Script(lens, prose, ["supported"] * 4), plan)
+    assert [s.kind for s in a.short_answer] == ["reading", "limit"]
+    assert a.short_answer[1].text == f"In book B, who is boldest? {interpret.NO_POSITION_LINE}"
 
 
 async def test_the_beyond_part_is_retrieved_once_and_its_limit_is_said_by_code():
@@ -489,6 +596,7 @@ async def test_the_beyond_part_is_retrieved_once_and_its_limit_is_said_by_code()
     assert len(script.prompts["claims"]) == 3
     beyond_prompt = [p for p in script.prompts["claims"] if "Question: Why did the author" in p][0]
     assert "cannot settle" in beyond_prompt
+    assert [s.kind for s in a.short_answer] == ["reading"]
     assert a.prose[-1].kind == "limit"
     assert a.prose[-1].text == "The books don't settle: Why did the author write it?"
     assert "not found" not in (a.note or "")
@@ -512,7 +620,8 @@ async def test_a_mixed_question_keeps_its_factual_part_as_facts():
     assert len(script.prompts["claims"]) == 3
     plain = [p for p in script.prompts["claims"] if "Question: Who is Rin?" in p][0]
     assert "Answer this part fully" in plain
-    assert [s.kind for s in a.prose][:3] == ["fact"] * 3 and a.prose[3].kind == "reading"
+    assert [s.kind for s in a.prose][:3] == ["fact"] * 3
+    assert [s.kind for s in a.short_answer] == ["reading"]
 
 
 async def test_a_custom_viewpoint_reaches_the_writer_and_the_check():
@@ -603,3 +712,20 @@ def test_the_new_prompt_texts_are_in_the_banned_word_and_leak_tests():
     for text in (interpret.LENS_CONTEXT, interpret.BEYOND_CONTEXT, interpret.WRITER_SHAPE_RULE,
                  interpret.WRITER_BEYOND_RULE, interpret.READING_CHECK_BLOCK, interpret.COUNTER_CHECK_BLOCK):
         assert text in covered
+
+
+def test_the_writer_names_the_chosen_candidate_for_a_judgement_and_rests_it_on_the_quality_asked_about():
+    flat = " ".join(interpret.writer_rule(SHAPE).split())
+    assert "name the candidate you choose and say why" in flat
+    assert "not on plot events that happen around them" in flat
+    assert "for EACH part marked (interpretive)" in flat and "every one needs its own reading" in flat
+
+
+def test_compose_answer_puts_the_short_answer_first_under_its_heading():
+    short = (ProseSentence("On balance, A.", (1,), (1,), True, "reading", True),
+             ProseSentence("B? " + interpret.NO_POSITION_LINE, (), (), True, "limit", True))
+    body = (ProseSentence("A fact.", (2,), (2,), False),)
+    text = w.compose_answer(short, body)
+    assert text == (f"{w.SHORT_ANSWER_HEADING}\nOn balance, A. [1]\n\nB? {interpret.NO_POSITION_LINE}"
+                    "\n\nA fact. [2]")
+    assert w.compose_answer((), body) == w.compose_text(body)

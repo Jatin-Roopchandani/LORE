@@ -4,7 +4,7 @@ the synthetic worlds library with a place, a faction, an idea and codex rows
 
 Covers the planner and its validation, a section's isolation, the events and
 their order, the per-section fallback, the codex block (only with entries), the
-request budget, the interpretive close, the output shapes, and DEEP off."""
+request budget, the output shapes, and DEEP off."""
 from __future__ import annotations
 
 import json
@@ -15,7 +15,7 @@ import pytest
 
 from lore.mcp.shapes import to_search_result
 from lore.mcp.stores import open_stores
-from lore.query import codexslice, decompose as decompose_module, deep, interpret
+from lore.query import codexslice, decompose as decompose_module, deep
 from lore.query.decompose import Decomposition, PartSpec
 from lore.query.deep import Candidate, DeepPlan, PlanSection
 from lore.query.models import CodexLine, Evidence, Passage, SectionSpec
@@ -403,45 +403,7 @@ async def test_the_budget_always_leaves_room_for_the_overview(config, monkeypatc
     assert answer.requests == 1 + 2 * deep.SECTION_REQUESTS + deep.TAIL_REQUESTS
 
 
-# ---- the interpretive close ---------------------------------------------------------------------
-
-async def test_an_interpretive_deep_question_closes_with_a_reading_and_the_limits(config):
-    plan = Decomposition(sub_questions=[
-        PartSpec(question="Was the road right for Zed Quill?", kind="interpretive",
-                 lenses=["What did the road cost Zed Quill?", "What did the road give Zed Quill?"]),
-        PartSpec(question="Why does the road exist?", kind="beyond")], depth="deep")
-    scripted = Scripted(plan, planner=TWO, tagged=True, write_kinds=True)
-    answer, events = await ask(config, scripted, "Was the road right?")
-    close = answer.sections[-1]
-    assert close.kind == "close" and close.heading == deep.CLOSE_HEADING
-    assert close.claims_end < close.claims_start
-    kinds = [s.kind for s in close.prose]
-    assert "reading" in kinds and kinds[-1] == "limit"
-    assert interpret.LIMITS_LEAD in close.prose[-1].text
-    # The reading rests on facts of at least two sections.
-    reading = next(s for s in close.prose if s.kind == "reading")
-    one, two = answer.sections[:2]
-    assert any(k <= one.claims_end for k in reading.claims)
-    assert any(k >= two.claims_start for k in reading.claims)
-    assert "## " + deep.CLOSE_HEADING in answer.text
-    last = of(events, "section")[-1]
-    assert last["kind"] == "close" and last["index"] == 2 and last["claims_range"] is None
-    # Facts are never repeated in the close.
-    assert all(s.kind != "fact" for s in close.prose)
-
-
-async def test_an_interpretive_close_never_goes_silent(config):
-    plan = Decomposition(sub_questions=[
-        PartSpec(question="Was the road right?", kind="interpretive",
-                 lenses=["What did the road cost?", "What did the road give?"])], depth="deep")
-    # The writer gives no reading: code says the evidence did not support one.
-    scripted = Scripted(plan, planner=TWO, tagged=True, write_kinds=False)
-    answer, _ = await ask(config, scripted, "Was the road right?")
-    close = answer.sections[-1]
-    assert [s.text for s in close.prose] == [interpret.NO_POSITION_LINE]
-
-
-# ---- readings belong to the close, not to sections or the overview -----------------------------------
+# ---- a topical section and the overview state facts only -----------------------------------
 
 async def test_sections_and_the_overview_keep_only_facts_and_ask_for_no_readings(config):
     from lore.query import write as write_module
@@ -454,17 +416,6 @@ async def test_sections_and_the_overview_keep_only_facts_and_ask_for_no_readings
     for section in answer.sections:
         assert section.prose and all(s.kind == "fact" for s in section.prose)
     assert "suggests a pattern" not in answer.text
-
-
-async def test_an_interpretive_deep_answer_still_puts_its_reading_in_the_close(config):
-    plan = Decomposition(sub_questions=[
-        PartSpec(question="Was the road right?", kind="interpretive",
-                 lenses=["What did the road cost?", "What did the road give?"])], depth="deep")
-    answer, _ = await ask(config, Scripted(plan, planner=TWO, tagged=True, write_kinds=True),
-                          "Was the road right?")
-    body, close = answer.sections[:-1], answer.sections[-1]
-    assert all(s.kind == "fact" for sec in body for s in sec.prose)
-    assert any(s.kind == "reading" for s in close.prose)
 
 
 # ---- the registry and the headings ---------------------------------------------------------------------

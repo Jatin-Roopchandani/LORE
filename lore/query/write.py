@@ -162,8 +162,20 @@ OVERVIEW_LENGTH_RULE = """- Length: this is the short overview that opens a long
   to five sentences that say in brief what the answer covers, in the order of
   the facts. Make no claim the facts do not support.
 """
+# One aspect (lens) of an interpretive question, written as a section of a deep
+# answer: no word cap, and an opening that says how the facts bear on the question.
+LENS_LENGTH_RULE = """- Length: this is one section of a long, detailed answer, and its question is one
+  aspect of a larger question. Use every fact given, and say as much as the facts
+  support; there is no word limit. Start a new paragraph for each theme: mark
+  its first sentence with new_paragraph.
+- Open with one sentence that says how these facts bear on the question. It must
+  itself state what the facts show (for example what a person does, chooses or
+  hides) and list those facts in `claims`; never open with a remark that no fact
+  supports. If no fact can open that way, leave the opening out and begin with
+  the first fact.
+"""
 LENGTH_RULES = {None: _LENGTH_RULE, "section": SECTION_LENGTH_RULE,
-                "overview": OVERVIEW_LENGTH_RULE}
+                "overview": OVERVIEW_LENGTH_RULE, "lens": LENS_LENGTH_RULE}
 
 
 STORY_WRITER_PROMPT = """Write the answer to the question from the numbered facts below.
@@ -610,15 +622,32 @@ def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = (),
     return text
 
 
+SHORT_ANSWER_HEADING = "Short answer"
+
+
+def compose_answer(short: Sequence[ProseSentence], prose: Sequence[ProseSentence],
+                   unanswered: Sequence[str] = (), gaps: Sequence[str] = ()) -> str:
+    """`compose_text` with an interpretive answer's short answer first, under its
+    heading, one paragraph per interpretive part."""
+    body = compose_text(prose, unanswered, gaps)
+    if not short:
+        return body
+    lead = SHORT_ANSWER_HEADING + "\n" + compose_text(short)
+    return lead + ("\n\n" + body if body else "")
+
+
 CONTENTS_HEADING = "Contents"
 
 
-def compose_sections(overview: Sequence[ProseSentence], sections: Sequence) -> str:
+def compose_sections(overview: Sequence[ProseSentence], sections: Sequence,
+                     short: Sequence[ProseSentence] = ()) -> str:
     """A deep answer as text: the overview, a numbered contents list, then each
     section under a markdown heading (`## heading`). A section is anything with
     `heading` and `text` (models.AnswerSection); the text of each is its own
-    prose with its citations, or its claim list when the prose did not pass."""
-    blocks = [compose_text(overview)] if overview else []
+    prose with its citations, or its claim list when the prose did not pass.
+    An interpretive answer's `short` answer comes first, under its heading."""
+    blocks = [SHORT_ANSWER_HEADING + "\n" + compose_text(short)] if short else []
+    blocks += [compose_text(overview)] if overview else []
     if len(sections) > 1:
         blocks.append(CONTENTS_HEADING + "\n" + "\n".join(
             f"{i}. {s.heading}" for i, s in enumerate(sections, start=1)))

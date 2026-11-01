@@ -1177,6 +1177,25 @@ def test_search_result_carries_the_interpretive_kinds():
     assert out["prose"][3]["claims"] == [] and out["prose"][3]["passages"] == []
 
 
+def test_search_result_carries_the_short_answer_and_the_unwritten_count():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)),), answer_style="prose",
+                    short_answer=(ProseSentence("On balance, A.", (1,), (1,), True, "reading", True),
+                                  ProseSentence("B? No clear position.", (), (), True, "limit", True)),
+                    unwritten=2)
+    out = to_search_result(answer, {}).model_dump()
+    assert [(p["kind"], p["text"]) for p in out["short_answer"]] == [
+        ("reading", "On balance, A."), ("limit", "B? No clear position.")]
+    assert out["short_answer"][0]["claims"] == [1] and out["short_answer"][1]["claims"] == []
+    assert out["unwritten_sections"] == 2
+    # Every other answer: no short answer, nothing unwritten.
+    plain = to_search_result(Answer(text="x", passages=(), mode="graph", template=None, note=None), {})
+    assert plain.short_answer == [] and plain.unwritten_sections == 0
+
+
 def test_search_result_maps_new_paragraph():
     from lore.mcp.shapes import to_search_result
     from lore.query.models import Answer, Claim, ProseSentence

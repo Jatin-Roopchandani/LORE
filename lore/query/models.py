@@ -93,6 +93,9 @@ class ProseSentence:
     # reading; "limit": a line written by code (no claims) saying what the
     # evidence or the books do not settle (lore/query/interpret.py).
     kind: str = "fact"
+    # Part of an interpretive answer's short answer (Answer.short_answer): the
+    # reading for one interpretive part, or code's line when it has none.
+    short: bool = False
 
 
 @dataclass(frozen=True)
@@ -170,6 +173,9 @@ class AnswerSection:
     kind: str = "section"
     entities: tuple[str, ...] = ()
     note: str | None = None
+    # The interpretive part this section's lens belongs to, named only when a
+    # question has several parts; "" otherwise.
+    group: str = ""
 
 
 @dataclass(frozen=True)
@@ -223,3 +229,11 @@ class Answer:
     sections: tuple[AnswerSection, ...] = ()
     overview: tuple[ProseSentence, ...] = ()
     requests: int = 0
+    # An interpretive answer opens with its short answer: one sentence per
+    # interpretive part (its reading, or code's "evidence did not support a
+    # clear position" line), each marked `short`. `prose` and the sections are
+    # the argument that follows. Empty for every other answer.
+    short_answer: tuple[ProseSentence, ...] = ()
+    # Sections of a sectioned answer that could not be written (failed or found
+    # nothing); they are left out of `sections`, and this counts them.
+    unwritten: int = 0

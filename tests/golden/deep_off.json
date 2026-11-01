@@ -36,6 +36,7 @@
      "passages": [
       1
      ],
+     "short": false,
      "text": "Sentence 1."
     },
     {
@@ -47,6 +48,7 @@
      "passages": [
       2
      ],
+     "short": false,
      "text": "Sentence 2."
     },
     {
@@ -58,6 +60,7 @@
      "passages": [
       3
      ],
+     "short": false,
      "text": "Sentence 3."
     }
    ],
@@ -360,6 +363,7 @@
      "passages": [
       1
      ],
+     "short": false,
      "text": "Sentence 1."
     },
     {
@@ -371,6 +375,7 @@
      "passages": [
       2
      ],
+     "short": false,
      "text": "Sentence 2."
     },
     {
@@ -382,6 +387,7 @@
      "passages": [
       3
      ],
+     "short": false,
      "text": "Sentence 3."
     }
    ],

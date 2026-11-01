@@ -13,9 +13,14 @@ entries as evidence; it has its own claims step, its own check and its own
 writer, which has no word cap (`synthesize.synthesize(section=...)`). A section
 that passes streams to the UI on its own; one that fails falls back to its
 claim list without touching the others. The answer is a short overview built
-from a few checked claims of each section, a contents list, the sections, and,
-when the question is interpretive, a closing section with LORE's reading, the
-counter-case and the limits (interpret.py).
+from a few checked claims of each section, a contents list and the sections.
+
+A question with an interpretive part is not planned this way. Its sections are
+its own parts and lenses (`answer_lenses`): one per lens, headed by the lens
+question, each with its own writer and check; the answer opens with the short
+answer (one reading per interpretive part), and a closing section holds the
+counter-case and the limits (interpret.py). Deep mode only lifts the length and
+claim caps of those sections.
 
 Faithfulness is as everywhere else: every sentence cites checked claims and
 every claim quotes a numbered passage. The planner, the codex and the timeline
@@ -39,7 +44,7 @@ from lore.extract.embed import QUERY_PREFIX
 from lore.query import codexslice, interpret
 from lore.query import timeline as timeline_module
 from lore.query import write as write_module
-from lore.query.events import emit
+from lore.query.events import EDGES_PER_PART_CAP, edge_key, emit
 from lore.query.models import (
     Answer, AnswerSection, BookInfo, Claim, EdgeRow, Evidence, Passage, ProseSentence,
     SectionSpec, SeedEntity, TemplateCall,
@@ -49,7 +54,8 @@ from lore.query.scope import Scope
 from lore.query.seed import _entities, named_seeds
 from lore.query.subgraph import assemble_ranked, relevance, run_template
 from lore.query.synthesize import (
-    CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, check_answer, synthesize,
+    CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _finish, check_answer, shaped_claims,
+    synthesize,
 )
 from lore.query.write import assemble, compose_sections, compose_text, split_items, verify_prose, write_answer
 from lore.resolve.normalize import normalize_name
@@ -80,10 +86,10 @@ SECTION_RELEVANT = 12
 DEEP_MAX_REQUESTS = 45
 SECTION_REQUESTS = 3
 TAIL_REQUESTS = 2
-# Claims of each section the overview and the close read.
+# Claims of each section the overview reads.
 OVERVIEW_CLAIMS_PER_SECTION = 2
-CLOSE_CLAIMS_PER_SECTION = 4
-CLOSE_HEADING = "Reading, counter-case and limits"
+# The closing section of an interpretive answer: the counter-case and the limits.
+CLOSE_HEADING = "Counter-case and limits"
 # Facets of one named entity.
 MAX_FACET_RELATIONS = 8
 PERIODS = 3
@@ -454,7 +460,7 @@ def _restrictions(section: PlannedSection):
 async def run_section(index: int, section: PlannedSection, vector: list[float], *, question: str,
                       conn, kuzu, lance, models, scope: Scope, titles: dict[str, str],
                       books: Mapping[str, BookInfo], registry: Registry,
-                      book_ids: frozenset[str] | None) -> SectionResult:
+                      book_ids: frozenset[str] | None, on_event=None) -> SectionResult:
     """Answer one section from its own evidence: its entities' relationships,
     timeline and codex slice, and the passages nearest it. The section's claims
     and prose come back in the answer's numbering (the registry's)."""
@@ -467,6 +473,11 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
         found = run_template(kuzu, TemplateCall("across_books", {
             "entity_id": seed.id, "limit": SECTION_EDGES_PER_BOOK}))
         rows += [r for r in found if scope.allows(r.book_id)]
+    # The graph view stages a section's starting entities and relationships as it
+    # starts, as it does for each part of an ordinary answer (part = the section).
+    emit(on_event, "seeds", part=index, entities=list(seeds))
+    emit(on_event, "edges", part=index, template="across_books", total=len(rows),
+         edges=rows[:EDGES_PER_PART_CAP])
     aspects, beat_ids = _restrictions(section)
     shown = book_ids if book_ids else None
     seed_ids = {s.id for s in seeds}
@@ -558,18 +569,6 @@ def _digest(sections: Sequence[AnswerSection], per: int) -> list[tuple[int, int]
     return out
 
 
-def interpretive_shape(plan, sections: Sequence[AnswerSection], digest, viewpoint: str):
-    """The Task 3 shape for the close: each section is a lens of the first
-    interpretive part, so a reading must rest on facts from at least two
-    sections; beyond parts give the limits line."""
-    kept = [(p.question, p.kind) for p in plan.parts if p.kind in ("interpretive", "beyond")]
-    kinds = tuple(k for _, k in kept)
-    at = kinds.index("interpretive") if "interpretive" in kinds else 0
-    shape = interpret.Shape(viewpoint=viewpoint, parts=tuple(q for q, _ in kept), kinds=kinds,
-                            retrieval=tuple((s.heading, at, True) for s in sections))
-    return shape.with_claims([frozenset({i}) for i, _ in digest])
-
-
 # --- the whole answer -------------------------------------------------------------
 
 def _passage_json(p: Passage) -> dict:
@@ -634,10 +633,11 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
                     "entities": [{"id": c.id, "name": c.name, "kind": c.kind}
                                  for c in s.candidates]} for i, s in enumerate(planned)])
 
-    closes = (plan is not None and interpret.active()
-              and interpret.shaped([p.kind for p in plan.parts]))
-    # The overview's writer and check, and the close's when there is a close.
-    tail = TAIL_REQUESTS * (2 if closes else 1)
+    # The sections are the answer's parts from here on: the graph view and the
+    # steps list name them as it names the parts of an ordinary answer.
+    emit(on_event, "parts", sub_questions=[s.heading for s in planned])
+    # The overview's writer and check.
+    tail = TAIL_REQUESTS
     vectors = await models.embed([QUERY_PREFIX + section_question(
         s.heading, [c.name for c in s.candidates]) for s in planned])
     registry = Registry()
@@ -646,6 +646,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
     seeds_seen: dict[str, SeedEntity] = {}
     skipped: list[str] = []
     failures: list[BaseException] = []
+    empties = 0
     for index, (section, vec) in enumerate(zip(planned, vectors)):
         reason = None
         if spend.n + SECTION_REQUESTS + tail > DEEP_MAX_REQUESTS:
@@ -663,7 +664,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
             result = await run_section(index, section, vec, question=question, conn=conn,
                                        kuzu=kuzu, lance=lance, models=models, scope=scope,
                                        titles=titles, books=books, registry=registry,
-                                       book_ids=scope_books)
+                                       book_ids=scope_books, on_event=on_event)
         except Exception as err:  # noqa: BLE001 -- one section failing leaves the others
             log.exception("deep section %r failed", section.heading)
             failures.append(err)
@@ -676,6 +677,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
         for s in result.seeds:
             seeds_seen.setdefault(s.id, s)
         if result.section is None:
+            empties += 1
             emit(on_event, "section", index=index, state="done", kind="section",
                  heading=section.heading, style="empty", text="", prose=[], claims=[],
                  claims_range=None, passages=[], note=None)
@@ -693,7 +695,10 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
         return None
 
     claims, passages = registry.claims, registry.passages
-    book_infos = write_module.book_infos(titles, dict(books))
+    # One `evidence` event for the whole answer (every section's relationships and the
+    # passages its claims cite), as an ordinary answer sends before it writes.
+    emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in passages],
+         edge_keys=[edge_key(e) for e in dict.fromkeys(edges)])
     # The overview: a few of the most important checked claims of each section.
     digest = _digest(done, OVERVIEW_CLAIMS_PER_SECTION)
     overview: tuple[ProseSentence, ...] = ()
@@ -706,14 +711,6 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
          text=compose_text(overview) if overview else "")
 
     sections = list(done)
-    if closes:
-        close = await interpretive_close(plan, done, claims, passages, models, question,
-                                         titles, dict(books), len(planned))
-        sections.append(close)
-        emit(on_event, "section", index=len(planned), state="start", kind="close",
-             heading=close.heading)
-        emit(on_event, "section", **_section_event(len(planned), "close", close, close.heading,
-                                                   [], [], close.style))
 
     note_parts = [CHECK_SKIPPED_NOTE] if any(
         s.note and CHECK_SKIPPED_NOTE in s.note for s in sections) else []
@@ -725,30 +722,186 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
         model=models.synthesis_model(), sub_questions=tuple(s.heading for s in sections),
         claims=tuple(claims), edges=tuple(dict.fromkeys(edges)), seeds=tuple(seeds_seen.values()),
         answer_style="sectioned", sections=tuple(sections), overview=overview,
-        requests=spend.n)
+        requests=spend.n, unwritten=len(failures) + empties)
 
 
-async def interpretive_close(plan, sections: Sequence[AnswerSection], claims: Sequence[Claim],
-                             passages: Sequence[Passage], models, question: str,
-                             titles: dict[str, str], books: dict[str, BookInfo],
-                             index: int) -> AnswerSection:
-    """The closing section of an interpretive question: LORE's reading, the
-    counter-case and the limits, over a few claims of each section. Sentences
-    that fail a guard or the check are dropped, and code says what the evidence
-    or the books do not settle (interpret.close_answer), so it is never silent."""
-    from lore.query.viewpoint import load_viewpoint
-    digest = _digest(sections, CLOSE_CLAIMS_PER_SECTION)
-    shape = interpretive_shape(plan, sections, digest,
-                               models.viewpoint if models.viewpoint is not None else load_viewpoint())
-    kept: tuple[ProseSentence, ...] = ()
-    if shape.interpretive:
-        got = await cited_prose(question, list(shape.parts), [claims[k - 1] for _, k in digest],
-                                passages, models, length=None, shape=shape,
-                                book_titles=titles, books=books)
-        if got is not None:
-            numbers = [k for _, k in digest]
-            kept = tuple(replace(s, claims=tuple(numbers[k - 1] for k in s.claims))
-                         for s in got if s.kind in ("reading", "counter"))
-    prose = interpret.close_answer(kept, shape, ())
-    return AnswerSection(heading=CLOSE_HEADING, prose=prose, text=compose_text(prose),
-                         claims_start=0, claims_end=-1, style="prose", kind="close")
+
+# --- an interpretive question: its own parts and lenses are the sections ---------------
+
+def lens_heading(question: str) -> str:
+    """A section's heading from its lens question: short and clean (clean_heading),
+    without the closing question mark."""
+    return clean_heading(question).rstrip("? ").strip() or str(question).strip()
+
+
+def _renumber(prose: Sequence[ProseSentence], numbering: Mapping[int, int],
+              claims: Sequence[Claim]) -> tuple[ProseSentence, ...]:
+    """`prose` with each claim number mapped through `numbering` (a claim missing
+    from it is dropped from the citation) and its passages recomputed from the
+    claims it now cites. Code-written sentences (no claims) are kept as they are."""
+    out = []
+    for s in prose:
+        mine = tuple(numbering[k] for k in s.claims if k in numbering)
+        if s.claims and not mine:
+            continue  # everything it cited is gone
+        out.append(replace(s, claims=mine, passages=tuple(sorted(
+            {claims[k - 1].passage for k in mine})) if s.claims else s.passages))
+    return tuple(out)
+
+
+async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, models, *, mode: str,
+                        template: str | None = None, note: str | None = None,
+                        book_titles: dict[str, str] | None = None,
+                        books: dict[str, BookInfo] | None = None,
+                        on_event=None) -> Answer:
+    """A deep answer to a question with an interpretive part, organised by that
+    question's own structure instead of a topical outline.
+
+    The claims come per retrieval part as in `synthesize_shaped`, with the claim
+    cap lifted (SECTION_CLAIMS). The reading phase comes first: one writer and
+    check over every claim give the short answer (a reading per interpretive
+    part), the counter-case and the limits, and the short answer is sent at
+    once (`short_answer` event). Then one section per retrieval part (a lens, or
+    a part of its own) is written in order, each with its own writer and check,
+    no word cap, and an opening that says how its facts bear on the question;
+    a part whose lenses are several is named as the section's group. The
+    counter-case and the limits close the answer. A section that fails or finds
+    nothing is left out and counted (`Answer.unwritten`); the request budget and
+    the day's answer reserve stop further sections as in `answer_deep`.
+    """
+    spend = Spend()
+    generate = spend.counted(models.synthesize)
+    models = replace(models, synthesize=generate,
+                     write=spend.counted(models.write) if models.write else None,
+                     check=spend.counted(models.check) if models.check else None)
+    books = dict(books or {})
+
+    def answer(text: str, *extra: str | None, claims=(), **more) -> Answer:
+        notes = "; ".join(n for n in (note, *extra) if n) or None
+        return Answer(text=text, passages=evidence.passages, mode=mode, template=template,
+                      note=notes, claims=tuple(claims), model=models.synthesis_model(),
+                      requests=spend.n, **more)
+
+    if not evidence.passages:
+        return answer(REFUSAL)
+    gathered = await shaped_claims(question, plan, retrieval, evidence, generate,
+                                   book_titles=book_titles, books=books,
+                                   viewpoint=models.viewpoint, max_claims=SECTION_CLAIMS)
+    shape = gathered.shape
+    # The reading phase: the writer sees every claim and the check judges them all.
+    kept, _cut, prose, skipped, _prose_note, _unanswered, _gaps = await _finish(
+        question, list(shape.parts), gathered.kept, evidence, models.check, models.write,
+        book_titles, part_claims=None, books=books, shape=shape)
+    if not kept:
+        return answer(REFUSAL)
+    at = [gathered.kept.index(c) for c in kept]  # position in `gathered.kept` of each survivor
+    found = [shape.claim_parts[i] for i in at]
+    owner = [min(f) if f else 0 for f in found]  # the first retrieval part that found it
+    order = sorted(range(len(kept)), key=lambda k: (owner[k], k))
+    numbering = {k + 1: n for n, k in enumerate(order, start=1)}  # survivor number -> final number
+    final = [kept[k] for k in order]
+    configured = models.write is not None and models.check is not None
+    short = tuple(s for s in prose if s.short) if prose else (
+        interpret.short_answer(shape) if shape.interpretive and configured else ())
+    short = _renumber(short, numbering, final)
+    argument = tuple(s for s in _renumber(prose, numbering, final)
+                     if not s.short and s.kind in ("counter", "limit"))
+
+    sections_of = [[n for n, k in enumerate(order, start=1) if owner[k] == ri]
+                   for ri in range(len(retrieval))]
+    planned = [ri for ri, mine in enumerate(sections_of) if mine]
+    unwritten = len(retrieval) - len(planned)
+    group_of = {ri: (plan[r.part].question if r.lens and len(plan) > 1 else "")
+                for ri, r in enumerate(retrieval)}
+    headings = {ri: lens_heading(retrieval[ri].question) for ri in planned}
+    emit(on_event, "plan", scope="", candidates=0,
+         sections=[{"index": ri, "heading": headings[ri], "group": group_of[ri], "entities": []}
+                   for ri in planned])
+    by_n = {p.n: p for p in evidence.passages}
+    sent: set[int] = set()
+
+    def fresh(numbers) -> list[Passage]:
+        out = []
+        for n in numbers:
+            p = by_n[final[n - 1].passage]
+            if p.n not in sent:
+                sent.add(p.n)
+                out.append(p)
+        return out
+
+    emit(on_event, "short_answer", prose=list(short),
+         text=compose_text(short) if short else "",
+         claims=[c.model_dump() for c in final], passages=[_passage_json(p) for p in fresh(range(1, len(final) + 1))])
+
+    sections: list[AnswerSection] = []
+    not_written: list[str] = []
+    failures: list[BaseException] = []
+    for ri in planned:
+        heading = headings[ri]
+        mine = sections_of[ri]
+        reason = None
+        if spend.n + SECTION_REQUESTS - 1 > DEEP_MAX_REQUESTS:
+            reason = "budget"
+        elif models.spend_ok is not None and not models.spend_ok():
+            reason = "reserve"
+        if reason:
+            not_written.append(heading)
+            emit(on_event, "section", index=ri, state="skipped", kind="section", heading=heading,
+                 reason=reason)
+            continue
+        emit(on_event, "step", name="section", state="start", part=ri, detail=None)
+        emit(on_event, "section", index=ri, state="start", kind="section", heading=heading)
+        owned = [final[n - 1] for n in mine]
+        served = plan[retrieval[ri].part].question
+        lens = retrieval[ri].question
+        ask = lens if served == lens else f"{lens} (one aspect of the larger question: {served})"
+        try:
+            got = await cited_prose(ask, [lens], owned, evidence.passages, models, length="lens",
+                                    book_titles=book_titles, books=books)
+        except Exception as err:  # noqa: BLE001 -- one section failing leaves the others
+            log.exception("deep section %r failed", heading)
+            failures.append(err)
+            unwritten += 1
+            emit(on_event, "section", index=ri, state="done", kind="section", heading=heading,
+                 style="failed", text="", prose=[], claims=[], claims_range=None, passages=[],
+                 note="the section could not be written")
+            emit(on_event, "step", name="section", state="done", part=ri, detail="failed")
+            continue
+        start = mine[0]
+        if got:
+            prose_of = remap_prose(got, start - 1, final)
+            text, style = compose_text(prose_of), "prose"
+        else:
+            prose_of, text, style = (), _compose(owned), "claims"
+        result = AnswerSection(heading=heading, prose=prose_of, text=text, claims_start=start,
+                               claims_end=mine[-1], style=style, group=group_of[ri],
+                               note=None if got else PROSE_FALLBACK_NOTE)
+        sections.append(result)
+        emit(on_event, "section", **_section_event(ri, "section", result, heading, owned,
+                                                   fresh(mine), style),
+             group=group_of[ri])
+        emit(on_event, "step", name="section", state="done", part=ri, detail=f"{len(owned)} claims")
+    if not sections and not not_written:
+        if failures:
+            raise failures[-1]
+    if not sections:  # nothing could be written section by section: the checked facts stand
+        text = _compose(final)
+        if short:
+            text = compose_sections((), [], short) + "\n\n" + text
+        return answer(text, skipped, claims=final, short_answer=short, unwritten=unwritten)
+
+    if argument:
+        close = AnswerSection(heading=CLOSE_HEADING, prose=argument, text=compose_text(argument),
+                              claims_start=0, claims_end=-1, style="prose", kind="close")
+        sections.append(close)
+        emit(on_event, "section", index=len(retrieval), state="start", kind="close",
+             heading=close.heading)
+        emit(on_event, "section", **_section_event(len(retrieval), "close", close, close.heading,
+                                                   [], fresh([n for s in argument for n in s.claims]),
+                                                   close.style))
+    notes = [skipped] if skipped else []
+    if not_written:
+        notes.append("stopped at the request limit; not written: " + "; ".join(not_written))
+    return answer(compose_sections((), sections, short), *notes, claims=final,
+                  answer_style="sectioned", sections=tuple(sections), short_answer=short,
+                  unwritten=unwritten)

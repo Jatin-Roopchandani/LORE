@@ -197,7 +197,9 @@ async def test_the_answer_has_evidence_a_reading_a_counter_case_and_the_beyond_l
     scripted = Models(plan_of(INTERPRETIVE, PartSpec(question=BEYOND, kind="beyond")), write=reply)
     answer, _ = await ask(config, scripted)
     assert answer.answer_style == "prose"
-    assert [s.kind for s in answer.prose] == ["fact", "fact", "reading", "counter", "limit"]
+    assert [s.kind for s in answer.prose] == ["fact", "fact", "counter", "limit"]
+    assert [s.text for s in answer.short_answer] == ["The evidence suggests Zed was right to go on."]
+    assert answer.text.startswith("Short answer\nThe evidence suggests Zed was right to go on.")
     assert answer.prose[-1].text == f"The books don't settle: {BEYOND}"
     assert answer.prose[-1].claims == () and answer.prose[-1].passages == ()
     assert answer.text.endswith(f"The books don't settle: {BEYOND}")
@@ -213,8 +215,8 @@ async def test_a_reading_that_cites_one_lens_is_dropped_and_the_answer_says_so(c
         S("Zed Quill walked on.", [1]), S("The traveller kept going.", [2]),
         S("The evidence suggests Zed was right to go on.", [1], "reading")])
     answer, _ = await ask(config, Models(plan_of(INTERPRETIVE), write=reply))
-    assert [s.kind for s in answer.prose] == ["fact", "fact", "limit"]
-    assert answer.prose[-1].text == interpret.NO_POSITION_LINE
+    assert [s.kind for s in answer.prose] == ["fact", "fact"]
+    assert [s.text for s in answer.short_answer] == [interpret.NO_POSITION_LINE]
 
 
 # ---- INTERPRETIVE off ---------------------------------------------------------------

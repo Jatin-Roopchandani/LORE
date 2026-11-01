@@ -39,7 +39,7 @@ from lore.query.models import (
 )
 from lore.query.position import order_passages
 from lore.query.write import (
-    assemble, book_infos, clean_gaps, compose_text, coverage_gaps, paragraphs_by_book, part_texts, split_items,
+    SHORT_ANSWER_HEADING, assemble, book_infos, clean_gaps, compose_answer, compose_text, coverage_gaps, paragraphs_by_book, part_texts, split_items,
     valid_unanswered, verify_prose, write_answer,
 )
 
@@ -956,7 +956,8 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     shown_gaps = (tuple(g for g, ok in zip(gaps, outcome.gap_ok) if ok)
                   if prose and outcome.gap_ok is not None and len(outcome.gap_ok) == len(gaps) else ())
     if shape is not None and prose:
-        prose, shown_gaps = interpret.close_answer(prose, shape, shown_gaps), ()
+        survivors = [k for k, ok in enumerate(outcome.claim_ok, start=1) if ok]
+        prose, shown_gaps = interpret.close_answer(prose, shape, shown_gaps, survivors), ()
     return (outcome.kept, [c for c, _ in outcome.dropped], prose, skipped, prose_note,
             tuple(missing) if prose else (), shown_gaps)
 
@@ -1144,42 +1145,28 @@ def _representative(claim: Claim, kept: Sequence[Claim]) -> int | None:
     return None
 
 
-async def synthesize_shaped(
-    question: str,
-    plan: Sequence,
-    retrieval: Sequence,
-    evidence: Evidence,
-    generate: Generate,
-    *,
-    mode: str,
-    template: str | None = None,
-    note: str | None = None,
-    book_titles: dict[str, str] | None = None,
-    check: Generate | None = None,
-    write: Generate | None = None,
-    books: dict[str, BookInfo] | None = None,
-    viewpoint: str | None = None,
-) -> Answer:
-    """An answer with an interpretive or beyond part (interpret.py).
+@dataclass
+class ShapedClaims:
+    """The claims of an interpretive answer, gathered per retrieval part: the
+    `kept` list (duplicates collapsed), the claims each retrieval part found
+    (`per_part`) and each plan part's own (`by_part`), and the answer's
+    `shape` (which retrieval parts found each kept claim)."""
 
-    One claims call per retrieval part, over its own share of the evidence: a
+    kept: list[Claim]
+    per_part: list[list[Claim]]
+    by_part: list[list[Claim]]
+    shape: "interpret.Shape"
+
+
+async def shaped_claims(question: str, plan: Sequence, retrieval: Sequence, evidence: Evidence,
+                        generate: Generate, *, book_titles: dict[str, str] | None = None,
+                        books: dict[str, BookInfo] | None = None, viewpoint: str | None = None,
+                        max_claims: int | None = None) -> ShapedClaims:
+    """One claims call per retrieval part, over its own share of the evidence: a
     lens gathers one aspect of its interpretive part, a beyond part gathers
-    what the books do say. The interpretive part's evidence is the union of its
-    lenses'. The writer then answers the plan's parts (not the lenses): the
-    evidence grouped by lens, a reading, a counter-case; code adds the limits.
-    Without prose (no writer, or the prose failed) the checked claims are the
-    answer, and the closing lines are added to its text.
-    """
+    what the books do say. `max_claims` lifts the claim cap of each call (a deep
+    answer's sections)."""
     from lore.query.viewpoint import load_viewpoint
-
-    def answer(text: str, *extra_notes: str | None,
-               claims: tuple[Claim, ...] = ()) -> Answer:
-        notes = "; ".join(n for n in (note, *extra_notes) if n) or None
-        return Answer(text=text, passages=evidence.passages, mode=mode,
-                      template=template, note=notes, claims=claims)
-
-    if not evidence.passages:
-        return answer(REFUSAL)
 
     n = len(retrieval)
     everything = tuple(p.n for p in evidence.passages)
@@ -1200,11 +1187,13 @@ async def synthesize_shaped(
                        timeline=timelines[index], codex=codexes[index])
         served = plan[part.part]
         role = ("lens" if part.lens else "beyond" if served.kind == "beyond" else "part")
+        spec = (SectionSpec(part_of=question, max_claims=max_claims, length="section")
+                if max_claims else None)
         result = await generate(
             _build_prompt(part.question, own, book_titles,
                           part_of=served.question if part.lens else question,
-                          books=books, role=role), Synthesis)
-        verified, _ = verify_claims(_capped(result), passages)
+                          books=books, role=role, section=spec), Synthesis)
+        verified, _ = verify_claims(_capped(result, max_claims), passages)
         per_part.append(verified)
         kept.extend(c for c in verified if c not in kept)
 
@@ -1224,8 +1213,49 @@ async def synthesize_shaped(
     by_part: list[list[Claim]] = [[] for _ in plan]
     for ri, claims in enumerate(per_part):
         by_part[retrieval[ri].part].extend(c for c in claims if c not in by_part[retrieval[ri].part])
+    return ShapedClaims(kept, per_part, by_part, shape)
+
+
+async def synthesize_shaped(
+    question: str,
+    plan: Sequence,
+    retrieval: Sequence,
+    evidence: Evidence,
+    generate: Generate,
+    *,
+    mode: str,
+    template: str | None = None,
+    note: str | None = None,
+    book_titles: dict[str, str] | None = None,
+    check: Generate | None = None,
+    write: Generate | None = None,
+    books: dict[str, BookInfo] | None = None,
+    viewpoint: str | None = None,
+) -> Answer:
+    """An answer with an interpretive or beyond part (interpret.py).
+
+    The claims come per retrieval part (`shaped_claims`). The writer then
+    answers the plan's parts (not the lenses): the evidence grouped by lens, a
+    reading for each interpretive part, a counter-case; code adds the limits.
+    The answer opens with its short answer (`Answer.short_answer`): one reading
+    per interpretive part, or code's line when a part's reading did not stand;
+    the rest is the argument. Without prose (no writer, or the prose failed) the
+    checked claims are the answer, and the closing lines are added to its text.
+    """
+    def answer(text: str, *extra_notes: str | None,
+               claims: tuple[Claim, ...] = ()) -> Answer:
+        notes = "; ".join(n for n in (note, *extra_notes) if n) or None
+        return Answer(text=text, passages=evidence.passages, mode=mode,
+                      template=template, note=notes, claims=claims)
+
+    if not evidence.passages:
+        return answer(REFUSAL)
+
+    gathered = await shaped_claims(question, plan, retrieval, evidence, generate,
+                                   book_titles=book_titles, books=books, viewpoint=viewpoint)
+    shape, by_part = gathered.shape, gathered.by_part
     kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
-        question, list(shape.parts), kept, evidence, check, write, book_titles,
+        question, list(shape.parts), gathered.kept, evidence, check, write, book_titles,
         part_claims=by_part, books=books, shape=shape)
     missing = [part.question for part, claims in zip(plan, by_part)
                if part.kind != "beyond" and (not claims or all(c in cut for c in claims))]
@@ -1234,17 +1264,21 @@ async def synthesize_shaped(
     partial = (PARTIAL_NOTE + "; " + "; ".join(NOT_FOUND + m for m in missing)
                if missing else None)
     if prose:
-        return replace(answer(compose_text(prose, unanswered, gaps), partial, skipped,
+        short = tuple(s for s in prose if s.short)
+        body = tuple(s for s in prose if not s.short)
+        return replace(answer(compose_answer(short, body, unanswered, gaps), partial, skipped,
                               claims=tuple(kept)),
-                       prose=prose, answer_style="prose", unanswered=unanswered, gaps=gaps)
+                       prose=body, short_answer=short, answer_style="prose",
+                       unanswered=unanswered, gaps=gaps)
     text = _compose(kept)
     # The writer was never asked, or its prose did not pass: the facts are the
     # answer, and it still says what the evidence and the books do not settle.
     configured = write_module.PROSE_ANSWERS and write is not None and check is not None
-    lines = []
-    if shape.interpretive and configured:
-        lines.append(interpret.NO_POSITION_LINE)
-    lines += interpret.limit_text(shape)
+    short = interpret.short_answer(shape) if shape.interpretive and configured else ()
+    lines = interpret.limit_text(shape)
+    if short:
+        text = (SHORT_ANSWER_HEADING + "\n" + compose_text(short)) + "\n\n" + text
     if lines:
         text += "\n\n" + " ".join(lines)
-    return answer(text, partial, skipped, prose_note, claims=tuple(kept))
+    return replace(answer(text, partial, skipped, prose_note, claims=tuple(kept)),
+                   short_answer=short)
