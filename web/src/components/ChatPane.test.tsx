@@ -11,7 +11,11 @@ const askWith = (events: AskEvent[], extra = {}) => ({
   ask: vi.fn(), replay: vi.fn(), retry: vi.fn(), clear: vi.fn(), depth: "auto" as const, setDepth: vi.fn(), busy: false, ...extra });
 
 test("renders steps, claims and the how panel for a recorded answer", () => {
+  localStorage.clear();
   render(<ChatPane ask={askWith(single as AskEvent[])} showInternals onHoverChunks={() => {}} />);
+  // Once the answer has landed the steps are folded into one line; opening it shows them.
+  expect(screen.queryByText("Splitting the question")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /How this was found/ }));
   expect(screen.getByText("Splitting the question")).toBeInTheDocument();
   expect(screen.getByText("How this was answered")).toBeInTheDocument();
   expect(screen.getAllByRole("listitem").length).toBeGreaterThan(3);
