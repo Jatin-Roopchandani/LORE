@@ -18,19 +18,27 @@ export interface ProseSentence { text: string; claims: number[]; passages: numbe
   kind?: "fact" | "reading" | "counter" | "limit" }
 // One section of a sectioned (deep) answer. Claim and passage numbers are the answer's own, as everywhere.
 export interface SectionOut { heading: string; kind: "section" | "close"; style: "prose" | "claims"; text: string;
-  prose: ProseSentence[]; claims_range: [number, number] | null; entities: string[]; note: string | null }
+  prose: ProseSentence[]; claims_range: [number, number] | null; entities: string[]; note: string | null;
+  // The interpretive part this lens section belongs to; "" (or absent) unless the question has several parts.
+  group?: string }
 export interface SearchResult { answer: string; mode: string; template: string | null; note: string | null;
   model: string | null; selection_model: string | null; sub_questions: string[]; claims: Claim[];
   passages: Passage[]; edges: Edge[]; seeds: Seed[];
   prose?: ProseSentence[]; answer_style?: "prose" | "claims" | "sectioned"; unanswered?: string[]; gaps?: string[];
   // Sectioned answers only: the cited overview, the sections, and the model requests the answer used.
-  overview?: ProseSentence[]; sections?: SectionOut[]; requests?: number }
-export interface PlanSection { index: number; heading: string; entities: { id: string; name: string; kind: string }[] }
+  overview?: ProseSentence[]; sections?: SectionOut[]; requests?: number;
+  // An interpretive answer opens with this: one sentence per interpretive part ("reading", or the "limit" line saying
+  // the evidence found no clear position), cited like any prose. `prose` and `sections` are the argument below it.
+  short_answer?: ProseSentence[];
+  // Sections of a sectioned answer that failed or found nothing: they are left out of `sections`, counted here.
+  unwritten_sections?: number }
+export interface PlanSection { index: number; heading: string; group?: string;
+  entities: { id: string; name: string; kind: string }[] }
 export interface SectionEvent { type: "section"; t: number; index: number; kind: "section" | "close"; heading: string;
   state: "start" | "done" | "skipped";
   style?: "prose" | "claims" | "empty" | "failed"; text?: string; prose?: ProseSentence[]; claims?: Claim[];
   claims_range?: [number, number] | null; passages?: Passage[]; note?: string | null;
-  reason?: "budget" | "reserve" }
+  reason?: "budget" | "reserve"; group?: string }
 export interface ApiError { code: string; message: string }
 export type AskEvent =
   | { type: "step"; t: number; name: StepName | DeepStepName; state: "start" | "done"; part: number | null; detail: string | null }
@@ -39,6 +47,8 @@ export type AskEvent =
   | { type: "plan"; t: number; scope: string; candidates: number; sections: PlanSection[] }
   | SectionEvent
   | { type: "overview"; t: number; prose: ProseSentence[]; text: string }
+  // The short answer of an interpretive answer, sent before its sections, with every claim and passage it cites.
+  | { type: "short_answer"; t: number; prose: ProseSentence[]; text: string; claims?: Claim[]; passages?: Passage[] }
   | { type: "seeds"; t: number; part: number; entities: Seed[] }
   | { type: "edges"; t: number; part: number; template: string | null; total: number; edges: Edge[] }
   | { type: "evidence"; t: number; chunk_ids: string[]; edge_keys: string[] }

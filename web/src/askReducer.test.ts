@@ -1,7 +1,8 @@
+import * as lens from "./fixtures/lens";
 import single from "./fixtures/single-part.json";
 import two from "./fixtures/two-part.json";
 import { budget, empty, interrupted } from "./fixtures/synthetic";
-import { askReducer, initialState } from "./askReducer";
+import { askReducer, initialState, unwrittenCount } from "./askReducer";
 import type { AskEvent } from "./types";
 
 const run = (events: AskEvent[]) => events.reduce(askReducer, initialState("q"));
@@ -105,4 +106,39 @@ test("the parts event keeps lens_of and the plan's questions", () => {
   expect(s.lensOf).toEqual([0, 0, null]);
   expect(s.planQuestions).toEqual(["P"]);
   expect(askReducer(initialState("q"), { type: "parts", t: 0, sub_questions: ["a"] }).lensOf).toEqual([]);
+});
+
+// ---- interpretive answers: short answer, lens sections, honest rows --------------------------------
+
+
+
+test("the short answer is kept, with the claims and passages its citations need", () => {
+  const s = run([...lens.head, lens.plan, lens.shortEvent([lens.shortA, lens.noPosition])]);
+  expect(s.shortAnswer?.map((x) => x.kind)).toEqual(["reading", "limit"]);
+  expect(s.liveClaims).toHaveLength(4);
+  expect(s.livePassages.map((p) => p.n)).toEqual([1, 2, 3, 4]);
+});
+
+test("a section knows the part it is grouped under", () => {
+  const s = run([...lens.head, lens.plan, ...lens.sec[0]]);
+  expect(s.sections[0].group).toBe(lens.PART_A);
+  expect(s.plan?.sections.map((x) => x.group)).toEqual([lens.PART_A, lens.PART_A, lens.PART_B, lens.PART_B]);
+});
+
+test("a failed section marks its step row failed, not done", () => {
+  const s = run([...lens.head, lens.plan, ...lens.sec[0], ...lens.sec[1]]);
+  expect(s.deepSteps.map((d) => d.state)).toEqual(["done", "failed"]);
+});
+
+test("a section that found nothing marks its row skipped, and a section skipped for budget gets a skipped row", () => {
+  const s = run([...lens.head, lens.plan, ...lens.sec[2],
+    { type: "section", t: 9, index: 3, state: "skipped", kind: "section", heading: "Who stood by Tam", reason: "budget" }]);
+  expect(s.deepSteps.map((d) => [d.part, d.state])).toEqual([[2, "skipped"], [3, "skipped"]]);
+});
+
+test("the count of sections that could not be written comes from the stream, then from the result", () => {
+  const streaming = run([...lens.head, lens.plan, ...lens.sec[0], ...lens.sec[1], ...lens.sec[2]]);
+  expect(unwrittenCount(streaming)).toBe(2);
+  expect(unwrittenCount(run(lens.full))).toBe(2);
+  expect(unwrittenCount(run([...lens.head, lens.plan, ...lens.sec[0]]))).toBe(0);
 });

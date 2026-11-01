@@ -216,3 +216,50 @@ test("a search node learns its world from the entity lookup", () => {
   expect(v.nodes.find((n) => n.id === "x")!.world).toEqual(B);
   expect(v.nodes.find((n) => n.id === "h")!.world).toBeUndefined();
 });
+
+// ---- a lens-part stream: the graph is staged part by part, before any answer text ---------------------
+
+import * as lens from "./fixtures/lens";
+
+test("replaying a lens-part stream, the graph gains nodes part by part before the answer event", () => {
+  const counts: number[] = [];
+  let state = stateWith([]);
+  for (const e of lens.full) {
+    if (e.type === "answer") break;
+    state = askReducer(state, e);
+    if (e.type === "seeds" || e.type === "edges") counts.push(deriveGraph(state, opts).nodes.length);
+  }
+  // Nothing has been answered, yet the view has every part's entities, each part adding its own.
+  expect(state.result).toBeNull();
+  expect(counts[0]).toBeGreaterThan(0);
+  expect(counts.at(-1)).toBeGreaterThan(counts[0]);
+  expect(counts).toEqual([...counts].sort((a, b) => a - b));
+  const view = deriveGraph(state, opts);
+  expect(view.nodes.map((n) => n.id).sort()).toEqual(["joss", "mara", "rin", "tam"]);
+  expect(view.links.length).toBe(2);
+});
+
+test("a lens part's seeds take the part's own colour, and part indices are the parts event's", () => {
+  const state = lens.head.reduce(askReducer, initialState("q"));
+  expect(state.subQuestions).toEqual(lens.LENSES);
+  expect(state.lensOf).toEqual([0, 0, 1, 1]);
+  const view = deriveGraph(state, opts);
+  const part = (id: string) => view.nodes.find((n) => n.id === id)!.seedPart;
+  expect([part("rin"), part("tam"), part("joss")]).toEqual([0, 1, 1]);   // mara was first found by part 0
+  expect(part("mara")).toBe(0);
+});
+
+test("the staged replay of a lens stream shows graph nodes before the answer is dispatched", async () => {
+  const { createScheduler } = await import("./scheduler");
+  vi.useFakeTimers();
+  let state = initialState("q");
+  const sizes: { type: string; nodes: number }[] = [];
+  const s = createScheduler((e) => { state = askReducer(state, e); sizes.push({ type: e.type, nodes: deriveGraph(state, opts).nodes.length }); },
+    { reduceMotion: false });
+  lens.full.forEach((e) => s.push(e));
+  await vi.runAllTimersAsync();
+  const at = sizes.findIndex((x) => x.type === "answer");
+  expect(sizes[at - 1].nodes).toBe(4);
+  expect(sizes.slice(0, at).some((x) => x.nodes > 0 && x.nodes < 4)).toBe(true);   // staged, not all at once
+  vi.useRealTimers();
+});

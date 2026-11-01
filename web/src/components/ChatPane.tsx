@@ -6,6 +6,7 @@ import { HistoryBar } from "./HistoryBar";
 import { HowPanel } from "./HowPanel";
 import { AskBox } from "./AskBox";
 import { Sections } from "./Sections";
+import { ShortAnswer } from "./ShortAnswer";
 import { StepList } from "./StepList";
 import { Snip } from "./SettingsMenu";
 import { exampleQuestions } from "../examples";
@@ -56,6 +57,7 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
               </div>
             )}
             {r && r.claims.length === 0 && <p className="note">{UI.refusal}</p>}
+            <ShortAnswer state={state} onHoverChunks={onHoverChunks} />
             {sectioned && <Sections key={ask.run} state={state} onHoverChunks={onHoverChunks} />}
             {!sectioned && r && r.claims.length > 0 && r.answer_style === "prose" && (r.prose?.length ?? 0) > 0 ? (
               <>

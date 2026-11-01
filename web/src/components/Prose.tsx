@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { highlightQuote } from "../highlight";
 import { UI } from "../messages";
 import type { ProseSentence, SearchResult } from "../types";
@@ -13,9 +13,12 @@ const NOTE = { reading: UI.readingNote, counter: UI.counterNote, limit: UI.limit
 
 // `prose` shows other sentences than the result's own (a section's, or the overview's), cited from the result's
 // claims and passages. `showMissing` is off for those: the unanswered line belongs to the whole answer.
-export function Prose({ result, prose: given, showMissing = true, onHoverChunks }:
-  { result: SearchResult; prose?: ProseSentence[]; showMissing?: boolean; onHoverChunks: (chunks: string[]) => void }) {
+// `labels` is off inside the short answer block, whose own heading already says what its sentences are.
+export function Prose({ result, prose: given, showMissing = true, labels = true, onHoverChunks }:
+  { result: SearchResult; prose?: ProseSentence[]; showMissing?: boolean; labels?: boolean; onHoverChunks: (chunks: string[]) => void }) {
   const [open, setOpen] = useState<string | null>(null);   // "<sentence>:<passage>"
+  const uid = useId();
+  const noteId = (kind: Exclude<Kind, "fact">) => `${uid}-note-${kind}`;
   const byN = new Map(result.passages.map((p) => [p.n, p]));
   const prose = given ?? result.prose ?? [];
   // A change between facts, readings, the other side and limits starts a paragraph, so each run can carry its label.
@@ -27,13 +30,16 @@ export function Prose({ result, prose: given, showMissing = true, onHoverChunks 
     paragraphs[paragraphs.length - 1].push({ s, i });
   });
   // Whole parts the passages do not answer, then aspects within a part: one line.
+  // One hidden description per kind used, for assistive technology: the sentences point to it, so the note is
+  // never part of the text a reader selects and copies.
+  const kinds = (["reading", "counter", "limit"] as const).filter((k) => prose.some((s) => kindOf(s) === k));
   const missing = showMissing ? [...(result.unanswered ?? []), ...(result.gaps ?? [])] : [];
   return (
     <div className="prose-answer">
       {paragraphs.map((para, pi) => (
         <div key={pi}>
           <p className={para[0] && kindOf(para[0].s) !== "fact" ? `prose ${kindOf(para[0].s)}` : "prose"}>
-            {para[0] && kindOf(para[0].s) !== "fact" && (
+            {labels && para[0] && kindOf(para[0].s) !== "fact" && (
               <span className="kind-label">{UI.kindLabel[kindOf(para[0].s) as Exclude<Kind, "fact">]}</span>
             )}
             {para.map(({ s, i }) => {
@@ -42,10 +48,9 @@ export function Prose({ result, prose: given, showMissing = true, onHoverChunks 
               const note = kind === "fact" ? undefined : NOTE[kind];
               return (
                 <span key={i} className={kind === "fact" ? "sentence" : `sentence ${kind}`}
-                  title={note}
+                  title={note} aria-describedby={kind === "fact" ? undefined : noteId(kind)}
                   onMouseEnter={() => onHoverChunks(chunks)} onMouseLeave={() => onHoverChunks([])}>
                   {s.text}{" "}
-                  {note && <span className="visually-hidden">{note}</span>}
                   {s.passages.map((n) => (
                     <button key={n} className="cite" type="button" aria-expanded={open === `${i}:${n}`}
                       onClick={() => setOpen(open === `${i}:${n}` ? null : `${i}:${n}`)}>{`[${n}]`}</button>
@@ -68,6 +73,7 @@ export function Prose({ result, prose: given, showMissing = true, onHoverChunks 
           }))}
         </div>
       ))}
+      {kinds.map((k) => <span key={k} id={noteId(k)} hidden>{NOTE[k]}</span>)}
       {missing.length > 0 && (
         <p className="unanswered">{`${UI.unanswered} ${missing.join("; ")}`}</p>
       )}

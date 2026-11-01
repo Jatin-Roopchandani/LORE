@@ -70,13 +70,52 @@ const withReading = {
   prose: [...result.prose!, { text: "This suggests he never forgave.", claims: [1, 2], passages: [3, 5], new_paragraph: false, kind: "reading" as const }],
 } as SearchResult;
 
-test("a reading is marked, with a tooltip and a hidden note for screen readers", () => {
+// The note a screen reader gets for a reading, a counter-case or a limit, found as its sentence points to it.
+const described = (container: HTMLElement, el: Element) => {
+  const id = el.getAttribute("aria-describedby");
+  return id ? container.querySelector(`[id="${id}"]`) : null;
+};
+
+test("a reading is marked, with a tooltip and a note for screen readers that points to one hidden description", () => {
   const { container } = render(<Prose result={withReading} onHoverChunks={() => {}} />);
   const readings = container.querySelectorAll(".sentence.reading");
   expect(readings).toHaveLength(1);
   expect(readings[0].textContent).toContain("This suggests he never forgave.");
   expect(readings[0]).toHaveAttribute("title", UI.readingNote);
-  expect(readings[0].querySelector(".visually-hidden")?.textContent).toBe(UI.readingNote);
+  expect(described(container, readings[0])?.textContent).toBe(UI.readingNote);
+  expect(container.querySelector(".sentence .visually-hidden")).toBeNull();
+});
+
+test("copying a reading does not copy the accessibility note", () => {
+  const { container } = render(<Prose result={withKinds} onHoverChunks={() => {}} />);
+  for (const para of container.querySelectorAll("p.prose")) {
+    for (const note of [UI.readingNote, UI.counterNote, UI.limitNote]) expect(para.textContent).not.toContain(note);
+  }
+  const reading = container.querySelector("p.prose.reading")!;
+  expect(reading.textContent).toBe(`${UI.kindLabel.reading}On balance he never forgave. [3][5] `);
+  // The notes are still there for assistive technology, once per kind and outside the sentences (and hidden,
+  // so a selection across the answer does not pick them up).
+  const note = described(container, container.querySelector(".sentence.reading")!)!;
+  expect(note).toHaveAttribute("hidden");
+  expect(note.closest("p")).toBeNull();
+  expect(container.querySelectorAll("[hidden]")).toHaveLength(3);
+});
+
+test("two sentences of one kind share one description", () => {
+  const two = { ...result, prose: [...result.prose!,
+    { text: "A reading.", claims: [1, 2], passages: [3], new_paragraph: true, kind: "reading" as const },
+    { text: "Another reading.", claims: [1, 2], passages: [3], new_paragraph: false, kind: "reading" as const }] } as SearchResult;
+  const { container } = render(<Prose result={two} onHoverChunks={() => {}} />);
+  const [a, b] = container.querySelectorAll(".sentence.reading");
+  expect(a.getAttribute("aria-describedby")).toBe(b.getAttribute("aria-describedby"));
+  expect(container.querySelectorAll("[hidden]")).toHaveLength(1);
+});
+
+test("two answers on a page do not share description ids", () => {
+  const first = render(<Prose result={withReading} onHoverChunks={() => {}} />);
+  const second = render(<Prose result={withReading} onHoverChunks={() => {}} />);
+  const ids = [first, second].map((r) => r.container.querySelector(".sentence.reading")!.getAttribute("aria-describedby"));
+  expect(ids[0]).not.toBe(ids[1]);
 });
 
 test("facts, and sentences with no kind, are not marked as readings", () => {
@@ -113,7 +152,8 @@ test("a reading, the other side and a limit each get a label, a style and a tool
   expect(container.querySelector(".sentence.reading")).toHaveAttribute("title", UI.readingNote);
   expect(container.querySelector(".sentence.counter")).toHaveAttribute("title", UI.counterNote);
   expect(container.querySelector(".sentence.limit")).toHaveAttribute("title", UI.limitNote);
-  expect(container.querySelector(".sentence.counter .visually-hidden")?.textContent).toBe(UI.counterNote);
+  expect(described(container, container.querySelector(".sentence.counter")!)?.textContent).toBe(UI.counterNote);
+  expect(described(container, container.querySelector(".sentence.limit")!)?.textContent).toBe(UI.limitNote);
   expect(container.querySelector("p.prose.limit")).not.toBeNull();   // the muted line
 });
 

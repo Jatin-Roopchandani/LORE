@@ -1,6 +1,7 @@
 import { STEP_ORDER, type ApiError, type AskEvent, type Claim, type Edge, type Passage, type PlanSection, type ProseSentence, type SearchResult, type Seed, type SectionEvent, type StepName } from "./types";
 
-export type StepState = "pending" | "running" | "done" | "skipped";
+// `failed`: a section that could not be written; `skipped`: one not written (nothing found, or the budget).
+export type StepState = "pending" | "running" | "done" | "skipped" | "failed";
 export interface StepView { name: StepName; state: StepState; detail: string | null; startedAt: number | null; doneAt: number | null }
 // The planner row and one row per section of a deep answer, in the order they arrived.
 export interface DeepStepView { kind: "plan" | "section"; part: number | null; state: StepState; detail: string | null; startedAt: number | null; doneAt: number | null }
@@ -8,7 +9,9 @@ export interface PlanView { scope: string; candidates: number; sections: PlanSec
 // One section of a sectioned answer as it streams in: writing, then done, skipped (budget) or failed.
 export interface SectionView { index: number; kind: "section" | "close"; heading: string;
   state: "writing" | "done" | "skipped" | "failed" | "empty"; style: "prose" | "claims" | null;
-  text: string; prose: ProseSentence[]; claimsRange: [number, number] | null; reason: "budget" | "reserve" | null }
+  text: string; prose: ProseSentence[]; claimsRange: [number, number] | null; reason: "budget" | "reserve" | null;
+  // The interpretive part this lens section is grouped under ("" for none).
+  group: string }
 export interface PartEdges { template: string | null; total: number; edges: Edge[] }
 export interface AskState {
   status: "idle" | "running" | "done" | "error" | "interrupted";
@@ -21,6 +24,8 @@ export interface AskState {
   // the sections have brought so far, in the answer's own numbering (so citations work before the answer lands).
   deepSteps: DeepStepView[]; plan: PlanView | null; sections: SectionView[];
   overview: ProseSentence[] | null; liveClaims: Claim[]; livePassages: Passage[];
+  // An interpretive answer's short answer, sent before its sections.
+  shortAnswer: ProseSentence[] | null;
 }
 
 export function initialState(question = ""): AskState {
@@ -28,7 +33,7 @@ export function initialState(question = ""): AskState {
     status: question ? "running" : "idle", question,
     steps: STEP_ORDER.map((name) => ({ name, state: "pending", detail: null, startedAt: null, doneAt: null })),
     subQuestions: [], seeds: [], edges: [], evidence: null, result: null, error: null, elapsed: 0,
-    lensOf: [], planQuestions: [], deepSteps: [], plan: null, sections: [], overview: null, liveClaims: [], livePassages: [],
+    lensOf: [], planQuestions: [], deepSteps: [], plan: null, sections: [], overview: null, liveClaims: [], livePassages: [], shortAnswer: null,
   };
 }
 
@@ -55,19 +60,32 @@ function deepStep(s: AskState, event: Extract<AskEvent, { type: "step" }>): AskS
     return { ...s, deepSteps, steps };
   }
   if (at < 0) return s;
-  return { ...s, deepSteps: setAt<DeepStepView>(s.deepSteps, at, { ...s.deepSteps[at], state: "done", detail: event.detail ?? s.deepSteps[at].detail, doneAt: event.t }) };
+  const row = s.deepSteps[at];
+  // A section already marked failed or skipped (its `section` event came first) keeps that mark.
+  const state = row.state === "failed" || row.state === "skipped" ? row.state : "done";
+  return { ...s, deepSteps: setAt<DeepStepView>(s.deepSteps, at, { ...row, state, detail: event.detail ?? row.detail, doneAt: event.t }) };
 }
 
 function section(s: AskState, e: SectionEvent): AskState {
   const prev = s.sections.find((x) => x.index === e.index);
   const base: SectionView = prev ?? { index: e.index, kind: e.kind, heading: e.heading, state: "writing", style: null,
-    text: "", prose: [], claimsRange: null, reason: null };
-  let view: SectionView = { ...base, kind: e.kind, heading: e.heading };
+    text: "", prose: [], claimsRange: null, reason: null, group: e.group ?? "" };
+  let view: SectionView = { ...base, kind: e.kind, heading: e.heading, group: e.group ?? base.group };
+  let deepSteps = s.deepSteps;
   let liveClaims = s.liveClaims;
   let livePassages = s.livePassages;
-  if (e.state === "skipped") view = { ...view, state: "skipped", reason: e.reason ?? "budget" };
+  // The steps list tells the truth about a section: a failed one is failed, one never written is skipped.
+  const mark = (state: "failed" | "skipped") => {
+    const at = deepSteps.findIndex((d) => d.kind === "section" && d.part === e.index);
+    const row: DeepStepView = at < 0 ? { kind: "section", part: e.index, state, detail: null, startedAt: null, doneAt: null }
+      : { ...deepSteps[at], state };
+    deepSteps = at < 0 ? [...deepSteps, row] : setAt<DeepStepView>(deepSteps, at, row);
+  };
+  if (e.state === "skipped") { view = { ...view, state: "skipped", reason: e.reason ?? "budget" }; mark("skipped"); }
   else if (e.state === "done") {
     const style = e.style ?? "prose";
+    if (style === "failed") mark("failed");
+    else if (style === "empty") mark("skipped");
     view = { ...view, state: style === "failed" ? "failed" : style === "empty" ? "empty" : "done",
       style: style === "prose" || style === "claims" ? style : null,
       text: e.text ?? "", prose: e.prose ?? [], claimsRange: e.claims_range ?? null };
@@ -80,7 +98,7 @@ function section(s: AskState, e: SectionEvent): AskState {
     if (fresh.length) livePassages = [...livePassages, ...fresh];
   }
   const sections = prev ? s.sections.map((x) => x.index === e.index ? view : x) : [...s.sections, view].sort((a, b) => a.index - b.index);
-  return { ...s, sections, liveClaims, livePassages };
+  return { ...s, sections, liveClaims, livePassages, deepSteps };
 }
 
 export function askReducer(state: AskState, event: AskEvent): AskState {
@@ -112,6 +130,13 @@ export function askReducer(state: AskState, event: AskEvent): AskState {
       return section(s, event);
     case "overview":
       return { ...s, overview: event.prose };
+    case "short_answer": {
+      // The claims and passages come whole, in the answer's numbering, so its citations work at once.
+      const have = new Set(s.livePassages.map((p) => p.n));
+      const fresh = (event.passages ?? []).filter((p) => !have.has(p.n));
+      return { ...s, shortAnswer: event.prose, liveClaims: event.claims?.length ? event.claims : s.liveClaims,
+        livePassages: fresh.length ? [...s.livePassages, ...fresh] : s.livePassages };
+    }
     case "seeds":
       return { ...s, seeds: setAt(s.seeds, event.part, [...(s.seeds[event.part] ?? []), ...event.entities]) };
     case "edges": {
@@ -144,4 +169,12 @@ export function citationSource(state: AskState): SearchResult {
   if (state.result) return state.result;
   return { answer: "", mode: "graph", template: null, note: null, model: null, selection_model: null,
     sub_questions: state.subQuestions, claims: state.liveClaims, passages: state.livePassages, edges: [], seeds: [] };
+}
+
+
+/** Sections of a sectioned answer that could not be written (failed, or found nothing): the final result's own count
+ *  once the answer has landed, until then the ones the stream has said so far. */
+export function unwrittenCount(state: AskState): number {
+  if (state.result) return state.result.unwritten_sections ?? 0;
+  return state.sections.filter((x) => x.state === "failed" || x.state === "empty").length;
 }

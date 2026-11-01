@@ -73,14 +73,16 @@ test("the close shows a reading, the other side and a limit, each labelled", () 
   expect(close.querySelector("p.prose.limit")?.textContent).toContain("who founded the council");
 });
 
-test("a skipped section shows why, and a failed one says so", () => {
+test("a skipped section shows why, and a failed one is hidden and counted", () => {
   const skipped = { type: "section", t: 3, index: 1, state: "skipped", kind: "section", heading: "The guild", reason: "budget" } as AskEvent;
   const failed = { ...deep.done(2, "Trade", [], [], null, [], { style: "failed", note: "the section could not be written" }) } as AskEvent;
   view([...deep.head, ...deep.sec0, skipped, failed]);
   const guild = document.querySelector("#answer-section-1") as HTMLElement;
   expect(within(guild).getByRole("heading", { name: "The guild" })).toBeInTheDocument();
   expect(guild).toHaveTextContent(DEEP.skipped.budget);
-  expect(document.querySelector("#answer-section-2")).toHaveTextContent(DEEP.failed);
+  expect(document.querySelector("#answer-section-2")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Trade" })).toBeNull();
+  expect(document.querySelector(".unwritten")).toHaveTextContent(DEEP.unwritten(1));
 });
 
 test("a reserve skip has its own note", () => {

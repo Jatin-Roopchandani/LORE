@@ -28,7 +28,10 @@ export const DEEP = {
   contents: "Contents",
   writing: "Writing…",
   claimsOnly: "Showing the checked facts; the written section didn't pass verification.",
-  failed: "This section couldn't be written.",
+  // An interpretive answer's short answer: the block at the top, one sentence per interpretive part.
+  shortAnswer: "Short answer",
+  // The one muted line that ends an answer with sections that failed or found nothing (they are not shown).
+  unwritten: (n: number) => `${n} ${n === 1 ? "section" : "sections"} couldn't be written`,
   skipped: { budget: "Not written: the request limit for one answer was reached.",
     reserve: "Not written: the rest of today's allowance is kept for answering other questions." },
   requests: "Requests used",
@@ -39,6 +42,17 @@ export const STEPS_DEEP = {
   plan: "Planning the sections",
   section: (n: number, heading: string | null) => heading ? `Section ${n}: ${heading}` : `Section ${n}`,
   group: (question: string) => question,
+  // The steps panel once the answer has landed: one line that opens it.
+  summary: (parts: number, sections: number, seconds: number) =>
+    ["How this was found", `${parts} ${parts === 1 ? "part" : "parts"}`,
+      ...(sections > 0 ? [`${sections} ${sections === 1 ? "section" : "sections"}`] : []), `${seconds} s`].join(" \u00b7 "),
+  // The list of the question's parts and, for an interpretive part, the lenses it was looked at through.
+  splitLabel: "Question split into",
+  split: (parts: number) => `Question split into \u00b7 ${parts} ${parts === 1 ? "part" : "parts"}`,
+  lensLabel: "looked at:",
+  // The mark of a section that could not be written, or was not written (budget, or nothing found).
+  failed: "couldn't be written",
+  skipped: "not written",
   lensDetail: (entities: number, relationships: number) =>
     `${entities} ${entities === 1 ? "entity" : "entities"} \u00b7 ${relationships} relationships`,
   partsLabel: "Parts of the question",
