@@ -59,6 +59,8 @@ export function outline(entries: Entry[]): Outline {
 }
 
 const partAnchor = (num: string) => `answer-part-${num}`;
+// A top-level number reads "1.", a nested one "1.1".
+const label = (num: string) => (num.includes(".") ? num : `${num}.`);
 
 export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChunks: (chunks: string[]) => void }) {
   const source = citationSource(state);
@@ -81,25 +83,21 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
   const partNum = new Map(tops.filter((t) => t.group).map((t) => [t.group, t.num]));
   const numOf = new Map<number, string>();
   for (const t of tops) { if (t.entry) numOf.set(t.entry.index, t.num); for (const i of t.items) numOf.set(i.entry.index, i.num); }
-  const overview = state.overview ?? state.result?.overview ?? null;
   const unwritten = unwrittenCount(state);
+  // One entry is one row: the number and the title side by side in one element ("1. Title", "1.1 Title").
   const link = (c: Entry, num: string) => (
     <li key={c.index} data-num={num}>
-      <span className="num">{num}</span>
-      {started.has(c.index)
-        ? <a href={`#${anchor(c.index)}`} title={c.title || undefined} onClick={(e) => jump(e, anchor(c.index))}>{c.heading}</a>
-        : <span className="pending" title={c.title || undefined}>{c.heading}</span>}
+      <span className="entry">
+        <span className="num">{label(num)}</span>{" "}
+        {started.has(c.index)
+          ? <a href={`#${anchor(c.index)}`} title={c.title || undefined} onClick={(e) => jump(e, anchor(c.index))}>{c.heading}</a>
+          : <span className="pending" title={c.title || undefined}>{c.heading}</span>}
+      </span>
     </li>
   );
   let lastGroup = "";
   return (
     <div className="sectioned">
-      {overview && overview.length > 0 && (
-        <section className="overview" aria-labelledby="answer-overview">
-          <h3 id="answer-overview">{DEEP.overview}</h3>
-          <Prose result={source} prose={overview} showMissing={false} onHoverChunks={onHoverChunks} />
-        </section>
-      )}
       {entries.length > 0 && (
         <nav className="contents" aria-labelledby="answer-contents">
           <p className="contents-title" id="answer-contents">{DEEP.contents}</p>
@@ -108,10 +106,12 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
               ? link(t.entry, t.num)
               : (
                 <li key={`p${t.num}`} className="part" data-num={t.num}>
-                  <span className="num">{t.num}</span>
-                  {t.items.some((i) => started.has(i.entry.index))
-                    ? <a href={`#${partAnchor(t.num)}`} onClick={(e) => jump(e, partAnchor(t.num))}>{t.group}</a>
-                    : <span className="pending">{t.group}</span>}
+                  <span className="entry">
+                    <span className="num">{label(t.num)}</span>{" "}
+                    {t.items.some((i) => started.has(i.entry.index))
+                      ? <a href={`#${partAnchor(t.num)}`} onClick={(e) => jump(e, partAnchor(t.num))}>{t.group}</a>
+                      : <span className="pending">{t.group}</span>}
+                  </span>
                   <ol>{t.items.map((i) => link(i.entry, i.num))}</ol>
                 </li>
               ))}

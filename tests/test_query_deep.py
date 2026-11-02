@@ -36,9 +36,11 @@ async def ask(config, scripted, question=GENERAL, **kw):
 
 
 DEEP_PLAN = Decomposition(sub_questions=[PartSpec(question=QUESTION)], depth="deep")
+TRAVELLER = "Who the traveller is"
+ROAD = "Where the road leads"
 TWO = DeepPlan(overview="Everything about the traveller and the road.", sections=[
-    PlanSection(heading="The traveller", entities=["a_zed", "a_yan"]),
-    PlanSection(heading="The road", entities=["a_gate", "a_guild", "a_road"])])
+    PlanSection(heading="The traveller", focus=TRAVELLER, entities=["a_zed", "a_yan"]),
+    PlanSection(heading="The road", focus=ROAD, entities=["a_gate", "a_guild", "a_road"])])
 
 
 @pytest.fixture
@@ -124,17 +126,17 @@ def candidates():
 
 def test_validation_drops_unknown_entities_and_empty_sections():
     raw = DeepPlan(sections=[
-        PlanSection(heading="One", entities=["a", "ghost", "a", "b"]),
-        PlanSection(heading="Nothing real", entities=["ghost", "phantom"]),
-        PlanSection(heading="Empty", entities=[]),
-        PlanSection(heading="Two", entities=["c"])])
+        PlanSection(heading="One", focus="f", entities=["a", "ghost", "a", "b"]),
+        PlanSection(heading="Nothing real", focus="f", entities=["ghost", "phantom"]),
+        PlanSection(heading="Empty", focus="f", entities=[]),
+        PlanSection(heading="Two", focus="f", entities=["c"])])
     got = deep.validate_plan(raw, candidates())
     assert [(s.heading, [c.id for c in s.candidates]) for s in got] == [
         ("One", ["a", "b"]), ("Two", ["c"])]
 
 
 def test_validation_caps_the_sections(monkeypatch):
-    many = DeepPlan(sections=[PlanSection(heading=f"S{i}", entities=["a"])
+    many = DeepPlan(sections=[PlanSection(heading=f"S{i}", focus="f", entities=["a"])
                               for i in range(deep.DEEP_MAX_SECTIONS + 5)])
     assert len(deep.validate_plan(many, candidates())) == deep.DEEP_MAX_SECTIONS == 12
     assert [s.heading for s in deep.validate_plan(many, candidates(), 2)] == ["S0", "S1"]
@@ -143,13 +145,15 @@ def test_validation_caps_the_sections(monkeypatch):
 
 
 def test_validation_merges_repeated_headings_and_names_blank_ones():
-    raw = DeepPlan(sections=[PlanSection(heading="Same", entities=["a"]),
-                             PlanSection(heading="other", entities=["b"]),
-                             PlanSection(heading=" same ", entities=["c", "a"]),
-                             PlanSection(heading="  ##  ", entities=["b"])])
+    raw = DeepPlan(sections=[PlanSection(heading="Same", focus="f", entities=["a"]),
+                             PlanSection(heading="other", focus="f", entities=["b"]),
+                             PlanSection(heading=" same ", focus="f", entities=["c", "a"]),
+                             PlanSection(heading="  ##  ", focus="", entities=["b"]),
+                             PlanSection(heading="  ##  ", focus="what it is", entities=["b"])])
     got = deep.validate_plan(raw, candidates())
+    # A blank heading is the focus, shortened; a section with no focus is dropped (see below).
     assert [(s.heading, [c.id for c in s.candidates]) for s in got] == [
-        ("Same", ["a", "c"]), ("other", ["b"]), ("Beta", ["b"])]
+        ("Same", ["a", "c"]), ("other", ["b"]), ("what it is", ["b"])]
 
 
 def test_validation_survives_a_garbled_plan():
@@ -166,23 +170,138 @@ def test_the_planner_prompt_lists_candidates_by_kind_with_their_summaries():
     assert "between 3 and 12 sections" in prompt and "Tell me everything" in prompt
 
 
+def test_the_planner_plans_around_the_question_not_around_the_candidates():
+    prompt = deep.planner_prompt("Q?", [Candidate("a", "Alpha", "Concept", ("a",))])
+    flat = " ".join(prompt.split())
+    # Each section is a distinct aspect of the question as asked ...
+    assert "one distinct aspect of the question as asked" in flat
+    assert "when the question asks about methods, techniques or stages, each section is one" in flat
+    # ... the candidates are evidence pointers, not the structure ...
+    assert "evidence pointers" in flat and "not the structure of the answer" in flat
+    assert "Plan the answer around the question as asked, not around the candidates" in flat
+    # ... a section whose subject does not bear on the question is dropped ...
+    assert "Drop any section whose subject does not bear on the question" in flat
+    # ... and each section carries a focus, a short heading and the entities it draws on.
+    for field in ('"focus"', '"heading"', '"entities"', '"analytical"'):
+        assert field in prompt
+
+
+def test_validation_drops_a_section_without_a_focus_and_carries_the_focus():
+    raw = DeepPlan(sections=[
+        PlanSection(heading="No focus", entities=["a"]),
+        PlanSection(heading="Blank focus", focus="   ", entities=["b"]),
+        PlanSection(heading="Kept", focus="How  it\nworks [3]", entities=["c"])])
+    got = deep.validate_plan(raw, candidates())
+    assert [(s.heading, s.focus) for s in got] == [("Kept", "How it works")]
+
+
+def test_a_heading_is_the_foci_short_label_or_the_focus_itself():
+    raw = DeepPlan(sections=[
+        PlanSection(heading="## **Ways of working** [3]", focus="Which ways of working are shown", entities=["a"]),
+        PlanSection(heading="", focus="Which tools are used, and how often does it use each one?", entities=["b"])])
+    got = deep.validate_plan(raw, candidates())
+    assert got[0].heading == "Ways of working"
+    assert got[1].heading == "Which tools are used, and how often does it use each one"
+
+
 # ---- a deep answer: shape, events, numbering ---------------------------------------------
 
-async def test_a_deep_answer_has_an_overview_a_contents_list_and_sections(config):
+async def test_a_deep_answer_opens_with_a_short_answer_a_contents_list_and_sections(config):
     scripted = deep_models()
-    answer, events = await ask(config, scripted)
+    answer, _ = await ask(config, scripted)
     assert answer.answer_style == "sectioned" and answer.template == "deep"
     assert [s.heading for s in answer.sections] == ["The traveller", "The road"]
-    assert answer.overview and all(s.kind == "fact" for s in answer.overview)
+    assert not hasattr(answer, "overview")  # the first-claims overview is gone
+    assert answer.short_answer and all(s.kind == "fact" and s.short for s in answer.short_answer)
+    assert 2 <= len(answer.short_answer) <= deep.SHORT_ANSWER_SENTENCES
     text = answer.text
-    assert text.index("Contents\n1. The traveller\n2. The road") > 0
+    assert text.startswith("Short answer\n" + answer.short_answer[0].text)
+    assert text.index("Contents\n1. The traveller\n2. The road") > text.index("Short answer")
     assert text.index("## The traveller") < text.index("## The road")
-    assert text.startswith(answer.overview[0].text)
     # One planner call, a claims call, a writer and a check per section, then the
-    # overview's writer and check.
+    # short answer's writer and check, after the sections.
     assert [k for k, _ in scripted.calls] == [
         "plan", "claims", "write", "check", "claims", "write", "check", "write", "check"]
     assert answer.requests == 9
+
+
+async def test_the_short_answer_is_written_after_the_sections_from_all_their_claims(config):
+    scripted = deep_models()
+    answer, _ = await ask(config, scripted)
+    one, two = answer.sections
+    writer = scripted.prompts("write")[-1]
+    # It answers the question as asked, and reads facts of both sections.
+    assert f"Question: {GENERAL}" in writer
+    assert "short answer that opens a long answer" in writer and "directly" in writer
+    for claim in answer.claims:
+        assert claim.text.strip() in writer
+    cited = {k for s in answer.short_answer for k in s.claims}
+    assert any(k <= one.claims_end for k in cited) and any(k >= two.claims_start for k in cited)
+    # Its passages are those of the claims it cites, in the answer's numbering.
+    for s in answer.short_answer:
+        assert set(s.passages) == {answer.claims[k - 1].passage for k in s.claims}
+
+
+async def test_a_short_answer_that_cannot_be_verified_says_so_and_keeps_the_sections(config):
+    scripted = deep_models(reject=("Tell me everything",))  # the short answer's sentences are tagged with the question
+    answer, events = await ask(config, scripted)
+    (line,) = answer.short_answer
+    assert line.text == deep.NO_SUMMARY_LINE and line.kind == "limit" and line.short and line.claims == ()
+    assert [s.heading for s in answer.sections] == ["The traveller", "The road"]
+    assert answer.text.startswith("Short answer\n" + deep.NO_SUMMARY_LINE)
+    (event,) = of(events, "short_answer")
+    assert event["text"] == deep.NO_SUMMARY_LINE and [p["text"] for p in event["prose"]] == [deep.NO_SUMMARY_LINE]
+
+
+async def test_a_short_answer_whose_writer_fails_says_so_too(config):
+    scripted = deep_models(fail=("short answer that opens a long answer",))
+    answer, _ = await ask(config, scripted)
+    assert [s.text for s in answer.short_answer] == [deep.NO_SUMMARY_LINE]
+    assert len(answer.sections) == 2
+
+
+async def test_the_short_answer_event_follows_the_sections_with_the_claims_it_cites(config):
+    answer, events = await ask(config, deep_models())
+    assert "overview" not in types(events)
+    kinds = types(events)
+    last_section = max(i for i, k in enumerate(kinds) if k == "section")
+    assert last_section < kinds.index("short_answer")
+    (event,) = of(events, "short_answer")
+    assert [p["text"] for p in event["prose"]] == [s.text for s in answer.short_answer]
+    assert len(event["claims"]) == len(answer.claims)
+    assert {p["n"] for p in event["passages"]} == {p.n for p in answer.passages}
+    json.dumps(events, allow_nan=False)
+
+
+async def test_an_analytical_question_may_open_with_a_reading_checked_by_the_viewpoint(config):
+    plan = DeepPlan(overview="x", analytical=True, sections=TWO.sections)
+    scripted = deep_models(plan, write_kinds=True)
+    answer, _ = await ask(config, scripted)
+    reading, *facts = answer.short_answer
+    assert reading.kind == "reading" and "suggests" in reading.text and reading.short
+    assert facts and all(f.kind == "fact" for f in facts)
+    assert len(answer.short_answer) <= deep.SHORT_ANSWER_SENTENCES
+    # The reading rests on facts of at least two sections, and the check judges it by the viewpoint rules.
+    one, two = answer.sections
+    assert any(k <= one.claims_end for k in reading.claims) and any(k >= two.claims_start for k in reading.claims)
+    assert "(reading)" in scripted.prompts("check")[-1]
+    # The sections themselves still state facts only.
+    for section in answer.sections:
+        assert all(s.kind == "fact" for s in section.prose)
+
+
+async def test_a_reading_the_check_rejects_leaves_the_facts_of_the_short_answer(config):
+    plan = DeepPlan(overview="x", analytical=True, sections=TWO.sections)
+    scripted = deep_models(plan, write_kinds=True, reject=("suggests a pattern",))
+    answer, _ = await ask(config, scripted)
+    assert answer.short_answer and all(s.kind == "fact" for s in answer.short_answer)
+
+
+async def test_a_factual_deep_question_gets_facts_only_in_its_short_answer(config):
+    scripted = deep_models(write_kinds=True)
+    answer, _ = await ask(config, scripted)
+    assert all(s.kind == "fact" for s in answer.short_answer)
+    assert "(reading)" not in scripted.prompts("check")[-1]
 
 
 async def test_sections_cite_the_answers_own_claims_and_passages(config):
@@ -197,25 +316,22 @@ async def test_sections_cite_the_answers_own_claims_and_passages(config):
     numbers = [p.n for p in answer.passages]
     assert numbers == list(range(1, len(numbers) + 1))
     assert all(c.passage in numbers for c in answer.claims)
-    # The overview cites claims from several sections.
-    cited = {k for s in answer.overview for k in s.claims}
-    assert any(k <= one.claims_end for k in cited) and any(k >= two.claims_start for k in cited)
 
 
 async def test_events_stream_in_order_and_each_section_carries_its_prose(config):
     answer, events = await ask(config, deep_models())
     kinds = types(events)
-    assert kinds.index("parts") < kinds.index("plan") < kinds.index("overview")
+    assert kinds.index("parts") < kinds.index("plan") < kinds.index("short_answer")
     flow = [(e["type"], e.get("index"), e.get("state")) for e in events
-            if e["type"] in ("plan", "section", "overview")]
+            if e["type"] in ("plan", "section", "short_answer")]
     assert flow == [("plan", None, None), ("section", 0, "start"), ("section", 0, "done"),
-                    ("section", 1, "start"), ("section", 1, "done"), ("overview", None, None)]
+                    ("section", 1, "start"), ("section", 1, "done"), ("short_answer", None, None)]
     (plan,) = of(events, "plan")
-    assert plan["sections"][0]["heading"] == "The traveller"
+    assert plan["sections"][0]["heading"] == "The traveller" and plan["sections"][0]["title"] == TRAVELLER
     assert [e["id"] for e in plan["sections"][1]["entities"]] == ["a_gate", "a_guild", "a_road"]
     assert plan["scope"] == TWO.overview
     first = [e for e in of(events, "section") if e["state"] == "done"][0]
-    assert first["heading"] == "The traveller" and first["style"] == "prose"
+    assert first["heading"] == "The traveller" and first["style"] == "prose" and first["title"] == TRAVELLER
     assert first["claims_range"] == [1, 3] and len(first["claims"]) == 3
     assert [p["text"] for p in first["prose"]] == [s.text for s in answer.sections[0].prose]
     assert first["text"] == answer.sections[0].text
@@ -235,9 +351,9 @@ async def test_each_section_reads_its_own_entities_and_nothing_of_the_others(con
     scripted = deep_models()
     await ask(config, scripted)
     one, two = scripted.prompts("claims")
-    assert "Question: The traveller (Zed Quill, Yan Vale)" in one
-    assert "Question: The road (Iron Gate, Ledger Guild, Long Road)" in two
-    assert "The traveller" not in two and "The road" not in one
+    assert f"Question: {TRAVELLER} (Zed Quill, Yan Vale)" in one
+    assert f"Question: {ROAD} (Iron Gate, Ledger Guild, Long Road)" in two
+    assert TRAVELLER not in two and ROAD not in one
     # Its own context: a section of a longer answer to the whole question.
     for prompt in (one, two):
         assert f"one section of a long, detailed answer to the larger question: {GENERAL}" in prompt
@@ -245,26 +361,47 @@ async def test_each_section_reads_its_own_entities_and_nothing_of_the_others(con
     # Each writer is told its section has no word limit; neither sees the other's facts.
     w1, w2 = scripted.prompts("write")[:2]
     assert "there is no word limit" in w1 and "400 words" not in w1
-    assert "The road" not in w1 and "The traveller" not in w2
+    assert ROAD not in w1 and TRAVELLER not in w2
+
+
+async def test_each_sections_claims_step_gets_the_question_its_focus_and_the_relevance_rule(config):
+    scripted = deep_models()
+    await ask(config, scripted)
+    for prompt, focus in zip(scripted.prompts("claims"), (TRAVELLER, ROAD)):
+        flat = " ".join(prompt.split())
+        assert f"larger question: {GENERAL}" in flat
+        assert f"This section answers one aspect of it: {focus}" in flat
+        assert "Keep only facts that bear on this aspect and on the larger question" in flat
+        assert "skip incidental plot detail" in flat
+
+
+async def test_each_section_writer_opens_with_how_the_section_answers_its_aspect(config):
+    scripted = deep_models()
+    await ask(config, scripted)
+    for prompt, focus in zip(scripted.prompts("write")[:2], (TRAVELLER, ROAD)):
+        flat = " ".join(prompt.split())
+        assert f"Question: {focus}" in flat and f"one aspect of the larger question: {GENERAL}" in flat
+        assert "Open with one sentence that says how these facts answer that aspect" in flat
+        assert "list those facts in `claims`" in flat and "leave the opening out" in flat
 
 
 async def test_a_section_failing_leaves_the_others(config):
-    scripted = deep_models(fail=("Question: The road",))
+    scripted = deep_models(fail=(f"Question: {ROAD}",))
     answer, events = await ask(config, scripted)
     assert [s.heading for s in answer.sections] == ["The traveller"]
     done = [e for e in of(events, "section") if e["state"] == "done"]
     assert [(e["heading"], e["style"]) for e in done] == [("The traveller", "prose"),
                                                            ("The road", "failed")]
-    assert answer.answer_style == "sectioned" and answer.overview
+    assert answer.answer_style == "sectioned" and answer.short_answer
 
 
 async def test_every_section_failing_is_an_error_not_an_empty_answer(config):
     with pytest.raises(RuntimeError):
-        await ask(config, deep_models(fail=("Question: The",)))
+        await ask(config, deep_models(fail=("Question: ",)))
 
 
 async def test_a_section_whose_prose_fails_falls_back_to_its_claims_alone(config):
-    scripted = deep_models(reject=("The road (",))
+    scripted = deep_models(reject=(ROAD,))
     answer, events = await ask(config, scripted)
     one, two = answer.sections
     assert one.style == "prose" and one.prose
@@ -279,15 +416,15 @@ async def test_a_section_whose_prose_fails_falls_back_to_its_claims_alone(config
 
 
 async def test_a_section_with_no_evidence_is_dropped(config):
-    plan = DeepPlan(sections=[PlanSection(heading="The traveller", entities=["a_zed"]),
-                              PlanSection(heading="A thing", entities=["a_road"])])
+    plan = DeepPlan(sections=[PlanSection(heading="The traveller", focus=TRAVELLER, entities=["a_zed"]),
+                              PlanSection(heading="A thing", focus="A thing to know", entities=["a_road"])])
     scripted = deep_models(plan)
     # Nothing in the second section's claims reply can be quoted.
     real = scripted.generate
 
     async def generate(prompt, schema):
         from lore.query.synthesize import Synthesis
-        if schema is Synthesis and "Question: A thing" in prompt:
+        if schema is Synthesis and "Question: A thing to know" in prompt:
             scripted.calls.append(("claims", prompt))
             return Synthesis(can_answer=False, claims=[])
         return await real(prompt, schema)
@@ -298,7 +435,7 @@ async def test_a_section_with_no_evidence_is_dropped(config):
 
 
 async def test_no_usable_plan_falls_back_to_the_ordinary_answer(config):
-    for planner in (DeepPlan(), DeepPlan(sections=[PlanSection(heading="X", entities=["ghost"])])):
+    for planner in (DeepPlan(), DeepPlan(sections=[PlanSection(heading="X", focus="f", entities=["ghost"])])):
         scripted = deep_models(planner)
         answer, events = await ask(config, scripted)
         assert answer.answer_style != "sectioned" and answer.sections == ()
@@ -315,8 +452,8 @@ async def test_a_failing_planner_falls_back_too(config):
 
 async def test_a_question_about_one_entity_is_planned_from_its_facets(config):
     scripted = deep_models(DeepPlan(sections=[
-        PlanSection(heading="What it is", entities=["a_zed#nature"]),
-        PlanSection(heading="Its history", entities=["a_zed#history", "a_gate"])]))
+        PlanSection(heading="What it is", focus="What Zed is", entities=["a_zed#nature"]),
+        PlanSection(heading="Its history", focus="How Zed's story went", entities=["a_zed#history", "a_gate"])]))
     answer, events = await ask(config, scripted, "Tell me about Zed Quill.")
     (prompt,) = scripted.prompts("plan")
     assert "Aspect:" in prompt and "a_zed#history" in prompt
@@ -330,7 +467,7 @@ async def test_a_question_about_one_entity_is_planned_from_its_facets(config):
     assert "Zed Quill, history:" in history
 
 
-async def test_the_overview_and_close_are_not_asked_for_without_claims_to_cite(config):
+async def test_no_close_for_a_question_with_no_interpretive_part(config):
     answer, _ = await ask(config, deep_models(write_kinds=False))
     assert answer.sections[-1].kind == "section"  # no interpretive part: no close
 
@@ -395,24 +532,24 @@ async def test_the_answer_reserve_stops_sections_too(config):
     assert [e["reason"] for e in of(events, "section") if e["state"] == "skipped"] == ["reserve"]
 
 
-async def test_the_budget_always_leaves_room_for_the_overview(config, monkeypatch):
+async def test_the_budget_always_leaves_room_for_the_short_answer(config, monkeypatch):
     monkeypatch.setattr(deep, "DEEP_MAX_REQUESTS", 1 + deep.SECTION_REQUESTS * 2 + deep.TAIL_REQUESTS)
     scripted = deep_models()
     answer, _ = await ask(config, scripted)
-    assert len(answer.sections) == 2 and answer.overview
+    assert len(answer.sections) == 2 and answer.short_answer and answer.short_answer[0].claims
     assert answer.requests == 1 + 2 * deep.SECTION_REQUESTS + deep.TAIL_REQUESTS
 
 
-# ---- a topical section and the overview state facts only -----------------------------------
+# ---- a topical section and a factual short answer state facts only ------------------------
 
-async def test_sections_and_the_overview_keep_only_facts_and_ask_for_no_readings(config):
+async def test_sections_and_the_short_answer_keep_only_facts_and_ask_for_no_readings(config):
     from lore.query import write as write_module
     assert write_module.readings_on()  # the legacy readings rule is live elsewhere
     scripted = deep_models(write_kinds=True)  # the writer offers a "reading" whenever it can
     answer, _ = await ask(config, scripted)
     for prompt in scripted.prompts("write"):
         assert write_module._READINGS_RULE not in prompt
-    assert all(s.kind == "fact" for s in answer.overview)
+    assert all(s.kind == "fact" for s in answer.short_answer)
     for section in answer.sections:
         assert section.prose and all(s.kind == "fact" for s in section.prose)
     assert "suggests a pattern" not in answer.text
@@ -435,17 +572,18 @@ def test_the_registry_refuses_a_claim_whose_passage_is_not_in_the_section():
 
 def test_headings_are_cleaned_capped_and_fall_back_to_a_name():
     raw = DeepPlan(sections=[
-        PlanSection(heading="## **The  road** [3] [1, 2]", entities=["a"]),
-        PlanSection(heading="`Rin` [link](http://x.example/y) _later_", entities=["b"]),
-        PlanSection(heading="x" * 200, entities=["c"]),
-        PlanSection(heading="[4] ** ##", entities=["b", "a"])])
+        PlanSection(heading="## **The  road** [3] [1, 2]", focus="f", entities=["a"]),
+        PlanSection(heading="`Rin` [link](http://x.example/y) _later_", focus="f", entities=["b"]),
+        PlanSection(heading="x" * 200, focus="f", entities=["c"]),
+        PlanSection(heading="[4] ** ##", focus="[2] **", entities=["b", "a"])])
     got = deep.validate_plan(raw, candidates())
     heads = [s.heading for s in got]
     assert heads[0] == "The road"
     assert "[" not in "".join(heads) and "*" not in "".join(heads) and "`" not in "".join(heads)
     assert heads[1] == "Rin link later"
     assert len(heads[2]) <= deep.MAX_HEADING_CHARS + 3 and heads[2].startswith("xxx")
-    assert heads[3] == "Beta"  # blank after cleaning: the section's first entity
+    # A focus that is blank once cleaned is no focus: that section is dropped.
+    assert len(heads) == 3
 
 
 # ---- the codex block of focused parts -------------------------------------------------------------
@@ -568,7 +706,7 @@ def test_the_default_prompts_do_not_change():
 
 # ---- output shapes ---------------------------------------------------------------------------------------
 
-async def test_the_mcp_shape_carries_the_sections_and_overview(config):
+async def test_the_mcp_shape_carries_the_sections_and_short_answer(config):
     answer, _ = await ask(config, deep_models())
     out = to_search_result(answer, {"ba1": "Alpha One"}).model_dump()
     assert out["answer_style"] == "sectioned" and out["requests"] == answer.requests
@@ -577,7 +715,10 @@ async def test_the_mcp_shape_carries_the_sections_and_overview(config):
     assert first["claims_range"] == [1, 3] and first["style"] == "prose" and first["kind"] == "section"
     assert first["prose"][0].keys() >= {"text", "claims", "passages", "new_paragraph", "kind"}
     assert first["entities"] == ["Zed Quill", "Yan Vale"]
-    assert out["overview"] and out["text"] if "text" in out else out["answer"] == answer.text
+    assert "overview" not in out
+    assert [p["text"] for p in out["short_answer"]] == [s.text for s in answer.short_answer]
+    assert out["answer"] == answer.text and out["answer"].startswith("Short answer\n")
+    assert first["title"] == TRAVELLER
     assert len(out["claims"]) == len(answer.claims)
     json.dumps(out, allow_nan=False)
 
@@ -586,18 +727,18 @@ async def test_an_ordinary_answer_has_no_sections_in_its_shape(config):
     scripted = Scripted(Decomposition(sub_questions=[PartSpec(question=QUESTION)], depth="focused"))
     answer, _ = await run_scenario(config, scripted)
     out = to_search_result(answer, {}).model_dump()
-    assert out["sections"] == [] and out["overview"] == [] and out["requests"] == 0
+    assert out["sections"] == [] and out["short_answer"] == [] and out["requests"] == 0
 
 
 def test_compose_sections_renders_markdown_headings_and_a_contents_list():
     from lore.query.models import AnswerSection, ProseSentence
-    overview = (ProseSentence("It covers two things.", (1,), (1,)),)
+    short = (ProseSentence("It covers two things.", (1,), (1,), short=True),)
     sections = [AnswerSection("Alpha", (), "Alpha text. [1]", 1, 1),
                 AnswerSection("Beta", (), "Beta text. [2]", 2, 2)]
-    assert compose_sections(overview, sections) == (
-        "It covers two things. [1]\n\nContents\n1. Alpha\n2. Beta\n\n"
+    assert compose_sections(sections, short) == (
+        "Short answer\nIt covers two things. [1]\n\nContents\n1. Alpha\n2. Beta\n\n"
         "## Alpha\n\nAlpha text. [1]\n\n## Beta\n\nBeta text. [2]")
-    assert compose_sections((), sections[:1]) == "## Alpha\n\nAlpha text. [1]"
+    assert compose_sections(sections[:1]) == "## Alpha\n\nAlpha text. [1]"
 
 
 # ---- DEEP off ------------------------------------------------------------------------------------------------
@@ -620,7 +761,7 @@ async def test_with_deep_off_everything_is_what_it_was(tmp_path, monkeypatch, na
     answer, events = await run_scenario(config, scripted, depth="deep")
     got = json.loads(json.dumps(snapshot(answer, events, scripted), sort_keys=True))
     assert got == json.loads(GOLDEN.read_text())[name]
-    assert answer.sections == () and answer.overview == () and answer.requests == 0
+    assert answer.sections == () and answer.short_answer == () and answer.requests == 0
 
 
 def test_deep_is_on_by_default():
@@ -667,10 +808,12 @@ def test_the_deep_code_and_prompts_name_no_character_book_or_genre():
     from tests.test_query_synthesize import _new_prompt_texts
     texts = "\n".join((_new_prompt_texts(), deep.PLANNER_PROMPT, deep.CLOSE_HEADING,
                        synthesize_module._CODEX_BLOCK, synthesize_module._SECTION_CONTEXT,
-                       write_module.SECTION_LENGTH_RULE, write_module.OVERVIEW_LENGTH_RULE,
+                       write_module.SECTION_LENGTH_RULE, write_module.SHORT_LENGTH_RULE,
+                       synthesize_module._SECTION_FOCUS_CONTEXT, deep.NO_SUMMARY_LINE,
                        write_module.CONTENTS_HEADING))
     from lore.query.viewpoint import load_viewpoint
-    for text in (decompose_module._KIND_RULE, decompose_module._DEPTH_RULE,
+    for text in (decompose_module._KIND_RULE, decompose_module._DEPTH_RULE, deep.PLANNER_PROMPT,
+                 write_module.SHORT_LENGTH_RULE, synthesize_module._SECTION_FOCUS_CONTEXT, deep.NO_SUMMARY_LINE,
                  decompose_module._ITEM_RULE, load_viewpoint()):
         assert text.strip() and text in texts  # nothing new is left out of the check
     assert not re.findall(banned, texts.lower())

@@ -136,12 +136,12 @@ class SearchResult(BaseModel):
     answer_style: str = "claims"
     unanswered: list[str] = []
     gaps: list[str] = []
-    # A deep answer (answer_style "sectioned"): the cited overview, then the sections.
-    overview: list[ProseOut] = []
+    # A deep answer (answer_style "sectioned"): its sections.
     sections: list[SectionOut] = []
     requests: int = 0
-    # An interpretive answer opens with this: one sentence (kind "reading", or "limit" for code's
-    # "no clear position" line) per interpretive part, each also cited like any prose. `prose` and
+    # A deep answer opens with this: an interpretive question's reading per interpretive part (or
+    # code's "no clear position" line), any other deep question's few fact sentences (or code's
+    # "no direct summary could be verified" line), each cited like any prose. `prose` and
     # `sections` are the argument below it. [] for every other answer.
     short_answer: list[ProseOut] = []
     # Sections of a sectioned answer that failed or found nothing: left out of `sections`, counted here.
@@ -290,7 +290,6 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
         answer_style=answer.answer_style,
         unanswered=list(answer.unanswered),
         gaps=list(answer.gaps),
-        overview=[_prose_out(s) for s in answer.overview],
         sections=[SectionOut(
             heading=x.heading, kind=x.kind, style=x.style, text=x.text,
             prose=[_prose_out(s) for s in x.prose],

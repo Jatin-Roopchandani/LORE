@@ -16,7 +16,8 @@ export const closeProse: ProseSentence[] = [
   sent("A case can be made that the guild matters more.", [3], [2], "counter"),
   sent("The books don't settle: who founded the council.", [], [], "limit", true),
 ];
-export const overviewProse: ProseSentence[] = [sent("A council and a guild run the harbour.", [1, 3], [1, 2])];
+// The short answer of a topical (not interpretive) deep answer: checked fact sentences citing claims of several sections.
+export const shortProse: ProseSentence[] = [sent("A council and a guild run the harbour.", [1, 3], [1, 2], undefined, true)];
 
 const step = (t: number, name: any, state: any, part: number | null = null, detail: string | null = null): AskEvent =>
   ({ type: "step", t, name, state, part, detail });
@@ -39,12 +40,12 @@ export const sec1: AskEvent[] = [step(2, "section", "start", 1), start(1, "The g
   done(1, "The guild", s2, claims.slice(2), [3, 3], [pass(2, 5, "The guild trains the pilots of the bay.")]),
   step(3, "section", "done", 1, "1 claim")];
 export const tail: AskEvent[] = [
-  { type: "overview", t: 4, prose: overviewProse, text: "" },
+  { type: "short_answer", t: 4, prose: shortProse, text: "", claims, passages: [pass(1, 3, "The council rules the harbour and taxes the ferries."), pass(2, 5, "The guild trains the pilots of the bay.")] },
   { ...start(2, "Reading, counter-case and limits", "close"), state: "done", style: "prose", text: "", prose: closeProse,
     claims: [], claims_range: null, passages: [], note: null } as AskEvent,
   { type: "answer", t: 5, result: { answer: "", mode: "graph", template: "deep", note: null, model: "m", selection_model: "m",
     sub_questions: ["The council", "The guild"], claims, passages: [pass(1, 3, "The council rules the harbour and taxes the ferries."), pass(2, 5, "The guild trains the pilots of the bay.")],
-    edges: [], seeds: [], answer_style: "sectioned", prose: [], requests: 11, overview: overviewProse,
+    edges: [], seeds: [], answer_style: "sectioned", prose: [], requests: 11, short_answer: shortProse,
     sections: [
       { heading: "The council", kind: "section", style: "prose", text: "", prose: s1, claims_range: [1, 2], entities: ["Council"], note: null },
       { heading: "The guild", kind: "section", style: "prose", text: "", prose: s2, claims_range: [3, 3], entities: ["Guild"], note: null },

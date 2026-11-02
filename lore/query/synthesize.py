@@ -470,6 +470,16 @@ _SECTION_CONTEXT = ("This is one section of a long, detailed answer to the large
                     "Cover this section fully, with every distinct fact the passages establish "
                     "about it, in as many claims as they support; the other sections are "
                     "written separately.\n")
+# The same, for a section that answers one aspect (`focus`) of the larger question:
+# only the facts that bear on that aspect and on the question are kept.
+_SECTION_FOCUS_CONTEXT = ("This is one section of a long, detailed answer to the larger question: "
+                          "{part_of}\n"
+                          "This section answers one aspect of it: {focus}\n"
+                          "Keep only facts that bear on this aspect and on the larger question; "
+                          "skip incidental plot detail and anything that only describes the "
+                          "setting, however vivid. Cover the aspect fully, with every distinct "
+                          "fact the passages establish about it, in as many claims as they "
+                          "support; the other sections are written separately.\n")
 
 
 def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
@@ -516,7 +526,8 @@ def _build_prompt(
     elif part_of and role == "beyond":
         context = interpret.BEYOND_CONTEXT.format(part_of=part_of)
     elif section is not None:
-        context = _SECTION_CONTEXT.format(part_of=section.part_of)
+        context = (_SECTION_FOCUS_CONTEXT.format(part_of=section.part_of, focus=section.focus)
+                   if section.focus else _SECTION_CONTEXT.format(part_of=section.part_of))
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
                           facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
@@ -904,8 +915,8 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     its lines (interpret.close_answer); the shown gaps join the limits line
     and so are not returned separately.
 
-    `length` ("section" or "overview"): the writer sizes the prose for a deep
-    answer's section or its overview (write.py) instead of the default cap."""
+    `length` ("section", "short" or "lens"): the writer sizes the prose for a deep
+    answer's section or its short answer (write.py) instead of the default cap."""
     try_prose = (write_module.PROSE_ANSWERS and write is not None and check is not None
                  and len(kept) >= 2)
     sentences, written, prose_note, missing, gaps = None, 0, None, [], []
@@ -1006,8 +1017,11 @@ async def synthesize(
     result = _capped(result, section.max_claims if section is not None else None)
     verified, _ = verify_claims(result, evidence.passages)
     kept = _collapse(verified)
+    # The writer of a section that answers one aspect is told which larger question it serves.
+    written_for = (f"{question} (one aspect of the larger question: {section.part_of})"
+                   if section is not None and section.focus else question)
     kept, _cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
-        question, list(checklist) or [question], kept, evidence, check, write, book_titles,
+        written_for, list(checklist) or [question], kept, evidence, check, write, book_titles,
         books=books, length=section.length if section is not None else None)
     if not kept:
         return answer(REFUSAL)

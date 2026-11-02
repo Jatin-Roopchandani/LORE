@@ -22,11 +22,11 @@ export interface AskState {
   result: SearchResult | null; error: ApiError | null; elapsed: number;
   // Per retrieval part: the plan part it is a lens of (null if none), and the plan's own questions.
   lensOf: (number | null)[]; planQuestions: string[];
-  // Deep answers: the plan, the sections so far, the overview (it arrives last), and the claims and passages
+  // Deep answers: the plan, the sections so far, and the claims and passages
   // the sections have brought so far, in the answer's own numbering (so citations work before the answer lands).
   deepSteps: DeepStepView[]; plan: PlanView | null; sections: SectionView[];
-  overview: ProseSentence[] | null; liveClaims: Claim[]; livePassages: Passage[];
-  // An interpretive answer's short answer, sent before its sections.
+  liveClaims: Claim[]; livePassages: Passage[];
+  // A deep answer's short answer: sent before its sections when interpretive, after them otherwise.
   shortAnswer: ProseSentence[] | null;
 }
 
@@ -35,7 +35,7 @@ export function initialState(question = ""): AskState {
     status: question ? "running" : "idle", question,
     steps: STEP_ORDER.map((name) => ({ name, state: "pending", detail: null, startedAt: null, doneAt: null })),
     subQuestions: [], seeds: [], edges: [], evidence: null, result: null, error: null, elapsed: 0,
-    lensOf: [], planQuestions: [], deepSteps: [], plan: null, sections: [], overview: null, liveClaims: [], livePassages: [], shortAnswer: null,
+    lensOf: [], planQuestions: [], deepSteps: [], plan: null, sections: [], liveClaims: [], livePassages: [], shortAnswer: null,
   };
 }
 
@@ -130,8 +130,6 @@ export function askReducer(state: AskState, event: AskEvent): AskState {
       return { ...s, plan: { scope: event.scope, candidates: event.candidates, sections: event.sections } };
     case "section":
       return section(s, event);
-    case "overview":
-      return { ...s, overview: event.prose };
     case "short_answer": {
       // The claims and passages come whole, in the answer's numbering, so its citations work at once.
       const have = new Set(s.livePassages.map((p) => p.n));

@@ -4,6 +4,10 @@ import * as deep from "../fixtures/deep";
 import { DEEP, STEPS_DEEP, UI } from "../messages";
 import type { AskEvent } from "../types";
 import { ChatPane } from "./ChatPane";
+// The stylesheet text itself, so the layout rules are tested as written (vitest swaps CSS imports for nothing).
+// @ts-expect-error -- node built-ins have no types in this project
+import { readFileSync } from "node:fs";
+const css: string = readFileSync("src/theme.css", "utf8")  // vitest runs from web/;
 
 const stateOf = (events: AskEvent[]) => events.reduce(askReducer, initialState("What runs the harbour?"));
 const askWith = (events: AskEvent[], extra = {}) => ({ state: stateOf(events), history: [], current: null, run: 1,
@@ -50,18 +54,64 @@ test("a section not yet started is listed but not linked", () => {
   expect(within(nav).queryAllByRole("link")).toHaveLength(0);
 });
 
-test("the overview arrives last but renders above the contents and the sections", () => {
+test("a sectioned answer that is not interpretive opens with the short answer block, above the contents and the sections", () => {
   const { container } = view(deep.full);
-  const order = [...container.querySelectorAll(".sectioned > *")].map((n) => n.className.split(" ")[0]);
-  expect(order.slice(0, 2)).toEqual(["overview", "contents"]);
-  expect(order.slice(2)).toEqual(["answer-section", "answer-section", "answer-section"]);
-  expect(screen.getByRole("heading", { name: DEEP.overview })).toBeInTheDocument();
-  expect(screen.getByText("A council and a guild run the harbour.")).toBeInTheDocument();
+  const block = container.querySelector(".short-answer") as HTMLElement;
+  expect(within(block).getByRole("heading", { name: DEEP.shortAnswer })).toBeInTheDocument();
+  expect(within(block).getByText("A council and a guild run the harbour.")).toBeInTheDocument();
+  expect(block.querySelector(".cite")).not.toBeNull();   // cited like any prose
+  // It sits before the sectioned body, which starts with the contents.
+  const sectioned = container.querySelector(".sectioned") as HTMLElement;
+  expect(block.compareDocumentPosition(sectioned) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect([...sectioned.children].map((n) => n.className.split(" ")[0])).toEqual(
+    ["contents", "answer-section", "answer-section", "answer-section"]);
+  expect(container.querySelector(".overview")).toBeNull();      // the old first-claims overview is gone
 });
 
-test("no overview heading until the overview arrives", () => {
-  view([...deep.head, ...deep.sec0]);
-  expect(screen.queryByRole("heading", { name: DEEP.overview })).toBeNull();
+test("the short answer arrives after the sections and shows as soon as it does", () => {
+  const { container, rerender } = render(<ChatPane ask={askWith([...deep.head, ...deep.sec0, ...deep.sec1])} showInternals onHoverChunks={() => {}} />);
+  expect(container.querySelector(".short-answer")).toBeNull();
+  rerender(<ChatPane ask={askWith([...deep.head, ...deep.sec0, ...deep.sec1, deep.tail[0]])} showInternals onHoverChunks={() => {}} />);
+  expect(container.querySelector(".short-answer")).not.toBeNull();
+});
+
+test("the line saying no direct summary could be verified shows in the short answer block", () => {
+  const line = { text: "No direct summary could be verified from the evidence found; the sections below give the checked facts.",
+    claims: [], passages: [], new_paragraph: true, kind: "limit" as const };
+  const { container } = view([...deep.head, ...deep.sec0, ...deep.sec1,
+    { type: "short_answer", t: 4, prose: [line], text: line.text } as AskEvent]);
+  expect(container.querySelector(".short-answer")).toHaveTextContent("No direct summary could be verified");
+  expect(container.querySelectorAll(".answer-section").length).toBe(2);  // the sections stay
+});
+
+test("each contents entry shows its number and title on one line, in one element", () => {
+  const { container } = view(deep.full);
+  const nav = screen.getByRole("navigation", { name: DEEP.contents });
+  const entries = [...nav.querySelectorAll("li > .entry")] as HTMLElement[];
+  expect(entries.map((e) => e.textContent)).toEqual(["1. The council", "2. The guild", "3. Reading, counter-case and limits"]);
+  for (const entry of entries) {
+    // The number and the link are siblings inside the same element, never in separate block rows.
+    const num = entry.querySelector(":scope > .num")!;
+    expect(num).not.toBeNull();
+    expect(entry.querySelector(":scope > a, :scope > .pending")).not.toBeNull();
+    expect(num.parentElement).toBe(entry);
+  }
+  expect(container.querySelector(".contents li > .num")).toBeNull();     // no number outside an entry
+});
+
+test("a pending entry (not yet written) also keeps its number inline", () => {
+  view(deep.head);
+  const nav = screen.getByRole("navigation", { name: DEEP.contents });
+  expect([...nav.querySelectorAll("li > .entry")].map((e) => e.textContent)).toEqual(["1. The council", "2. The guild"]);
+});
+
+test("the stylesheet lays an entry out as one row that never wraps its number above its title", () => {
+  const rule = (selector: string) => [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter((m) => m[1].split(",").map((x) => x.trim()).includes(selector)).map((m) => m[2]).join(";");
+  expect(rule(".contents .entry")).toMatch(/display:\s*flex/);
+  expect(rule(".contents .entry")).not.toMatch(/flex-wrap:\s*wrap/);
+  expect(rule(".contents .num")).toMatch(/flex:\s*none/);
+  expect(rule(".contents li")).not.toMatch(/flex-wrap/);      // a long title used to push the number onto its own row
 });
 
 test("the close shows a reading, the other side and a limit, each labelled", () => {
@@ -124,7 +174,7 @@ test("an answer with no section events still renders its sections from the resul
 test("a deep ask that fell back to the ordinary path renders the ordinary answer", () => {
   const final = deep.tail[deep.tail.length - 1];
   if (final.type !== "answer") throw new Error("fixture");
-  const result = { ...final.result, answer_style: "prose" as const, sections: [], overview: [], requests: 0, prose: deep.s2 };
+  const result = { ...final.result, answer_style: "prose" as const, sections: [], short_answer: [], requests: 0, prose: deep.s2 };
   view([deep.head[0], deep.head[3], { type: "answer", t: 2, result }]);
   expect(screen.queryByRole("navigation", { name: DEEP.contents })).toBeNull();
   expect(document.querySelector("p.prose")).toHaveTextContent("The guild trains the pilots.");
@@ -134,7 +184,7 @@ test("a deep ask that fell back to the ordinary path renders the ordinary answer
 test("a plan whose sections all came back empty, then an ordinary answer, renders the ordinary prose", () => {
   const final = deep.tail[deep.tail.length - 1];
   if (final.type !== "answer") throw new Error("fixture");
-  const result = { ...final.result, answer_style: "prose" as const, sections: [], overview: [], requests: 0, prose: deep.s2 };
+  const result = { ...final.result, answer_style: "prose" as const, sections: [], short_answer: [], requests: 0, prose: deep.s2 };
   const empties = [0, 1].map((i) => deep.done(i, `S${i}`, [], [], null, [], { style: "empty" }));
   view([...deep.head, ...empties, { type: "answer", t: 2, result }]);
   expect(screen.queryByRole("navigation", { name: DEEP.contents })).toBeNull();
@@ -145,7 +195,7 @@ test("a plan whose sections all came back empty, then an ordinary answer, render
 test("a plan alone, then an ordinary answer, renders the ordinary prose", () => {
   const final = deep.tail[deep.tail.length - 1];
   if (final.type !== "answer") throw new Error("fixture");
-  const result = { ...final.result, answer_style: "prose" as const, sections: [], overview: [], requests: 0, prose: deep.s2 };
+  const result = { ...final.result, answer_style: "prose" as const, sections: [], short_answer: [], requests: 0, prose: deep.s2 };
   view([...deep.head, { type: "answer", t: 2, result }]);
   expect(document.querySelector("p.prose")).toHaveTextContent("The guild trains the pilots.");
 });

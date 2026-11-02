@@ -346,3 +346,19 @@ def test_the_label_rule_is_in_the_kind_rule_covered_by_the_banned_word_tests() -
     from tests.test_query_synthesize import _new_prompt_texts
     assert '"label"' in decompose_module._KIND_RULE
     assert decompose_module._KIND_RULE in _new_prompt_texts()
+
+
+def test_the_decomposer_prompt_sends_analysis_style_questions_to_interpretive():
+    from lore.query.decompose import decomposition_prompt
+    flat = " ".join(decomposition_prompt("Q?").split())
+    assert ("A question that asks for an analysis or an assessment, for an explanation of how or why that the "
+            "books do not state outright, or to explore methods, motives, themes or significance is "
+            '"interpretive", not "factual"') in flat
+    assert "Its lenses cover the distinct aspects the question asks about" in flat
+    assert "What, who, when or where stays factual" in flat
+
+
+def test_the_analysis_rule_is_absent_with_interpretive_off(monkeypatch):
+    from lore.query import decompose
+    monkeypatch.setattr(decompose, "INTERPRETIVE", False)
+    assert "analysis or an assessment" not in decompose.decomposition_prompt("Q?")

@@ -27,10 +27,12 @@ export interface SearchResult { answer: string; mode: string; template: string |
   model: string | null; selection_model: string | null; sub_questions: string[]; claims: Claim[];
   passages: Passage[]; edges: Edge[]; seeds: Seed[];
   prose?: ProseSentence[]; answer_style?: "prose" | "claims" | "sectioned"; unanswered?: string[]; gaps?: string[];
-  // Sectioned answers only: the cited overview, the sections, and the model requests the answer used.
-  overview?: ProseSentence[]; sections?: SectionOut[]; requests?: number;
-  // An interpretive answer opens with this: one sentence per interpretive part ("reading", or the "limit" line saying
-  // the evidence found no clear position), cited like any prose. `prose` and `sections` are the argument below it.
+  // Sectioned answers only: the sections, and the model requests the answer used.
+  sections?: SectionOut[]; requests?: number;
+  // A deep answer opens with this. Interpretive: one sentence per interpretive part ("reading", or the "limit" line
+  // saying the evidence found no clear position). Otherwise a few cited fact sentences (an analytical question's may
+  // open with a "reading"), or the "limit" line saying no direct summary could be verified. `prose` and `sections`
+  // are the argument below it.
   short_answer?: ProseSentence[];
   // Sections of a sectioned answer that failed or found nothing: they are left out of `sections`, counted here.
   unwritten_sections?: number }
@@ -48,8 +50,8 @@ export type AskEvent =
   | { type: "parts"; t: number; sub_questions: string[]; lens_of?: (number | null)[]; plan_questions?: string[] }
   | { type: "plan"; t: number; scope: string; candidates: number; sections: PlanSection[] }
   | SectionEvent
-  | { type: "overview"; t: number; prose: ProseSentence[]; text: string }
-  // The short answer of an interpretive answer, sent before its sections, with every claim and passage it cites.
+  // The short answer of a deep answer (before the sections when interpretive, after them otherwise), with every
+  // claim and passage it cites.
   | { type: "short_answer"; t: number; prose: ProseSentence[]; text: string; claims?: Claim[]; passages?: Passage[] }
   | { type: "seeds"; t: number; part: number; entities: Seed[] }
   | { type: "edges"; t: number; part: number; template: string | null; total: number; edges: Edge[] }

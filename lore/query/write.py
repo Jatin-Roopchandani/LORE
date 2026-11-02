@@ -145,22 +145,28 @@ Facts:
 
 
 # The length rule of the story writer prompt, and its replacements for the
-# parts of a deep answer (deep.py): a section has no word cap, the overview is
-# short. Kept apart so the prompt reads exactly as before when none is asked for.
+# parts of a deep answer (deep.py): a section has no word cap, the short answer
+# is short. Kept apart so the prompt reads exactly as before when none is asked for.
 _LENGTH_RULE = """- Length: a narrow question gets two to four sentences. A broad, abstract
   or multi-part question gets a detailed answer of up to four short
   paragraphs, about 400 words at most. Start a new paragraph for each part
   or theme: mark its first sentence with new_paragraph.
 """
 SECTION_LENGTH_RULE = """- Length: this is one section of a long, detailed answer, and its question is the
-  section's subject. Use every fact given, and say as much as the facts
-  support; there is no word limit. Start a new paragraph for each theme: mark
-  its first sentence with new_paragraph.
+  aspect of a larger question that the section answers. Use every fact given,
+  and say as much as the facts support; there is no word limit. Start a new
+  paragraph for each theme: mark its first sentence with new_paragraph.
+- Open with one sentence that says how these facts answer that aspect. It must
+  itself state what the facts show and list those facts in `claims`; never open
+  with a remark that no fact supports. If no fact can open that way, leave the
+  opening out and begin with the first fact.
 """
-OVERVIEW_LENGTH_RULE = """- Length: this is the short overview that opens a long answer, and the facts are
-  a few of the most important ones from each section that follows. Write two
-  to five sentences that say in brief what the answer covers, in the order of
-  the facts. Make no claim the facts do not support.
+SHORT_LENGTH_RULE = """- Length: this is the short answer that opens a long answer, and the facts come
+  from all of its sections. Write two to five sentences in all that answer the
+  question directly, as it was asked, rather than saying what the sections
+  cover. The first sentence gives the answer itself. Draw on facts from more
+  than one section where they bear on the answer, and list every fact a
+  sentence rests on in `claims`. Make no claim the facts do not support.
 """
 # One aspect (lens) of an interpretive question, written as a section of a deep
 # answer: no word cap, and an opening that says how the facts bear on the question.
@@ -175,7 +181,7 @@ LENS_LENGTH_RULE = """- Length: this is one section of a long, detailed answer, 
   the first fact.
 """
 LENGTH_RULES = {None: _LENGTH_RULE, "section": SECTION_LENGTH_RULE,
-                "overview": OVERVIEW_LENGTH_RULE, "lens": LENS_LENGTH_RULE}
+                "short": SHORT_LENGTH_RULE, "lens": LENS_LENGTH_RULE}
 
 
 STORY_WRITER_PROMPT = """Write the answer to the question from the numbered facts below.
@@ -307,7 +313,7 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
     """`shape`: the interpretive answer's shape (interpret.py), only with
     STORY_ORDER. The facts are then listed under an "Evidence for:" heading per
     lens, and the shape's rule and the viewpoint replace the readings rule.
-    `length` ("section" or "overview", only with STORY_ORDER): the part of a
+    `length` ("section", "short" or "lens", only with STORY_ORDER): the part of a
     deep answer this writes, which sizes its prose (LENGTH_RULES)."""
     passages = list(passages)
     parts = "\n".join(f"{i}. {s}" for i, s in enumerate(part_texts(question, sub_questions), start=1))
@@ -326,7 +332,7 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
         if shape is not None:
             parts = "\n".join(interpret.part_labels(shape))
             rules = interpret.writer_rule(shape)
-        else:  # a deep answer's section or overview states facts: readings are the close's
+        else:  # a deep answer's section or short answer states facts
             rules = _READINGS_RULE if readings_on() and length is None else ""
         return STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
                                           order_note=note, readings=rules,
@@ -365,8 +371,9 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     outside the list becomes 0, which `verify_prose` drops with its
     sentence, as it drops any out-of-range citation."""
     passages = list(passages)
-    # A deep answer's section or overview (`length`) states facts only: no readings
-    # rule, no kinds in the reply, and a stray reading is dropped, not relabelled.
+    # A deep answer's section (`length`) states facts only: no readings rule, no
+    # kinds in the reply, and a stray reading is dropped, not relabelled. Its short
+    # answer may carry a reading when it is given a shape (interpret.py).
     part = length is not None
     kinds = (readings_on() and not part) or shape is not None
     try:
@@ -391,7 +398,7 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
                  claims=[back.get(k, 0) for k in s.claims] if back else list(s.claims),
                  kind=_kind(s, shape) if kinds else "fact")
         for s in reply.sentences
-        if not (part and str(getattr(s, "kind", "fact")).strip().lower() != "fact")]
+        if not (part and shape is None and str(getattr(s, "kind", "fact")).strip().lower() != "fact")]
     if not sentences:
         return None
     return Prose(sentences=sentences, unanswered=reply.unanswered, gaps=getattr(reply, "gaps", []))
@@ -639,15 +646,13 @@ def compose_answer(short: Sequence[ProseSentence], prose: Sequence[ProseSentence
 CONTENTS_HEADING = "Contents"
 
 
-def compose_sections(overview: Sequence[ProseSentence], sections: Sequence,
-                     short: Sequence[ProseSentence] = ()) -> str:
-    """A deep answer as text: the overview, a numbered contents list, then each
-    section under a markdown heading (`## heading`). A section is anything with
-    `heading` and `text` (models.AnswerSection); the text of each is its own
-    prose with its citations, or its claim list when the prose did not pass.
-    An interpretive answer's `short` answer comes first, under its heading."""
+def compose_sections(sections: Sequence, short: Sequence[ProseSentence] = ()) -> str:
+    """A deep answer as text: the short answer under its heading, a numbered
+    contents list, then each section under a markdown heading (`## heading`). A
+    section is anything with `heading` and `text` (models.AnswerSection); the
+    text of each is its own prose with its citations, or its claim list when the
+    prose did not pass."""
     blocks = [SHORT_ANSWER_HEADING + "\n" + compose_text(short)] if short else []
-    blocks += [compose_text(overview)] if overview else []
     if len(sections) > 1:
         blocks.append(CONTENTS_HEADING + "\n" + "\n".join(
             f"{i}. {s.heading}" for i, s in enumerate(sections, start=1)))

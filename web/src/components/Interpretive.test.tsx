@@ -72,7 +72,7 @@ test("with several parts, each part is an h2 and its sections h3 beneath it, in 
   const { container } = view(lens.full);
   const nav = screen.getByRole("navigation", { name: DEEP.contents });
   const parts = [...nav.querySelectorAll(":scope > ol > li.part")];
-  expect(parts.map((li) => li.querySelector(":scope > a")?.textContent)).toEqual([lens.PART_A, lens.PART_B]);
+  expect(parts.map((li) => li.querySelector(":scope > .entry > a")?.textContent)).toEqual([lens.PART_A, lens.PART_B]);
   const h2 = [...container.querySelectorAll(".sectioned h2.part-heading")].map((n) => n.textContent);
   expect(h2).toEqual([lens.PART_A, lens.PART_B, "Counter-case and limits"]);
   expect(screen.getByRole("heading", { name: "What did Rin risk", level: 3 })).toHaveClass("section-heading");
@@ -82,8 +82,8 @@ test("with several parts, each part is an h2 and its sections h3 beneath it, in 
 test("the contents numbers parts 1, 2, ... and their sections 1.1, 2.1, with none repeated or skipped", () => {
   view(lens.full);   // a failed and an empty section are hidden: no gap where they were
   const nav = screen.getByRole("navigation", { name: DEEP.contents });
-  const nums = [...nav.querySelectorAll("li > .num")].map((n) => n.textContent);
-  expect(nums).toEqual(["1", "1.1", "2", "2.1", "3"]);
+  const nums = [...nav.querySelectorAll("li > .entry > .num")].map((n) => n.textContent);
+  expect(nums).toEqual(["1.", "1.1", "2.", "2.1", "3."]);
   expect(new Set(nums).size).toBe(nums.length);
   expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(
     [lens.PART_A, "What did Rin risk", lens.PART_B, "Who stood by Tam", "Counter-case and limits"]);
@@ -108,7 +108,7 @@ test("a question with one part has no part heading and the contents lists only i
   expect(container.querySelector(".sectioned h2")).toBeNull();
   const nav = screen.getByRole("navigation", { name: DEEP.contents });
   expect(nav.querySelectorAll("li.part")).toHaveLength(0);
-  expect([...nav.querySelectorAll("li > .num")].map((n) => n.textContent)).toEqual(["1", "2", "3"]);
+  expect([...nav.querySelectorAll("li > .entry > .num")].map((n) => n.textContent)).toEqual(["1.", "2.", "3."]);
   expect(screen.getByRole("heading", { name: "What did Rin risk", level: 3 })).toBeInTheDocument();
   for (const a of within(nav).getAllByRole("link")) expect(container.querySelector(a.getAttribute("href")!)).not.toBeNull();
 });

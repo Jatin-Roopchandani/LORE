@@ -81,6 +81,12 @@ _KIND_RULE = """- "kind": how the part can be answered.
     would have happened otherwise.
   - "beyond": the books cannot settle it: the author's intent, facts about
     the real world, or events outside the text.
+  A question that asks for an analysis or an assessment, for an explanation of
+  how or why that the books do not state outright, or to explore methods,
+  motives, themes or significance is "interpretive", not "factual", even when
+  it names one subject. Its lenses cover the distinct aspects the question asks
+  about (for example each method, motive or theme). What, who, when or where
+  stays factual.
   When unsure, use "factual".
 - "lenses": for an "interpretive" part only (otherwise an empty list), up to
   4 aspects of the story that would decide the part. Each lens is an object
@@ -89,7 +95,8 @@ _KIND_RULE = """- "kind": how the part can be answered.
   - "label": a short noun phrase of at most 6 words that names the aspect, to
     head a section (not a question, no trailing punctuation, and no claim
     about the answer).
-  - Together the lenses must cover opposing sides of the part.
+  - Together the lenses must cover opposing sides of the part, and, for a part
+    that asks for an analysis, each distinct aspect it asks about.
   - Each lens is concrete: what happens, what characters do, choose, hide or
     change, what is said, and how it ends.
   - No lens may assume or hint at the answer to the part.

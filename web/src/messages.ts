@@ -24,7 +24,6 @@ export const DEEP = {
     focused: "Every question gets a short answer.",
   } as Record<Depth, string>,
   costNote: "A deep answer can take a few dozen requests from the daily allowance.",
-  overview: "Overview",
   contents: "Contents",
   writing: "Writing…",
   claimsOnly: "Showing the checked facts; the written section didn't pass verification.",

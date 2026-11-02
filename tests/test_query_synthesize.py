@@ -1041,7 +1041,8 @@ def _new_prompt_texts() -> str:
     from lore.query.viewpoint import load_viewpoint
     return "\n".join((deep.PLANNER_PROMPT, deep.CLOSE_HEADING, synthesize_module._CODEX_BLOCK,
                       synthesize_module._SECTION_CONTEXT, write_module._LENGTH_RULE,
-                      write_module.SECTION_LENGTH_RULE, write_module.OVERVIEW_LENGTH_RULE,
+                      write_module.SECTION_LENGTH_RULE, write_module.SHORT_LENGTH_RULE,
+                      synthesize_module._SECTION_FOCUS_CONTEXT, deep.NO_SUMMARY_LINE,
                       write_module.CONTENTS_HEADING, write_module.LENS_LENGTH_RULE,
                       write_module.SHORT_ANSWER_HEADING,
                       decompose._ITEM_RULE, decompose._KIND_RULE,

@@ -111,11 +111,13 @@ async def test_a_deep_interpretive_question_is_organised_by_its_lenses_not_a_top
 async def test_a_deep_question_with_no_interpretive_part_still_gets_the_topical_planner(config):
     plan = Decomposition(sub_questions=[PartSpec(question="Tell me about the world.")], depth="deep")
     scripted = Scripted(plan, planner=DeepPlan(overview="x", sections=[
-        PlanSection(heading="The traveller", entities=["a_zed"]),
-        PlanSection(heading="The road", entities=["a_road"])]), tagged=True)
+        PlanSection(heading="The traveller", focus="Who the traveller is", entities=["a_zed"]),
+        PlanSection(heading="The road", focus="Where the road leads", entities=["a_road"])]), tagged=True)
     answer, events = await run_scenario(config, scripted, "Tell me about the world.", depth="deep")
     assert [e["name"] for e in of(events, "step") if e["name"] == "plan"]
-    assert answer.template == "deep" and answer.short_answer == ()
+    # No interpretive part: the topical sections, opened by a short answer of fact sentences only.
+    assert answer.template == "deep" and answer.short_answer
+    assert all(s.kind == "fact" for s in answer.short_answer)
 
 
 async def test_a_focused_interpretive_question_is_not_sectioned(config):
@@ -309,9 +311,9 @@ async def test_a_lens_that_found_nothing_is_not_a_section_and_is_counted(config)
 async def test_the_topical_path_counts_its_unwritten_sections_too(config):
     plan = Decomposition(sub_questions=[PartSpec(question="Tell me about the world.")], depth="deep")
     planner = DeepPlan(overview="x", sections=[
-        PlanSection(heading="The traveller", entities=["a_zed"]),
-        PlanSection(heading="The road", entities=["a_road"])])
-    scripted = Scripted(plan, planner=planner, tagged=True, fail=["The road"])
+        PlanSection(heading="The traveller", focus="Who the traveller is", entities=["a_zed"]),
+        PlanSection(heading="The road", focus="Where the road leads", entities=["a_road"])])
+    scripted = Scripted(plan, planner=planner, tagged=True, fail=["Where the road leads"])
     answer, _ = await run_scenario(config, scripted, "Tell me about the world.", depth="deep")
     assert [s.heading for s in answer.sections] == ["The traveller"]
     assert answer.unwritten == 1
@@ -335,8 +337,8 @@ async def test_the_lens_path_sends_seeds_and_edges_per_part_before_any_answer_te
 async def test_the_topical_path_sends_seeds_and_edges_per_section_and_names_the_sections_as_parts(config):
     plan = Decomposition(sub_questions=[PartSpec(question="Tell me about the world.")], depth="deep")
     planner = DeepPlan(overview="x", sections=[
-        PlanSection(heading="The traveller", entities=["a_zed", "a_yan"]),
-        PlanSection(heading="The road", entities=["a_gate", "a_guild", "a_road"])])
+        PlanSection(heading="The traveller", focus="Who the traveller is", entities=["a_zed", "a_yan"]),
+        PlanSection(heading="The road", focus="Where the road leads", entities=["a_gate", "a_guild", "a_road"])])
     answer, events = await run_scenario(config, Scripted(plan, planner=planner, tagged=True),
                                         "Tell me about the world.", depth="deep")
     types = [e["type"] for e in events]

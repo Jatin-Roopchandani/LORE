@@ -147,12 +147,14 @@ class Evidence:
 @dataclass(frozen=True)
 class SectionSpec:
     """How a deep answer's section is asked for (lore/query/deep.py): the
-    whole question it is a section of, how many claims it may keep, and how
-    its writer is told to size it ("section" or "overview")."""
+    whole question it is a section of, how many claims it may keep, how its
+    writer is told to size it ("section"), and the aspect of that question the
+    section answers (`focus`, "" when it has none)."""
 
     part_of: str
     max_claims: int
     length: str = "section"
+    focus: str = ""
 
 
 @dataclass(frozen=True)
@@ -225,16 +227,17 @@ class Answer:
     # Aspects of the question, inside a part the prose does answer, that the
     # facts do not cover (checked); shown with `unanswered` in one line.
     gaps: tuple[str, ...] = ()
-    # A deep answer (lore/query/deep.py): the cited overview, then the
-    # sections in order; `answer_style` is "sectioned". `requests` is the
-    # number of model requests the deep path made (planner, sections, overview).
+    # A deep answer (lore/query/deep.py): the sections in order; `answer_style`
+    # is "sectioned". `requests` is the number of model requests the deep path
+    # made (planner, sections, short answer).
     sections: tuple[AnswerSection, ...] = ()
-    overview: tuple[ProseSentence, ...] = ()
     requests: int = 0
-    # An interpretive answer opens with its short answer: one sentence per
-    # interpretive part (its reading, or code's "evidence did not support a
-    # clear position" line), each marked `short`. `prose` and the sections are
-    # the argument that follows. Empty for every other answer.
+    # A deep answer opens with its short answer, written after its sections: an
+    # interpretive question's one reading per interpretive part (or code's
+    # "evidence did not support a clear position" line), any other deep
+    # question's few checked fact sentences (or code's "no direct summary could
+    # be verified" line), each marked `short`. `prose` and the sections are the
+    # argument that follows. Empty for every other answer.
     short_answer: tuple[ProseSentence, ...] = ()
     # Sections of a sectioned answer that could not be written (failed or found
     # nothing); they are left out of `sections`, and this counts them.

@@ -75,18 +75,18 @@ test("compose and check run at the same time", () => {
 
 import * as deep from "./fixtures/deep";
 
-test("a deep answer builds the plan, sections, overview and live citations as events arrive", () => {
+test("a deep answer builds the plan, sections, short answer and live citations as events arrive", () => {
   let s = initialState("q");
   for (const e of [...deep.head, ...deep.sec0, deep.sec1[0], deep.sec1[1]]) s = askReducer(s, e);
   expect(s.plan?.sections.map((x) => x.heading)).toEqual(["The council", "The guild"]);
   expect(s.sections.map((x) => [x.index, x.state])).toEqual([[0, "done"], [1, "writing"]]);
   expect(s.liveClaims.map((c) => c.text)).toEqual(deep.claims.slice(0, 2).map((c) => c.text));
   expect(s.livePassages.map((p) => p.n)).toEqual([1]);
-  expect(s.overview).toBeNull();
+  expect(s.shortAnswer).toBeNull();
   expect(s.deepSteps.map((d) => [d.kind, d.part, d.state])).toEqual([["plan", null, "done"], ["section", 0, "done"], ["section", 1, "running"]]);
   expect(s.steps.find((x) => x.name === "split")!.state).toBe("done");
   for (const e of [deep.sec1[2], deep.sec1[3], ...deep.tail]) s = askReducer(s, e);
-  expect(s.overview?.length).toBe(1);
+  expect(s.shortAnswer?.length).toBe(1);
   expect(s.liveClaims).toHaveLength(3);
   expect(s.sections.map((x) => x.kind)).toEqual(["section", "section", "close"]);
   expect(s.status).toBe("done");
