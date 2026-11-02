@@ -13,30 +13,52 @@ function viewsOf(state: AskState): SectionView[] {
   if (state.sections.length) return state.sections.filter(written);
   return (state.result?.sections ?? []).map((s, index) => ({
     index, kind: s.kind, heading: s.heading, state: "done" as const, style: s.style, text: s.text, prose: s.prose,
-    claimsRange: s.claims_range, reason: null, group: s.group ?? "" }));
+    claimsRange: s.claims_range, reason: null, group: s.group ?? "", title: s.title ?? "" }));
 }
 
-function jump(e: React.MouseEvent<HTMLAnchorElement>, index: number) {
-  const target = document.getElementById(anchor(index));
+function jump(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
+  const target = document.getElementById(id);
   if (!target) return;
   e.preventDefault();
   target.scrollIntoView?.({ block: "start" });
-  const heading = target.querySelector<HTMLElement>("h3, h4");
+  const heading = /^H[1-6]$/.test(target.tagName) ? target : target.querySelector<HTMLElement>("h2, h3");
   heading?.focus({ preventScroll: true });
 }
 
-interface Entry { index: number; heading: string; group: string }
-
-// The contents list: consecutive entries of one part sit under that part's name.
-function contentsBlocks(entries: Entry[]): { group: string; items: Entry[] }[] {
-  const blocks: { group: string; items: Entry[] }[] = [];
-  for (const e of entries) {
-    const last = blocks[blocks.length - 1];
-    if (last && last.group === e.group && e.group) last.items.push(e);
-    else blocks.push({ group: e.group, items: [e] });
-  }
-  return blocks;
+export interface Entry { index: number; heading: string; title: string; group: string; kind: string }
+export interface Outline {
+  // With several parts, each top-level item is a part (its sections inside, numbered 1.1, 1.2) or a section on its
+  // own (a part answered whole, the closing section). With one part there is no part level: sections only, 1..N.
+  multi: boolean;
+  tops: { num: string; group: string; entry: Entry | null; items: { num: string; entry: Entry }[] }[];
 }
+
+// The contents' structure and numbers, from the entries in render order (hidden sections are already gone), so
+// the numbers are sequential with no gaps and no repeats.
+export function outline(entries: Entry[]): Outline {
+  const groups = new Set(entries.filter((e) => e.group).map((e) => e.group));
+  const loose = entries.some((e) => !e.group && e.kind !== "close");
+  const multi = groups.size >= 2 || (groups.size === 1 && loose);
+  const tops: Outline["tops"] = [];
+  if (!multi) {
+    entries.forEach((e, i) => tops.push({ num: String(i + 1), group: "", entry: e, items: [] }));
+    return { multi, tops };
+  }
+  for (const e of entries) {
+    const last = tops[tops.length - 1];
+    if (e.group && last && last.group === e.group) {
+      last.items.push({ num: `${last.num}.${last.items.length + 1}`, entry: e });
+    } else if (e.group) {
+      const num = String(tops.length + 1);
+      tops.push({ num, group: e.group, entry: null, items: [{ num: `${num}.1`, entry: e }] });
+    } else {
+      tops.push({ num: String(tops.length + 1), group: "", entry: e, items: [] });
+    }
+  }
+  return { multi, tops };
+}
+
+const partAnchor = (num: string) => `answer-part-${num}`;
 
 export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChunks: (chunks: string[]) => void }) {
   const source = citationSource(state);
@@ -49,17 +71,24 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
   const entries: Entry[] = [
     ...planned.map((p) => {
       const v = views.find((x) => x.index === p.index);
-      return { index: p.index, heading: v?.heading ?? p.heading, group: v?.group ?? p.group ?? "" };
+      return { index: p.index, heading: v?.heading || p.heading, title: v?.title || p.title || "",
+        group: v?.group || p.group || "", kind: v?.kind ?? "section" };
     }),
-    ...views.filter((v) => !planned.some((p) => p.index === v.index)).map((v) => ({ index: v.index, heading: v.heading, group: v.group })),
+    ...views.filter((v) => !planned.some((p) => p.index === v.index))
+      .map((v) => ({ index: v.index, heading: v.heading, title: v.title, group: v.group, kind: v.kind })),
   ].sort((a, b) => a.index - b.index);
+  const { multi, tops } = outline(entries);
+  const partNum = new Map(tops.filter((t) => t.group).map((t) => [t.group, t.num]));
+  const numOf = new Map<number, string>();
+  for (const t of tops) { if (t.entry) numOf.set(t.entry.index, t.num); for (const i of t.items) numOf.set(i.entry.index, i.num); }
   const overview = state.overview ?? state.result?.overview ?? null;
   const unwritten = unwrittenCount(state);
-  const item = (c: Entry) => (
-    <li key={c.index}>
+  const link = (c: Entry, num: string) => (
+    <li key={c.index} data-num={num}>
+      <span className="num">{num}</span>
       {started.has(c.index)
-        ? <a href={`#${anchor(c.index)}`} onClick={(e) => jump(e, c.index)}>{c.heading}</a>
-        : <span className="pending">{c.heading}</span>}
+        ? <a href={`#${anchor(c.index)}`} title={c.title || undefined} onClick={(e) => jump(e, anchor(c.index))}>{c.heading}</a>
+        : <span className="pending" title={c.title || undefined}>{c.heading}</span>}
     </li>
   );
   let lastGroup = "";
@@ -75,22 +104,37 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
         <nav className="contents" aria-labelledby="answer-contents">
           <p className="contents-title" id="answer-contents">{DEEP.contents}</p>
           <ol>
-            {contentsBlocks(entries).map((b) => b.group
-              ? <li key={`g${b.items[0].index}`} className="group"><span>{b.group}</span><ol>{b.items.map(item)}</ol></li>
-              : b.items.map(item))}
+            {tops.map((t) => t.entry
+              ? link(t.entry, t.num)
+              : (
+                <li key={`p${t.num}`} className="part" data-num={t.num}>
+                  <span className="num">{t.num}</span>
+                  {t.items.some((i) => started.has(i.entry.index))
+                    ? <a href={`#${partAnchor(t.num)}`} onClick={(e) => jump(e, partAnchor(t.num))}>{t.group}</a>
+                    : <span className="pending">{t.group}</span>}
+                  <ol>{t.items.map((i) => link(i.entry, i.num))}</ol>
+                </li>
+              ))}
           </ol>
         </nav>
       )}
       {views.map((v) => {
-        // A part's name heads its first section; its lens sections are one level down.
-        const heading = v.group !== lastGroup && v.group ? <h3 className="group-heading">{v.group}</h3> : null;
+        // With several parts, a part's name heads its first section (h2) and its sections are h3 below it; a part
+        // answered whole, or the closing section, is an h2 of its own. With one part there is no part heading.
+        const num = partNum.get(v.group);
+        const part = multi && v.group && v.group !== lastGroup && num
+          ? <h2 id={partAnchor(num)} className="part-heading" tabIndex={-1}>{v.group}</h2> : null;
         lastGroup = v.group;
-        const Heading = v.group ? "h4" : "h3";
+        const Heading = multi && !v.group ? "h2" : "h3";
+        const subtitle = v.title && !v.title.startsWith(v.heading.replace(/\u2026$/, "")) ? v.title : "";
         return (
           <Fragment key={v.index}>
-            {heading}
-            <section id={anchor(v.index)} className={`answer-section ${v.state}`} aria-labelledby={`${anchor(v.index)}-h`}>
-              <Heading id={`${anchor(v.index)}-h`} tabIndex={-1}>{v.heading}</Heading>
+            {part}
+            <section id={anchor(v.index)} className={`answer-section ${v.state}${Heading === "h2" ? " standalone" : ""}`}
+              aria-labelledby={`${anchor(v.index)}-h`} data-num={numOf.get(v.index)}>
+              <Heading id={`${anchor(v.index)}-h`} className={Heading === "h2" ? "part-heading section-heading" : "section-heading"}
+                tabIndex={-1} title={v.title || undefined}>{v.heading}</Heading>
+              {subtitle && <p className="section-question">{subtitle}</p>}
               {v.state === "writing" && <p className="writing" role="status">{DEEP.writing}</p>}
               {v.state === "skipped" && <p className="note">{DEEP.skipped[v.reason ?? "budget"]}</p>}
               {v.state === "done" && v.style === "claims" && (

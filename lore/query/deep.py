@@ -186,8 +186,14 @@ def clean_heading(text, limit: int = MAX_HEADING_CHARS) -> str:
     code, links, "#") removed, on one line, at most about `limit` characters.
     It is planner text, never a claim, so it is not trusted to be clean."""
     text = _LINK.sub(r"\1", str(text or ""))
-    text = _MARKUP.sub("", _CITATION.sub("", text))
-    return _one_line(text, limit).strip(" :.-")
+    text = " ".join(_MARKUP.sub("", _CITATION.sub("", text)).split())
+    if len(text) > limit:  # cut at a word boundary, never inside a word
+        cut = text[:limit + 1].rsplit(" ", 1)[0] if " " in text[:limit + 1] else text.split(" ", 1)[0]
+        if len(cut) > 2 * limit:  # one absurd unbroken string: the only case that is cut inside a word
+            cut = text[:limit]
+        text = cut.rstrip(" :;,.-\u2013\u2014") + "\u2026"
+        return text.lstrip(" :.-")
+    return text.strip(" :.-")
 
 
 def _counts(conn: sqlite3.Connection, sql: str, ids: Sequence[str]) -> dict[str, int]:
@@ -728,10 +734,19 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
 
 # --- an interpretive question: its own parts and lenses are the sections ---------------
 
-def lens_heading(question: str) -> str:
-    """A section's heading from its lens question: short and clean (clean_heading),
-    without the closing question mark."""
-    return clean_heading(question).rstrip("? ").strip() or str(question).strip()
+LABEL_CHARS = 48
+QUESTION_HEADING_CHARS = 60
+
+
+def lens_heading(question: str, label: str = "") -> str:
+    """A section's heading: the lens's short label when it has one, else the
+    question shortened at a word boundary (with an ellipsis), without its closing
+    question mark. Always clean_heading, so no markup, citation or half word."""
+    named = clean_heading(label, LABEL_CHARS).rstrip("? ").strip()
+    if named:
+        return named
+    asked = clean_heading(str(question or "").strip().rstrip("? "), QUESTION_HEADING_CHARS)
+    return asked or str(question).strip()
 
 
 def _renumber(prose: Sequence[ProseSentence], numbering: Mapping[int, int],
@@ -813,9 +828,11 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
     unwritten = len(retrieval) - len(planned)
     group_of = {ri: (plan[r.part].question if r.lens and len(plan) > 1 else "")
                 for ri, r in enumerate(retrieval)}
-    headings = {ri: lens_heading(retrieval[ri].question) for ri in planned}
+    headings = {ri: lens_heading(retrieval[ri].question, retrieval[ri].label) for ri in planned}
+    titles = {ri: retrieval[ri].question for ri in planned}  # the full lens question, for a tooltip
     emit(on_event, "plan", scope="", candidates=0,
-         sections=[{"index": ri, "heading": headings[ri], "group": group_of[ri], "entities": []}
+         sections=[{"index": ri, "heading": headings[ri], "group": group_of[ri],
+                    "title": titles[ri], "entities": []}
                    for ri in planned])
     by_n = {p.n: p for p in evidence.passages}
     sent: set[int] = set()
@@ -850,7 +867,8 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
                  reason=reason)
             continue
         emit(on_event, "step", name="section", state="start", part=ri, detail=None)
-        emit(on_event, "section", index=ri, state="start", kind="section", heading=heading)
+        emit(on_event, "section", index=ri, state="start", kind="section", heading=heading,
+             group=group_of[ri], title=titles[ri])
         owned = [final[n - 1] for n in mine]
         served = plan[retrieval[ri].part].question
         lens = retrieval[ri].question
@@ -874,12 +892,12 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
         else:
             prose_of, text, style = (), _compose(owned), "claims"
         result = AnswerSection(heading=heading, prose=prose_of, text=text, claims_start=start,
-                               claims_end=mine[-1], style=style, group=group_of[ri],
+                               claims_end=mine[-1], style=style, group=group_of[ri], title=titles[ri],
                                note=None if got else PROSE_FALLBACK_NOTE)
         sections.append(result)
         emit(on_event, "section", **_section_event(ri, "section", result, heading, owned,
                                                    fresh(mine), style),
-             group=group_of[ri])
+             group=group_of[ri], title=titles[ri])
         emit(on_event, "step", name="section", state="done", part=ri, detail=f"{len(owned)} claims")
     if not sections and not not_written:
         if failures:

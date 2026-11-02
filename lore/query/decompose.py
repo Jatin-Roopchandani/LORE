@@ -83,8 +83,12 @@ _KIND_RULE = """- "kind": how the part can be answered.
     the real world, or events outside the text.
   When unsure, use "factual".
 - "lenses": for an "interpretive" part only (otherwise an empty list), up to
-  4 aspects of the story that would decide the part, each written as a
-  self-contained question the text itself can answer.
+  4 aspects of the story that would decide the part. Each lens is an object
+  with a "question" and a "label".
+  - "question": a self-contained question the text itself can answer.
+  - "label": a short noun phrase of at most 6 words that names the aspect, to
+    head a section (not a question, no trailing punctuation, and no claim
+    about the answer).
   - Together the lenses must cover opposing sides of the part.
   - Each lens is concrete: what happens, what characters do, choose, hide or
     change, what is said, and how it ends.
@@ -110,6 +114,18 @@ def _text(value: Any) -> str:
     return value if isinstance(value, str) else ""
 
 
+class LensSpec(BaseModel):
+    """One lens as the model returns it: its question and a short label."""
+
+    question: str = ""
+    label: str = ""
+
+    @field_validator("question", "label", mode="before")
+    @classmethod
+    def _as_text(cls, value: Any) -> str:
+        return _text(value)
+
+
 class PartSpec(BaseModel):
     """One part as the model returns it. Every field is read tolerantly: a
     value of the wrong type becomes its default, so one bad field costs that
@@ -117,7 +133,7 @@ class PartSpec(BaseModel):
 
     question: str
     kind: str = Field(default="factual", description="factual, interpretive or beyond")
-    lenses: list[str] = Field(default_factory=list)
+    lenses: list[LensSpec] = Field(default_factory=list)
 
     @field_validator("question", "kind", mode="before")
     @classmethod
@@ -126,8 +142,12 @@ class PartSpec(BaseModel):
 
     @field_validator("lenses", mode="before")
     @classmethod
-    def _as_list(cls, value: Any) -> list[str]:
-        return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+    def _as_list(cls, value: Any) -> list:
+        # A lens is a bare question or {question, label}; anything else is dropped.
+        if not isinstance(value, list):
+            return []
+        return [{"question": v} if isinstance(v, str) else v
+                for v in value if isinstance(v, (str, dict, LensSpec))]
 
 
 class Decomposition(BaseModel):
@@ -157,6 +177,8 @@ class Part:
     question: str
     kind: str = "factual"
     lenses: tuple[str, ...] = ()
+    # A short heading per lens, parallel to `lenses` ("" when the model gave none).
+    labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -196,15 +218,17 @@ def _part(spec: PartSpec) -> Part | None:
     if kind not in KINDS:
         kind = "factual"
     lenses: list[str] = []
+    labels: list[str] = []
     if kind == "interpretive":
-        for lens in spec.lenses:
-            lens = _clean(lens)
+        for item in spec.lenses:
+            lens = _clean(item.question)
             if lens and lens != text and lens not in lenses:
                 lenses.append(lens)
-        lenses = lenses[:MAX_LENSES]
+                labels.append(_clean(item.label))
+        lenses, labels = lenses[:MAX_LENSES], labels[:MAX_LENSES]
         if not lenses:  # nothing to gather evidence by: answer it as today
             kind = "factual"
-    return Part(text, kind, tuple(lenses))
+    return Part(text, kind, tuple(lenses), tuple(labels) if any(labels) else ())
 
 
 async def plan(
@@ -256,6 +280,7 @@ class RetrievalPart:
     question: str
     part: int
     lens: bool = False
+    label: str = ""  # the lens's short heading, "" when it has none
 
 
 def retrieval_parts(parts: Sequence[Part], max_parts: int = MAX_PARTS) -> list[RetrievalPart]:
@@ -266,7 +291,8 @@ def retrieval_parts(parts: Sequence[Part], max_parts: int = MAX_PARTS) -> list[R
     whichever part has the most (the later one on a tie), one at a time, never below one lens each.
     Parts are never dropped. A repeated question is retrieved once.
     """
-    kept = {i: list(part.lenses) for i, part in enumerate(parts) if part.kind == "interpretive"}
+    kept = {i: list(zip(part.lenses, part.labels or ("",) * len(part.lenses)))
+            for i, part in enumerate(parts) if part.kind == "interpretive"}
     plain = len(parts) - len(kept)
     while plain + sum(map(len, kept.values())) > max_parts:
         widest = max(kept, key=lambda i: (len(kept[i]), i), default=None)
@@ -275,10 +301,10 @@ def retrieval_parts(parts: Sequence[Part], max_parts: int = MAX_PARTS) -> list[R
         kept[widest].pop()
     out: list[RetrievalPart] = []
     for i, part in enumerate(parts):
-        for text, lens in (((lens, True) for lens in kept[i]) if i in kept
-                           else [(part.question, False)]):
+        for text, lens, label in (((t, True, lb) for t, lb in kept[i]) if i in kept
+                                  else [(part.question, False, "")]):
             if not any(r.question == text for r in out):
-                out.append(RetrievalPart(text, i, lens))
+                out.append(RetrievalPart(text, i, lens, label))
     return out
 
 

@@ -68,21 +68,62 @@ test("the facts-only fallback also opens with the short answer when there is one
 
 // ---- B. sections follow the question's own structure ------------------------------------------
 
-test("sections are grouped under their part, and the contents list is too", () => {
+test("with several parts, each part is an h2 and its sections h3 beneath it, in a nested contents list", () => {
   const { container } = view(lens.full);
   const nav = screen.getByRole("navigation", { name: DEEP.contents });
-  const groups = [...nav.querySelectorAll("li.group > span")].map((n) => n.textContent);
-  expect(groups).toEqual([lens.PART_A, lens.PART_B]);   // each part with a section written, even if only one
-  const heads = [...container.querySelectorAll(".sectioned h3.group-heading")].map((n) => n.textContent);
-  expect(heads).toEqual([lens.PART_A, lens.PART_B]);
-  expect(screen.getByRole("heading", { name: "What did Rin risk", level: 4 })).toBeInTheDocument();
+  const parts = [...nav.querySelectorAll(":scope > ol > li.part")];
+  expect(parts.map((li) => li.querySelector(":scope > a")?.textContent)).toEqual([lens.PART_A, lens.PART_B]);
+  const h2 = [...container.querySelectorAll(".sectioned h2.part-heading")].map((n) => n.textContent);
+  expect(h2).toEqual([lens.PART_A, lens.PART_B, "Counter-case and limits"]);
+  expect(screen.getByRole("heading", { name: "What did Rin risk", level: 3 })).toHaveClass("section-heading");
+  expect(container.querySelector(".group-heading")).toBeNull();
 });
 
-test("a question with one part shows plain section headings and no group heading", () => {
-  const events = lens.full.map((e) => e.type === "section" || e.type === "plan" ? JSON.parse(JSON.stringify(e).replaceAll(lens.PART_A, "").replaceAll(lens.PART_B, "")) : e);
-  const { container } = view(events);
-  expect(container.querySelector(".group-heading")).toBeNull();
+test("the contents numbers parts 1, 2, ... and their sections 1.1, 2.1, with none repeated or skipped", () => {
+  view(lens.full);   // a failed and an empty section are hidden: no gap where they were
+  const nav = screen.getByRole("navigation", { name: DEEP.contents });
+  const nums = [...nav.querySelectorAll("li > .num")].map((n) => n.textContent);
+  expect(nums).toEqual(["1", "1.1", "2", "2.1", "3"]);
+  expect(new Set(nums).size).toBe(nums.length);
+  expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(
+    [lens.PART_A, "What did Rin risk", lens.PART_B, "Who stood by Tam", "Counter-case and limits"]);
+});
+
+test("every contents entry is a link to an anchor that exists", () => {
+  const { container } = view(lens.full);
+  const nav = screen.getByRole("navigation", { name: DEEP.contents });
+  for (const a of within(nav).getAllByRole("link")) {
+    const id = a.getAttribute("href")!.slice(1);
+    expect(container.querySelector(`#${id}`), id).not.toBeNull();
+  }
+  expect(nav.querySelectorAll("li > .pending")).toHaveLength(0);
+});
+
+const oneGroup = (events: AskEvent[]) => events.map((e) => e.type === "section" || e.type === "plan"
+  ? JSON.parse(JSON.stringify(e).replaceAll(lens.PART_A, "").replaceAll(lens.PART_B, "")) as AskEvent : e);
+
+test("a question with one part has no part heading and the contents lists only its sections, 1..N", () => {
+  const { container } = view(oneGroup(lens.full));
+  expect(container.querySelector(".part-heading")).toBeNull();
+  expect(container.querySelector(".sectioned h2")).toBeNull();
+  const nav = screen.getByRole("navigation", { name: DEEP.contents });
+  expect(nav.querySelectorAll("li.part")).toHaveLength(0);
+  expect([...nav.querySelectorAll("li > .num")].map((n) => n.textContent)).toEqual(["1", "2", "3"]);
   expect(screen.getByRole("heading", { name: "What did Rin risk", level: 3 })).toBeInTheDocument();
+  for (const a of within(nav).getAllByRole("link")) expect(container.querySelector(a.getAttribute("href")!)).not.toBeNull();
+});
+
+test("a section heading carries its full lens question as a tooltip, and as a subtitle when the heading is a label", () => {
+  const { container } = view(lens.full);
+  const head = screen.getByRole("heading", { name: "What did Rin risk", level: 3 });
+  expect(head).toHaveAttribute("title", lens.TITLE_0);
+  // The heading is the start of the question, so no subtitle repeats it.
+  expect(container.querySelector(".section-question")).toBeNull();
+  const labelled = lens.full.map((e) => e.type === "section" || e.type === "plan"
+    ? JSON.parse(JSON.stringify(e).replaceAll('"What did Rin risk"', '"Risks he ran"')) as AskEvent : e);
+  const again = render(<ChatPane ask={askWith(labelled)} showInternals onHoverChunks={() => {}} />);
+  expect(again.container.querySelector(".section-question")?.textContent).toBe(lens.TITLE_0);
+  expect(within(again.container as HTMLElement).getByRole("heading", { name: "Risks he ran", level: 3 })).toHaveAttribute("title", lens.TITLE_0);
 });
 
 // ---- D. failed and empty sections are hidden, and counted ----------------------------------------
@@ -93,7 +134,7 @@ test("a failed or empty section is in neither the contents nor the body", () => 
   expect(screen.queryByText("Who stood by Rin")).toBeNull();
   expect(screen.queryByText(/couldn.t be written\.$/)).toBeNull();     // no per-section failure line
   const nav = screen.getByRole("navigation", { name: DEEP.contents });
-  expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual(["What did Rin risk", "Who stood by Tam", "Counter-case and limits"]);
+  expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toEqual([lens.PART_A, "What did Rin risk", lens.PART_B, "Who stood by Tam", "Counter-case and limits"]);
   expect(container.querySelectorAll("section.answer-section")).toHaveLength(3);
 });
 

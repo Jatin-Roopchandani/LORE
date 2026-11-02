@@ -689,3 +689,30 @@ async def test_the_real_search_stops_sections_when_the_ledger_is_spent(config, m
     result = await tools.lore_search(config, GENERAL, world=ALPHA)
     assert [s["heading"] for s in result["sections"]] == ["The traveller"]
     assert "not written: The road" in result["note"]
+
+
+# --- headings are never cut inside a word -------------------------------------------
+
+def test_clean_heading_cuts_at_a_word_boundary_with_an_ellipsis():
+    q = "What specific examples of evidence does the detective collect and how does She reason about it"
+    for limit in (20, 33, 40, 66, 80):
+        got = deep.clean_heading(q, limit)
+        assert got.endswith("…") and len(got) <= limit + 1
+        assert q.startswith(got[:-1]) and (q[len(got) - 1] == " ")
+        assert got[:-1].split()[-1] in q.split()
+
+
+def test_clean_heading_keeps_a_short_heading_and_a_long_single_word_whole():
+    assert deep.clean_heading("Evidence he collects") == "Evidence he collects"
+    assert deep.clean_heading("Supercalifragilistic and more", 12) == "Supercalifragilistic…"
+    assert deep.clean_heading("a, b: c" * 30, 20).endswith("…")
+
+
+def test_lens_heading_prefers_the_label_and_falls_back_to_the_question():
+    q = "What specific examples of evidence does the detective collect and how does he reason?"
+    assert deep.lens_heading(q, "Evidence he collects") == "Evidence he collects"
+    fallback = deep.lens_heading(q)
+    assert fallback.endswith("…") and not fallback.endswith("?")
+    assert q.startswith(fallback[:-1]) and q[len(fallback) - 1] == " "
+    assert deep.lens_heading("Who stood by Rin?") == "Who stood by Rin"
+    assert deep.lens_heading("Who?", "[3] **Allies**") == "Allies"

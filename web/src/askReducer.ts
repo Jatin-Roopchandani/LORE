@@ -11,7 +11,9 @@ export interface SectionView { index: number; kind: "section" | "close"; heading
   state: "writing" | "done" | "skipped" | "failed" | "empty"; style: "prose" | "claims" | null;
   text: string; prose: ProseSentence[]; claimsRange: [number, number] | null; reason: "budget" | "reserve" | null;
   // The interpretive part this lens section is grouped under ("" for none).
-  group: string }
+  group: string;
+  // The full lens question this section answers; the heading is a short label ("" for none).
+  title: string }
 export interface PartEdges { template: string | null; total: number; edges: Edge[] }
 export interface AskState {
   status: "idle" | "running" | "done" | "error" | "interrupted";
@@ -69,8 +71,8 @@ function deepStep(s: AskState, event: Extract<AskEvent, { type: "step" }>): AskS
 function section(s: AskState, e: SectionEvent): AskState {
   const prev = s.sections.find((x) => x.index === e.index);
   const base: SectionView = prev ?? { index: e.index, kind: e.kind, heading: e.heading, state: "writing", style: null,
-    text: "", prose: [], claimsRange: null, reason: null, group: e.group ?? "" };
-  let view: SectionView = { ...base, kind: e.kind, heading: e.heading, group: e.group ?? base.group };
+    text: "", prose: [], claimsRange: null, reason: null, group: e.group ?? "", title: e.title ?? "" };
+  let view: SectionView = { ...base, kind: e.kind, heading: e.heading, group: e.group ?? base.group, title: e.title ?? base.title };
   let deepSteps = s.deepSteps;
   let liveClaims = s.liveClaims;
   let livePassages = s.livePassages;

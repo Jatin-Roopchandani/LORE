@@ -176,6 +176,8 @@ class AnswerSection:
     # The interpretive part this section's lens belongs to, named only when a
     # question has several parts; "" otherwise.
     group: str = ""
+    # The full question a lens section answers (its heading is a short label); "" otherwise.
+    title: str = ""
 
 
 @dataclass(frozen=True)

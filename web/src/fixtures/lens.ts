@@ -43,17 +43,20 @@ export const head: AskEvent[] = [
   { type: "seeds", t: 0.9, part: 3, entities: [seed("joss", "Joss")] },
   { type: "evidence", t: 1.0, chunk_ids: ["c1", "c2", "c3", "c4"], edge_keys: [] },
 ];
+// The full lens question behind the first section's short heading.
+export const TITLE_0 = "What did Rin risk by crossing the pass in winter?";
 export const plan: AskEvent = { type: "plan", t: 2, scope: "", candidates: 0, sections: [
-  { index: 0, heading: "What did Rin risk", group: PART_A, entities: [] },
+  { index: 0, heading: "What did Rin risk", title: TITLE_0, group: PART_A, entities: [] },
   { index: 1, heading: "What did Tam refuse", group: PART_A, entities: [] },
   { index: 2, heading: "Who stood by Rin", group: PART_B, entities: [] },
   { index: 3, heading: "Who stood by Tam", group: PART_B, entities: [] }] };
 export const shortEvent = (prose: ProseSentence[]): AskEvent =>
   ({ type: "short_answer", t: 3, prose, text: "", claims, passages });
-const startOf = (index: number, heading: string): AskEvent => ({ type: "section", t: 4, index, state: "start", kind: "section", heading });
+const startOf = (index: number, heading: string): AskEvent => ({ type: "section", t: 4, index, state: "start", kind: "section", heading,
+  ...(index === 0 ? { title: TITLE_0 } : {}) } as AskEvent);
 const doneOf = (index: number, heading: string, group: string, prose: ProseSentence[], range: [number, number], extra = {}): AskEvent =>
   ({ type: "section", t: 5, index, state: "done", kind: "section", heading, style: "prose", text: "", prose,
-    claims: claims.slice(range[0] - 1, range[1]), claims_range: range, passages: [], note: null, group, ...extra } as AskEvent);
+    claims: claims.slice(range[0] - 1, range[1]), claims_range: range, passages: [], note: null, group, ...(index === 0 ? { title: TITLE_0 } : {}), ...extra } as AskEvent);
 export const sec = {
   0: [step(4, "section", "start", 0), startOf(0, "What did Rin risk"),
     doneOf(0, "What did Rin risk", PART_A, [sent("Rin crossed the pass in winter.", [1], [1])], [1, 1]), step(5, "section", "done", 0, "1 claims")],

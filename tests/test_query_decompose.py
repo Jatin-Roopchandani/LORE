@@ -251,10 +251,12 @@ async def test_parts_still_capped_at_four_and_a_blank_part_is_dropped() -> None:
 
 def test_the_schema_reaches_the_model_as_plain_strings() -> None:
     """Gemini sees the JSON schema: kind and depth are strings (a bad value is
-    ours to repair, not a validation failure), the lenses a list of strings."""
+    ours to repair, not a validation failure), each lens a question and a label, both strings."""
     props = Decomposition.model_json_schema()["$defs"]["PartSpec"]["properties"]
     assert props["kind"]["type"] == "string" and props["question"]["type"] == "string"
-    assert props["lenses"]["items"] == {"type": "string"}
+    assert props["lenses"]["items"] == {"$ref": "#/$defs/LensSpec"}
+    lens = Decomposition.model_json_schema()["$defs"]["LensSpec"]["properties"]
+    assert lens["question"]["type"] == "string" and lens["label"]["type"] == "string"
     assert Decomposition.model_json_schema()["properties"]["depth"]["type"] == "string"
 
 
@@ -309,3 +311,38 @@ def test_a_repeated_retrieval_question_is_kept_once() -> None:
 
 def test_under_budget_nothing_is_trimmed() -> None:
     assert len(retrieval_parts([_interp("A", 4), Part("B?")])) == 5
+
+
+# --- lens labels --------------------------------------------------------------------
+
+async def test_a_lens_carries_its_short_label_parallel_to_its_question() -> None:
+    raw = {"sub_questions": [{"question": "Was it right?", "kind": "interpretive", "lenses": [
+        {"question": "What evidence did he collect?", "label": " Evidence  he collects "},
+        {"question": "How did he explain it?", "label": "How he explains it"}]}]}
+    got = await plan("q", _returning(Decomposition.model_validate(raw)))
+    assert got.parts[0].lenses == ("What evidence did he collect?", "How did he explain it?")
+    assert got.parts[0].labels == ("Evidence he collects", "How he explains it")
+    rp = retrieval_parts(got.parts)
+    assert [r.label for r in rp] == ["Evidence he collects", "How he explains it"]
+
+
+async def test_a_missing_or_bad_label_is_empty_and_a_bare_lens_string_still_works() -> None:
+    raw = {"sub_questions": [{"question": "Was it right?", "kind": "interpretive", "lenses": [
+        "A bare lens?", {"question": "No label?"}, {"question": "Bad label?", "label": 5},
+        {"label": "no question"}, 7]}]}
+    got = await plan("q", _returning(Decomposition.model_validate(raw)))
+    assert got.parts[0].lenses == ("A bare lens?", "No label?", "Bad label?")
+    assert got.parts[0].labels == ()
+    assert [r.label for r in retrieval_parts(got.parts)] == ["", "", ""]
+
+
+def test_the_prompt_asks_for_a_short_label_without_a_name_or_a_book() -> None:
+    prompt = " ".join(decomposition_prompt("q?").split())
+    if "label" in prompt:
+        assert "at most 6 words" in prompt
+
+
+def test_the_label_rule_is_in_the_kind_rule_covered_by_the_banned_word_tests() -> None:
+    from tests.test_query_synthesize import _new_prompt_texts
+    assert '"label"' in decompose_module._KIND_RULE
+    assert decompose_module._KIND_RULE in _new_prompt_texts()

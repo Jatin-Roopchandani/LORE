@@ -181,6 +181,22 @@ async def test_the_heading_is_the_lens_question_cleaned_and_a_part_is_named_when
     assert [(x["index"], x["group"]) for x in plan_event["sections"]][-1] == (3, "In the second volume, who walked best?")
 
 
+async def test_a_lens_label_heads_the_section_and_the_full_question_rides_along_as_its_title(config):
+    plan = Decomposition(sub_questions=[PartSpec(
+        question=QUESTION, kind="interpretive",
+        lenses=[{"question": LENS_A, "label": "What Zed did"}, {"question": LENS_B}])], depth="deep")
+    answer, events = await ask(config, LensModels(plan, READING, quotes=QUOTE_OF))
+    one, two, close = answer.sections
+    assert (one.heading, one.title) == ("What Zed did", LENS_A)
+    assert (two.heading, two.title) == ("How did the road end for Zed Quill", LENS_B)  # no label: the question
+    assert close.title == ""
+    (plan_event,) = of(events, "plan")
+    assert [(x["heading"], x["title"]) for x in plan_event["sections"]] == [
+        ("What Zed did", LENS_A), ("How did the road end for Zed Quill", LENS_B)]
+    done = [e for e in of(events, "section") if e["state"] == "done" and e["kind"] == "section"]
+    assert [e["title"] for e in done] == [LENS_A, LENS_B]
+
+
 async def test_a_single_part_names_no_group(config):
     answer, _ = await ask(config, LensModels(ONE_PART, READING, quotes=QUOTE_OF))
     assert [s.group for s in answer.sections] == ["", "", ""]

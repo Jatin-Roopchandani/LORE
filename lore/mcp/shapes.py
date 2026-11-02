@@ -116,6 +116,8 @@ class SectionOut(BaseModel):
     note: str | None = None
     # The interpretive part this section's lens belongs to ("" unless the question has several parts).
     group: str = ""
+    # The full question a lens section answers (its heading is a short label); "" otherwise.
+    title: str = ""
 
 
 class SearchResult(BaseModel):
@@ -294,7 +296,7 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
             prose=[_prose_out(s) for s in x.prose],
             claims_range=([x.claims_start, x.claims_end]
                           if x.claims_end >= x.claims_start else None),
-            entities=list(x.entities), note=x.note, group=x.group) for x in answer.sections],
+            entities=list(x.entities), note=x.note, group=x.group, title=x.title) for x in answer.sections],
         requests=answer.requests,
         short_answer=[_prose_out(s) for s in answer.short_answer],
         unwritten_sections=answer.unwritten,
