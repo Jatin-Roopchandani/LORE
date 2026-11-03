@@ -899,7 +899,7 @@ def test_the_filter_keeps_only_claims_no_earlier_section_states():
     keep = deep._unseen(reg)
     same = Claim(text="Mara forged the seal secretly in the night.", passage=1,
                  quote="forged the seal in secret")
-    other_passage = Claim(text="Mara forged the seal in secret.", passage=2, quote="forged the seal in secret")
+    other_passage = Claim(text="Mara forged the seal in secret.", passage=2, quote="she forged it in the dark")
     other_fact = Claim(text="The gate was shut at dusk.", passage=1, quote="the gate was shut at dusk")
     got = keep([same, other_passage, other_fact],
                [p, Passage(n=2, chunk_id="c2", book_id="b", chapter_seq=1, text="y")])
@@ -930,3 +930,59 @@ def test_planned_sections_with_near_identical_focus_merge():
 
 def test_the_planner_is_told_no_two_sections_cover_one_aspect():
     assert "No two sections may cover the same aspect" in " ".join(deep.PLANNER_PROMPT.split())
+
+
+# ---- a section writes up and cites only the claims it introduces -------------------------------
+
+SAME_ENTITY = DeepPlan(sections=[
+    PlanSection(heading="First aspect", focus="How the first thing works", entities=["a_zed"]),
+    PlanSection(heading="Second aspect", focus="Why the second thing matters", entities=["a_zed"])])
+
+
+async def test_an_identical_claim_found_by_two_sections_is_written_only_by_the_first(config):
+    scripted = deep_models(SAME_ENTITY, restate=True)  # both sections find the very same claims
+    answer, events = await ask(config, scripted)
+    cited = [[k for s in sec.prose for k in s.claims] for sec in answer.sections]
+    assert len(answer.sections) == 1 and answer.unwritten == 0
+    assert len({(c.passage, c.quote) for c in answer.claims}) == len(answer.claims)
+    assert cited and all(a.claims_start <= k <= a.claims_end
+                         for a, ks in zip(answer.sections, cited) for k in ks)
+
+
+def test_the_very_same_claim_found_in_another_copy_of_the_passage_is_not_new():
+    from lore.query.models import Claim, Passage
+    reg = deep.Registry()
+    p1 = Passage(n=1, chunk_id="c1", book_id="b", chapter_seq=1, text="x")
+    reg.add([Claim(text="Mara forged the seal.", passage=1, quote="forged the seal in secret")], {1: p1})
+    p2 = Passage(n=1, chunk_id="c2", book_id="b", chapter_seq=2, text="y")
+    again = Claim(text="Mara forged the seal.", passage=1, quote="forged the seal in secret")
+    other = Claim(text="Mara forged the seal.", passage=1, quote="a quite different line here")
+    assert deep._unseen(reg)([again, other], [p2]) == [other]
+
+
+def _sentence(text, *claims):
+    from lore.query.write import ProseSentence
+    return ProseSentence(text=text, claims=tuple(claims), passages=tuple(sorted({1 for _ in claims})))
+
+
+def test_a_citation_of_an_earlier_sections_claim_is_dropped_and_a_sentence_left_bare_goes():
+    from lore.query.models import Claim
+    claims = [Claim(text=f"Fact {i}.", passage=1, quote=f"quote number {i}") for i in range(1, 6)]
+    prose = (_sentence("Both.", 2, 4), _sentence("Earlier only.", 1), _sentence("Own.", 4, 5),
+             _sentence("By code."))
+    got = deep.keep_own(prose, 4, 5, claims)
+    assert [(s.text, s.claims) for s in got] == [("Both.", (4,)), ("Own.", (4, 5)), ("By code.", ())]
+
+
+async def test_a_section_writer_citing_an_earlier_sections_claim_is_cut_back_to_its_own(config, monkeypatch):
+    real = deep.remap_prose
+
+    def greedy(prose, offset, claims):
+        out = real(prose, offset, claims)
+        return out + (_sentence("Repeats an earlier fact.", 1),) if offset else out
+    monkeypatch.setattr(deep, "remap_prose", greedy)
+    answer, _ = await ask(config, deep_models(TWO))
+    second = answer.sections[1]
+    assert all(second.claims_start <= k <= second.claims_end for s in second.prose for k in s.claims)
+    assert "Repeats an earlier fact." not in second.text
+

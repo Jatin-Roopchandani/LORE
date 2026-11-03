@@ -64,7 +64,7 @@ from lore.query.seed import _entities, named_seeds
 from lore.query.subgraph import assemble_ranked, relevance, run_template
 from lore.query.synthesize import (
     CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _content_words, _finish, _numbers,
-    _overlap, _same_evidence, check_answer, shaped_claims, synthesize,
+    _normalise, _overlap, _same_evidence, check_answer, shaped_claims, synthesize,
 )
 from lore.query.viewpoint import load_viewpoint
 from lore.query.write import assemble, compose_sections, compose_text, split_items, verify_prose, write_answer
@@ -626,6 +626,8 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
     local = {p.n: p for p in evidence.passages}
     claims, offset, added = registry.add(answer.claims, local)
     prose = remap_prose(answer.prose, offset, registry.claims) if answer.prose else ()
+    if prose:  # a section cites only the claims it introduces
+        prose = keep_own(prose, offset + 1, offset + len(claims), registry.claims)
     if prose:
         text, style = compose_text(prose, answer.unanswered, answer.gaps), "prose"
     else:
@@ -929,8 +931,27 @@ SAME_FACT_OVERLAP = 0.3
 
 
 def _same_fact(a: Claim, b: Claim) -> bool:
+    if _normalise(a.text) == _normalise(b.text) and _normalise(a.quote) == _normalise(b.quote):
+        return True  # the very same claim, whichever copy of the passage it was found in
     return (_same_evidence(a, b) and _numbers(a.text) == _numbers(b.text)
             and _overlap(a.text, b.text) >= SAME_FACT_OVERLAP)
+
+
+def keep_own(prose: Sequence[ProseSentence], first: int, last: int,
+             claims: Sequence[Claim]) -> tuple[ProseSentence, ...]:
+    """`prose` (the answer's numbering) limited to the claims `first`..`last`, the ones
+    its section introduced: a citation of any other claim is dropped, and a sentence left
+    with no citation is dropped with it. Code-written sentences (no claims) stay."""
+    out = []
+    for s in prose:
+        mine = tuple(k for k in s.claims if first <= k <= last)
+        if s.claims and not mine:
+            continue
+        if mine != s.claims:
+            s = replace(s, claims=mine, passages=tuple(sorted(
+                {claims[k - 1].passage for k in mine if 1 <= k <= len(claims)})))
+        out.append(s)
+    return tuple(out)
 
 
 def assign_sections(claims: Sequence[Claim], found: Sequence[frozenset[int]],
@@ -1105,7 +1126,7 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
             continue
         start = mine[0]
         if got:
-            prose_of = remap_prose(got, start - 1, final)
+            prose_of = keep_own(remap_prose(got, start - 1, final), start, mine[-1], final)
             text, style = compose_text(prose_of), "prose"
         else:
             prose_of, text, style = (), _compose(owned), "claims"
