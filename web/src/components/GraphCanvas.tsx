@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import Graph from "graphology";
 import Sigma from "sigma";
+import { nearestEdge } from "../edgePick";
 import { createNodeBorderProgram } from "@sigma/node-border";
 import { nodeLabel, type GraphView } from "../graphView";
 import { worldSlot } from "../worlds";
@@ -146,6 +147,37 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       const g = graph.current;
       if (g.hasEdge(edge)) edgeClick.current?.(g.source(edge), g.target(edge));
     });
+    // Near-miss clicks and hovers: pick the closest edge within EDGE_PICK_PX.
+    const near = (x: number, y: number): string | null => {
+      const s = sigma.current;
+      if (!s) return null;
+      const g = graph.current;
+      const at = (n: string) => { const d = s.getNodeDisplayData(n); return d ? s.framedGraphToViewport({ x: d.x, y: d.y }) : null; };
+      const edges: { id: string; a: { x: number; y: number }; b: { x: number; y: number } }[] = [];
+      g.forEachEdge((id, _attrs, src, tgt) => {
+        if (g.getEdgeAttribute(id, "hidden")) return;
+        const a = at(src), b = at(tgt);
+        if (a && b) edges.push({ id, a, b });
+      });
+      return nearestEdge(x, y, edges);
+    };
+    let hovered: string | null = null;
+    let hoveredSize = 0;
+    const setHover = (edge: string | null) => {
+      const g = graph.current;
+      if (hovered === edge) return;
+      if (hovered && g.hasEdge(hovered)) g.setEdgeAttribute(hovered, "size", hoveredSize);
+      hovered = edge && g.hasEdge(edge) ? edge : null;
+      if (hovered) { hoveredSize = g.getEdgeAttribute(hovered, "size") ?? 1.4; g.setEdgeAttribute(hovered, "size", hoveredSize + 2.5); }
+      if (box.current) box.current.style.cursor = hovered ? "pointer" : "";
+    };
+    sigma.current.on("clickStage", ({ event }) => {
+      const edge = near(event.x, event.y);
+      const g = graph.current;
+      if (edge && g.hasEdge(edge)) edgeClick.current?.(g.source(edge), g.target(edge));
+    });
+    sigma.current.on("moveBody", ({ event }) => setHover(near(event.x, event.y)));
+    sigma.current.on("enterNode", () => setHover(null));
     paint();
     const obs = new MutationObserver(paint);
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
