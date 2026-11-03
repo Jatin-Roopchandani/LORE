@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, isError } from "../api";
 import { HISTORY, LIBRARY } from "../messages";
-import { applyTheme, isDark } from "../theme";
 import type { Book, Quota, World } from "../types";
 import { AddBookDialog } from "./AddBookDialog";
 import { LibraryPanel } from "./LibraryPanel";
@@ -9,6 +8,7 @@ import { BooksDropdown } from "./BooksDropdown";
 import { QuotaChip } from "./QuotaChip";
 import { WorldSelector } from "./WorldSelector";
 import { SettingsMenu } from "./SettingsMenu";
+import { ThemeMenu } from "./ThemeMenu";
 
 export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange, historyOpen = false, onToggleHistory }:
   { books: Book[]; hiddenBooks: Set<string>; onBooksChange: (s: Set<string>) => void; showInternals: boolean; refreshKey: number;
@@ -31,7 +31,7 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
         <button className="tbtn" type="button" onClick={() => setLibrary(true)}>{LIBRARY.open}</button>
         <button className="tbtn primary" type="button" onClick={() => setAdding(true)}>+ Add book</button>
         <QuotaChip quota={quota} showInternals={showInternals} />
-        <button className="tbtn icon" type="button" aria-label="Switch light or dark" onClick={() => applyTheme(isDark() ? "light" : "dark")}>◐</button>
+        <ThemeMenu />
         <SettingsMenu showInternals={showInternals} />
       </div>
       <LibraryPanel open={library} onClose={() => setLibrary(false)} showInternals={showInternals} onChange={onLibraryChange} />
@@ -41,7 +41,7 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
 }
 
 // The LORE mark: an open book whose spine fans out into a small graph, one node
-// glowing. Colours come from the theme, so it follows light and dark mode.
+// glowing. Colours come from the theme, so it follows the chosen theme.
 function LoreMark() {
   return (
     <svg className="mark-icon" viewBox="0 0 64 64" aria-hidden="true">

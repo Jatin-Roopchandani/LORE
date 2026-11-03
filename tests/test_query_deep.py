@@ -126,17 +126,17 @@ def candidates():
 
 def test_validation_drops_unknown_entities_and_empty_sections():
     raw = DeepPlan(sections=[
-        PlanSection(heading="One", focus="f", entities=["a", "ghost", "a", "b"]),
-        PlanSection(heading="Nothing real", focus="f", entities=["ghost", "phantom"]),
-        PlanSection(heading="Empty", focus="f", entities=[]),
-        PlanSection(heading="Two", focus="f", entities=["c"])])
+        PlanSection(heading="One", focus="alpha topic", entities=["a", "ghost", "a", "b"]),
+        PlanSection(heading="Nothing real", focus="ghost topic", entities=["ghost", "phantom"]),
+        PlanSection(heading="Empty", focus="empty topic", entities=[]),
+        PlanSection(heading="Two", focus="gamma topic", entities=["c"])])
     got = deep.validate_plan(raw, candidates())
     assert [(s.heading, [c.id for c in s.candidates]) for s in got] == [
         ("One", ["a", "b"]), ("Two", ["c"])]
 
 
 def test_validation_caps_the_sections(monkeypatch):
-    many = DeepPlan(sections=[PlanSection(heading=f"S{i}", focus="f", entities=["a"])
+    many = DeepPlan(sections=[PlanSection(heading=f"S{i}", focus=f"aspect{i}", entities=["a"])
                               for i in range(deep.DEEP_MAX_SECTIONS + 5)])
     assert len(deep.validate_plan(many, candidates())) == deep.DEEP_MAX_SECTIONS == 12
     assert [s.heading for s in deep.validate_plan(many, candidates(), 2)] == ["S0", "S1"]
@@ -145,9 +145,9 @@ def test_validation_caps_the_sections(monkeypatch):
 
 
 def test_validation_merges_repeated_headings_and_names_blank_ones():
-    raw = DeepPlan(sections=[PlanSection(heading="Same", focus="f", entities=["a"]),
-                             PlanSection(heading="other", focus="f", entities=["b"]),
-                             PlanSection(heading=" same ", focus="f", entities=["c", "a"]),
+    raw = DeepPlan(sections=[PlanSection(heading="Same", focus="first aspect", entities=["a"]),
+                             PlanSection(heading="other", focus="second aspect", entities=["b"]),
+                             PlanSection(heading=" same ", focus="third aspect", entities=["c", "a"]),
                              PlanSection(heading="  ##  ", focus="", entities=["b"]),
                              PlanSection(heading="  ##  ", focus="what it is", entities=["b"])])
     got = deep.validate_plan(raw, candidates())
@@ -572,9 +572,9 @@ def test_the_registry_refuses_a_claim_whose_passage_is_not_in_the_section():
 
 def test_headings_are_cleaned_capped_and_fall_back_to_a_name():
     raw = DeepPlan(sections=[
-        PlanSection(heading="## **The  road** [3] [1, 2]", focus="f", entities=["a"]),
-        PlanSection(heading="`Rin` [link](http://x.example/y) _later_", focus="f", entities=["b"]),
-        PlanSection(heading="x" * 200, focus="f", entities=["c"]),
+        PlanSection(heading="## **The  road** [3] [1, 2]", focus="roads", entities=["a"]),
+        PlanSection(heading="`Rin` [link](http://x.example/y) _later_", focus="names", entities=["b"]),
+        PlanSection(heading="x" * 200, focus="lengths", entities=["c"]),
         PlanSection(heading="[4] ** ##", focus="[2] **", entities=["b", "a"])])
     got = deep.validate_plan(raw, candidates())
     heads = [s.heading for s in got]
@@ -859,3 +859,130 @@ def test_lens_heading_prefers_the_label_and_falls_back_to_the_question():
     assert q.startswith(fallback[:-1]) and q[len(fallback) - 1] == " "
     assert deep.lens_heading("Who stood by Rin?") == "Who stood by Rin"
     assert deep.lens_heading("Who?", "[3] **Allies**") == "Allies"
+
+
+# ---- one section per claim on the topical path; overlapping planner sections merge ------------
+
+async def test_claims_restating_an_earlier_sections_fact_are_written_up_once(config):
+    from lore.query.synthesize import Synthesis
+    plan = DeepPlan(sections=[
+        PlanSection(heading="First aspect", focus="How the first thing works", entities=["a_zed"]),
+        PlanSection(heading="Second aspect", focus="Why the second thing matters", entities=["a_zed"])])
+    scripted = deep_models(plan, restate=True)
+    real = scripted.generate
+
+    async def generate(prompt, schema):
+        if schema is Synthesis:
+            got = await real(prompt, schema)
+            # every section states the same fact, in its own wording
+            return got.model_copy(update={"claims": [
+                c.model_copy(update={"text": c.text + " again"}) if "Why the second" in prompt else c
+                for c in got.claims]})
+        return await real(prompt, schema)
+    scripted.generate = generate
+    answer, events = await ask(config, scripted)
+    assert answer.unwritten == 0  # a redundant section is left out silently, not counted as failed
+    assert [e["style"] for e in of(events, "section") if e["state"] == "done"] == ["prose", "empty"]
+    texts = [c.text.removesuffix(" again") for c in answer.claims]
+    quotes = [(c.passage, c.quote) for c in answer.claims]
+    assert len(set(quotes)) == len(quotes)  # each fact once in the claims list
+    assert len(answer.sections) == 1  # the second section had nothing new
+    assert texts
+
+
+def test_the_filter_keeps_only_claims_no_earlier_section_states():
+    from lore.query.models import Claim, Passage
+    reg = deep.Registry()
+    p = Passage(n=1, chunk_id="c1", book_id="b", chapter_seq=1, text="x")
+    first = Claim(text="Mara forged the seal in secret.", passage=1, quote="forged the seal in secret")
+    reg.add([first], {1: p})
+    keep = deep._unseen(reg)
+    same = Claim(text="Mara forged the seal secretly in the night.", passage=1,
+                 quote="forged the seal in secret")
+    other_passage = Claim(text="Mara forged the seal in secret.", passage=2, quote="she forged it in the dark")
+    other_fact = Claim(text="The gate was shut at dusk.", passage=1, quote="the gate was shut at dusk")
+    got = keep([same, other_passage, other_fact],
+               [p, Passage(n=2, chunk_id="c2", book_id="b", chapter_seq=1, text="y")])
+    assert got == [other_passage, other_fact]
+
+
+async def test_a_later_section_writer_is_told_what_earlier_sections_cover(config):
+    scripted = deep_models()
+    await ask(config, scripted)
+    one, two = scripted.prompts("write")[:2]
+    assert "Already covered in earlier sections:" not in one
+    assert "Already covered in earlier sections:" in two and TRAVELLER_HEADING in two
+
+
+TRAVELLER_HEADING = "The traveller"
+
+
+def test_planned_sections_with_near_identical_focus_merge():
+    cands = [Candidate(id=i, name=i, kind="Character", entity_ids=(i,)) for i in ("e1", "e2", "e3")]
+    raw = DeepPlan(sections=[
+        PlanSection(heading="Weather methods", focus="How the guild forecasts the weather", entities=["e1"]),
+        PlanSection(heading="Forecasting", focus="How the guild forecasts weather", entities=["e2"]),
+        PlanSection(heading="Taxes", focus="What the crown collects each year", entities=["e3"])])
+    got = deep.validate_plan(raw, cands)
+    assert [s.heading for s in got] == ["Weather methods", "Taxes"]
+    assert [c.id for c in got[0].candidates] == ["e1", "e2"]
+
+
+def test_the_planner_is_told_no_two_sections_cover_one_aspect():
+    assert "No two sections may cover the same aspect" in " ".join(deep.PLANNER_PROMPT.split())
+
+
+# ---- a section writes up and cites only the claims it introduces -------------------------------
+
+SAME_ENTITY = DeepPlan(sections=[
+    PlanSection(heading="First aspect", focus="How the first thing works", entities=["a_zed"]),
+    PlanSection(heading="Second aspect", focus="Why the second thing matters", entities=["a_zed"])])
+
+
+async def test_an_identical_claim_found_by_two_sections_is_written_only_by_the_first(config):
+    scripted = deep_models(SAME_ENTITY, restate=True)  # both sections find the very same claims
+    answer, events = await ask(config, scripted)
+    cited = [[k for s in sec.prose for k in s.claims] for sec in answer.sections]
+    assert len(answer.sections) == 1 and answer.unwritten == 0
+    assert len({(c.passage, c.quote) for c in answer.claims}) == len(answer.claims)
+    assert cited and all(a.claims_start <= k <= a.claims_end
+                         for a, ks in zip(answer.sections, cited) for k in ks)
+
+
+def test_the_very_same_claim_found_in_another_copy_of_the_passage_is_not_new():
+    from lore.query.models import Claim, Passage
+    reg = deep.Registry()
+    p1 = Passage(n=1, chunk_id="c1", book_id="b", chapter_seq=1, text="x")
+    reg.add([Claim(text="Mara forged the seal.", passage=1, quote="forged the seal in secret")], {1: p1})
+    p2 = Passage(n=1, chunk_id="c2", book_id="b", chapter_seq=2, text="y")
+    again = Claim(text="Mara forged the seal.", passage=1, quote="forged the seal in secret")
+    other = Claim(text="Mara forged the seal.", passage=1, quote="a quite different line here")
+    assert deep._unseen(reg)([again, other], [p2]) == [other]
+
+
+def _sentence(text, *claims):
+    from lore.query.write import ProseSentence
+    return ProseSentence(text=text, claims=tuple(claims), passages=tuple(sorted({1 for _ in claims})))
+
+
+def test_a_citation_of_an_earlier_sections_claim_is_dropped_and_a_sentence_left_bare_goes():
+    from lore.query.models import Claim
+    claims = [Claim(text=f"Fact {i}.", passage=1, quote=f"quote number {i}") for i in range(1, 6)]
+    prose = (_sentence("Both.", 2, 4), _sentence("Earlier only.", 1), _sentence("Own.", 4, 5),
+             _sentence("By code."))
+    got = deep.keep_own(prose, 4, 5, claims)
+    assert [(s.text, s.claims) for s in got] == [("Both.", (4,)), ("Own.", (4, 5)), ("By code.", ())]
+
+
+async def test_a_section_writer_citing_an_earlier_sections_claim_is_cut_back_to_its_own(config, monkeypatch):
+    real = deep.remap_prose
+
+    def greedy(prose, offset, claims):
+        out = real(prose, offset, claims)
+        return out + (_sentence("Repeats an earlier fact.", 1),) if offset else out
+    monkeypatch.setattr(deep, "remap_prose", greedy)
+    answer, _ = await ask(config, deep_models(TWO))
+    second = answer.sections[1]
+    assert all(second.claims_start <= k <= second.claims_end for s in second.prose for k in s.claims)
+    assert "Repeats an earlier fact." not in second.text
+

@@ -20,7 +20,7 @@ const RingedNode = createNodeBorderProgram({
   ],
 });
 
-function palette() {
+export function palette() {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => css.getPropertyValue(name).trim();
   return { v, ink: v("--ink"), muted: v("--muted"), edge: v("--edge"), faint: v("--edge-faint"), glow: v("--glow"), panel: v("--panel") };

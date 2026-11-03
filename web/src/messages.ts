@@ -277,3 +277,12 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
       return { text: error.message || "Something went wrong.", retry: true };
   }
 }
+
+// Theme picker.
+export const THEME = {
+  button: "Theme",
+  menu: "Choose a theme",
+  system: "System",
+  systemHint: "Follows your device",
+  groups: { dark: "Dark", light: "Light" },
+};

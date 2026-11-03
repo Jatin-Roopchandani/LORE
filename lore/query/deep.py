@@ -64,7 +64,7 @@ from lore.query.seed import _entities, named_seeds
 from lore.query.subgraph import assemble_ranked, relevance, run_template
 from lore.query.synthesize import (
     CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _content_words, _finish, _numbers,
-    _overlap, _same_evidence, check_answer, shaped_claims, synthesize,
+    _normalise, _overlap, _same_evidence, check_answer, shaped_claims, synthesize,
 )
 from lore.query.viewpoint import load_viewpoint
 from lore.query.write import assemble, compose_sections, compose_text, split_items, verify_prose, write_answer
@@ -113,6 +113,10 @@ MAX_SUMMARY_CHARS = 160
 MAX_HEADING_CHARS = 80
 MAX_FOCUS_CHARS = 200
 
+# Two planned sections whose focus lines share this share of their content words (Jaccard,
+# function words dropped) cover one aspect: most of what one says the other says too.
+SAME_ASPECT_OVERLAP = 0.6
+
 # Candidate kinds, in the order the planner sees them.
 KINDS = ("Concept", "Faction", "Place", "Object", "Character", "Event")
 
@@ -147,8 +151,8 @@ Rules:
 - Give between {min_sections} and {max_sections} sections. Each section addresses
   one distinct aspect of the question as asked. For example, when the question asks
   about methods, techniques or stages, each section is one method, technique or
-  stage; when it asks about causes, each section is one cause. No section repeats
-  another.
+  stage; when it asks about causes, each section is one cause. No two sections may
+  cover the same aspect: when two aspects overlap, merge them into one section.
 - Each section has:
   - "focus": one line saying the aspect of the question that the section answers,
     worded as that aspect and not as a topic.
@@ -407,8 +411,14 @@ def validate_plan(raw, candidates: Sequence[Candidate],
         heading = lens_heading(focus, getattr(item, "heading", ""))
         mine = sections.setdefault(heading.casefold(), (heading, focus, []))[2]
         mine += [c for c in members if c not in mine]
-    return [PlannedSection(h, tuple(cs), f)
-            for h, f, cs in list(sections.values())[:max(cap, 0)]]
+    merged: list[tuple[str, str, list[Candidate]]] = []
+    for heading, focus, members in sections.values():
+        twin = next((m for m in merged if _overlap(m[1], focus) >= SAME_ASPECT_OVERLAP), None)
+        if twin is None:
+            merged.append((heading, focus, list(members)))
+        else:
+            twin[2].extend(c for c in members if c not in twin[2])
+    return [PlannedSection(h, tuple(cs), f) for h, f, cs in merged[:max(cap, 0)]]
 
 
 # --- one section -----------------------------------------------------------------
@@ -487,6 +497,7 @@ class SectionResult:
     seeds: list[SeedEntity]
     failed: str | None = None
     offtopic: bool = False  # claims were written but none bear on the question's subject
+    redundant: bool = False  # every claim restated an earlier section's: left out, not failed
 
 
 _NAME_STOP = frozenset({"the", "and", "of", "von", "van", "de", "la", "le", "sir", "mr", "mrs", "dr"})
@@ -509,6 +520,25 @@ def section_question(heading: str, names: Sequence[str]) -> str:
     return f"{heading} ({', '.join(names)})" if names else heading
 
 
+def _unseen(registry: "Registry"):
+    """A filter for a section's claims: those that do not restate a fact an earlier
+    section already wrote (the same passage, and `_same_fact`'s word overlap). Each
+    fact then appears in one section, the earliest that wrote it."""
+    def keep(claims, passages):
+        keep.dropped += len(claims)
+        chunk = {p.n: p.chunk_id for p in passages}
+        out = []
+        for c in claims:
+            at = registry._at.get(chunk.get(c.passage, ""), -1)
+            probe = c.model_copy(update={"passage": at})
+            if not any(_same_fact(prior, probe) for prior in registry.claims):
+                out.append(c)
+        keep.dropped -= len(out)
+        return out
+    keep.dropped = 0
+    return keep
+
+
 def _restrictions(section: PlannedSection):
     """Per entity, the codex aspects and the beat ids a section is narrowed to.
     An entity named plainly in the section is not narrowed."""
@@ -529,7 +559,8 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
                       conn, kuzu, lance, models, scope: Scope, titles: dict[str, str],
                       books: Mapping[str, BookInfo], registry: Registry,
                       book_ids: frozenset[str] | None, on_event=None,
-                      subject: Sequence[SeedEntity] = ()) -> SectionResult:
+                      subject: Sequence[SeedEntity] = (),
+                      covered: Sequence[str] = ()) -> SectionResult:
     """Answer one section from its own evidence: its entities' relationships,
     timeline and codex slice, and the passages nearest it. The section's claims
     and prose come back in the answer's numbering (the registry's). The claims
@@ -578,12 +609,14 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
                                score_lists=[scores], **extra)
     if not evidence.passages:
         return SectionResult(None, [], [], [], seeds)
+    unseen = _unseen(registry)
     spec = SectionSpec(part_of=question, max_claims=SECTION_CLAIMS, length="section",
-                       focus=section.focus, subject=tuple(s.name for s in subject))
+                       focus=section.focus, subject=tuple(s.name for s in subject),
+                       covered=tuple(covered), skip=unseen)
     answer = await synthesize(ask, evidence, models.synthesize, mode="graph", check=models.check,
                               write=models.write, book_titles=titles, books=dict(books), section=spec)
     if not answer.claims:
-        return SectionResult(None, [], [], list(evidence.edges), seeds)
+        return SectionResult(None, [], [], list(evidence.edges), seeds, redundant=unseen.dropped > 0)
     # A section that also reads entities other than the subject is checked against
     # the subject: facts about someone else leave it out (a section of the subject's
     # own aspects is about it by construction).
@@ -593,6 +626,8 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
     local = {p.n: p for p in evidence.passages}
     claims, offset, added = registry.add(answer.claims, local)
     prose = remap_prose(answer.prose, offset, registry.claims) if answer.prose else ()
+    if prose:  # a section cites only the claims it introduces
+        prose = keep_own(prose, offset + 1, offset + len(claims), registry.claims)
     if prose:
         text, style = compose_text(prose, answer.unanswered, answer.gaps), "prose"
     else:
@@ -787,7 +822,8 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
             result = await run_section(index, section, vec, question=question, conn=conn,
                                        kuzu=kuzu, lance=lance, models=models, scope=scope,
                                        titles=titles, books=books, registry=registry,
-                                       book_ids=scope_books, on_event=on_event, subject=subject)
+                                       book_ids=scope_books, on_event=on_event, subject=subject,
+                                       covered=[d.heading for d in done])
         except Exception as err:  # noqa: BLE001 -- one section failing leaves the others
             log.exception("deep section %r failed", section.heading)
             failures.append(err)
@@ -800,7 +836,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
         for s in result.seeds:
             seeds_seen.setdefault(s.id, s)
         if result.section is None:
-            empties += 0 if result.offtopic else 1
+            empties += 0 if result.offtopic or result.redundant else 1
             emit(on_event, "section", index=index, state="done", kind="section",
                  heading=section.heading, style="empty", text="", prose=[], claims=[],
                  claims_range=None, passages=[], note=None)
@@ -895,8 +931,27 @@ SAME_FACT_OVERLAP = 0.3
 
 
 def _same_fact(a: Claim, b: Claim) -> bool:
+    if _normalise(a.text) == _normalise(b.text) and _normalise(a.quote) == _normalise(b.quote):
+        return True  # the very same claim, whichever copy of the passage it was found in
     return (_same_evidence(a, b) and _numbers(a.text) == _numbers(b.text)
             and _overlap(a.text, b.text) >= SAME_FACT_OVERLAP)
+
+
+def keep_own(prose: Sequence[ProseSentence], first: int, last: int,
+             claims: Sequence[Claim]) -> tuple[ProseSentence, ...]:
+    """`prose` (the answer's numbering) limited to the claims `first`..`last`, the ones
+    its section introduced: a citation of any other claim is dropped, and a sentence left
+    with no citation is dropped with it. Code-written sentences (no claims) stay."""
+    out = []
+    for s in prose:
+        mine = tuple(k for k in s.claims if first <= k <= last)
+        if s.claims and not mine:
+            continue
+        if mine != s.claims:
+            s = replace(s, claims=mine, passages=tuple(sorted(
+                {claims[k - 1].passage for k in mine if 1 <= k <= len(claims)})))
+        out.append(s)
+    return tuple(out)
 
 
 def assign_sections(claims: Sequence[Claim], found: Sequence[frozenset[int]],
@@ -1071,7 +1126,7 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
             continue
         start = mine[0]
         if got:
-            prose_of = remap_prose(got, start - 1, final)
+            prose_of = keep_own(remap_prose(got, start - 1, final), start, mine[-1], final)
             text, style = compose_text(prose_of), "prose"
         else:
             prose_of, text, style = (), _compose(owned), "claims"

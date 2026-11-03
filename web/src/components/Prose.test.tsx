@@ -184,3 +184,33 @@ test("a section's own sentences are cited from the result and show no unanswered
   expect(container.querySelector(".unanswered")).toBeNull();
   expect(screen.getByRole("button", { name: /\[3\]/ })).toBeInTheDocument();
 });
+
+// A sentence that rests on many passages shows four chips, the ones whose claims fit it best, and a +N chip.
+const many = (() => {
+  const topics = ["marble quarry", "silver ferry", "tin harbour", "glass orchard", "salt bridge", "wool tower"];
+  const claims = topics.map((t, i) => ({ text: `The ${t} opened in year ${i}.`, passage: i + 1, quote: `${t} opened` }));
+  return {
+    ...result, claims,
+    passages: topics.map((t, i) => ({ n: i + 1, chunk_id: `k${i + 1}`, book_id: "b9", book_title: "T", chapter_seq: 1, text: `The ${t} opened.` })),
+    prose: [{ text: "The salt bridge and the wool tower opened late.", claims: [1, 2, 3, 4, 5, 6], passages: [1, 2, 3, 4, 5, 6], new_paragraph: false }],
+  } as SearchResult;
+})();
+
+test("a sentence shows at most four citation chips, the best-fitting ones, with a +N chip", () => {
+  render(<Prose result={many} onHoverChunks={() => {}} />);
+  const chips = screen.getAllByRole("button", { name: /^\[\d\]$/ }).map((b) => b.textContent);
+  expect(chips).toHaveLength(4);
+  expect(chips).toContain("[5]");
+  expect(chips).toContain("[6]");   // the claims about the bridge and the tower fit the sentence best
+  expect(screen.getByRole("button", { name: "+2" })).toBeInTheDocument();
+});
+
+test("the +N chip shows the rest, and hovering still reports every cited passage", () => {
+  const onHover = vi.fn();
+  render(<Prose result={many} onHoverChunks={onHover} />);
+  fireEvent.mouseEnter(screen.getByText(/salt bridge and the wool tower/));
+  expect(onHover).toHaveBeenCalledWith(["k1", "k2", "k3", "k4", "k5", "k6"]);
+  fireEvent.click(screen.getByRole("button", { name: "+2" }));
+  expect(screen.getAllByRole("button", { name: /^\[\d\]$/ })).toHaveLength(6);
+  expect(screen.queryByRole("button", { name: "+2" })).toBeNull();
+});

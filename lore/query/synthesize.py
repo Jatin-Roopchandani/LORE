@@ -912,7 +912,7 @@ PROSE_FALLBACK_NOTE = "the written answer did not pass verification; showing the
 
 
 async def _finish(question, sub_questions, kept, evidence, check, write, book_titles,
-                  part_claims=None, books=None, shape=None, length=None):
+                  part_claims=None, books=None, shape=None, length=None, covered=()):
     """Writer (when it applies) and the faithfulness check, in one place for
     all synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note,
     unanswered part texts, gaps -- both set only when the prose is shown).
@@ -930,7 +930,7 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     if try_prose:
         drafted = await write_answer(question, sub_questions, kept, evidence.passages, write,
                                      book_titles=book_titles, books=books, shape=shape,
-                                     length=length)
+                                     length=length, covered=covered)
         if drafted is None:
             prose_note = PROSE_FALLBACK_NOTE
         else:
@@ -963,7 +963,7 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
             # list: the writer is told which sentences the check rejected.
             again = await write_answer(question, sub_questions, kept, evidence.passages, write,
                                        book_titles=book_titles, books=books, shape=shape,
-                                       length=length, avoid=rejected)
+                                       length=length, avoid=rejected, covered=covered)
             second = (verify_prose(again, len(kept), [c.text for c in kept], shape)
                       if again is not None else [])
             if second:
@@ -1044,12 +1044,15 @@ async def synthesize(
     result = _capped(result, section.max_claims if section is not None else None)
     verified, _ = verify_claims(result, evidence.passages)
     kept = _collapse(verified)
+    if section is not None and section.skip is not None:
+        kept = section.skip(kept, evidence.passages)
     # The writer of a section that answers one aspect is told which larger question it serves.
     written_for = (f"{question} (one aspect of the larger question: {section.part_of})"
                    if section is not None and section.focus else question)
     kept, _cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         written_for, list(checklist) or [question], kept, evidence, check, write, book_titles,
-        books=books, length=section.length if section is not None else None)
+        books=books, length=section.length if section is not None else None,
+        covered=section.covered if section is not None else ())
     if not kept:
         return answer(REFUSAL)
     # can_answer=false with verified claims is a partial answer, not a

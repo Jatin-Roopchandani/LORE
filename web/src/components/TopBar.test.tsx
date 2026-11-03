@@ -38,11 +38,12 @@ test("dialog shows a safely quoted command", async () => {
   expect(screen.getByText(`lore ingest 'it'\\''s.epub' --world 'it'\\''s'`)).toBeInTheDocument();
 });
 
-test("settings reflects the theme toggled with the top bar button", async () => {
+test("the theme button opens the picker; choosing a theme sets it on the page; Escape in settings returns focus", async () => {
   bar();
-  await userEvent.click(screen.getByRole("button", { name: "Switch light or dark" }));
+  await userEvent.click(screen.getByRole("button", { name: "Theme" }));
+  await userEvent.click(screen.getByRole("menuitemradio", { name: "Neon" }));
+  expect(document.documentElement.dataset.theme).toBe("neon");
   await userEvent.click(screen.getByRole("button", { name: "Settings" }));
-  expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
   await userEvent.keyboard("{Escape}");
   expect(screen.getByRole("button", { name: "Settings" })).toHaveFocus();
 });

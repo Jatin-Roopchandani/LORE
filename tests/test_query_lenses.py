@@ -467,3 +467,26 @@ async def test_a_part_is_headed_by_its_short_label_and_the_question_rides_along_
     assert [s.label for s in answer.short_answer] == ["Analytic methods", "Scientific methods"]
     start = [e for e in of(events, "section") if e["state"] == "start"][0]
     assert (start["group"], start["group_title"]) == ("Analytic methods", sections[0].group_title)
+
+
+def test_the_very_same_claim_in_two_copies_of_a_passage_is_placed_in_one_section():
+    a = _claim("Alpha beta gamma.", "one two three four", passage=1)
+    b = _claim("Alpha beta gamma.", "one two three four", passage=2)
+    assert deep.assign_sections([a, b], [frozenset({0}), frozenset({1})], FOCUS) == [0, 0]
+
+
+async def test_a_lens_writer_citing_another_sections_claim_is_cut_back_to_its_own(config, monkeypatch):
+    from lore.query.write import ProseSentence
+    real = deep.remap_prose
+
+    def greedy(prose, offset, claims):
+        out = real(prose, offset, claims)
+        return out + (ProseSentence(text="Repeats an earlier fact.", claims=(1,), passages=(1,)),) if offset else out
+    monkeypatch.setattr(deep, "remap_prose", greedy)
+    sets = {LENS_A: [("Zed Quill walked on with Yan Vale along the dusty road at night.", QUOTES[0])],
+            LENS_B: [("Zed Quill: the traveller Zed Quill.", QUOTES[1])]}
+    answer, _ = await ask(config, LensModels(ONE_PART, READING, quotes=QUOTE_OF, claim_sets=sets))
+    for sec in (s for s in answer.sections if s.kind == "section"):
+        assert all(sec.claims_start <= k <= sec.claims_end for p in sec.prose for k in p.claims)
+        assert "Repeats an earlier fact." not in sec.text or sec.claims_start == 1
+

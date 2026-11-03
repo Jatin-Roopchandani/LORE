@@ -109,7 +109,7 @@ class Scripted:
     raises."""
 
     def __init__(self, decomposition=None, *, planner=None, fail=(), reject=(),
-                 write_kinds=False, tagged=False):
+                 write_kinds=False, tagged=False, restate=False):
         self.decomposition = decomposition or Decomposition(
             sub_questions=[PartSpec(question=QUESTION)], depth="focused")
         self.planner = planner
@@ -120,6 +120,8 @@ class Scripted:
         # Each written sentence starts with its section's question, so a test can
         # tell which section wrote (and rejects) what.
         self.tagged = tagged
+        # Sections state the same facts unless told apart by a number in their text.
+        self.restate = restate
 
     def prompts(self, kind):
         return [p for k, p in self.calls if k == kind]
@@ -143,6 +145,7 @@ class Scripted:
             return self.planner(prompt) if callable(self.planner) else self.planner
         if schema is Synthesis:
             self.calls.append(("claims", prompt))
+            ordinal = "" if self.restate or not self.tagged else f" in part {len(self.prompts('claims'))}"
             if any(f in prompt for f in self.fail):
                 raise RuntimeError("claims call failed")
             numbers = [int(n) for n in re.findall(r"^\[(\d+)\]", prompt, re.M)]
@@ -152,7 +155,7 @@ class Scripted:
                 text = _passage_text(prompt, n)
                 quote = next((q for q in quotes if q in text), None)
                 if quote:
-                    claims.append({"text": f"Zed Quill: {quote} (fact {i}).", "passage": n,
+                    claims.append({"text": f"Zed Quill: {quote} (fact {i}){ordinal}.", "passage": n,
                                    "quote": quote})
             return Synthesis(can_answer=True, claims=claims)
         if "sentences" in schema.model_fields:
