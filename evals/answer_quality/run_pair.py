@@ -113,10 +113,17 @@ def _pinned(config, model: str):
         for step in ("selection", "synthesis")})
 
 
+# The world every question is asked in (--world); None asks across all worlds,
+# where deep answers do not run, so a run meant to mirror the UI names one.
+WORLD: str | None = None
+
+
 async def ask(config, question: str, overrides, trace: list | None):
     # The `deep` arm asks at depth "deep"; any other arm lets the decomposer decide.
     depth = "deep" if overrides.get(("lore.query.decompose", "DEEP")) is True else None
     kw = {"depth": depth} if depth else {}
+    if WORLD is not None:
+        kw["world"] = WORLD
     with _Applied(overrides):
         models = _real_models(config)
         if trace is not None:
@@ -182,9 +189,12 @@ def main() -> None:
     parser.add_argument("--set", dest="qset", choices=sorted(SETS), default="dev")
     parser.add_argument("--trace", action="store_true")
     parser.add_argument("--only", nargs="*")
+    parser.add_argument("--world", help="ask every question in this world (as the UI does)")
     args = parser.parse_args()
     if len(args.arm) != 2:
         raise SystemExit("give exactly two --arm")
+    global WORLD
+    WORLD = args.world
     asyncio.run(run(args.label, args.arm, args.qset, args.only, args.trace))
 
 
