@@ -159,6 +159,9 @@ class SectionSpec:
     max_claims: int
     length: str = "section"
     focus: str = ""
+    # Names of the larger question's main entities (a topical question): a
+    # section's facts must bear on them as well as on its focus.
+    subject: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -357,7 +357,7 @@ async def test_each_section_reads_its_own_entities_and_nothing_of_the_others(con
     # Its own context: a section of a longer answer to the whole question.
     for prompt in (one, two):
         assert f"one section of a long, detailed answer to the larger question: {GENERAL}" in prompt
-        assert "at most 16 claims" in prompt
+        assert "at most 12 claims" in prompt
     # Each writer is told its section has no word limit; neither sees the other's facts.
     w1, w2 = scripted.prompts("write")[:2]
     assert "there is no word limit" in w1 and "400 words" not in w1

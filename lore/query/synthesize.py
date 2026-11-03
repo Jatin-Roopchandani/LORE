@@ -480,6 +480,11 @@ _SECTION_FOCUS_CONTEXT = ("This is one section of a long, detailed answer to the
                           "setting, however vivid. Cover the aspect fully, with every distinct "
                           "fact the passages establish about it, in as many claims as they "
                           "support; the other sections are written separately.\n")
+# Added to a section's claims rule when the larger question is about named entities:
+# a fact about someone or something else is off the question, however well it fits the aspect.
+SUBJECT_RULE = ("Every fact kept must also bear on {subject}, whom or which the larger question is "
+                "about: skip facts that are only about other people or things, even when they fit "
+                "the aspect.\n")
 
 
 def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
@@ -528,6 +533,8 @@ def _build_prompt(
     elif section is not None:
         context = (_SECTION_FOCUS_CONTEXT.format(part_of=section.part_of, focus=section.focus)
                    if section.focus else _SECTION_CONTEXT.format(part_of=section.part_of))
+        if section.subject:
+            context += SUBJECT_RULE.format(subject=" and ".join(section.subject))
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
                           facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
@@ -948,6 +955,26 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     if sentences is not None:
         built = (assemble(sentences, written, outcome.claim_ok, outcome.sentence_ok, passage_of)
                  if sentences and outcome.ran and outcome.sentence_ok is not None else None)
+        rejected = ([s.text for s, ok in zip(sentences, outcome.sentence_ok or [])
+                     if not ok and getattr(s, "kind", "fact") == "fact"]
+                    if sentences and len(outcome.sentence_ok or []) == len(sentences) else [])
+        if built is None and length == "section" and outcome.ran and rejected:
+            # A deep section gets one rewrite before it falls back to its claim
+            # list: the writer is told which sentences the check rejected.
+            again = await write_answer(question, sub_questions, kept, evidence.passages, write,
+                                       book_titles=book_titles, books=books, shape=shape,
+                                       length=length, avoid=rejected)
+            second = (verify_prose(again, len(kept), [c.text for c in kept], shape)
+                      if again is not None else [])
+            if second:
+                outcome2 = await check_answer(kept, evidence.passages, check,
+                                              book_titles=book_titles, sentences=second,
+                                              books=books, shape=shape)
+                if outcome2.ran and outcome2.sentence_ok is not None:
+                    built = assemble(second, len(split_items(again)), outcome2.claim_ok,
+                                     outcome2.sentence_ok, passage_of)
+                    if built:
+                        outcome, gaps = outcome2, []
         if built and part_claims is not None:
             numbered = [[outcome.kept.index(c) + 1 for c in cs if c in outcome.kept]
                         for cs in part_claims]

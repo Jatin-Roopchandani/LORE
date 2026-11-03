@@ -125,6 +125,12 @@ _CASCADE_STATUSES = {
 }
 
 
+# A JSON reply (a deep section's claims, a written section) is cut off at the
+# model's default output limit, which left a long claims list unterminated
+# ("expected , or ] at line 1 column 4975"); the flash-lite tier allows far more.
+MAX_JSON_OUTPUT_TOKENS = 16384
+
+
 class GeminiError(RuntimeError):
     """A request failed. The message never carries the API key."""
 
@@ -151,9 +157,11 @@ class GeminiOutputError(GeminiError):
     stays diagnosable.
     """
 
-    def __init__(self, message: str, raw_output: str = "") -> None:
+    def __init__(self, message: str, raw_output: str = "", model: str = "") -> None:
         super().__init__(message)
         self.raw_output = raw_output
+        # The model that wrote the unusable reply, so a retry can go elsewhere.
+        self.model = model
 
 
 class GeminiQuotaError(GeminiError):
@@ -344,19 +352,25 @@ class GeminiClient:
         if not candidates:
             raise GeminiOutputError(
                 f"{model} returned no candidates"
-                f" (promptFeedback={payload.get('promptFeedback')})"
+                f" (promptFeedback={payload.get('promptFeedback')})",
+                model=model,
             )
         parts = (candidates[0].get("content") or {}).get("parts") or []
         text = "".join(str(part.get("text") or "") for part in parts)
         if not text.strip():
-            raise GeminiOutputError(f"{model} returned an empty answer", text)
+            raise GeminiOutputError(f"{model} returned an empty answer", text, model)
         return text
 
     async def _cascade(
-        self, prompt: str, generation_config: dict, exhausted_hint: str
+        self, prompt: str, generation_config: dict, exhausted_hint: str,
+        avoid: str | None = None,
     ) -> str:
         refusals: list[str] = []
         willing = self._willing_models()
+        if avoid in willing and len(willing) > 1:
+            # A retry after a malformed reply goes to the next model first; the
+            # one that failed is still the last resort.
+            willing = [m for m in willing if m != avoid] + [avoid]
         for model in willing:
             try:
                 text = await self._generate_one(model, prompt, generation_config)
@@ -407,7 +421,8 @@ class GeminiClient:
         )
 
     async def generate_json(
-        self, prompt: str, schema: type[Model], *, exhausted_hint: str | None = None
+        self, prompt: str, schema: type[Model], *, exhausted_hint: str | None = None,
+        avoid: str | None = None,
     ) -> Model:
         """One schema-valid object at temperature 0, from the first willing model.
 
@@ -420,10 +435,12 @@ class GeminiClient:
             prompt + JSON_INSTRUCTION.format(
                 schema=json.dumps(schema.model_json_schema())
             ),
-            {"temperature": 0, "responseMimeType": "application/json"},
+            {"temperature": 0, "responseMimeType": "application/json",
+             "maxOutputTokens": MAX_JSON_OUTPUT_TOKENS},
             exhausted_hint if exhausted_hint is not None else
             "Re-run when a daily budget resets, or set [lore.synthesis]"
             ' provider = "ollama" to answer locally.',
+            avoid=avoid,
         )
         try:
             return schema.model_validate_json(_strip_fence(text))
@@ -433,7 +450,7 @@ class GeminiClient:
                 f" {schema.__name__} JSON object ({exc.error_count()} error(s):"
                 f" {str(exc.errors()[0].get('msg'))[:200]}). Raw start:"
                 f" {text[:200]!r}",
-                text,
+                text, self.last_model or "",
             ) from exc
 
     async def aclose(self) -> None:

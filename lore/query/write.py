@@ -186,6 +186,10 @@ LENS_LENGTH_RULE = """- Length: this is one section of a long, detailed answer, 
 COVERED_LEAD = "Already covered in earlier sections:"
 COVERED_RULE = ("- " + COVERED_LEAD + "\n{headings}\n  Those sections state their own facts. Do not "
                 "re-explain what their headings cover; write only about the facts given below.\n")
+# Added to a section writer's prompt on its one rewrite: the sentences the check
+# rejected, so the second draft leaves them out.
+AVOID_LEAD = "Do not state these; they were not supported by the cited facts:"
+AVOID_RULE = "- " + AVOID_LEAD + "\n{sentences}\n  Write only what the facts below support.\n"
 LENGTH_RULES = {None: _LENGTH_RULE, "section": SECTION_LENGTH_RULE,
                 "short": SHORT_LENGTH_RULE, "lens": LENS_LENGTH_RULE}
 
@@ -315,8 +319,10 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
                   passages: Iterable[Passage], book_titles: dict[str, str] | None,
                   books: dict[str, BookInfo] | None = None,
                   shape: "interpret.Shape | None" = None,
-                  length: str | None = None, covered: Sequence[str] = ()) -> str:
-    """`covered`: the headings of the sections written before this one (a lens
+                  length: str | None = None, covered: Sequence[str] = (),
+                  avoid: Sequence[str] = ()) -> str:
+    """`avoid`: sentences an earlier draft wrote that the check rejected (AVOID_RULE).
+    `covered`: the headings of the sections written before this one (a lens
     section's writer), listed so it does not re-explain them (COVERED_RULE).
     `shape`: the interpretive answer's shape (interpret.py), only with
     STORY_ORDER. The facts are then listed under an "Evidence for:" heading per
@@ -344,9 +350,11 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
             rules = _READINGS_RULE if readings_on() and length is None else ""
         before = (COVERED_RULE.format(headings="\n".join(f"  - {h}" for h in covered))
                   if covered else "")
+        after = (AVOID_RULE.format(sentences="\n".join(f"  - {t}" for t in avoid))
+                 if avoid else "")
         return STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
                                           order_note=note, readings=rules,
-                                          length=LENGTH_RULES[length] + before)
+                                          length=LENGTH_RULES[length] + before + after)
     by_number = {p.n: p for p in passages}
     lines = []
     for number, claim in enumerate(claims, start=1):
@@ -373,7 +381,8 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
                        book_titles: dict[str, str] | None = None,
                        books: dict[str, BookInfo] | None = None,
                        shape: "interpret.Shape | None" = None,
-                       length: str | None = None, covered: Sequence[str] = ()) -> Prose | None:
+                       length: str | None = None, covered: Sequence[str] = (),
+                       avoid: Sequence[str] = ()) -> Prose | None:
     """The writer's prose, or None on any failure: a failed extra step must
     never cost the user the checked claims (they are the fallback).
 
@@ -391,7 +400,7 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     try:
         reply = await generate(
             writer_prompt(question, sub_questions, claims, passages, book_titles, books, shape,
-                          length, covered),
+                          length, covered, avoid),
             (Prose if kinds else _StoryProse) if STORY_ORDER else _PlainProse)
     except Exception:  # noqa: BLE001 -- see the docstring
         return None
@@ -579,12 +588,14 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
     standing = [(s, ok) for s, ok in zip(sentences, sentence_ok)
                 if all(k in survivors_index for k in s.claims)]
     # One unsupported sentence is removed; more falls back -- except that a
-    # long answer may lose one in five (amended 2026-10-28 with the longer
-    # answers: one weak clause in ten sentences should not cost the prose).
+    # long answer may lose a quarter (amended 2026-10-28 to one in five, and
+    # again to a quarter with the deep sections: two weak clauses in eight
+    # sentences should not cost the prose; a deep section gets one rewrite
+    # before it falls back, `synthesize._finish`).
     # Only facts count: a reading or counter-case is an optional extra, and one
     # the check rejects is simply dropped (2026-10-29).
     facts = [ok for s, ok in standing if getattr(s, "kind", "fact") == "fact"]
-    if sum(not ok for ok in facts) > max(1, len(facts) // 5):
+    if sum(not ok for ok in facts) > max(1, len(facts) // 4):
         return None
     kept = [s for s, ok in standing if ok]
     if not kept or 2 * len(kept) < written:

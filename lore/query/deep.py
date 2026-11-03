@@ -49,6 +49,7 @@ from pydantic import BaseModel
 from lore.beats.store import beats_for_entities
 from lore.codex import store as codex_store
 from lore.extract.embed import QUERY_PREFIX
+from lore.inference.gemini import GeminiOutputError
 from lore.query import codexslice, interpret
 from lore.query import timeline as timeline_module
 from lore.query import write as write_module
@@ -81,7 +82,7 @@ SECTION_ENTITIES = 8
 # A section's own budget: the claims it may keep, the characters of passages it
 # reads (at most the models' own evidence budget), the facts per book it takes
 # from each entity's relationships, and the nearest passages added to those.
-SECTION_CLAIMS = 16
+SECTION_CLAIMS = 12
 SECTION_CHARS = 18_000
 SECTION_EDGES_PER_BOOK = 10
 SECTION_NEAR_K = 8
@@ -419,9 +420,18 @@ class Spend:
     n: int = 0
 
     def counted(self, generate):
+        """`generate`, counting each request. A reply the model wrote but that
+        is not usable (malformed or cut-off JSON) is asked for once more, on the
+        next model of the cascade when there is one; the retry is a request too."""
         async def call(prompt, schema):
             self.n += 1
-            return await generate(prompt, schema)
+            try:
+                return await generate(prompt, schema)
+            except GeminiOutputError as err:
+                self.n += 1
+                log.warning("retrying after an unusable reply from %s", err.model or "the model")
+                return await (generate(prompt, schema, avoid=err.model) if err.model
+                              else generate(prompt, schema))
         return call
 
 
@@ -476,6 +486,23 @@ class SectionResult:
     edges: list[EdgeRow]
     seeds: list[SeedEntity]
     failed: str | None = None
+    offtopic: bool = False  # claims were written but none bear on the question's subject
+
+
+_NAME_STOP = frozenset({"the", "and", "of", "von", "van", "de", "la", "le", "sir", "mr", "mrs", "dr"})
+
+
+def _name_words(name: str) -> set[str]:
+    return {w for w in re.findall(r"\w+", name.casefold()) if len(w) >= 3 and w not in _NAME_STOP}
+
+
+def bears_on(claims: Sequence[Claim], subject: Sequence[SeedEntity]) -> bool:
+    """True when some claim's text or quote names one of the `subject` entities
+    (its name, or any distinctive word of it)."""
+    words = set().union(*(_name_words(s.name) for s in subject)) if subject else set()
+    if not words:
+        return True  # nothing to check against
+    return any(words & set(re.findall(r"\w+", f"{c.text} {c.quote}".casefold())) for c in claims)
 
 
 def section_question(heading: str, names: Sequence[str]) -> str:
@@ -501,7 +528,8 @@ def _restrictions(section: PlannedSection):
 async def run_section(index: int, section: PlannedSection, vector: list[float], *, question: str,
                       conn, kuzu, lance, models, scope: Scope, titles: dict[str, str],
                       books: Mapping[str, BookInfo], registry: Registry,
-                      book_ids: frozenset[str] | None, on_event=None) -> SectionResult:
+                      book_ids: frozenset[str] | None, on_event=None,
+                      subject: Sequence[SeedEntity] = ()) -> SectionResult:
     """Answer one section from its own evidence: its entities' relationships,
     timeline and codex slice, and the passages nearest it. The section's claims
     and prose come back in the answer's numbering (the registry's). The claims
@@ -551,11 +579,17 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
     if not evidence.passages:
         return SectionResult(None, [], [], [], seeds)
     spec = SectionSpec(part_of=question, max_claims=SECTION_CLAIMS, length="section",
-                       focus=section.focus)
+                       focus=section.focus, subject=tuple(s.name for s in subject))
     answer = await synthesize(ask, evidence, models.synthesize, mode="graph", check=models.check,
                               write=models.write, book_titles=titles, books=dict(books), section=spec)
     if not answer.claims:
         return SectionResult(None, [], [], list(evidence.edges), seeds)
+    # A section that also reads entities other than the subject is checked against
+    # the subject: facts about someone else leave it out (a section of the subject's
+    # own aspects is about it by construction).
+    if subject and set(section.entity_ids) - {s.id for s in subject} \
+            and not bears_on(answer.claims, subject):
+        return SectionResult(None, [], [], list(evidence.edges), seeds, offtopic=True)
     local = {p.n: p for p in evidence.passages}
     claims, offset, added = registry.add(answer.claims, local)
     prose = remap_prose(answer.prose, offset, registry.claims) if answer.prose else ()
@@ -692,9 +726,11 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
                      check=spend.counted(models.check) if models.check else None)
     scope_books = book_ids or scope.books
     focal = None
+    subject: list[SeedEntity] = []
     if len(named_ids) >= 1:
         seeds = await named_seeds(kuzu, list(named_ids), exclude_names=book_names,
                                   book_ids=scope.books)
+        subject = list(seeds)
         focal = seeds[0] if len(seeds) == 1 else None
     emit(on_event, "step", name="plan", state="start", part=None, detail=None)
     candidates = (facet_candidates(conn, kuzu, focal, book_ids=scope_books, books=books,
@@ -751,7 +787,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
             result = await run_section(index, section, vec, question=question, conn=conn,
                                        kuzu=kuzu, lance=lance, models=models, scope=scope,
                                        titles=titles, books=books, registry=registry,
-                                       book_ids=scope_books, on_event=on_event)
+                                       book_ids=scope_books, on_event=on_event, subject=subject)
         except Exception as err:  # noqa: BLE001 -- one section failing leaves the others
             log.exception("deep section %r failed", section.heading)
             failures.append(err)
@@ -764,7 +800,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
         for s in result.seeds:
             seeds_seen.setdefault(s.id, s)
         if result.section is None:
-            empties += 1
+            empties += 0 if result.offtopic else 1
             emit(on_event, "section", index=index, state="done", kind="section",
                  heading=section.heading, style="empty", text="", prose=[], claims=[],
                  claims_range=None, passages=[], note=None)

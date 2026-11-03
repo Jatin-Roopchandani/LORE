@@ -1052,7 +1052,8 @@ def _new_prompt_texts() -> str:
                       interpret.VIEWPOINT_LEAD, interpret.READING_CHECK_BLOCK,
                       interpret.COUNTER_CHECK_BLOCK, interpret.NO_VERDICT_LINE,
                       interpret.NO_ANALYSIS_LINE, interpret.NO_COUNTER_LINE, interpret.LIMITS_LEAD,
-                      write_module.COVERED_RULE))
+                      write_module.COVERED_RULE, write_module.AVOID_RULE,
+                      synthesize_module.SUBJECT_RULE))
 
 
 def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:

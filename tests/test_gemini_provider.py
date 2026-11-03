@@ -279,7 +279,8 @@ async def test_generate_json_asks_for_json_and_validates_the_schema() -> None:
     result = await client.generate_json("who?", _Pick)
     assert result == _Pick(name="Holmes", count=2)
     config = seen["body"]["generationConfig"]
-    assert config == {"temperature": 0, "responseMimeType": "application/json"}
+    assert config == {"temperature": 0, "responseMimeType": "application/json",
+                      "maxOutputTokens": 16384}
     prompt = seen["body"]["contents"][0]["parts"][0]["text"]
     assert prompt.startswith("who?")
     assert "Respond with ONLY a JSON object (no prose, no code fences)" in prompt

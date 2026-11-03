@@ -291,7 +291,11 @@ def make_query_models(
     if config.synthesis.provider == "gemini":
         writer = remote(config.synthesis.models)
 
-        async def synthesize_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
+        async def synthesize_with(prompt: str, schema: type[BaseModel], *,
+                                  avoid: str | None = None) -> BaseModel:
+            # `avoid`: the model whose reply was malformed (deep.Spend retries once).
+            if avoid:
+                return await writer.generate_json(prompt, schema, avoid=avoid)
             return await writer.generate_json(prompt, schema)
 
         # The synthesis client and cascade; generate_json runs at temperature 0.
@@ -300,7 +304,8 @@ def make_query_models(
         def synthesis_model() -> str | None:
             return writer.last_model
     else:
-        async def synthesize_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
+        async def synthesize_with(prompt: str, schema: type[BaseModel], *,
+                                  avoid: str | None = None) -> BaseModel:
             return await local.generate(prompt, schema, options=SYNTHESIS_OPTIONS)
 
         async def decompose_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
