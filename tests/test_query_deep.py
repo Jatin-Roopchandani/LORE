@@ -880,7 +880,9 @@ async def test_claims_restating_an_earlier_sections_fact_are_written_up_once(con
                 for c in got.claims]})
         return await real(prompt, schema)
     scripted.generate = generate
-    answer, _ = await ask(config, scripted)
+    answer, events = await ask(config, scripted)
+    assert answer.unwritten == 0  # a redundant section is left out silently, not counted as failed
+    assert [e["style"] for e in of(events, "section") if e["state"] == "done"] == ["prose", "empty"]
     texts = [c.text.removesuffix(" again") for c in answer.claims]
     quotes = [(c.passage, c.quote) for c in answer.claims]
     assert len(set(quotes)) == len(quotes)  # each fact once in the claims list

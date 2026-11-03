@@ -497,6 +497,7 @@ class SectionResult:
     seeds: list[SeedEntity]
     failed: str | None = None
     offtopic: bool = False  # claims were written but none bear on the question's subject
+    redundant: bool = False  # every claim restated an earlier section's: left out, not failed
 
 
 _NAME_STOP = frozenset({"the", "and", "of", "von", "van", "de", "la", "le", "sir", "mr", "mrs", "dr"})
@@ -524,6 +525,7 @@ def _unseen(registry: "Registry"):
     section already wrote (the same passage, and `_same_fact`'s word overlap). Each
     fact then appears in one section, the earliest that wrote it."""
     def keep(claims, passages):
+        keep.dropped += len(claims)
         chunk = {p.n: p.chunk_id for p in passages}
         out = []
         for c in claims:
@@ -531,7 +533,9 @@ def _unseen(registry: "Registry"):
             probe = c.model_copy(update={"passage": at})
             if not any(_same_fact(prior, probe) for prior in registry.claims):
                 out.append(c)
+        keep.dropped -= len(out)
         return out
+    keep.dropped = 0
     return keep
 
 
@@ -605,13 +609,14 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
                                score_lists=[scores], **extra)
     if not evidence.passages:
         return SectionResult(None, [], [], [], seeds)
+    unseen = _unseen(registry)
     spec = SectionSpec(part_of=question, max_claims=SECTION_CLAIMS, length="section",
                        focus=section.focus, subject=tuple(s.name for s in subject),
-                       covered=tuple(covered), skip=_unseen(registry))
+                       covered=tuple(covered), skip=unseen)
     answer = await synthesize(ask, evidence, models.synthesize, mode="graph", check=models.check,
                               write=models.write, book_titles=titles, books=dict(books), section=spec)
     if not answer.claims:
-        return SectionResult(None, [], [], list(evidence.edges), seeds)
+        return SectionResult(None, [], [], list(evidence.edges), seeds, redundant=unseen.dropped > 0)
     # A section that also reads entities other than the subject is checked against
     # the subject: facts about someone else leave it out (a section of the subject's
     # own aspects is about it by construction).
@@ -829,7 +834,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
         for s in result.seeds:
             seeds_seen.setdefault(s.id, s)
         if result.section is None:
-            empties += 0 if result.offtopic else 1
+            empties += 0 if result.offtopic or result.redundant else 1
             emit(on_event, "section", index=index, state="done", kind="section",
                  heading=section.heading, style="empty", text="", prose=[], claims=[],
                  claims_range=None, passages=[], note=None)
