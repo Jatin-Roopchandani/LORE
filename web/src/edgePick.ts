@@ -22,3 +22,22 @@ export function nearestEdge(x: number, y: number, edges: Iterable<{ id: string; 
   }
   return best;
 }
+
+// Nodes are hit on the dot plus a margin, and on their drawn label, so the name is
+// clickable too. A node beats any edge near the same point.
+export const NODE_PICK_PX = 6;
+
+export interface PickNode { id: string; x: number; y: number; r: number; labelW: number; labelH: number }
+
+export function nodeAt(x: number, y: number, nodes: Iterable<PickNode>, margin = NODE_PICK_PX): string | null {
+  let best: string | null = null;
+  let bestD = Infinity;
+  for (const n of nodes) {
+    const d = Math.hypot(x - n.x, y - n.y);
+    const onDot = d <= n.r + margin;
+    const left = n.x + n.r, right = left + 4 + n.labelW;
+    const onLabel = n.labelW > 0 && x >= left && x <= right + margin && Math.abs(y - n.y) <= n.labelH / 2 + margin / 2;
+    if ((onDot || onLabel) && d < bestD) { bestD = d; best = n.id; }
+  }
+  return best;
+}

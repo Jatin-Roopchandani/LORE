@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import Graph from "graphology";
 import Sigma from "sigma";
-import { nearestEdge } from "../edgePick";
+import { nearestEdge, nodeAt, type PickNode } from "../edgePick";
 import { createNodeBorderProgram } from "@sigma/node-border";
 import { nodeLabel, type GraphView } from "../graphView";
 import { worldSlot } from "../worlds";
@@ -98,7 +98,11 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     if (s && !pin && s.getCustomBBox()) s.setCustomBBox(null);
     const keepNodes = new Set(v.nodes.map((n) => n.id));
     g.forEachNode((id) => { if (!keepNodes.has(id)) g.dropNode(id); });
-    for (const n of v.nodes) {
+    // The world suffix and ring tell same-named entities apart only when the view really
+    // shows two or more worlds; with one world they are noise.
+    const manyWorlds = new Set(v.nodes.map((n) => n.world?.id).filter((w) => w != null)).size > 1;
+    for (const raw of v.nodes) {
+      const n = manyWorlds ? raw : { ...raw, world: undefined };
       const at = pos.get(n.id) ?? { x: 500, y: 350 };
       const dim = n.state === "dim";
       const seed = n.seedPart !== null;
@@ -147,6 +151,24 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       const g = graph.current;
       if (g.hasEdge(edge)) edgeClick.current?.(g.source(edge), g.target(edge));
     });
+    // Near-miss clicks and hovers on nodes: the dot plus a margin, or its drawn label.
+    const measure = document.createElement("canvas").getContext("2d");
+    const nearNode = (x: number, y: number): string | null => {
+      const s = sigma.current;
+      if (!s) return null;
+      const shown = s.getNodeDisplayedLabels();
+      const nodes: PickNode[] = [];
+      graph.current.forEachNode((id, attrs) => {
+        if (attrs.hidden) return;
+        const d = s.getNodeDisplayData(id);
+        if (!d) return;
+        const at = s.framedGraphToViewport({ x: d.x, y: d.y });
+        let labelW = 0;
+        if (shown.has(id) && measure && attrs.label) { measure.font = "12px Public Sans"; labelW = measure.measureText(String(attrs.label)).width; }
+        nodes.push({ id, x: at.x, y: at.y, r: s.scaleSize(d.size), labelW, labelH: 12 });
+      });
+      return nodeAt(x, y, nodes);
+    };
     // Near-miss clicks and hovers: pick the closest edge within EDGE_PICK_PX.
     const near = (x: number, y: number): string | null => {
       const s = sigma.current;
@@ -172,12 +194,18 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       if (box.current) box.current.style.cursor = hovered ? "pointer" : "";
     };
     sigma.current.on("clickStage", ({ event }) => {
+      const node = nearNode(event.x, event.y);
+      if (node) { click.current(node); return; }
       const edge = near(event.x, event.y);
       const g = graph.current;
       if (edge && g.hasEdge(edge)) edgeClick.current?.(g.source(edge), g.target(edge));
     });
-    sigma.current.on("moveBody", ({ event }) => setHover(near(event.x, event.y)));
-    sigma.current.on("enterNode", () => setHover(null));
+    sigma.current.on("moveBody", ({ event }) => {
+      if (nearNode(event.x, event.y)) { setHover(null); if (box.current) box.current.style.cursor = "pointer"; return; }
+      setHover(near(event.x, event.y));
+    });
+    sigma.current.on("enterNode", () => { setHover(null); if (box.current) box.current.style.cursor = "pointer"; });
+    sigma.current.on("leaveNode", () => { if (box.current) box.current.style.cursor = ""; });
     paint();
     const obs = new MutationObserver(paint);
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
