@@ -74,13 +74,17 @@ function drawThemedHover(ctx: CanvasRenderingContext2D, data: HoverData, setting
 // While `pinned` is false the camera fits the whole layout on every change (staging and the answer).
 // Once it turns true (an expansion) the current framing is frozen before new nodes land, so nodes
 // already on screen stay put. Bumping `fitRequest` refits once and re-pins if still pinned.
-export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitRequest = 0 }:
-  { view: GraphView; positions: Positions; onNodeClick: (id: string) => void; pinned?: boolean; fitRequest?: number }) {
+// Bumping `focusRequest` glides the camera to the node `focusId` (once it is drawn).
+export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned = false, fitRequest = 0, focusId = null, focusRequest = 0 }:
+  { view: GraphView; positions: Positions; onNodeClick: (id: string) => void; onEdgeClick?: (source: string, target: string) => void;
+    pinned?: boolean; fitRequest?: number; focusId?: string | null; focusRequest?: number }) {
   const box = useRef<HTMLDivElement>(null);
   const sigma = useRef<Sigma | null>(null);
   const graph = useRef(new Graph({ multi: false, type: "directed" }));
   const click = useRef(onNodeClick);
   click.current = onNodeClick;
+  const edgeClick = useRef(onEdgeClick);
+  edgeClick.current = onEdgeClick;
   const latest = useRef({ view, positions, pinned });
   latest.current = { view, positions, pinned };
 
@@ -99,21 +103,26 @@ export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitR
       const seed = n.seedPart !== null;
       const color = dim ? p.faint : p.v(KIND_VAR[n.kind] ?? "--k-other");
       // In the all-worlds view a plain node wears a ring in its world's colour (a seed keeps its part ring).
-      const ringed = seed || !!n.world;
-      const ringColor = dim ? p.faint : seed ? p.v(`--part-${n.seedPart! % 4}`) : n.world ? p.v(`--world-${worldSlot(n.world.id)}`) : p.faint;
-      const attrs = { x: at.x, y: -at.y, size: seed ? 11 : 7, label: nodeLabel({ ...n, label: n.label.replace(/^Mr\. /, "") }), color,
-        ring: seed ? 0.3 : n.world ? 0.28 : 0, gap: ringed ? 0.12 : 0, gapColor: p.panel,
-        ringColor, zIndex: dim ? 0 : 1 };
+      // The open entity wears an ink ring and a node on the highlighted path an accent one, over any other ring.
+      const marked = !!n.selected || !!n.onPath;
+      const ringed = seed || !!n.world || marked;
+      const ringColor = n.selected ? p.ink : n.onPath ? p.v("--accent") : dim ? p.faint : seed ? p.v(`--part-${n.seedPart! % 4}`)
+        : n.world ? p.v(`--world-${worldSlot(n.world.id)}`) : p.faint;
+      const attrs = { x: at.x, y: -at.y, size: seed || marked ? 11 : 7, label: nodeLabel({ ...n, label: n.label.replace(/^Mr\. /, "") }), color,
+        ring: seed || marked ? 0.3 : n.world ? 0.28 : 0, gap: ringed ? 0.12 : 0, gapColor: p.panel,
+        ringColor, zIndex: marked ? 5 : dim ? 0 : 1 };
       if (g.hasNode(n.id)) g.mergeNodeAttributes(n.id, attrs); else g.addNode(n.id, attrs);
     }
     const keepEdges = new Set(v.links.map((l) => l.id));
     g.forEachEdge((id) => { if (!keepEdges.has(id)) g.dropEdge(id); });
     for (const l of v.links) {
       if (!g.hasNode(l.source) || !g.hasNode(l.target)) continue;
-      const color = l.hot || l.state === "cited" ? p.glow
+      const lit = !!l.onPath || !!l.picked;
+      const color = l.onPath ? p.v("--accent") : l.picked || l.hot || l.state === "cited" ? p.glow
         : l.state === "shown" ? (l.part !== null ? p.v(`--part-${l.part % 4}`) : p.edge) : p.faint;
-      const attrs = { type: l.both ? "line" : "arrow", label: l.state === "faint" || l.state === "cut" ? "" : l.label, color,
-        size: l.hot ? 4 : l.state === "cited" ? 2.6 : v.overview && l.state === "faint" ? 1 : 1.4, zIndex: l.hot ? 3 : l.state === "cited" ? 2 : l.state === "shown" ? 1 : 0 };
+      const attrs = { type: l.both ? "line" : "arrow", label: !lit && (l.state === "faint" || l.state === "cut") ? "" : l.label, color,
+        size: lit ? 4.5 : l.hot ? 4 : l.state === "cited" ? 2.6 : v.overview && l.state === "faint" ? 1 : 1.4,
+        zIndex: lit ? 4 : l.hot ? 3 : l.state === "cited" ? 2 : l.state === "shown" ? 1 : 0 };
       if (g.hasEdge(l.id)) g.mergeEdgeAttributes(l.id, attrs);
       else if (!g.hasDirectedEdge(l.source, l.target)) g.addEdgeWithKey(l.id, l.source, l.target, attrs);
     }
@@ -130,9 +139,13 @@ export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitR
     sigma.current = new Sigma(graph.current, box.current!, {
       renderEdgeLabels: true, defaultEdgeType: "arrow", defaultNodeType: "ringed", nodeProgramClasses: { ringed: RingedNode }, labelFont: "Public Sans", labelSize: 12, edgeLabelSize: 10,
       labelRenderedSizeThreshold: 0, labelColor: { color: p.ink }, edgeLabelColor: { color: p.muted }, zIndex: true,
-      allowInvalidContainer: true, defaultDrawNodeHover: drawThemedHover,
+      allowInvalidContainer: true, defaultDrawNodeHover: drawThemedHover, enableEdgeEvents: true,
     });
     sigma.current.on("clickNode", ({ node }) => click.current(node));
+    sigma.current.on("clickEdge", ({ edge }) => {
+      const g = graph.current;
+      if (g.hasEdge(edge)) edgeClick.current?.(g.source(edge), g.target(edge));
+    });
     paint();
     const obs = new MutationObserver(paint);
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
@@ -150,5 +163,14 @@ export function GraphCanvas({ view, positions, onNodeClick, pinned = false, fitR
     s.refresh();
     if (latest.current.pinned) s.setCustomBBox(s.getBBox());
   }, [fitRequest]);
+  useEffect(() => {
+    const s = sigma.current;
+    if (!s || focusRequest === 0 || !focusId) return;
+    // paint (an earlier effect) has refreshed sigma, so the node's display position is current.
+    const at = s.getNodeDisplayData(focusId);
+    if (!at) return;
+    const ratio = Math.min(s.getCamera().ratio, 0.7);
+    s.getCamera().animate({ x: at.x, y: at.y, ratio }, { duration: 300 });
+  }, [focusRequest]);
   return <div ref={box} className="gcanvas" role="img" aria-label="Entities and relationships used for the answer" />;
 }

@@ -1,4 +1,5 @@
-import type { ApiError, AskEvent, Depth, Book, EntityCardData, EntityKind, LibraryStatus, McpInfo, MoveResult, Quota, SubgraphData, World, WorldRef } from "./types";
+import type { ApiError, AskEvent, Depth, Book, EdgeDetail, EntityCardData, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult,
+  PassageText, PathResult, Quota, Relations, SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   const events: AskEvent[] = [];
@@ -105,6 +106,17 @@ export const api = {
   subgraph: (id: string, world?: string) => getJson<SubgraphData>(withWorld(`/api/subgraph?id=${encodeURIComponent(id)}&depth=1`, world)),
   overview: (world?: string) => getJson<SubgraphData>(withWorld("/api/overview?limit=40", world)),
   worlds: () => getJson<World[]>("/api/worlds"),
+  // The graph explorer's reads: stored data only, no model calls.
+  profile: (id: string, world?: string) => getJson<EntityProfile>(withWorld(`/api/entity/${encodeURIComponent(id)}/profile`, world)),
+  timeline: (id: string, world?: string) => getJson<Timeline>(withWorld(`/api/entity/${encodeURIComponent(id)}/timeline`, world)),
+  relations: (id: string, world?: string) => getJson<Relations>(withWorld(`/api/entity/${encodeURIComponent(id)}/relations`, world)),
+  edge: (a: string, b: string, world?: string) =>
+    getJson<EdgeDetail>(withWorld(`/api/edge?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`, world)),
+  search: (q: string, world?: string, limit = 8) =>
+    getJson<{ results: SearchHit[] }>(withWorld(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`, world)),
+  path: (a: string, b: string, world?: string) =>
+    getJson<PathResult>(withWorld(`/api/path?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&max=4`, world)),
+  passage: (chunkId: string, world?: string) => getJson<PassageText>(withWorld(`/api/passage/${encodeURIComponent(chunkId)}`, world)),
   // A world given by name with `create` is made first; 202 starts the move job, 200 {started:false} means already there.
   moveBook: (id: string, world: string | number, create = false) =>
     sendJson<MoveResult>("POST", `/api/books/${encodeURIComponent(id)}/move`, { world, create }),

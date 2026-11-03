@@ -263,3 +263,37 @@ test("the staged replay of a lens stream shows graph nodes before the answer is 
   expect(sizes.slice(0, at).some((x) => x.nodes > 0 && x.nodes < 4)).toBe(true);   // staged, not all at once
   vi.useRealTimers();
 });
+
+// The explorer's marks and filters.
+const mini = (nodes: [string, string, string[]][], links: [string, string][]): SubgraphData => ({ truncated: false, depth: 1,
+  nodes: nodes.map(([id, kind, books]) => ({ id, name: id.toUpperCase(), kind, books })),
+  edges: links.map(([s, o]) => ({ subject: s, subject_id: s, object: o, object_id: o, count: 1, predicates: { KNOWS: 1 } })) });
+const lib = mini([["a", "Character", ["b1"]], ["p", "Place", ["b1"]], ["c", "Character", ["b2"]]], [["a", "p"], ["a", "c"]]);
+
+test("the selected node, the open edge and the path are marked", () => {
+  const v = deriveGraph(initialState(), { ...opts, overview: lib, selected: "a", edge: { a: "p", b: "a" }, path: { nodes: ["a", "c"], hops: [{ from: "c", to: "a" }] } });
+  expect(v.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(["a"]);
+  expect(v.nodes.filter((n) => n.onPath).map((n) => n.id)).toEqual(["a", "c"]);
+  expect(v.links.find((l) => l.picked)!.id).toBe("a<->p");
+  expect(v.links.find((l) => l.onPath)!.id).toBe("a<->c");
+});
+
+test("a kind filter hides those nodes and the links to them", () => {
+  const v = deriveGraph(initialState(), { ...opts, overview: lib, filters: { kinds: new Set(["Place"]), books: new Set() } });
+  expect(v.nodes.map((n) => n.id)).toEqual(["a", "c"]);
+  expect(v.links.map((l) => l.id)).toEqual(["a<->c"]);
+  expect(v.hiddenByFilters).toBe(1);
+});
+
+test("a book filter hides nodes only in hidden books; the selected node and the path stay", () => {
+  const f = { kinds: new Set<string>(), books: new Set(["b2"]) };
+  expect(deriveGraph(initialState(), { ...opts, overview: lib, filters: f }).nodes.map((n) => n.id)).toEqual(["a", "p"]);
+  expect(deriveGraph(initialState(), { ...opts, overview: lib, filters: f, selected: "c" }).nodes.map((n) => n.id)).toEqual(["a", "p", "c"]);
+  expect(deriveGraph(initialState(), { ...opts, overview: lib, filters: f, path: { nodes: ["c"], hops: [] } }).nodes.map((n) => n.id)).toEqual(["a", "p", "c"]);
+});
+
+test("no filters changes nothing", () => {
+  const v = deriveGraph(initialState(), { ...opts, overview: lib, filters: { kinds: new Set(), books: new Set() } });
+  expect(v.nodes).toHaveLength(3);
+  expect(v.hiddenByFilters).toBe(0);
+});

@@ -5,16 +5,25 @@ import { edgeKey, type Edge, type SubgraphData, type WorldRef } from "./types";
 export type NodeState = "shown" | "dim";
 export type LinkState = "shown" | "cut" | "cited" | "faint";
 // `world`: set only in the all-worlds view, where each world is its own cluster.
-export interface ViewNode { id: string; label: string; kind: string; books: string[]; seedPart: number | null; state: NodeState; expanded: boolean; world?: WorldRef }
+export interface ViewNode { id: string; label: string; kind: string; books: string[]; seedPart: number | null; state: NodeState; expanded: boolean; world?: WorldRef;
+  // The entity open in the panel, and a node on the highlighted path.
+  selected?: boolean; onPath?: boolean }
 // `both`: the pair has relationships in each direction, merged into one link drawn without an arrowhead.
 export interface ViewLink { id: string; source: string; target: string; label: string; count: number; chunkIds: string[];
-  part: number | null; state: LinkState; hot: boolean; books: string[]; both: boolean }
+  part: number | null; state: LinkState; hot: boolean; books: string[]; both: boolean;
+  // The link the edge view shows, and a link on the highlighted path.
+  picked?: boolean; onPath?: boolean }
 // `overview`: the library overview is drawn (before any question); its own links are faint and unlabelled.
-export interface GraphView { nodes: ViewNode[]; links: ViewLink[]; shownEdges: number; totalEdges: number; overview?: boolean }
+// `hiddenByFilters`: how many nodes the kind and book filters removed.
+export interface GraphView { nodes: ViewNode[]; links: ViewLink[]; shownEdges: number; totalEdges: number; overview?: boolean; hiddenByFilters?: number }
 export type KindMap = Record<string, { kind: string; books: string[]; world?: WorldRef }>;
 export interface ViewOptions { hiddenBooks: Set<string>; hoverChunks: string[]; expansions: SubgraphData[]; kinds?: KindMap;
   // The library overview, drawn before any question: like an expansion, but it marks no node expanded.
-  overview?: SubgraphData | null }
+  overview?: SubgraphData | null;
+  // The entity open in the panel; the pair whose edge view is open; the path being shown (node ids, and its hops' ends).
+  selected?: string | null; edge?: { a: string; b: string } | null; path?: { nodes: string[]; hops: { from: string; to: string }[] } | null;
+  // Kinds and books to hide: their nodes go, and so do the links to them. The selected node and the path stay.
+  filters?: { kinds: ReadonlySet<string>; books: ReadonlySet<string> } }
 
 const pretty = (p: string) => p.toLowerCase().replace(/_/g, " ");
 const pairKey = (a: string, b: string) => (a < b ? `${a}<->${b}` : `${b}<->${a}`);
@@ -44,7 +53,7 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
   const nodes = new Map<string, ViewNode>();
   const touch = (id: string, label: string, kind = "Other", books: string[] = [], world?: WorldRef) => {
     const key = id || label;
-    const n = nodes.get(key) ?? { id: key, label, kind, books: [], seedPart: null, state: "shown" as NodeState, expanded: false };
+    const n = nodes.get(key) ?? { id: key, label, kind, books: [], seedPart: null, state: "shown" as NodeState, expanded: false, selected: false, onPath: false };
     if (n.kind === "Other" && kind !== "Other") n.kind = kind;
     for (const b of books) if (!n.books.includes(b)) n.books.push(b);
     if (world && !n.world) n.world = world;
@@ -94,7 +103,7 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
     if (allHidden(books)) linkState = "faint";
     links.push({ id, source: g.source, target: g.target, label: pairLabel((fwd ?? back)!, fwd && back),
       count: g.rows.length, chunkIds, part: g.part, state: linkState,
-      hot: chunkIds.some((c) => options.hoverChunks.includes(c)), books, both: !!(fwd && back) });
+      hot: chunkIds.some((c) => options.hoverChunks.includes(c)), books, both: !!(fwd && back), picked: false, onPath: false });
   }
 
   const extra = new Map<string, { source: string; target: string; fwd: Map<string, number>; back: Map<string, number>; nf: number; nb: number; quiet: boolean }>();
@@ -123,7 +132,7 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
     const back = x.nb ? { top: topOf(x.back), n: x.nb } : null;
     const quiet = x.quiet && !!options.overview;
     links.push({ id, source: x.source, target: x.target, label: quiet ? "" : pairLabel((fwd ?? back)!, fwd && back),
-      count: x.nf + x.nb, chunkIds: [], part: null, state: quiet ? "faint" : "shown", hot: false, books: [], both: !!(fwd && back) });
+      count: x.nf + x.nb, chunkIds: [], part: null, state: quiet ? "faint" : "shown", hot: false, books: [], both: !!(fwd && back), picked: false, onPath: false });
   }
 
   for (const [id, k] of Object.entries(options.kinds ?? {})) {
@@ -135,8 +144,28 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
   }
 
   for (const n of nodes.values()) n.state = allHidden(n.books) ? "dim" : "shown";
+
+  // The highlights: the open entity, the open edge and the path (a link's id is its pair, whichever way it points).
+  const pathNodes = new Set(options.path?.nodes ?? []);
+  const pathPairs = new Set((options.path?.hops ?? []).map((h) => pairKey(h.from, h.to)));
+  const edgePair = options.edge ? pairKey(options.edge.a, options.edge.b) : null;
+  for (const n of nodes.values()) { n.selected = n.id === options.selected; n.onPath = pathNodes.has(n.id); }
+  for (const l of links) { l.picked = l.id === edgePair; l.onPath = pathPairs.has(l.id); }
+
+  // The filters: a node is hidden by its kind, or when every book it is in is hidden.
+  let shownNodes = [...nodes.values()], shownLinks = links, hiddenByFilters = 0;
+  const f = options.filters;
+  if (f && (f.kinds.size > 0 || f.books.size > 0)) {
+    const keep = (n: ViewNode) => n.selected || n.onPath
+      || !(f.kinds.has(n.kind) || (n.books.length > 0 && n.books.every((b) => f.books.has(b))));
+    shownNodes = shownNodes.filter(keep);
+    hiddenByFilters = nodes.size - shownNodes.length;
+    const ids = new Set(shownNodes.map((n) => n.id));
+    shownLinks = links.filter((l) => ids.has(l.source) && ids.has(l.target)
+      && (l.picked || l.onPath || !(l.books.length > 0 && l.books.every((b) => f.books.has(b)))));
+  }
   return {
-    nodes: [...nodes.values()], links, overview: !!options.overview,
+    nodes: shownNodes, links: shownLinks, overview: !!options.overview, hiddenByFilters,
     shownEdges: state.edges.reduce((a, pe) => a + (pe?.edges.length ?? 0), 0),
     totalEdges: state.edges.reduce((a, pe) => a + (pe?.total ?? 0), 0),
   };

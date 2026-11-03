@@ -85,3 +85,26 @@ export interface LibraryBook { id: string; title: string; author: string | null;
 export type MoveResult = { started: true; world: WorldRef } | { started: false };
 export interface GeminiUse { used_today: number; limit: number; answer_reserve: number }
 export interface LibraryStatus { books: LibraryBook[]; gemini: GeminiUse }
+
+// The graph explorer's reads (profile, timeline, relations, edge, search, path, passage).
+export interface EntityRef { id: string; name: string; kind: string }
+export interface Quote { quote: string; chunk_id: string; book_id: string; chapter: number }
+export interface ProfileStatement extends Quote { text: string }
+export interface EntityProfile { id: string; name: string; kind: string; books: string[]; summary: string | null;
+  aspects: { aspect: string; statements: ProfileStatement[] }[];
+  counts: { beats: number; relations: number; chapters: number }; world?: WorldRef }
+export interface Beat { kind: string; text: string; quote: string; chunk_id: string; book_id: string; book_title: string | null;
+  chapter: number; position_label: string; others: { id: string | null; name: string }[] }
+export interface Timeline { beats: Beat[]; order_note: string | null }
+export interface PredicateCount { predicate: string; count: number; direction: "out" | "in" }
+export interface ChapterRef { book_id: string; book_title: string | null; chapter: number }
+export interface Relation { other: EntityRef; predicates: PredicateCount[]; evidence: Quote[];
+  first_chapter: ChapterRef | null; last_chapter: ChapterRef | null }
+export interface Relations { relations: Relation[]; order_note: string | null }
+export interface EdgeRelationship { subject: EntityRef; object: EntityRef; predicate: string; predicate_raw: string;
+  quote: string; chunk_id: string; book_id: string; book_title: string | null; chapter: number; position_label: string }
+export interface EdgeDetail { a: EntityRef; b: EntityRef; relationships: EdgeRelationship[]; predicates: PredicateCount[]; order_note: string | null }
+export interface SearchHit { id: string; name: string; kind: string; books: string[]; matched_alias: string | null; world?: WorldRef }
+export interface PathHop { from: string; to: string; predicates: PredicateCount[]; evidence: Quote[] }
+export interface PathResult { nodes: EntityRef[]; hops: PathHop[]; found: boolean; timed_out: boolean }
+export interface PassageText { chunk_id: string; book_id: string; book_title: string | null; chapter: number; text: string; position_label: string }

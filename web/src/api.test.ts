@@ -103,3 +103,21 @@ test("ask sends the depth in its body, and leaves it out when not given", async 
   for await (const _ of streamAsk("who?", new AbortController().signal, undefined, "focused")) { /* drain */ }
   expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ question: "who?", depth: "focused" });
 });
+
+test("the explorer reads hit the right paths, in the world", async () => {
+  jsonFetch();
+  await api.profile("a_zed", "2");
+  expect(lastCall()[0]).toBe("/api/entity/a_zed/profile?world=2");
+  await api.timeline("a_zed");
+  expect(lastCall()[0]).toBe("/api/entity/a_zed/timeline");
+  await api.relations("a_zed", "2");
+  expect(lastCall()[0]).toBe("/api/entity/a_zed/relations?world=2");
+  await api.edge("a_zed", "a_yan", "2");
+  expect(lastCall()[0]).toBe("/api/edge?a=a_zed&b=a_yan&world=2");
+  await api.search("zed q", "2");
+  expect(lastCall()[0]).toBe("/api/search?q=zed%20q&limit=8&world=2");
+  await api.path("a_zed", "a_yan", "all");
+  expect(lastCall()[0]).toBe("/api/path?a=a_zed&b=a_yan&max=4&world=all");
+  await api.passage("ba1:1:0", "2");
+  expect(lastCall()[0]).toBe("/api/passage/ba1%3A1%3A0?world=2");
+});

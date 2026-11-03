@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, isError } from "./api";
 import { ChatPane } from "./components/ChatPane";
 import { GraphPane } from "./components/GraphPane";
@@ -54,7 +54,6 @@ export default function App() {
     setRefreshKey((k) => k + 1);
     api.quota().then((q) => { if (!isError(q)) setResetsAt(q.resets_at); });
   }, [ask.state.status]);
-  const bookTitles = useMemo(() => new Map(books.map((b) => [b.id, b.title])), [books]);
   const graphed = books.filter((b) => b.status === "graphed");
   const noBooks = graphed.length > 0 && graphed.every((b) => hiddenBooks.has(b.id));
   return (
@@ -63,7 +62,7 @@ export default function App() {
         worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)} />
       <div className="panes">
         <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview} />
-        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} bookTitles={bookTitles} overview={overview} world={world} />
+        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} onAsk={ask.ask} />
       </div>
     </div>
   );

@@ -145,6 +145,78 @@ export const EXAMPLES = {
   group: (g: string) => `Who belongs to ${g}?`,
 };
 
+// The graph explorer: the graph pane's modes, the entity and edge panels, search, paths and filters.
+const nth = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const pretty = (p: string) => p.toLowerCase().replace(/_/g, " ");
+export const EXPLORE = {
+  modeLabel: "Graph view", modeAnswer: "This answer", modeLibrary: "Library",
+  panelLabel: "Entity", edgeLabel: "Relationship", close: "Close", back: "Back",
+  expand: "Expand neighbours", expanding: "Expanding\u2026", expandFailed: "Couldn't load the neighbours.",
+  loading: "Loading\u2026", failed: "Couldn't load that.",
+  tabsLabel: "Entity details",
+  tabs: { profile: "Profile", timeline: "Timeline", relations: "Relationships", ask: "Ask" },
+  startingEntity: "starting entity",
+  // Profile
+  noProfile: "No profile yet for this entity.",
+  noProfileHint: "Showing the facts found in the graph instead.",
+  rawFactsTitle: "Facts in the graph",
+  noFacts: "No facts found for this entity.",
+  counts: (c: { beats: number; relations: number; chapters: number }) =>
+    [nth(c.beats, "event", "events"), nth(c.relations, "connection", "connections"), nth(c.chapters, "chapter", "chapters")].join(" \u00b7 "),
+  aspect: (name: string) => name.charAt(0).toUpperCase() + name.slice(1).replace(/_/g, " "),
+  // Passages (quote chips)
+  chip: (book: string, chapter: number) => `${book} ch.${chapter}`,
+  chipLabel: (book: string, chapter: number) => `Open the passage from ${book}, chapter ${chapter}`,
+  passageLoading: "Loading the passage\u2026", passageFailed: "Couldn't load the passage.",
+  passageSource: (title: string | null, chapter: number) => `${title ?? "Book"} \u00b7 chapter ${chapter}`,
+  // Timeline
+  noBeats: "No story events recorded for this entity.",
+  chapter: (n: number) => `Chapter ${n}`,
+  beatKind: (kind: string) => kind.charAt(0).toUpperCase() + kind.slice(1).replace(/_/g, " "),
+  withOthers: "With",
+  openEntity: (name: string) => `Open ${name}`,
+  // Relationships
+  noRelations: "No relationships recorded for this entity.",
+  predicateLabel: (p: { predicate: string; count: number; direction: "out" | "in" }) =>
+    `${p.direction === "in" ? "\u2190 " : ""}${pretty(p.predicate)}${p.count > 1 ? ` \u00d7${p.count}` : ""}${p.direction === "out" ? " \u2192" : ""}`,
+  chapterSpan: (a: string, b: string) => (a === b ? a : `${a} \u2013 ${b}`),
+  showEdge: (a: string, b: string) => `Show how ${a} and ${b} are connected`,
+  // Ask
+  askIntro: "Ask LORE about this entity. Each question is answered from the books.",
+  askCost: "Uses the daily allowance.",
+  askCostDeep: "Uses the daily allowance: a deep answer can take a few dozen requests.",
+  askBusy: "LORE is still answering the previous question.",
+  deepDive: (name: string) => `Deep dive on ${name}`,
+  change: (name: string) => `How does ${name} change across the story?`,
+  role: (name: string) => `What role does ${name} play?`,
+  relationship: (a: string, b: string) => `How does the relationship between ${a} and ${b} develop?`,
+  // Edge view
+  edgeBetween: (a: string, b: string) => `${a} and ${b}`,
+  noEdges: "No relationships recorded between these two.",
+  edgeStatement: (subject: string, predicate: string, object: string) => `${subject} ${pretty(predicate)} ${object}`,
+  // Search
+  searchLabel: "Find an entity", searchPlaceholder: "Find an entity\u2026", searchResults: "Matching entities",
+  noMatches: "No entity matches that.", searching: "Searching\u2026",
+  matchedAlias: (alias: string) => `also called ${alias}`,
+  // Connect
+  connect: "Connect to\u2026", connectLabel: "Connect this entity to another", connectPick: "Find the second entity",
+  connectCancel: "Cancel", connecting: "Looking for a connection\u2026",
+  pathTitle: (from: string, to: string) => `${from} to ${to}`,
+  pathHops: (n: number) => nth(n, "step", "steps"),
+  pathNone: (from: string, to: string) => `No connection found between ${from} and ${to} within 4 steps.`,
+  pathTimedOut: "The search took too long. Try a closer pair.",
+  pathFailed: "Couldn't look for a connection.",
+  pathSame: "That is the same entity.",
+  clearPath: "Clear path", pathLabel: "Connection",
+  hop: (n: number) => `Step ${n}`,
+  // Filters
+  filters: "Filters", filtersLabel: "Graph filters", kindsLabel: "Show kinds", booksLabel: "Show books",
+  filtersActive: (n: number) => `Filters (${n} hidden)`,
+  resetFilters: "Show everything",
+  kindLabel: { Character: "Character", Place: "Place", Faction: "Group", Object: "Object", Concept: "Concept", Event: "Event" } as Record<string, string>,
+  filteredOut: (nodes: number) => `${nth(nodes, "entity", "entities")} hidden by filters`,
+};
+
 function until(resetsAt: string | undefined, now: Date): string {
   if (!resetsAt) return "";
   const mins = Math.max(0, Math.round((new Date(resetsAt).getTime() - now.getTime()) / 60000));

@@ -158,3 +158,20 @@ test("the Deep dive choice defaults to auto, is sent with every question and is 
   const again = renderHook(() => useAsk());
   expect(again.result.current.depth).toBe("focused");
 });
+
+test("a depth given to ask overrides the Deep dive choice for that question only, and retry keeps it", async () => {
+  const { useAsk } = await import("./useAsk");
+  const { result } = renderHook(() => useAsk("2"));
+  act(() => result.current.ask("Deep dive on Zed Quill", "deep"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(streamAsk.mock.calls[0][3]).toBe("deep");
+  expect(result.current.depth).toBe("auto");
+  act(() => result.current.ask("What role does Zed Quill play?"));
+  await waitFor(() => expect(streamAsk).toHaveBeenCalledTimes(2));
+  expect(streamAsk.mock.calls[1][3]).toBe("auto");
+  act(() => result.current.ask("Deep dive on Zed Quill", "deep"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  act(() => result.current.retry());
+  await waitFor(() => expect(streamAsk).toHaveBeenCalledTimes(4));
+  expect(streamAsk.mock.calls[3][3]).toBe("deep");
+});
