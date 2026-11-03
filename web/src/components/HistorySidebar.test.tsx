@@ -16,21 +16,21 @@ const items: HistoryItem[] = [
 const worlds = [{ id: 1, name: "Alpha Saga", books: [] }, { id: 2, name: "Beta Realm", books: [] }];
 const handlers = () => ({ onReplay: vi.fn(), onDelete: vi.fn(), onClear: vi.fn(), onNew: vi.fn(), onClose: vi.fn() });
 const show = (h = handlers(), extra: Partial<React.ComponentProps<typeof HistorySidebar>> = {}) => {
-  render(<HistorySidebar items={items} current="2" worlds={worlds} now={now} {...h} {...extra} />);
+  render(<HistorySidebar items={items} current="2" world="1" worlds={worlds} now={now} {...h} {...extra} />);
   return h;
 };
 
-test("entries sit under Today, Yesterday and Earlier with the time, a world badge and a deep marker", () => {
+test("entries sit under Today, Yesterday and Earlier with the time, a badge only for another world and a deep icon", () => {
   show();
   expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([HISTORY.groups.today, HISTORY.groups.yesterday, HISTORY.groups.earlier]);
   const today = screen.getByRole("region", { name: HISTORY.groups.today });
   expect(within(today).getByText("10:42")).toBeInTheDocument();
   expect(within(today).getByText("Beta Realm")).toBeInTheDocument();
-  expect(within(today).getByText(HISTORY.deep)).toBeInTheDocument();
+  expect(within(today).getByRole("img", { name: "Deep answer" })).toBeInTheDocument();
   const yesterday = screen.getByRole("region", { name: HISTORY.groups.yesterday });
   expect(within(yesterday).getByText("Yesterday", { selector: ".mono" })).toBeInTheDocument();
-  expect(within(yesterday).getByText("Alpha Saga")).toBeInTheDocument();
-  expect(within(yesterday).queryByText(HISTORY.deep)).toBeNull();
+  expect(within(yesterday).queryByText("Alpha Saga")).toBeNull(); // the selected world: no badge
+  expect(within(yesterday).queryByRole("img", { name: "Deep answer" })).toBeNull();
   // An old item with no world still reads fine: no badge.
   const earlier = screen.getByRole("region", { name: HISTORY.groups.earlier });
   expect(within(earlier).getByText("14 Oct")).toBeInTheDocument();
@@ -90,15 +90,26 @@ test("New question is a button; an empty history says what will appear and offer
   expect(h.onNew).toHaveBeenCalled();
 });
 
-test("as a drawer it is a modal dialog: focus starts inside, Tab wraps, Escape closes", async () => {
+test("the world badge shows only when the entry's world differs from the selected one", () => {
+  show(handlers(), { world: "2" });
+  expect(screen.getByText("Alpha Saga")).toBeInTheDocument();
+  expect(screen.queryByText("Beta Realm")).toBeNull();
+  expect(screen.queryByText(HISTORY.allWorlds)).toBeNull();
+});
+
+test("a Ctrl K hint is shown", () => {
+  show();
+  expect(screen.getByText(/Ctrl K|\u2318K/)).toBeInTheDocument();
+});
+
+test("it is a modal dialog: focus starts inside, Tab wraps, Escape closes", async () => {
   const h = handlers();
-  render(<><button>outside</button><HistorySidebar items={items} current={null} worlds={worlds} now={now} drawer {...h} /></>);
+  render(<><button>outside</button><HistorySidebar items={items} current={null} worlds={worlds} now={now} {...h} /></>);
   const dialog = screen.getByRole("dialog", { name: HISTORY.title });
   expect(dialog).toHaveAttribute("aria-modal", "true");
   const close = within(dialog).getByRole("button", { name: HISTORY.close });
   expect(close).toHaveFocus();
-  await userEvent.tab({ shift: true }); // from the first control back to the last, not out to the page
-  expect(dialog.contains(document.activeElement)).toBe(true);
+  await userEvent.tab({ shift: true });
   expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: HISTORY.clear }));
   await userEvent.tab();
   expect(close).toHaveFocus();
@@ -106,9 +117,10 @@ test("as a drawer it is a modal dialog: focus starts inside, Tab wraps, Escape c
   expect(h.onClose).toHaveBeenCalled();
 });
 
-test("the column version is a plain landmark, not a modal", () => {
-  show();
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.getByRole("complementary", { name: HISTORY.title })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: HISTORY.close })).toBeNull();
+test("a click outside the drawer closes it; a click inside does not", async () => {
+  const h = show();
+  await userEvent.click(screen.getByRole("dialog", { name: HISTORY.title }));
+  expect(h.onClose).not.toHaveBeenCalled();
+  await userEvent.click(document.querySelector(".hist-backdrop")!);
+  expect(h.onClose).toHaveBeenCalled();
 });

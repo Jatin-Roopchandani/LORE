@@ -87,7 +87,7 @@ export const WORLDS = {
 };
 
 export const LIBRARY = {
-  open: "Library", manage: "Manage library\u2026", title: "Library", close: "Close", loading: "Loading the library…", empty: "No books yet.",
+  open: "Books", manage: "Manage library\u2026", title: "Library", close: "Close", loading: "Loading the library…", empty: "No books yet.",
   unreachable: "LORE isn't reachable. Check that `lore ui` is still running.",
   ready: "Ready", paused: "Paused", failed: "Failed", unprocessed: "Not processed yet",
   stage: (stage: string) => STAGE_LABEL[stage] ?? stage,
@@ -227,13 +227,20 @@ export const HISTORY = {
   empty: "Questions you ask will be listed here.",
   noMatch: (q: string) => `No question matches \u201c${q}\u201d.`,
   yesterday: "Yesterday",
-  deep: "Deep", deepHint: "A deep, sectioned answer",
+  deep: "Deep answer",
+  quickHint: (mac: boolean) => (mac ? "\u2318K" : "Ctrl K"), quickHintLabel: (mac: boolean) => `Quick switcher: press ${mac ? "Command K" : "Control K"} anywhere`,
   allWorlds: "All worlds",
   delete: (q: string) => `Delete: ${q}`, deleteShort: "\u00d7",
   clear: "Clear history",
   clearConfirm: (n: number) => `Clear all ${n} saved ${n === 1 ? "question" : "questions"}? This can't be undone.`,
   clearConfirmLabel: "Confirm clearing history", clearYes: "Clear", clearNo: "Keep",
   entries: "Earlier questions",
+};
+
+// The Ctrl+K quick switcher: jump back to a past question, or ask a new one.
+export const QUICK = {
+  title: "Quick switcher", search: "Search past questions or type a new one", placeholder: "Search or ask\u2026",
+  list: "Matching questions", ask: (q: string) => `Ask: ${q}`, empty: "No past question matches.",
 };
 
 function until(resetsAt: string | undefined, now: Date): string {

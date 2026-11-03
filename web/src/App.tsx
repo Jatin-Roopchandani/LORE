@@ -3,8 +3,8 @@ import { api, isError } from "./api";
 import { ChatPane } from "./components/ChatPane";
 import { GraphPane } from "./components/GraphPane";
 import { HistorySidebar } from "./components/HistorySidebar";
+import { QuickSwitcher } from "./components/QuickSwitcher";
 import { TopBar } from "./components/TopBar";
-import { loadHistoryOpen, saveHistoryOpen, useNarrow } from "./historyPanel";
 import { applyTheme, loadTheme } from "./theme";
 import type { Book, SubgraphData, World } from "./types";
 import { useAsk } from "./useAsk";
@@ -27,17 +27,19 @@ export default function App() {
   const [overview, setOverview] = useState<SubgraphData | null | undefined>();
   // Bumped when the Library panel changed the worlds or moved a book.
   const [libraryVersion, setLibraryVersion] = useState(0);
-  // The history sidebar: a column that stays open or shut (remembered) on wide screens, a drawer opened on demand on narrow ones.
-  const narrow = useNarrow();
-  const [historyOpen, setHistoryOpen] = useState(() => loadHistoryOpen());
+  // History is a drawer over the page at every width (never a column); Ctrl/Cmd+K opens the quick switcher.
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const sidebarOpen = narrow ? drawerOpen : historyOpen;
-  const toggleHistory = useCallback(() => {
-    if (narrow) { setDrawerOpen((o) => !o); return; }
-    setHistoryOpen((o) => { saveHistoryOpen(!o); return !o; });
-  }, [narrow]);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const toggleHistory = useCallback(() => setDrawerOpen((o) => !o), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  useEffect(() => { if (!narrow) setDrawerOpen(false); }, [narrow]);
+  const closeQuick = useCallback(() => setQuickOpen(false), []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k") { e.preventDefault(); setDrawerOpen(false); setQuickOpen((o) => !o); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   useEffect(() => { applyTheme(loadTheme()); }, []);
   useEffect(() => {
     api.settings().then((s) => { if (!isError(s)) setShowInternals(s.show_internals); });
@@ -80,15 +82,16 @@ export default function App() {
     <div className="app">
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey}
         worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)}
-        historyOpen={sidebarOpen} onToggleHistory={toggleHistory} />
-      <div className={sidebarOpen && !narrow ? "panes with-history" : "panes"}>
-        {sidebarOpen && (
-          <HistorySidebar items={ask.history} current={ask.current} worlds={worlds ?? []} drawer={narrow} onReplay={replay} onDelete={ask.remove}
+        historyOpen={drawerOpen} onToggleHistory={toggleHistory} />
+      <div className="panes">
+        {drawerOpen && (
+          <HistorySidebar items={ask.history} current={ask.current} world={world} worlds={worlds ?? []} onReplay={replay} onDelete={ask.remove}
             onClear={ask.clearHistory} onNew={newQuestion} onClose={closeDrawer} />
         )}
         <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview} />
         <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} onAsk={ask.ask} />
       </div>
+      {quickOpen && <QuickSwitcher items={ask.history} onReplay={ask.replay} onAsk={(q) => ask.ask(q)} onClose={closeQuick} />}
     </div>
   );
 }
