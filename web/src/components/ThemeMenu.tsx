@@ -4,12 +4,27 @@ import { applyTheme, loadTheme } from "../theme";
 import { THEMES, themeById, type Theme } from "../themes";
 
 const SYSTEM_SWATCH: Theme = { id: "system", name: THEME.system, group: "light", tokens: {} };
-const dot = (t: Theme) => {
-  // System shows a split of Light and Dark.
-  if (t.id !== "system") return { background: `linear-gradient(135deg, ${t.tokens["--bg"]} 0 50%, ${t.tokens["--accent"]} 50% 75%, ${t.tokens["--glow"]} 75%)` };
-  const l = themeById("light")!.tokens["--bg"], d = themeById("dark")!.tokens["--bg"];
-  return { background: `linear-gradient(135deg, ${l} 0 50%, ${d} 50%)` };
-};
+// A miniature of the app in that theme: its background, a panel strip, a line of
+// text in its ink, and accent and glow dots. System shows Light and Dark side by side.
+function Preview({ t }: { t: Theme }) {
+  const card = (tk: Record<string, string>) => (
+    <span className="theme-card" style={{ background: tk["--bg"], borderColor: tk["--line"] }}>
+      <span className="tc-panel" style={{ background: tk["--panel"] }} />
+      <span className="tc-ink" style={{ background: tk["--ink"] }} />
+      <span className="tc-dots">
+        <span style={{ background: tk["--accent"] }} />
+        <span style={{ background: tk["--glow"] }} />
+      </span>
+    </span>
+  );
+  if (t.id !== "system") return <span className="theme-swatch" aria-hidden="true">{card(t.tokens)}</span>;
+  return (
+    <span className="theme-swatch split" aria-hidden="true">
+      {card(themeById("light")!.tokens)}
+      {card(themeById("dark")!.tokens)}
+    </span>
+  );
+}
 
 // A button that opens a menu of themes: System, then the Dark group, then the Light group. Arrow keys move,
 // Enter picks, Escape closes and returns focus to the button.
@@ -40,7 +55,7 @@ export function ThemeMenu() {
   };
   const entry = (t: Theme, hint?: string) => (
     <button key={t.id} type="button" role="menuitemradio" aria-checked={current === t.id} data-id={t.id} className="theme-item" onClick={() => pick(t.id)}>
-      <i className="theme-swatch" style={dot(t)} aria-hidden="true" />
+      <Preview t={t} />
       <span>{t.name}</span>
       {hint && <small>{hint}</small>}
     </button>

@@ -46,7 +46,13 @@ header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-block:12p
 .theme-item small{margin-left:auto;color:var(--muted);font-size:11px}
 .theme-item:hover,.theme-item:focus-visible{background:var(--sunk)}
 .theme-item[aria-checked="true"]{font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}
-.theme-swatch{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);flex:none}
+.theme-swatch{display:inline-flex;gap:2px;flex:none}
+.theme-card{position:relative;display:block;width:34px;height:24px;border-radius:5px;border:1px solid;overflow:hidden;box-sizing:border-box}
+.theme-swatch.split .theme-card{width:17px}
+.tc-panel{position:absolute;left:0;top:0;right:0;height:7px}
+.tc-ink{position:absolute;left:4px;top:11px;width:55%;height:2px;border-radius:1px;opacity:.85}
+.tc-dots{position:absolute;right:3px;bottom:3px;display:flex;gap:2px}
+.tc-dots span{display:block;width:6px;height:6px;border-radius:50%}
 .menu h4{margin:0;font:600 11px var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .menu input[type=search]{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:6px 10px;font:inherit;color:var(--ink);width:100%}
 .booklist{list-style:none;margin:0;padding:0;max-height:240px;overflow:auto;display:flex;flex-direction:column;gap:2px}
