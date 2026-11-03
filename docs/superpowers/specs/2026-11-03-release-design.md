@@ -89,6 +89,22 @@ Migrations use Alembic. Per-user SQLite migrations keep the existing in-app styl
 - A terms line: users upload only books they own, for personal use.
 - An account deletion action removes the data directory, the Postgres rows and the key.
 
+## 8a. Homepage and waitlist (decided 2026-11-03)
+
+A small front door, served by the same app. The app itself moves behind sign-in.
+- **`/` (public):** a one-line pitch, a short looping clip or 2–3 screenshots of a real answer, and the differentiators:
+  - every sentence checked against the book;
+  - deep and analytical answers;
+  - an explorable graph;
+  - a private library;
+  - spoiler-safe reading, marked "soon".
+
+  It has a "How the beta works" section (invite-only, bring your own free Gemini key) and two buttons: **Sign in** and **Request an invite**. Screenshots use public-domain books only. It uses the logo and supports light and dark themes.
+- **Waitlist:** the form takes an email, "what are you reading?" (optional) and a consent checkbox. Entries go into a new table `waitlist(id, email, reading, created_at, status, invited_at)`.
+  - Spam protection: a rate limit per IP plus a honeypot field. No third-party captcha in the beta.
+  - The admin page lists requests. **Approve** creates an invite and emails a sign-in link through Resend; **Decline** removes the request.
+- **`/privacy` and `/terms`:** short, plain pages. Google's OAuth consent screen requires these links.
+
 ## 9. Order of work (each piece gets its own plan)
 
 1. **Tenancy core:** per-user data directories, resolving a user to a config, and the worker as a separate process with a Postgres job queue.
@@ -97,8 +113,9 @@ Migrations use Alembic. Per-user SQLite migrations keep the existing in-app styl
 4. **Server-side history and the trace store.**
 5. **Browser upload** (Phase 5b), with limits and validation.
 6. **Hardening:** hidden internals, rate limits, friendly errors.
-7. **Deploy:** Docker images, Compose, Caddy, Oracle VM, DNS, backups and a restore drill, monitoring.
-8. **Invite the first testers.**
+7. **Homepage, waitlist and admin approval**, plus the privacy and terms pages.
+8. **Deploy:** Docker images, Compose, Caddy, Oracle VM, DNS, backups and a restore drill, monitoring.
+9. **Invite the first testers.**
 
 ## Open questions (decide during the plans)
 
