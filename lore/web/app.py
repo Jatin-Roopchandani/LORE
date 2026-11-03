@@ -33,6 +33,7 @@ from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE, day_report, today
 from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.move import prepare_move
 from lore.orchestrator.pipeline import processing_budget_left, run_book
+from lore.query import explore
 from lore.web.ask import ask_events
 from lore.worlds import (
     WorldError, books_in, create_world, delete_world, get_world, list_worlds,
@@ -408,6 +409,37 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     @api.get("/api/overview")
     def overview(limit: int = 40, world: str | None = None):
         return tools.overview(config, limit, world=world)
+
+    # The graph explorer's reads: stored data only, never a model call.
+    @api.get("/api/entity/{entity_id}/profile")
+    def entity_profile(entity_id: str, world: str | None = None):
+        return explore.profile(config, entity_id, world=world)
+
+    @api.get("/api/entity/{entity_id}/timeline")
+    def entity_timeline(entity_id: str, world: str | None = None):
+        return explore.timeline(config, entity_id, world=world)
+
+    @api.get("/api/entity/{entity_id}/relations")
+    def entity_relations(entity_id: str, world: str | None = None):
+        return explore.relations(config, entity_id, world=world)
+
+    @api.get("/api/edge")
+    def edge(a: str, b: str, world: str | None = None):
+        return explore.edge(config, a, b, world=world)
+
+    @api.get("/api/search")
+    def search(q: str = "", world: str | None = None,
+               limit: int = Query(explore.SEARCH_LIMIT_DEFAULT, ge=1)):
+        return explore.search(config, q, world=world, limit=limit)
+
+    @api.get("/api/path")
+    def path(a: str, b: str, world: str | None = None,
+             max: int = Query(explore.PATH_MAX_HOPS, ge=1)):
+        return explore.path(config, a, b, world=world, max_hops=max)
+
+    @api.get("/api/passage/{chunk_id}")
+    def passage(chunk_id: str, world: str | None = None):
+        return explore.passage(config, chunk_id, world=world)
 
     @api.get("/api/quota")
     def quota():
