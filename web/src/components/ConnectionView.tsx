@@ -28,8 +28,8 @@ export function ConnectionView({ connection, world, bookTitles, onSelect, onClea
               <span className="preds">{h.predicates.map((p) => <span key={`${p.predicate}:${p.direction}`} className="pred">{EXPLORE.predicateLabel(p)}</span>)}</span>
               <button className="linkbtn" type="button" aria-label={EXPLORE.openEntity(name(h.to))} onClick={() => onSelect(h.to)}>{name(h.to)}</button>
               {h.evidence.map((q) => (
-                <p key={`${q.chunk_id}:${q.quote}`} className="ev"><span className="qtext">{`“${q.quote}”`}</span>{" "}
-                  <QuoteChip chunkId={q.chunk_id} quote={q.quote} bookId={q.book_id} chapter={q.chapter} world={world} bookTitles={bookTitles} /></p>
+                <div key={`${q.chunk_id}:${q.quote}`} className="ev"><span className="qtext">{`“${q.quote}”`}</span>{" "}
+                  <QuoteChip chunkId={q.chunk_id} quote={q.quote} bookId={q.book_id} chapter={q.chapter} world={world} bookTitles={bookTitles} /></div>
               ))}
             </li>
           ))}

@@ -217,8 +217,8 @@ function RelationRow({ rel, from, world, bookTitles, onOpen }: { rel: Relation; 
         {span && <span className="mono">{span}</span>}
       </button>
       {rel.evidence.map((q) => (
-        <p key={`${q.chunk_id}:${q.quote}`} className="ev"><span className="qtext">{`“${q.quote}”`}</span>{" "}
-          <QuoteChip chunkId={q.chunk_id} quote={q.quote} bookId={q.book_id} chapter={q.chapter} world={world} bookTitles={bookTitles} /></p>
+        <div key={`${q.chunk_id}:${q.quote}`} className="ev"><span className="qtext">{`“${q.quote}”`}</span>{" "}
+          <QuoteChip chunkId={q.chunk_id} quote={q.quote} bookId={q.book_id} chapter={q.chapter} world={world} bookTitles={bookTitles} /></div>
       ))}
     </li>
   );

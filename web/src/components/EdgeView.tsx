@@ -32,8 +32,8 @@ export function EdgeView({ a, b, world, bookTitles, busy = false, onClose, onSel
               <li key={i}>
                 <strong>{EXPLORE.edgeStatement(r.subject.name, r.predicate, r.object.name)}</strong>
                 <span className="mono">{r.position_label}</span>
-                <p className="ev"><span className="qtext">{`“${r.quote}”`}</span>{" "}
-                  <QuoteChip chunkId={r.chunk_id} quote={r.quote} bookId={r.book_id} chapter={r.chapter} world={world} bookTitles={bookTitles} /></p>
+                <div className="ev"><span className="qtext">{`“${r.quote}”`}</span>{" "}
+                  <QuoteChip chunkId={r.chunk_id} quote={r.quote} bookId={r.book_id} chapter={r.chapter} world={world} bookTitles={bookTitles} /></div>
               </li>
             ))}
           </ul>
