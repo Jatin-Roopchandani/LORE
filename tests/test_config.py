@@ -221,3 +221,12 @@ def test_the_committed_lore_toml_builds_the_graph_with_gemini() -> None:
     assert cfg.extraction_provider == "gemini"
     assert cfg.adjudication.provider == "gemini"
     assert cfg.disambiguation.enabled is True
+
+
+def test_processing_answer_reserve_default_and_toml(tmp_path) -> None:
+    from lore.config import LoreConfig
+    assert LoreConfig().processing.answer_reserve == 60
+    p = tmp_path / "lore.toml"
+    p.write_text("[lore.processing]\nanswer_reserve = 12\n")
+    assert LoreConfig.load(p).processing.answer_reserve == 12
+    assert LoreConfig.load(Path("lore.toml")).processing.answer_reserve == 60

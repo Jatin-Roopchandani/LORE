@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LORE">
+  <style>:root{--a:#1E5AA0;--g:#B97808}@media (prefers-color-scheme:dark){:root{--a:#78AEEA;--g:#EBAA3C}}</style>
+  <path d="M32 56 C24 51 14 50 6 52 V30 C14 28 24 29 32 34 C40 29 50 28 58 30 V52 C50 50 40 51 32 56 Z" fill="none" stroke="var(--a)" stroke-width="3.4" stroke-linejoin="round"/>
+  <path d="M32 34 V56" stroke="var(--a)" stroke-width="3.4"/>
+  <path d="M32 30 L16 14 M32 30 L32 8 M32 30 L48 14 M16 14 L32 8 L48 14" fill="none" stroke="var(--a)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="30" r="3.2" fill="var(--a)"/>
+  <circle cx="16" cy="14" r="3.4" fill="var(--a)"/><circle cx="32" cy="8" r="3.8" fill="var(--g)"/><circle cx="48" cy="14" r="3.4" fill="var(--a)"/>
+</svg>

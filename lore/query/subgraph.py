@@ -6,8 +6,11 @@ from itertools import zip_longest
 from typing import Iterable, Sequence
 
 from lore.ingest.registry import chunks_by_id
-from lore.query.models import EdgeRow, Evidence, Passage, TemplateCall
+from lore.query.models import CodexLine, EdgeRow, Evidence, Passage, TemplateCall, TimelineBeat
+from lore.query.retrieval import drop_boilerplate
 from lore.query.templates import MAX_EVIDENCE_CHARS, TEMPLATES
+from lore.query.timeline import coverage_order
+from lore.resolve.entityhood import is_boilerplate_chunk
 
 _Item = tuple[str, str, int, str]  # chunk_id, book_id, chapter_seq, text
 
@@ -227,6 +230,11 @@ def assemble_ranked(
     extra_chunks: Iterable[tuple[str, str, int]] = (),
     max_chars: int = MAX_EVIDENCE_CHARS,
     book_fair: bool = False,
+    timelines: Sequence[Sequence[TimelineBeat]] = (),
+    timeline_share: float = 0.0,
+    part_books: Sequence[Sequence[str]] = (),
+    codexes: Sequence[Sequence[CodexLine]] = (),
+    codex_share: float = 0.0,
 ) -> Evidence:
     """Evidence from template rows plus vector passages, for one or more parts.
 
@@ -244,6 +252,24 @@ def assemble_ranked(
     round-robin across books within each list, as in `assemble`, for the
     no-decomposition fallback, where one part may still span books.
 
+    `timelines` holds one sequence of story beats per part (timeline.py).
+    Their passages join the candidates, and `timeline_share` of `max_chars`
+    is a slice only they fill, the earliest, the latest, then an even sample
+    between (timeline.coverage_order), a part at a time. What the slice
+    does not use goes back to the ranked passages, which fill the rest
+    exactly as they would without a timeline. A part's share also holds its
+    own timeline passages, and the evidence carries the beats for the prompt.
+
+    `part_books` holds, per part, the ids of the library books its text
+    names. A part naming exactly one book answers from that book alone: no
+    other book's passage is in its ranked list or its timeline, so none is in
+    its share (retrieval v2's SCOPE_PENALTY only ranked them lower). A part
+    naming no book, or several, is unchanged.
+
+    `codexes` and `codex_share` do the same for codex lines (codexslice.py): a
+    second slice, filled after the timeline's, from the passages the timeline
+    slice did not already take.
+
     Passages are numbered in reading order, and only edges whose passage
     was kept are returned. `shares` gives each part's passage numbers: the
     ones it took, plus the ones it ranked above them that another part took.
@@ -254,18 +280,77 @@ def assemble_ranked(
         positions.setdefault(row.chunk_id, (row.book_id, row.chapter_seq))
     for chunk_id, book_id, chapter_seq in extra_chunks:
         positions.setdefault(chunk_id, (book_id, chapter_seq))
+    for beats in timelines:
+        for beat in beats:
+            positions.setdefault(beat.chunk_id, (beat.book_id, beat.chapter_seq))
+    for lines in codexes:
+        for line in lines:
+            positions.setdefault(line.chunk_id, (line.book_id, line.chapter_seq))
     if not positions:
         return Evidence(edges=(), passages=(), truncated=False)
 
     ordered = sorted(positions.items(), key=lambda kv: (kv[1][0], kv[1][1], kv[0]))
     texts = chunks_by_id(conn, [c for c, _ in ordered])
-    items = [(c, b, s, texts[c]) for c, (b, s) in ordered if c in texts]
+    # Whatever path a chunk came from (edge, vector, keyword), a licence or
+    # table-of-contents chunk is no evidence.
+    items = [(c, b, s, texts[c]) for c, (b, s) in ordered
+             if c in texts and not is_boilerplate_chunk(texts[c])]
     rank_list = _by_relevance if book_fair else _pure_relevance
-    lists = [rank_list(items, scores) for scores in score_lists] or [_interleaved(items)]
-    turns = _next_unseen(lists)
-    kept, truncated = _capped(turns.merged, max_chars)
+    def only_book(index: int) -> str | None:
+        books = list(dict.fromkeys(part_books[index])) if index < len(part_books) else []
+        return books[0] if len(books) == 1 else None
 
+    lists = [rank_list([i for i in items if only_book(index) in (None, i[1])], scores)
+             for index, scores in enumerate(score_lists)] or [_interleaved(items)]
+    turns = _next_unseen(lists)
+    by_id = {item[0]: item for item in items}
+    # Each part's timeline passages, earliest-to-latest evenly (those that
+    # exist and are story), and the slice they fill together, a part at a time.
+    part_ids: list[list[str]] = []
+    for index, beats in enumerate(timelines):
+        chunks = [c for c in dict.fromkeys(b.chunk_id for b in beats)
+                  if c in by_id and only_book(index) in (None, by_id[c][1])]
+        part_ids.append([chunks[i] for i in coverage_order(len(chunks))])
+    slice_items: list[_Item] = []
+    slice_used = 0
+    if timeline_share > 0 and any(part_ids):
+        slice_cap = int(max_chars * timeline_share)
+        for item in _next_unseen([[by_id[c] for c in ids] for ids in part_ids]).merged:
+            if slice_used + len(item[3]) > slice_cap:
+                continue  # one oversized passage must not empty the slice
+            slice_items.append(item)
+            slice_used += len(item[3])
+    # The codex slice: the same, over the passages the timeline did not take.
+    codex_ids: list[list[str]] = []
+    for index, lines in enumerate(codexes):
+        chunks = [c for c in dict.fromkeys(l.chunk_id for l in lines)
+                  if c in by_id and only_book(index) in (None, by_id[c][1])]
+        codex_ids.append([chunks[i] for i in coverage_order(len(chunks))])
+    if codex_share > 0 and any(codex_ids):
+        codex_cap = int(max_chars * codex_share)
+        codex_used = 0
+        taken = {item[0] for item in slice_items}
+        for item in _next_unseen([[by_id[c] for c in ids] for ids in codex_ids]).merged:
+            if item[0] in taken:
+                continue
+            if codex_used + len(item[3]) > codex_cap:
+                continue
+            slice_items.append(item)
+            taken.add(item[0])
+            codex_used += len(item[3])
+            slice_used += len(item[3])
+    slice_ids = {item[0] for item in slice_items}
+    ranked, truncated = _capped([i for i in turns.merged if i[0] not in slice_ids],
+                                max_chars - slice_used)
+    kept = ranked + slice_items
     kept_ids = {item[0] for item in kept}
+    # Every timeline passage the evidence could not hold is evidence cut too.
+    truncated = truncated or any(c not in kept_ids for ids in part_ids for c in ids)
+    truncated = truncated or any(c not in kept_ids for ids in codex_ids for c in ids)
+    # Of the ranked turns, the leading ones that were taken: a part's share
+    # counts what it took within them (_shares).
+    kept_count = next((i for i, item in enumerate(turns.merged) if item[0] not in kept_ids),
+                      len(turns.merged))
 
     def best(chunk_id: str) -> tuple[bool, float]:
         return min(_relevance_key(scores, chunk_id) for scores in score_lists) \
@@ -280,13 +365,26 @@ def assemble_ranked(
         for index, (c, b, s, t) in enumerate(kept)
     )
     number = {p.chunk_id: p.n for p in passages}
-    shares = tuple(tuple(sorted(number[c] for c in share if c in number))
-                   for share in _shares(turns, len(kept)))
-    return Evidence(edges=edges, passages=passages, truncated=truncated, shares=shares)
+    base = _shares(turns, kept_count)
+    if part_ids:
+        base = [share | {c for c in ids if c in kept_ids}
+                for share, ids in zip(base, part_ids + [[]] * len(base))]
+    if codex_ids:
+        base = [share | {c for c in ids if c in kept_ids}
+                for share, ids in zip(base, codex_ids + [[]] * len(base))]
+    shares = tuple(tuple(sorted(number[c] for c in share if c in number)) for share in base)
+    timeline = tuple(dict.fromkeys(b for beats in timelines for b in beats))
+    codex = tuple(dict.fromkeys(l for lines in codexes for l in lines))
+    return Evidence(edges=edges, passages=passages, truncated=truncated, shares=shares,
+                    timeline=timeline,
+                    timelines=tuple(tuple(beats) for beats in timelines) if timeline else (),
+                    codex=codex,
+                    codexes=tuple(tuple(lines) for lines in codexes) if codex else ())
 
 
 def passages_from_chunks(chunk_rows: list[dict]) -> tuple[Passage, ...]:
     """Passages straight from LanceDB rows, for the no-graph paths."""
+    chunk_rows = drop_boilerplate(chunk_rows)
     return tuple(
         Passage(n=index + 1, chunk_id=str(row["chunk_id"]),
                 book_id=str(row.get("book_id", "")),

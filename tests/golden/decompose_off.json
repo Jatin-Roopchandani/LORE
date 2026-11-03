@@ -1,0 +1,20 @@
+{
+ "prompt_books": "You are splitting a question about books into the parts a search must cover.\n\nBooks in the library (a reference for names only): Alpha Tale; Beta Tale\n\nQuestion: How is A connected to B?\n\nReturn \"sub_questions\": a list of 1 to 4 self-contained questions that\ntogether ask exactly what the question asks.\n- If the question has one part, return the question unchanged as the only item.\n- Split per book only when the question explicitly asks about each book or\n  both books (\"in each novel\", \"in both novels\", \"in each book\", \"in both\n  books\"): then give one sub-question per book, naming that book.\n- Otherwise keep the question's own parts. Do not split a question by book\n  just because the library holds several books.\n- A question that asks \"who ... and why ...\" is two sub-questions: one\n  for who, one for why. Likewise \"what ... and how ...\".\n- If the question asks about a role or a theme (a kind of character, a\n  motive, a vice or a virtue) rather than a named person, make the parts\n  find every character it applies to, not only the most prominent one:\n  including those whose earlier actions set the events in motion.\n- Each sub-question must make sense on its own: repeat the names it needs\n  instead of \"he\", \"she\", \"it\", \"they\" or \"that\".\n- Do not answer, and do not add anything the question does not ask.\n",
+ "prompt_plain": "You are splitting a question about books into the parts a search must cover.\n\nQuestion: Who did it, and why?\n\nReturn \"sub_questions\": a list of 1 to 4 self-contained questions that\ntogether ask exactly what the question asks.\n- If the question has one part, return the question unchanged as the only item.\n- Split per book only when the question explicitly asks about each book or\n  both books (\"in each novel\", \"in both novels\", \"in each book\", \"in both\n  books\"): then give one sub-question per book, naming that book.\n- Otherwise keep the question's own parts. Do not split a question by book\n  just because the library holds several books.\n- A question that asks \"who ... and why ...\" is two sub-questions: one\n  for who, one for why. Likewise \"what ... and how ...\".\n- If the question asks about a role or a theme (a kind of character, a\n  motive, a vice or a virtue) rather than a named person, make the parts\n  find every character it applies to, not only the most prominent one:\n  including those whose earlier actions set the events in motion.\n- Each sub-question must make sense on its own: repeat the names it needs\n  instead of \"he\", \"she\", \"it\", \"they\" or \"that\".\n- Do not answer, and do not add anything the question does not ask.\n",
+ "schema": {
+  "properties": {
+   "sub_questions": {
+    "items": {
+     "type": "string"
+    },
+    "title": "Sub Questions",
+    "type": "array"
+   }
+  },
+  "required": [
+   "sub_questions"
+  ],
+  "title": "SubQuestions",
+  "type": "object"
+ }
+}

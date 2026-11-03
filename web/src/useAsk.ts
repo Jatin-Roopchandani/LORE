@@ -2,8 +2,9 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { streamAsk } from "./api";
 import { askReducer, initialState, type AskState } from "./askReducer";
 import { addToHistory, loadHistory, saveHistory, type HistoryItem } from "./history";
+import { loadDepth, saveDepth } from "./depth";
 import { createScheduler, type Scheduler } from "./scheduler";
-import type { AskEvent } from "./types";
+import type { AskEvent, Depth } from "./types";
 
 type Action = { kind: "reset"; question: string } | { kind: "event"; event: AskEvent };
 function reducer(state: AskState, action: Action): AskState {
@@ -11,7 +12,9 @@ function reducer(state: AskState, action: Action): AskState {
 }
 const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
-export function useAsk() {
+// `world` is the selected world (an id as a string, or "all"). Replaying an item asked in another world calls
+// `onReplayWorld` with it, so the rest of the page follows.
+export function useAsk(world: string = "all", onReplayWorld?: (world: string) => void) {
   const [state, dispatch] = useReducer(reducer, initialState());
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
   const [current, setCurrent] = useState<string | null>(null);
@@ -22,14 +25,25 @@ export function useAsk() {
   useEffect(() => { if (history !== loaded.current) saveHistory(history); }, [history]);
   const abort = useRef<AbortController | null>(null);
   const scheduler = useRef<Scheduler | null>(null);
-  const last = useRef<string>("");
+  const last = useRef<{ question: string; depth?: Depth }>({ question: "" });
+  // The Deep dive choice (auto, deep or focused), remembered across visits and sent with every question.
+  const [depth, setDepthState] = useState<Depth>(() => loadDepth());
+  const depthRef = useRef(depth);
+  depthRef.current = depth;
+  const setDepth = useCallback((d: Depth) => { setDepthState(d); saveDepth(d); }, []);
+  const worldRef = useRef(world);
+  worldRef.current = world;
+  const onReplayWorld_ = useRef(onReplayWorld);
+  onReplayWorld_.current = onReplayWorld;
 
   const stop = () => { abort.current?.abort(); scheduler.current?.stop(); };
   useEffect(() => stop, []);
 
-  const ask = useCallback((question: string) => {
+  // `depth` overrides the Deep dive choice for this one question (the graph panel's Deep dive button).
+  const ask = useCallback((question: string, depth?: Depth) => {
     stop();
-    last.current = question;
+    const asked = worldRef.current;
+    last.current = { question, depth };
     dispatch({ kind: "reset", question });
     const controller = new AbortController();
     abort.current = controller;
@@ -40,10 +54,10 @@ export function useAsk() {
     setRun((n) => n + 1);
     (async () => {
       const events: AskEvent[] = [];
-      for await (const event of streamAsk(question, controller.signal)) { events.push(event); sched.push(event); }
+      for await (const event of streamAsk(question, controller.signal, asked, depth ?? depthRef.current)) { events.push(event); sched.push(event); }
       if (controller.signal.aborted) return;
       if (events.some((e) => e.type === "answer"))
-        setHistory((h) => addToHistory(h, { id, question, events, askedAt: new Date().toISOString() }));
+        setHistory((h) => addToHistory(h, { id, question, events, askedAt: new Date().toISOString(), world: asked }));
     })();
   }, []);
 
@@ -51,6 +65,7 @@ export function useAsk() {
     const item = history.find((h) => h.id === id);
     if (!item) return;
     stop();
+    if (item.world && item.world !== worldRef.current) onReplayWorld_.current?.(item.world);
     setCurrent(id);
     setRun((n) => n + 1);
     dispatch({ kind: "reset", question: item.question });
@@ -59,6 +74,21 @@ export function useAsk() {
     item.events.forEach((e) => sched.push(e));
   }, [history]);
 
-  const retry = useCallback(() => { if (last.current) ask(last.current); }, [ask]);
-  return { state, history, current, run, ask, replay, retry, busy: state.status === "running" };
+  // Back to the empty state (the library overview), as when the world changes.
+  const clear = useCallback(() => {
+    stop();
+    setCurrent(null);
+    setRun((n) => n + 1);
+    dispatch({ kind: "reset", question: "" });
+  }, []);
+
+  // Deleting the entry on show keeps the answer on screen but no longer marks it as an entry.
+  const remove = useCallback((id: string) => {
+    setHistory((h) => h.filter((x) => x.id !== id));
+    setCurrent((c) => (c === id ? null : c));
+  }, []);
+  const clearHistory = useCallback(() => { setHistory([]); setCurrent(null); }, []);
+
+  const retry = useCallback(() => { if (last.current.question) ask(last.current.question, last.current.depth); }, [ask]);
+  return { state, history, current, run, ask, replay, retry, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running" };
 }

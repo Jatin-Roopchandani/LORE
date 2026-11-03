@@ -140,6 +140,35 @@ class WebConfig(BaseModel):
     port: int = 8766
 
 
+class ProcessingConfig(BaseModel):
+    """Book processing (resumable jobs). `answer_reserve` is the number of
+    Gemini requests per day that processing leaves untouched, so questions
+    in the UI keep working while a book is being processed."""
+
+    answer_reserve: int = Field(default=60, ge=0)
+
+
+class BeatsConfig(BaseModel):
+    """Story beats (the `beats` pipeline stage). On by default; when False the
+    stage does nothing and the book simply has no beats."""
+
+    enabled: bool = True
+
+
+class CodexConfig(BaseModel):
+    """The codex (the `codex` pipeline stage): quote-verified entity profiles.
+    On by default; when False the stage does nothing and no entry is built."""
+
+    enabled: bool = True
+
+
+class AnswersConfig(BaseModel):
+    """How answers are written. `viewpoint` is the path of an editorial policy
+    that replaces the packaged `lore/query/viewpoint.md`; empty uses it."""
+
+    viewpoint: Path | None = None
+
+
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
     # "kaggle": free T4 burst. "ollama": fully local, zero egress.
@@ -156,6 +185,10 @@ class LoreConfig(BaseModel):
     synthesis: SynthesisConfig = Field(default_factory=SynthesisConfig)
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
     web: WebConfig = Field(default_factory=WebConfig)
+    processing: ProcessingConfig = Field(default_factory=ProcessingConfig)
+    beats: BeatsConfig = Field(default_factory=BeatsConfig)
+    answers: AnswersConfig = Field(default_factory=AnswersConfig)
+    codex: CodexConfig = Field(default_factory=CodexConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
@@ -198,6 +231,16 @@ class LoreConfig(BaseModel):
         with no key and no config is byte-identical to today" testable.
         """
         return self.data_dir / "disambiguation"
+
+    @property
+    def beats_dir(self) -> Path:
+        """Cached beat answers, per book. Never created eagerly."""
+        return self.data_dir / "beats"
+
+    @property
+    def codex_dir(self) -> Path:
+        """Cached codex answers, per entity. Never created eagerly."""
+        return self.data_dir / "codex"
 
     @property
     def adjudication_dir(self) -> Path:

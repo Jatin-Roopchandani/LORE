@@ -1,7 +1,8 @@
+import * as lens from "./fixtures/lens";
 import single from "./fixtures/single-part.json";
 import two from "./fixtures/two-part.json";
 import { budget, empty, interrupted } from "./fixtures/synthetic";
-import { askReducer, initialState } from "./askReducer";
+import { askReducer, initialState, unwrittenCount } from "./askReducer";
 import type { AskEvent } from "./types";
 
 const run = (events: AskEvent[]) => events.reduce(askReducer, initialState("q"));
@@ -57,4 +58,87 @@ test("errors and empty answers", () => {
 
 test("elapsed never goes backwards", () => {
   expect(run(interrupted).elapsed).toBe(0.5);
+});
+
+test("compose and check run at the same time", () => {
+  const ev = (name: any, state: any, t: number) => ({ type: "step", t, name, state, part: null, detail: null }) as AskEvent;
+  let s = initialState("q");
+  for (const e of [ev("write", "start", 1), ev("write", "done", 2), ev("compose", "start", 3), ev("check", "start", 4)]) s = askReducer(s, e);
+  const st = (n: string) => s.steps.find((x) => x.name === n)!.state;
+  expect(st("compose")).toBe("running");
+  expect(st("check")).toBe("running");
+  expect(s.steps.map((x) => x.name).indexOf("compose")).toBe(s.steps.map((x) => x.name).indexOf("write") + 1);
+  s = askReducer(s, ev("check", "done", 5));
+  s = askReducer(s, { ...ev("compose", "done", 6), detail: "3 sentences" } as AskEvent);
+  expect(st("compose")).toBe("done");
+});
+
+import * as deep from "./fixtures/deep";
+
+test("a deep answer builds the plan, sections, short answer and live citations as events arrive", () => {
+  let s = initialState("q");
+  for (const e of [...deep.head, ...deep.sec0, deep.sec1[0], deep.sec1[1]]) s = askReducer(s, e);
+  expect(s.plan?.sections.map((x) => x.heading)).toEqual(["The council", "The guild"]);
+  expect(s.sections.map((x) => [x.index, x.state])).toEqual([[0, "done"], [1, "writing"]]);
+  expect(s.liveClaims.map((c) => c.text)).toEqual(deep.claims.slice(0, 2).map((c) => c.text));
+  expect(s.livePassages.map((p) => p.n)).toEqual([1]);
+  expect(s.shortAnswer).toBeNull();
+  expect(s.deepSteps.map((d) => [d.kind, d.part, d.state])).toEqual([["plan", null, "done"], ["section", 0, "done"], ["section", 1, "running"]]);
+  expect(s.steps.find((x) => x.name === "split")!.state).toBe("done");
+  for (const e of [deep.sec1[2], deep.sec1[3], ...deep.tail]) s = askReducer(s, e);
+  expect(s.shortAnswer?.length).toBe(1);
+  expect(s.liveClaims).toHaveLength(3);
+  expect(s.sections.map((x) => x.kind)).toEqual(["section", "section", "close"]);
+  expect(s.status).toBe("done");
+});
+
+test("a skipped section is kept with its reason; an interrupted stream fails the one being written", () => {
+  let s = initialState("q");
+  s = askReducer(s, deep.start(0, "A"));
+  s = askReducer(s, { type: "section", t: 1, index: 1, state: "skipped", kind: "section", heading: "B", reason: "reserve" });
+  expect(s.sections[1]).toMatchObject({ state: "skipped", reason: "reserve" });
+  s = askReducer(s, { type: "error", t: 2, error: { code: "interrupted", message: "" } });
+  expect(s.sections[0].state).toBe("failed");
+});
+
+test("the parts event keeps lens_of and the plan's questions", () => {
+  const s = askReducer(initialState("q"), { type: "parts", t: 0, sub_questions: ["l1", "l2", "f"], lens_of: [0, 0, null], plan_questions: ["P"] });
+  expect(s.lensOf).toEqual([0, 0, null]);
+  expect(s.planQuestions).toEqual(["P"]);
+  expect(askReducer(initialState("q"), { type: "parts", t: 0, sub_questions: ["a"] }).lensOf).toEqual([]);
+});
+
+// ---- interpretive answers: short answer, lens sections, honest rows --------------------------------
+
+
+
+test("the short answer is kept, with the claims and passages its citations need", () => {
+  const s = run([...lens.head, lens.plan, lens.shortEvent([lens.shortA, lens.noPosition])]);
+  expect(s.shortAnswer?.map((x) => x.kind)).toEqual(["reading", "limit"]);
+  expect(s.liveClaims).toHaveLength(4);
+  expect(s.livePassages.map((p) => p.n)).toEqual([1, 2, 3, 4]);
+});
+
+test("a section knows the part it is grouped under", () => {
+  const s = run([...lens.head, lens.plan, ...lens.sec[0]]);
+  expect(s.sections[0].group).toBe(lens.PART_A);
+  expect(s.plan?.sections.map((x) => x.group)).toEqual([lens.PART_A, lens.PART_A, lens.PART_B, lens.PART_B]);
+});
+
+test("a failed section marks its step row failed, not done", () => {
+  const s = run([...lens.head, lens.plan, ...lens.sec[0], ...lens.sec[1]]);
+  expect(s.deepSteps.map((d) => d.state)).toEqual(["done", "failed"]);
+});
+
+test("a section that found nothing marks its row skipped, and a section skipped for budget gets a skipped row", () => {
+  const s = run([...lens.head, lens.plan, ...lens.sec[2],
+    { type: "section", t: 9, index: 3, state: "skipped", kind: "section", heading: "Who stood by Tam", reason: "budget" }]);
+  expect(s.deepSteps.map((d) => [d.part, d.state])).toEqual([[2, "skipped"], [3, "skipped"]]);
+});
+
+test("the count of sections that could not be written comes from the stream, then from the result", () => {
+  const streaming = run([...lens.head, lens.plan, ...lens.sec[0], ...lens.sec[1], ...lens.sec[2]]);
+  expect(unwrittenCount(streaming)).toBe(2);
+  expect(unwrittenCount(run(lens.full))).toBe(2);
+  expect(unwrittenCount(run([...lens.head, lens.plan, ...lens.sec[0]]))).toBe(0);
 });

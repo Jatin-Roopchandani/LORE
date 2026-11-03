@@ -7,7 +7,7 @@ interface Stream { signal: AbortSignal; push(e: AskEvent): void; end(): void }
 const streams: Stream[] = [];
 const streamAsk = vi.fn();
 
-vi.mock("./api", () => ({ streamAsk: (q: string, signal: AbortSignal) => streamAsk(q, signal) }));
+vi.mock("./api", () => ({ streamAsk: (q: string, signal: AbortSignal, world?: string, depth?: string) => streamAsk(q, signal, world, depth) }));
 Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
 
 function controllable(signal: AbortSignal) {
@@ -84,4 +84,115 @@ test("unmount aborts the active stream", async () => {
   expect(streams[0].signal.aborted).toBe(false);
   unmount();
   expect(streams[0].signal.aborted).toBe(true);
+});
+
+test("ask sends the selected world and records it in the history item", async () => {
+  const { useAsk } = await import("./useAsk");
+  const { result, rerender } = renderHook(({ w }) => useAsk(w), { initialProps: { w: "2" } });
+  act(() => result.current.ask("q1"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(streamAsk.mock.calls[0][2]).toBe("2");
+  expect(result.current.history[0].world).toBe("2");
+  rerender({ w: "all" });
+  act(() => result.current.ask("q2"));
+  await waitFor(() => expect(result.current.history).toHaveLength(2));
+  expect(streamAsk.mock.calls[1][2]).toBe("all");
+  expect(result.current.history[0].world).toBe("all");
+});
+
+test("replaying an item from another world switches to it; the same world does not", async () => {
+  const { useAsk } = await import("./useAsk");
+  const switched = vi.fn();
+  const item = (id: string, world: string) => ({ id, question: id, events: single, askedAt: "2026-10-01T00:00:00Z", world });
+  localStorage.setItem("lore-history-v1", JSON.stringify([item("here", "2"), item("there", "1")]));
+  const { result } = renderHook(() => useAsk("2", switched));
+  act(() => result.current.replay("here"));
+  expect(switched).not.toHaveBeenCalled();
+  act(() => result.current.replay("there"));
+  expect(switched).toHaveBeenCalledWith("1");
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(streamAsk).not.toHaveBeenCalled();
+});
+
+test("an item saved before worlds replays without switching", async () => {
+  const { useAsk } = await import("./useAsk");
+  const switched = vi.fn();
+  const item = { id: "old", question: "q", events: single, askedAt: "2026-10-01T00:00:00Z" };
+  localStorage.setItem("lore-history-v1", JSON.stringify([item]));
+  const { result } = renderHook(() => useAsk("3", switched));
+  act(() => result.current.replay("old"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(switched).not.toHaveBeenCalled();
+});
+
+test("clear returns to the empty state and aborts a running stream", async () => {
+  const { useAsk } = await import("./useAsk");
+  streamAsk.mockImplementation((_q: string, signal: AbortSignal) => controllable(signal));
+  const { result } = renderHook(() => useAsk());
+  act(() => result.current.ask("q"));
+  const run = result.current.run;
+  act(() => result.current.clear());
+  expect(streams[0].signal.aborted).toBe(true);
+  expect(result.current.state.status).toBe("idle");
+  expect(result.current.state.question).toBe("");
+  expect(result.current.run).toBe(run + 1);
+});
+
+test("the Deep dive choice defaults to auto, is sent with every question and is remembered", async () => {
+  const { useAsk } = await import("./useAsk");
+  const { result, unmount } = renderHook(() => useAsk());
+  expect(result.current.depth).toBe("auto");
+  act(() => result.current.ask("q1"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(streamAsk.mock.calls[0][3]).toBe("auto");
+  act(() => result.current.setDepth("deep"));
+  expect(localStorage.getItem("lore-depth-v1")).toBe("deep");
+  act(() => result.current.ask("q2"));
+  await waitFor(() => expect(streamAsk).toHaveBeenCalledTimes(2));
+  expect(streamAsk.mock.calls[1][3]).toBe("deep");
+  act(() => result.current.setDepth("focused"));
+  act(() => result.current.retry());
+  await waitFor(() => expect(streamAsk).toHaveBeenCalledTimes(3));
+  expect(streamAsk.mock.calls[2][3]).toBe("focused");
+  unmount();
+  const again = renderHook(() => useAsk());
+  expect(again.result.current.depth).toBe("focused");
+});
+
+test("a depth given to ask overrides the Deep dive choice for that question only, and retry keeps it", async () => {
+  const { useAsk } = await import("./useAsk");
+  const { result } = renderHook(() => useAsk("2"));
+  act(() => result.current.ask("Deep dive on Zed Quill", "deep"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  expect(streamAsk.mock.calls[0][3]).toBe("deep");
+  expect(result.current.depth).toBe("auto");
+  act(() => result.current.ask("What role does Zed Quill play?"));
+  await waitFor(() => expect(streamAsk).toHaveBeenCalledTimes(2));
+  expect(streamAsk.mock.calls[1][3]).toBe("auto");
+  act(() => result.current.ask("Deep dive on Zed Quill", "deep"));
+  await waitFor(() => expect(result.current.state.status).toBe("done"));
+  act(() => result.current.retry());
+  await waitFor(() => expect(streamAsk).toHaveBeenCalledTimes(4));
+  expect(streamAsk.mock.calls[3][3]).toBe("deep");
+});
+
+test("remove drops one history item (and the current mark if it was current); clearHistory empties it and the store", async () => {
+  const { useAsk } = await import("./useAsk");
+  const { result } = renderHook(() => useAsk());
+  act(() => result.current.ask("first"));
+  await waitFor(() => expect(result.current.history).toHaveLength(1));
+  act(() => result.current.ask("second"));
+  await waitFor(() => expect(result.current.history).toHaveLength(2));
+  const [newest, older] = result.current.history.map((h) => h.id);
+  expect(result.current.current).toBe(newest);
+  act(() => result.current.remove(older));
+  expect(result.current.history.map((h) => h.id)).toEqual([newest]);
+  expect(result.current.current).toBe(newest);
+  act(() => result.current.remove(newest));
+  expect(result.current.history).toEqual([]);
+  expect(result.current.current).toBeNull();
+  act(() => result.current.ask("third"));
+  await waitFor(() => expect(result.current.history).toHaveLength(1));
+  act(() => result.current.clearHistory());
+  await waitFor(() => expect(JSON.parse(localStorage.getItem(HISTORY_KEY)!)).toEqual([]));
 });

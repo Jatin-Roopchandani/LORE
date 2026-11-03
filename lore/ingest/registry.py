@@ -4,6 +4,8 @@ from __future__ import annotations
 import sqlite3
 
 from lore.ingest.models import Chunk
+from lore.query.models import BookInfo
+from lore.worlds import suggest_world
 
 
 def ingest_book(
@@ -15,7 +17,12 @@ def ingest_book(
     source: str,
     file_path: str,
     chunks: list[Chunk],
+    series: str | None = None,
+    series_index: float | None = None,
+    world_id: int | None = None,
 ) -> bool:
+    """Register a book. Every book gets a world: `world_id`, else the
+    suggested one for its series/title (created when it does not exist)."""
     row = conn.execute(
         "SELECT status FROM books WHERE id = ?", (book_id,)
     ).fetchone()
@@ -29,10 +36,14 @@ def ingest_book(
         return False
     try:
         conn.execute("BEGIN")
+        if world_id is None:
+            world_id, name = suggest_world(conn, series, title)
+            if world_id is None:
+                world_id = _new_world(conn, name, book_id)
         conn.execute(
-            "INSERT OR REPLACE INTO books (id, title, author, source, file_path, status)"
-            " VALUES (?, ?, ?, ?, ?, 'chunked')",
-            (book_id, title, author, source, file_path),
+            "INSERT OR REPLACE INTO books (id, title, author, source, file_path, status,"
+            " series, series_index, world_id) VALUES (?, ?, ?, ?, ?, 'chunked', ?, ?, ?)",
+            (book_id, title, author, source, file_path, series, series_index, world_id),
         )
         conn.executemany(
             "INSERT INTO chunks (id, book_id, chapter_seq, scene_seq, seq, text)"
@@ -47,6 +58,16 @@ def ingest_book(
         conn.rollback()
         raise
     return True
+
+
+def _new_world(conn: sqlite3.Connection, name: str, book_id: str) -> int:
+    """Insert a world inside the caller's transaction; a taken name gets the
+    book id appended so the book still lands somewhere of its own."""
+    name = name or book_id
+    if conn.execute("SELECT 1 FROM worlds WHERE name = ? COLLATE NOCASE",
+                    (name,)).fetchone():
+        name = f"{name} ({book_id[:8]})"
+    return conn.execute("INSERT INTO worlds (name) VALUES (?)", (name,)).lastrowid
 
 
 def forget_book(conn: sqlite3.Connection, book_id: str) -> bool:
@@ -83,15 +104,50 @@ def forget_book(conn: sqlite3.Connection, book_id: str) -> bool:
 
 
 def list_books(conn: sqlite3.Connection) -> list[dict]:
-    rows = conn.execute(
-        "SELECT b.id, b.title, b.author, b.status, COUNT(c.id)"
-        " FROM books b LEFT JOIN chunks c ON c.book_id = b.id"
-        " GROUP BY b.id ORDER BY b.created_at"
-    ).fetchall()
+    # The query path may open a library read-only that has not been migrated
+    # yet: fall back to the columns it has (no world before v9, no story
+    # position before v5).
+    base = ("SELECT b.id, b.title, b.author, b.status, COUNT(c.id){extra}"
+            " FROM books b LEFT JOIN chunks c ON c.book_id = b.id{join}"
+            " GROUP BY b.id ORDER BY b.created_at")
+    try:
+        rows = conn.execute(base.format(
+            extra=", b.series, b.series_index, b.world_id, w.name",
+            join=" LEFT JOIN worlds w ON w.id = b.world_id")).fetchall()
+    except sqlite3.OperationalError:
+        try:
+            rows = [(*r, None, None) for r in conn.execute(base.format(
+                extra=", b.series, b.series_index", join="")).fetchall()]
+        except sqlite3.OperationalError:
+            rows = [(*r, None, None, None, None) for r in conn.execute(
+                base.format(extra="", join="")).fetchall()]
     return [
-        {"id": r[0], "title": r[1], "author": r[2], "status": r[3], "chunk_count": r[4]}
+        {"id": r[0], "title": r[1], "author": r[2], "status": r[3], "chunk_count": r[4],
+         "series": r[5], "series_index": r[6], "world_id": r[7], "world": r[8]}
         for r in rows
     ]
+
+
+def set_series(conn: sqlite3.Connection, book_id: str, series: str | None,
+               series_index: float | None) -> bool:
+    """Set (or, with None, None, clear) a book's story position. False when
+    there is no such book."""
+    cur = conn.execute("UPDATE books SET series = ?, series_index = ? WHERE id = ?",
+                       (series, series_index, book_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def book_rows(conn: sqlite3.Connection) -> dict[str, BookInfo]:
+    """Every book's title and story position, by id. Tolerates a library
+    that has not been migrated yet (no series columns): the query path may
+    open the file read-only as it is, and then no book has a position."""
+    try:
+        rows = conn.execute("SELECT id, title, series, series_index FROM books").fetchall()
+    except sqlite3.OperationalError:
+        rows = [(r[0], r[1], None, None)
+                for r in conn.execute("SELECT id, title FROM books").fetchall()]
+    return {r[0]: BookInfo(title=r[1], series=r[2], series_index=r[3]) for r in rows}
 
 
 def chunks_for_book(conn: sqlite3.Connection, book_id: str) -> list[Chunk]:
@@ -118,3 +174,19 @@ def chunks_by_id(conn: sqlite3.Connection, ids: list[str]) -> dict[str, str]:
         f"SELECT id, text FROM chunks WHERE id IN ({marks})", ids
     ).fetchall()
     return {row[0]: row[1] for row in rows}
+
+
+def find_books(conn: sqlite3.Connection, ref: str) -> list[dict]:
+    """The books a user's reference names: an exact id; else a title,
+    ignoring case, exactly; else a title containing the text. One entry is
+    a match; several mean the reference is ambiguous; none, unknown."""
+    books = list_books(conn)
+    ref = ref.strip()
+    for matches in (
+        [b for b in books if b["id"] == ref],
+        [b for b in books if b["title"].casefold() == ref.casefold()],
+        [b for b in books if ref and ref.casefold() in b["title"].casefold()],
+    ):
+        if matches:
+            return matches
+    return []

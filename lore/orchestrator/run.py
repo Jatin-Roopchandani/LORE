@@ -19,6 +19,7 @@ from lore.extract.runner import ExtractionHalted
 from lore.ingest.registry import chunks_for_book
 from lore.kaggle_api.client import KaggleClient
 from lore.orchestrator import quota
+from lore.orchestrator.local import QuotaHalted
 from lore.orchestrator.quota import QuotaExceeded
 from lore.orchestrator.templates import materialize_extract_run
 from lore.orchestrator.workunit import WorkUnit, pack_units, validate_output
@@ -90,7 +91,13 @@ class _UnitHalted(Exception):
     Internal to this module: the unit is already marked failed when this is
     raised, and `run_extraction` ends the run instead of failing every
     remaining unit the same way (each attempt would spend requests).
+    `quota` marks a spent daily allowance (resumable tomorrow), as opposed to
+    a rejected key or an unreachable server.
     """
+
+    def __init__(self, reason: str, quota: bool = False) -> None:
+        super().__init__(reason)
+        self.quota = quota
 
 
 def _run_unit_here(
@@ -108,7 +115,7 @@ def _run_unit_here(
         if on_event is not None:
             on_event(f"{unit.unit_id}: failed — {exc}")
         if isinstance(exc, ExtractionHalted):
-            raise _UnitHalted(str(exc)) from exc
+            raise _UnitHalted(str(exc), quota=isinstance(exc, QuotaHalted)) from exc
         return False, 0.0, 0, 0
     set_unit_state(conn, unit.book_id, unit.unit_id, "completed")
     if on_event is not None:

@@ -34,7 +34,8 @@ def _answers(path: Path) -> dict[str, dict]:
             for l in path.read_text().splitlines() if l.strip()}
 
 
-def packet(run: str, arms: list[str], qset: str, out: Path, seed: int) -> None:
+def packet(run: str, arms: list[str], qset: str, out: Path, seed: int,
+           answer_only: bool = False) -> None:
     runs = [_answers(HERE / "runs" / f"{run}.{a}.jsonl") for a in arms]
     rng = random.Random(seed)
     items, key = [], {}
@@ -47,9 +48,12 @@ def packet(run: str, arms: list[str], qset: str, out: Path, seed: int) -> None:
         item = {"id": q["id"], "question": q["question"]}
         for label, a in zip("AB", order):
             r = runs[a][q["id"]]
-            item[label] = {"answer": r.get("answer"),
-                           "claims": [{"text": c["text"], "quote": c.get("quote")}
-                                      for c in r.get("claims", [])]}
+            if answer_only:
+                item[label] = {"answer": r.get("answer")}
+            else:
+                item[label] = {"answer": r.get("answer"),
+                               "claims": [{"text": c["text"], "quote": c.get("quote")}
+                                          for c in r.get("claims", [])]}
         items.append(item)
     (out / "sealed").mkdir(parents=True, exist_ok=True)
     (out / "packet.json").write_text(json.dumps(items, indent=1, ensure_ascii=False))
@@ -87,11 +91,32 @@ def score(out: Path) -> None:
         print(f"{a:24s} facts {t['facts']}/{t['of']}  false {t['false']}  dup {t['dup']}  "
               f"correct/partly/refused/wrong {t['correct']}/{t['partly']}/"
               f"{t['refused']}/{t['wrong']}")
+    prefs = Counter()
+    for g in grades:
+        p = g.get("preferred")
+        if p in ("A", "B"):
+            prefs[key[g["id"]][p]] += 1
+        elif p == "tie":
+            prefs["tie"] += 1
+    if prefs:
+        w, l = prefs[arms[1]], prefs[arms[0]]
+        print(f"readability: {arms[1]} preferred {w}, {arms[0]} preferred {l}, tie {prefs['tie']};"
+              f" sign test p = {sign_test(w, l):.3f}")
     wins = sum(b > a for _, a, b in per_q)
     losses = sum(b < a for _, a, b in per_q)
     print(f"\n{arms[1]} vs {arms[0]}, per question: better {wins}, worse {losses}, "
           f"same {len(per_q) - wins - losses}; sign test p = {sign_test(wins, losses):.3f}")
     print("changed:", ", ".join(f"{i} {a}->{b}" for i, a, b in per_q if a != b))
+
+
+def styles(run: str, arms: list[str]) -> None:
+    for a in arms:
+        recs = list(_answers(HERE / "runs" / f"{run}.{a}.jsonl").values())
+        c = Counter(r.get("answer_style", "claims") for r in recs)
+        eligible = sum(1 for r in recs if len(r.get("claims", [])) >= 2)
+        fell = sum(1 for r in recs if len(r.get("claims", [])) >= 2 and r.get("answer_style") != "prose")
+        rate = f"{100 * fell // eligible}%" if eligible else "n/a"
+        print(f"{a}: prose {c['prose']}, claims {c['claims']}; fallback {rate} of {eligible} eligible")
 
 
 def main() -> None:
@@ -104,11 +129,18 @@ def main() -> None:
     p.add_argument("--set", dest="qset", choices=sorted(SETS), default="dev")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--answer-only", action="store_true",
+                   help="show graders only each answer text, not its claims")
     s = sub.add_parser("score")
     s.add_argument("--out", type=Path, required=True)
+    st = sub.add_parser("styles")
+    st.add_argument("--run", required=True)
+    st.add_argument("--arms", nargs=2, required=True)
     args = parser.parse_args()
     if args.cmd == "packet":
-        packet(args.run, args.arms, args.qset, args.out, args.seed)
+        packet(args.run, args.arms, args.qset, args.out, args.seed, args.answer_only)
+    elif args.cmd == "styles":
+        styles(args.run, args.arms)
     else:
         score(args.out)
 

@@ -38,5 +38,8 @@ packages = ["lore"]
 artifacts = ["lore/web/static/**"]
 
 [tool.pytest.ini_options]
-markers = ["live: tests that hit real local services (ollama); deselect with -m 'not live'"]
+markers = [
+    "live: tests that hit real local services (ollama); deselect with -m 'not live'",
+    "network: tests allowed to reach non-local hosts (opts out of the socket guard)",
+]
 asyncio_mode = "auto"

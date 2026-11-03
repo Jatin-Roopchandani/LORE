@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import re
+import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
+from xml.etree import ElementTree
 
 import ebooklib
 from ebooklib import epub
@@ -152,6 +154,59 @@ def _metadata(book: epub.EpubBook, field: str) -> str | None:
     return values[0][0] if values else None
 
 
+def _number(text: str | None) -> float | None:
+    try:
+        value = float((text or "").strip())
+    except ValueError:
+        return None
+    return value if value == value and abs(value) != float("inf") else None
+
+
+def series_from_opf(opf_xml: str) -> tuple[str | None, float | None]:
+    """(series name, position in it) from an OPF document, or (None, None).
+
+    Two conventions: calibre's `<meta name="calibre:series">` with
+    `calibre:series_index`, and EPUB3's `belongs-to-collection` with the
+    `group-position` refinement (a collection whose type is given and is not
+    "series" is ignored). Calibre's wins when both are present. Anything
+    unreadable is simply no series: story position is optional metadata and
+    must never fail an ingest.
+    """
+    try:
+        root = ElementTree.fromstring(opf_xml)
+    except ElementTree.ParseError:
+        return None, None
+    metas = [el for el in root.iter() if el.tag.rsplit("}", 1)[-1] == "meta"]
+    named = {el.get("name"): el.get("content") for el in metas if el.get("name")}
+    name = (named.get("calibre:series") or "").strip()
+    if name:
+        return name, _number(named.get("calibre:series_index"))
+    refined: dict[str, dict[str, str]] = {}
+    for el in metas:
+        target = (el.get("refines") or "").lstrip("#")
+        if target and el.get("property"):
+            refined.setdefault(target, {})[el.get("property")] = (el.text or "").strip()
+    for el in metas:
+        if el.get("property") != "belongs-to-collection":
+            continue
+        name = (el.text or "").strip()
+        props = refined.get(el.get("id") or "", {})
+        if name and props.get("collection-type", "series").lower() == "series":
+            return name, _number(props.get("group-position"))
+    return None, None
+
+
+def _series(path: Path) -> tuple[str | None, float | None]:
+    try:
+        with zipfile.ZipFile(path) as z:
+            container = ElementTree.fromstring(z.read("META-INF/container.xml"))
+            rootfile = next(el for el in container.iter()
+                            if el.tag.rsplit("}", 1)[-1] == "rootfile")
+            return series_from_opf(z.read(rootfile.get("full-path")).decode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001 -- optional metadata, see series_from_opf
+        return None, None
+
+
 def _spine_documents(book: epub.EpubBook) -> list:
     """Document items in reading (spine) order.
 
@@ -220,8 +275,11 @@ def parse_epub(path: Path) -> ParsedBook:
             )
     if not chapters:
         raise IngestError(f"EPUB {path.name} contains no readable chapters")
+    series, series_index = _series(path)
     return ParsedBook(
         title=_metadata(book, "title") or path.stem,
         author=_metadata(book, "creator"),
         chapters=chapters,
+        series=series,
+        series_index=series_index,
     )

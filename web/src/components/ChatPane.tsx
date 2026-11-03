@@ -1,31 +1,52 @@
 import type { useAsk } from "../useAsk";
 import { errorMessage, UI } from "../messages";
 import { Claims } from "./Claims";
-import { HistoryBar } from "./HistoryBar";
+import { Prose } from "./Prose";
 import { HowPanel } from "./HowPanel";
 import { AskBox } from "./AskBox";
+import { Sections } from "./Sections";
+import { ShortAnswer } from "./ShortAnswer";
 import { StepList } from "./StepList";
 import { Snip } from "./SettingsMenu";
+import { exampleQuestions } from "../examples";
+import type { SubgraphData } from "../types";
 
 const NOT_FOUND = "not found: ";
 // The backend joins notes with "; " and names each missing part as "not found: <part>".
 const missingParts = (note: string | null | undefined) =>
   (note ?? "").split("; ").filter((n) => n.startsWith(NOT_FOUND)).map((n) => n.slice(NOT_FOUND.length));
 
-export function ChatPane({ ask, showInternals, resetsAt, onHoverChunk }:
-  { ask: ReturnType<typeof useAsk>; showInternals: boolean; resetsAt?: string; onHoverChunk: (c: string | null) => void }) {
+export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview }:
+  { ask: Pick<ReturnType<typeof useAsk>, "state" | "run" | "ask" | "retry" | "busy" | "depth" | "setDepth">; showInternals: boolean; resetsAt?: string; onHoverChunks: (chunks: string[]) => void;
+    overview?: SubgraphData | null }) {
   const { state } = ask;
   const r = state.result;
   const err = state.error ? errorMessage(state.error, { showInternals, resetsAt }) : null;
   const notFound = missingParts(r?.note);
+  // A deep answer: once the answer has landed, the result says so (a deep question that fell back to the
+  // ordinary path has a plan but a prose or claims answer, and must show that). Until then the stream does:
+  // a plan or a written section, unless every planned section has come back empty (the ordinary path is next).
+  const written = state.sections.some((s) => s.state !== "empty");
+  const abandoned = state.plan !== null && state.sections.length > 0 && !written;
+  const sectioned = r ? r.answer_style === "sectioned" : written || (state.plan !== null && !abandoned);
+  const examples = state.question ? [] : exampleQuestions(overview);
   return (
     <section className="pane chat" aria-label="Conversation">
-      <HistoryBar items={ask.history} current={ask.current} onPick={ask.replay} />
       <div className="thread" aria-live="polite">
+        {!state.question && (
+          <div className="empty">
+            <p>{UI.emptyIntro}</p>
+            {examples.length > 0 && (
+              <ul className="examples" aria-label={UI.examplesLabel}>
+                {examples.map((q) => <li key={q}><button className="example" type="button" onClick={() => ask.ask(q)}>{q}</button></li>)}
+              </ul>
+            )}
+          </div>
+        )}
         {state.question && <div className="q">{state.question}</div>}
         {state.question && (
           <div className="a">
-            <StepList steps={state.steps} />
+            <StepList state={state} />
             {err && (
               <div className="note" role="alert">
                 <p>{err.text}</p>
@@ -34,13 +55,28 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunk }:
               </div>
             )}
             {r && r.claims.length === 0 && <p className="note">{UI.refusal}</p>}
-            {r && r.claims.length > 0 && <Claims key={ask.run} result={r} onHoverChunk={onHoverChunk} />}
+            <ShortAnswer state={state} onHoverChunks={onHoverChunks} />
+            {sectioned && <Sections key={ask.run} state={state} onHoverChunks={onHoverChunks} />}
+            {!sectioned && r && r.claims.length > 0 && r.answer_style === "prose" && (r.prose?.length ?? 0) > 0 ? (
+              <>
+                <Prose key={ask.run} result={r} onHoverChunks={onHoverChunks} />
+                <details className="evidence">
+                  <summary>{UI.evidence(r.claims.length)}</summary>
+                  <Claims key={ask.run} result={r} onHoverChunks={onHoverChunks} />
+                </details>
+              </>
+            ) : !sectioned && r && r.claims.length > 0 && (
+              <>
+                {(r.note ?? "").includes("written answer did not pass verification") && <p className="note">{UI.proseFallback}</p>}
+                <Claims key={ask.run} result={r} onHoverChunks={onHoverChunks} />
+              </>
+            )}
             {notFound.length > 0 && <p className="note">{UI.partial(notFound)}</p>}
             <HowPanel state={state} showInternals={showInternals} />
           </div>
         )}
       </div>
-      <AskBox onAsk={ask.ask} busy={ask.busy} />
+      <AskBox onAsk={ask.ask} busy={ask.busy} depth={ask.depth} onDepth={ask.setDepth} />
     </section>
   );
 }

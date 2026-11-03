@@ -93,6 +93,35 @@ class SeedOut(BaseModel):
     score: float | None
 
 
+class ProseOut(BaseModel):
+    text: str
+    claims: list[int]
+    passages: list[int]
+    new_paragraph: bool = False
+    kind: str = "fact"
+    label: str = ""
+
+
+class SectionOut(BaseModel):
+    """One section of a deep answer. `prose` cites the answer's own `claims`
+    (1-based) and `passages`; `claims_range` is the section's claims in that
+    numbering, [first, last] inclusive, or null when it has none (the close)."""
+
+    heading: str
+    kind: str = "section"
+    style: str = "prose"
+    text: str
+    prose: list[ProseOut] = []
+    claims_range: list[int] | None = None
+    entities: list[str] = []
+    note: str | None = None
+    # The interpretive part this section's lens belongs to ("" unless the question has several parts).
+    group: str = ""
+    group_title: str = ""
+    # The full question a lens section answers (its heading is a short label); "" otherwise.
+    title: str = ""
+
+
 class SearchResult(BaseModel):
     answer: str
     mode: str
@@ -105,6 +134,20 @@ class SearchResult(BaseModel):
     passages: list[PassageOut]
     edges: list[EdgeOut]
     seeds: list[SeedOut]
+    prose: list[ProseOut] = []
+    answer_style: str = "claims"
+    unanswered: list[str] = []
+    gaps: list[str] = []
+    # A deep answer (answer_style "sectioned"): its sections.
+    sections: list[SectionOut] = []
+    requests: int = 0
+    # A deep answer opens with this: an interpretive question's reading per interpretive part (or
+    # code's "no clear position" line), any other deep question's few fact sentences (or code's
+    # "no direct summary could be verified" line), each cited like any prose. `prose` and
+    # `sections` are the argument below it. [] for every other answer.
+    short_answer: list[ProseOut] = []
+    # Sections of a sectioned answer that failed or found nothing: left out of `sections`, counted here.
+    unwritten_sections: int = 0
 
 
 class ChunkHit(BaseModel):
@@ -192,6 +235,8 @@ class BookOut(BaseModel):
     # None when the graph could not be opened (absent, or locked by a load):
     # unknown, which is not the same as zero. `library` says why in `note`.
     entity_count: int | None
+    # The world's name; None for a library from before worlds.
+    world: str | None = None
 
 
 class JobOut(BaseModel):
@@ -243,4 +288,24 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
         seeds=[SeedOut(id=s.id, name=s.name, kind=s.kind, books=list(s.books),
                        score=s.score if math.isfinite(s.score) else None)
                for s in answer.seeds],
+        prose=[_prose_out(s) for s in answer.prose],
+        answer_style=answer.answer_style,
+        unanswered=list(answer.unanswered),
+        gaps=list(answer.gaps),
+        sections=[SectionOut(
+            heading=x.heading, kind=x.kind, style=x.style, text=x.text,
+            prose=[_prose_out(s) for s in x.prose],
+            claims_range=([x.claims_start, x.claims_end]
+                          if x.claims_end >= x.claims_start else None),
+            entities=list(x.entities), note=x.note, group=x.group, group_title=x.group_title,
+            title=x.title) for x in answer.sections],
+        requests=answer.requests,
+        short_answer=[_prose_out(s) for s in answer.short_answer],
+        unwritten_sections=answer.unwritten,
     )
+
+
+def _prose_out(s) -> "ProseOut":
+    return ProseOut(text=s.text, claims=list(s.claims), passages=list(s.passages),
+                    new_paragraph=s.new_paragraph, kind=s.kind,
+                    label=getattr(s, "label", ""))

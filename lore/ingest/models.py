@@ -22,6 +22,9 @@ class ParsedBook:
     title: str
     author: str | None
     chapters: list[ParsedChapter] = field(default_factory=list)
+    # Story position from the file's metadata, when it has any (EPUB only).
+    series: str | None = None
+    series_index: float | None = None
 
 
 @dataclass(frozen=True)

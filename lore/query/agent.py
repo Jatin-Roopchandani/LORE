@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field, replace
-from typing import Awaitable, Callable
+from itertools import zip_longest
+from typing import Awaitable, Callable, Collection
 
 from pydantic import BaseModel
 
@@ -14,8 +15,14 @@ from lore.config import LoreConfig
 from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
-from lore.ingest.registry import list_books
-from lore.query.decompose import split
+from lore.ingest.registry import book_rows, list_books
+from lore.query import deep as deep_module
+from lore.query import interpret as interpret_module
+from lore.query import judge as judge_module
+from lore.query import decompose as decompose_module
+from lore.query.decompose import (
+    DEPTHS, plan as decompose_plan, resolve_depth, retrieval_parts,
+)
 from lore.query.events import EDGES_PER_PART_CAP, OnEvent, edge_key, emit
 from lore.query.keyword import KeywordIndex, fused
 from lore.query.models import Answer, EdgeRow, Evidence, SeedEntity
@@ -26,6 +33,8 @@ from lore.query.seed import (
     named_seeds,
     seed_entities,
 )
+from lore.query.retrieval import books_named, search_chunks, title_names
+from lore.query.scope import Scope, resolve_scopes, union
 from lore.query.select import select_template
 from lore.query.subgraph import (
     assemble_ranked,
@@ -37,6 +46,9 @@ from lore.query.synthesize import (
     CHECK_SKIPPED_NOTE, synthesize, synthesize_parts, validated_verdicts,
 )
 from lore.query.templates import MAX_EVIDENCE_CHARS
+from lore.query.viewpoint import load_viewpoint
+from lore.query import timeline as timeline_module
+from lore.query import codexslice
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
@@ -107,6 +119,18 @@ VECTOR_K = 5
 # stay at today's behaviour until a change passes the held-out check.
 CANDIDATE_K = VECTOR_K
 KEYWORD_K = 0
+# A part scoped to a book but with no usable entity seed, or whose template
+# found fewer than WEAK_EVIDENCE distinct passages, has nothing for the graph
+# to add ("What drives the villains in A Study in Scarlet?" names no
+# character). Only then does it also take SCOPED_K candidates from EACH of
+# vector and keyword search over the book it names. Round 3 rejected a
+# global CANDIDATE_K increase; this widens nothing for a part the graph
+# already answers.
+SCOPED_K = 12
+WEAK_EVIDENCE = 5
+# Subtracted from the relevance of a chunk of ANOTHER book in a scoped part's
+# ranking: cosines are within [-1, 1], so it puts them below every in-book chunk.
+SCOPE_PENALTY = 2.0
 # The evidence budget when Gemini writes the answer. MAX_EVIDENCE_CHARS
 # (12,000) was sized for the local 3B's 12,288-token context and stays the
 # Ollama budget. On the Holmes library the median chunk is ~1,473 chars, so
@@ -157,6 +181,13 @@ class QueryModels:
     decompose: Generate | None = field(default=None)
     evidence_chars: int = MAX_EVIDENCE_CHARS
     check: Generate | None = field(default=None)
+    write: Generate | None = field(default=None)
+    # The viewpoint text (lore/query/viewpoint.py) an interpretive answer
+    # follows. None: the packaged default is read when it is needed.
+    viewpoint: str | None = field(default=None)
+    # Deep answers (deep.py): False when the day's requests have reached the
+    # answer reserve, so no further section is started. None: never asked.
+    spend_ok: Callable[[], bool] | None = field(default=None)
 
 
 @dataclass(frozen=True)
@@ -260,7 +291,11 @@ def make_query_models(
     if config.synthesis.provider == "gemini":
         writer = remote(config.synthesis.models)
 
-        async def synthesize_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
+        async def synthesize_with(prompt: str, schema: type[BaseModel], *,
+                                  avoid: str | None = None) -> BaseModel:
+            # `avoid`: the model whose reply was malformed (deep.Spend retries once).
+            if avoid:
+                return await writer.generate_json(prompt, schema, avoid=avoid)
             return await writer.generate_json(prompt, schema)
 
         # The synthesis client and cascade; generate_json runs at temperature 0.
@@ -269,7 +304,8 @@ def make_query_models(
         def synthesis_model() -> str | None:
             return writer.last_model
     else:
-        async def synthesize_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
+        async def synthesize_with(prompt: str, schema: type[BaseModel], *,
+                                  avoid: str | None = None) -> BaseModel:
             return await local.generate(prompt, schema, options=SYNTHESIS_OPTIONS)
 
         async def decompose_with(prompt: str, schema: type[BaseModel]) -> BaseModel:
@@ -288,13 +324,17 @@ def make_query_models(
         finally:
             await local.aclose()
 
+    # Loaded now, so a missing or empty file is an error before any request is
+    # spent; only an interpretive answer reads it.
+    viewpoint = (load_viewpoint(config.answers.viewpoint)
+                 if decompose_module.INTERPRETIVE else None)
     return QueryModels(embed, select, synthesize_with, synthesis_model, aclose,
-                       selection_model, decompose=decompose_with,
+                       selection_model, decompose=decompose_with, viewpoint=viewpoint,
                        evidence_chars=evidence_budget(config.synthesis.provider),
                        # The same callable as synthesis: same provider, same
                        # client, same cascade, same temperature 0, and so the
                        # same request bookkeeping.
-                       check=synthesize_with)
+                       check=synthesize_with, write=synthesize_with)
 
 
 async def _select(question, seeds, models: QueryModels):
@@ -328,31 +368,66 @@ async def _synthesize(question, evidence, models: QueryModels, *,
 
     if sub_questions is None:
         answer = await synthesize(question, evidence, generate, check=models.check,
-                                  **kwargs)
+                                  write=models.write, **kwargs)
     else:
         answer = await synthesize_parts(question, sub_questions, evidence, generate,
-                                        check=models.check, **kwargs)
+                                        check=models.check, write=models.write, **kwargs)
     return replace(answer, model=models.synthesis_model() if asked else None)
 
 
 async def _vector_answer(lance, question, vector, models, titles, *, mode,
-                         note) -> Answer:
-    passages = passages_from_chunks(lance.search_chunks(vector, limit=VECTOR_K))
+                         note, books=None, book_ids=None) -> Answer:
+    passages = passages_from_chunks(search_chunks(lance, vector, VECTOR_K,
+                                                  book_ids=book_ids))
     evidence = Evidence(edges=(), passages=passages, truncated=False)
     return await _synthesize(question, evidence, models, mode=mode, note=note,
-                             book_titles=titles)
+                             book_titles=titles, books=books)
 
 
-def _keyword_hits(conn: sqlite3.Connection,
-                  parts: list[str]) -> list[list[tuple[str, str, int]]]:
-    """Each part's keyword-search candidates, one index for all parts."""
+def _keyword_hits(conn: sqlite3.Connection, parts: list[str],
+                  scopes: list[list[Scope]] | None = None) -> list[list[tuple[str, str, int]]]:
+    """Each part's keyword-search candidates, one index for all parts.
+
+    `scopes[i]` are the scopes part i runs in; its hits are each scope's own
+    best matches, interleaved by rank so no world's hits all come first.
+    Without `scopes` every part searches the whole library."""
     if KEYWORD_K <= 0:
         return [[] for _ in parts]
     index = KeywordIndex(conn)
     try:
-        return [index.search(part, KEYWORD_K) for part in parts]
+        if scopes is None:
+            return [index.search(part, KEYWORD_K) for part in parts]
+        return [_interleaved([index.search(part, KEYWORD_K, book_ids=scope.books)
+                              for scope in running])
+                for part, running in zip(parts, scopes)]
     finally:
         index.close()
+
+
+def _interleaved(lists: list[list]) -> list:
+    """One from each list per turn, in list order."""
+    if len(lists) == 1:
+        return lists[0]
+    return [item for turn in zip_longest(*lists) for item in turn if item is not None]
+
+
+def _scoped_candidates(lance, conn: sqlite3.Connection, part: str,
+                       vector: list[float], book_ids: list[str]
+                       ) -> list[tuple[str, str, int]]:
+    """(chunk_id, book_id, chapter_seq) of a part's candidates drawn from the
+    books it names: the SCOPED_K nearest story chunks of each, then the
+    SCOPED_K best keyword matches in each. The weak-evidence path only."""
+    out: list[tuple[str, str, int]] = []
+    index = KeywordIndex(conn)
+    try:
+        for book_id in book_ids:
+            for row in search_chunks(lance, vector, SCOPED_K, book_id=book_id):
+                out.append((str(row["chunk_id"]), book_id,
+                            int(row.get("chapter_seq", 0))))
+            out += index.search(part, SCOPED_K, book_id=book_id)
+    finally:
+        index.close()
+    return out
 
 
 def _cosine(row: dict) -> float:
@@ -360,24 +435,45 @@ def _cosine(row: dict) -> float:
     return 1 - float(row.get("_distance", float("inf"))) / 2
 
 
-async def _parts(question, vector, models: QueryModels, kuzu):
-    """(sub-question, its vector) pairs, and whether decomposition succeeded.
-    A part identical to the question reuses its vector; the others are
-    embedded together in one call."""
-    parts = None
+def _retrieval(plan) -> list:
+    """What the question retrieves for (decompose.retrieval_parts): each part,
+    and for an interpretive part its lenses in place of itself, within the
+    part budget. [] without a plan, or with INTERPRETIVE off."""
+    if plan is None or not decompose_module.INTERPRETIVE:
+        return []
+    return retrieval_parts(plan.parts)
+
+
+async def _parts(question, vector, models: QueryModels, kuzu,
+                 book_ids: Collection[str] | None = None):
+    """(retrieval part, its vector) pairs, whether decomposition succeeded, and
+    the Plan (each part's kind and lenses, and the planned depth). The plan is
+    None when decomposition did not run or failed: every part is then factual
+    and the depth is `focused`. A retrieval part is a part of the question, or
+    a lens of an interpretive part (which has no retrieval of its own). A part
+    identical to the question reuses its vector; the others are embedded
+    together in one call."""
+    planned = None
     if models.decompose is not None:
         # The graph's books, not the registry's: only those can be searched,
         # and "in each novel" should split into exactly those.
-        graphed = sorted({str(row[0]) for row in kuzu.execute(
-            "MATCH (b:Book) RETURN b.title") if row[0]})
-        parts = await split(question, models.decompose, book_titles=graphed)
-    decomposed = parts is not None
-    parts = parts or [question]
+        if book_ids is None:
+            graphed = sorted({str(row[0]) for row in kuzu.execute(
+                "MATCH (b:Book) RETURN b.title") if row[0]})
+        else:  # only the world's books: never split into another world's
+            graphed = sorted({str(row[1]) for row in kuzu.execute(
+                "MATCH (b:Book) RETURN b.id, b.title")
+                if row[1] and row[0] in book_ids})
+        planned = await decompose_plan(question, models.decompose, book_titles=graphed)
+    decomposed = planned is not None
+    rparts = _retrieval(planned)
+    parts = ([r.question for r in rparts] if rparts
+             else planned.questions if planned is not None else [question])
     fresh = [part for part in parts if part != question]
     vectors = {question: vector}
     if fresh:
         vectors.update(zip(fresh, await models.embed([QUERY_PREFIX + p for p in fresh])))
-    return [(part, vectors[part]) for part in parts], decomposed
+    return [(part, vectors[part]) for part in parts], decomposed, planned
 
 
 # The check step's detail when its verdicts were not applied: the call
@@ -386,7 +482,7 @@ async def _parts(question, vector, models: QueryModels, kuzu):
 CHECK_UNVERIFIED = "couldn't verify \u2014 claims kept"
 
 
-class _CheckSteps:
+class _AnswerSteps:
     """Announces the faithfulness check as a step. Writing ends, and
     checking begins, exactly when the check is called; the step closes once
     synthesis returns, with a detail decided from the final outcome --
@@ -395,17 +491,30 @@ class _CheckSteps:
     def __init__(self, on_event: OnEvent) -> None:
         self.on_event = on_event
         self.ran = False
+        self.composed = False
         self.reply = None
         self.closed = False
 
     def wrap(self, models: QueryModels) -> QueryModels:
+        if models.write is not None:
+            write = models.write
+
+            async def composing(prompt, schema):
+                self.composed = True
+                emit(self.on_event, "step", name="write", state="done", part=None, detail=None)
+                emit(self.on_event, "step", name="compose", state="start", part=None, detail=None)
+                return await write(prompt, schema)
+
+            models = replace(models, write=composing)
         if models.check is None:
             return models
         check = models.check
 
         async def announced(prompt, schema):
             self.ran = True
-            emit(self.on_event, "step", name="write", state="done", part=None, detail=None)
+            if not self.composed:
+                emit(self.on_event, "step", name="write", state="done", part=None,
+                     detail=None)
             emit(self.on_event, "step", name="check", state="start", part=None,
                  detail=None)
             self.reply = await check(prompt, schema)
@@ -414,9 +523,21 @@ class _CheckSteps:
         return replace(models, check=announced)
 
     def close(self, answer: Answer | None) -> None:
-        if not self.ran or self.closed:
+        if self.closed:
             return
         self.closed = True
+        try:
+            if self.ran:
+                self._close_check(answer)
+        finally:
+            if self.composed:
+                n = len(answer.prose) if answer is not None else 0
+                prose = answer is not None and answer.answer_style == "prose" and n
+                emit(self.on_event, "step", name="compose", state="done", part=None,
+                     detail=(f"{n} sentence{'s' if n != 1 else ''}" if prose
+                             else "fell back to facts"))
+
+    def _close_check(self, answer: Answer | None) -> None:
         detail = CHECK_UNVERIFIED
         applied = (answer is not None and self.reply is not None
                    and CHECK_SKIPPED_NOTE not in (answer.note or ""))
@@ -429,6 +550,52 @@ class _CheckSteps:
         emit(self.on_event, "step", name="check", state="done", part=None, detail=detail)
 
 
+_CheckSteps = _AnswerSteps
+
+
+@dataclass
+class _ScopeContext:
+    """What one scope (a world, or the whole library) reads for a question:
+    its own name index, book titles and the names the question gives in it."""
+
+    scope: Scope
+    titles: dict[str, str]
+    names: object
+    book_names: frozenset[str]
+    named_in_question: list[str]
+
+
+def _scope_context(scope: Scope, kuzu, question: str,
+                   titles: dict[str, str]) -> _ScopeContext:
+    mine = {b: t for b, t in titles.items() if scope.allows(b)}
+    names = load_name_index(kuzu, scope.books)
+    return _ScopeContext(scope, mine, names, title_names(mine.values()),
+                         named_entity_ids(question, names))
+
+
+def _dedupe(items) -> list:
+    return list(dict.fromkeys(items))
+
+
+async def _deep(conn, kuzu, lance, question, models, vector, plan, scopes, nearest, titles,
+                books, on_event) -> Answer | None:
+    """The deep answer (deep.py), or None when it does not apply: the question
+    is about more than one world (or none), or the planner gave no section. The
+    caller then answers in the ordinary way."""
+    live = [si for si in range(len(scopes))
+            if max((_cosine(row) for row in nearest[(si, tuple(vector))]),
+                   default=float("-inf")) >= RELEVANCE_FLOOR]
+    if len(live) != 1:
+        return None
+    scope = scopes[live[0]]
+    ctx = _scope_context(scope, kuzu, question, titles)
+    named = books_named(question, ctx.titles)
+    return await deep_module.answer_deep(
+        conn, kuzu, lance, question, models, scope=scope, titles=ctx.titles, books=books,
+        vector=vector, plan=plan, named_ids=ctx.named_in_question, book_names=ctx.book_names,
+        book_ids=frozenset(named) if named else None, on_event=on_event)
+
+
 async def answer_question(
     conn: sqlite3.Connection,
     kuzu,
@@ -438,8 +605,30 @@ async def answer_question(
     *,
     baseline: bool = False,
     on_event: OnEvent | None = None,
+    world: int | str | None = None,
+    depth: str = "auto",
 ) -> Answer:
+    """Answer `question` from the library.
+
+    `world` (an id or a name) confines everything -- seeds, graph evidence,
+    vector and keyword candidates, the timeline and the decomposition's book
+    list -- to that world's books (lore/query/scope.py). With no world, a
+    library of one world uses it, and a library of several is answered "across
+    worlds": each world is searched on its own and the evidence pooled, so an
+    entity is never matched, selected or judged against another world's.
+    A library of one world (or none) takes exactly the unscoped path.
+
+    `depth` is `auto`, `deep` or `focused`: `auto` takes the decomposer's
+    judgement, the others override it. The decomposition's per-part kinds and
+    lenses (`plan`) and the resolved `depth` are what the interpretive and
+    deep answer paths read; they are in the `parts` event.
+    """
+    if depth not in ("auto", *DEPTHS):
+        raise ValueError(f"depth must be auto, deep or focused, not {depth!r}")
+    scopes = resolve_scopes(conn, world)
     titles = {book["id"]: book["title"] for book in list_books(conn)}
+    # Story position (series, index) per book, for the writer and the check.
+    books = book_rows(conn)
 
     # Embedded once: the question's vector finds the baseline's passages on
     # every path, and ranks the evidence when the question has one part.
@@ -448,42 +637,87 @@ async def answer_question(
     if baseline:
         # Unchanged by Task 10d: no decomposition, no union.
         return await _vector_answer(lance, question, vector, models, titles,
-                                    mode="vector-baseline", note=None)
+                                    mode="vector-baseline", note=None, books=books,
+                                    book_ids=union(scopes))
 
-    check_steps = _CheckSteps(on_event) if on_event is not None else None
+    plain_models = models  # a deep answer announces its own steps
+    check_steps = _AnswerSteps(on_event) if on_event is not None else None
     if check_steps is not None:
         models = check_steps.wrap(models)
 
     empty = Evidence(edges=(), passages=(), truncated=False)
-    # The baseline's passages for the whole question, then each part's.
-    nearest: dict[tuple, list[dict]] = {tuple(vector): lance.search_chunks(
-        vector, limit=CANDIDATE_K)}
-    if not nearest[tuple(vector)]:
+
+    def near(si: int, v: list[float]) -> list[dict]:
+        return search_chunks(lance, v, CANDIDATE_K, book_ids=scopes[si].books)
+
+    # The baseline's passages for the whole question, then each part's; per scope.
+    nearest: dict[tuple, list[dict]] = {
+        (si, tuple(vector)): near(si, vector) for si in range(len(scopes))}
+    if not any(nearest.values()):
         # Vector search returns a nearest chunk whenever there is any chunk,
         # so no part could find one either: skip decomposition.
         return await _synthesize(question, empty, models, mode="empty",
-                                 book_titles=titles)
+                                 book_titles=titles, books=books)
 
     emit(on_event, "step", name="split", state="start", part=None, detail=None)
-    parts, decomposed = await _parts(question, vector, models, kuzu)
+    parts, decomposed, plan = await _parts(question, vector, models, kuzu, union(scopes))
     sub_questions = tuple(part for part, _ in parts)
-    emit(on_event, "parts", sub_questions=list(sub_questions))
+    rparts = _retrieval(plan)  # parallel to `parts`; [] unless INTERPRETIVE
+    depth = resolve_depth(depth, plan.depth if plan is not None else "focused")
+    # `kinds`, `lenses` and `depth` only when a switch is on: with both off
+    # the event is what it always was.
+    extra = ({"kinds": [p.kind for p in plan.parts] if plan is not None
+              else ["factual"] * len(parts),
+              "lenses": [list(p.lenses) for p in plan.parts] if plan is not None
+              else [[] for _ in parts],
+              "depth": depth}
+             if decompose_module.INTERPRETIVE or decompose_module.DEEP else {})
+    if any(r.lens for r in rparts):
+        # `sub_questions` is then the retrieval parts, the index space of every
+        # per-part event: lens_of says which plan part (of plan_questions) each
+        # one is a lens of, or null.
+        extra["lens_of"] = [r.part if r.lens else None for r in rparts]
+        extra["plan_questions"] = [p.question for p in plan.parts]
+    emit(on_event, "parts", sub_questions=list(sub_questions), **extra)
     emit(on_event, "step", name="split", state="done", part=None,
          detail=f"{len(parts)} part" + ("s" if len(parts) != 1 else ""))
-    for v in (v for _, v in parts):
-        if tuple(v) not in nearest:
-            nearest[tuple(v)] = lance.search_chunks(v, limit=CANDIDATE_K)
-    best = max((_cosine(row) for _, v in parts for row in nearest[tuple(v)]),
-               default=float("-inf"))
-    if best < RELEVANCE_FLOOR:
+    # A question with an interpretive (or beyond) part is organised by its own parts and
+    # lenses (deep.answer_lenses), never by the topical outline.
+    shaped_plan = bool(rparts) and interpret_module.shaped([p.kind for p in plan.parts])
+    if decompose_module.DEEP and depth == "deep" and not shaped_plan:
+        deeper = await _deep(conn, kuzu, lance, question, plain_models, vector, plan,
+                             scopes, nearest, titles, books, on_event)
+        if deeper is not None:
+            return deeper
+    for si in range(len(scopes)):
+        for v in (v for _, v in parts):
+            if (si, tuple(v)) not in nearest:
+                nearest[(si, tuple(v))] = near(si, v)
+    # A world with nothing near any part of the question is left out: it would
+    # only add unrelated passages to the others'. One scope: the floor as before.
+    active = [si for si in range(len(scopes))
+              if max((_cosine(row) for _, v in parts for row in nearest[(si, tuple(v))]),
+                     default=float("-inf")) >= RELEVANCE_FLOOR]
+    if not active:
         # A legitimate empty answer, not a failure: nothing in the library
         # is close enough to any part of the question to start from.
         return await _synthesize(question, empty, models, mode="empty",
-                                 book_titles=titles)
+                                 book_titles=titles, books=books)
 
-    # Every name and alias in one read per question, not one per part.
-    names = load_name_index(kuzu)
-    named_in_question = named_entity_ids(question, names)
+    contexts = {si: _scope_context(scopes[si], kuzu, question, titles) for si in active}
+
+    def runs_in(si: int, part: str) -> bool:
+        # With several worlds, a part naming a book runs only where it is.
+        if len(scopes) < 2:
+            return True
+        named = books_named(part, titles)
+        return not named or scopes[si].allows_any(named)
+
+    scoped: list[tuple[str, str, int]] = []
+    scoped_books: dict[int, list[str]] = {}  # part index -> the books it is scoped to
+    # Every part's named books, scoped or not: a part naming exactly one book
+    # answers from that book alone (subgraph.assemble_ranked).
+    named_books: list[list[str]] = [[] for _ in parts]
     rows: list[EdgeRow] = []
     templates: list[str] = []
     chosen_by: list[str] = []
@@ -499,57 +733,139 @@ async def answer_question(
     all_seeds: list[SeedEntity] = []
     seen_seed_ids: set[str] = set()
     seeded = False
+    # Story beats of each part's characters, factions and objects (timeline.py).
+    part_beats: list[list] = [[] for _ in parts]
+    # The codex lines of each part's entities (codexslice.py); only with DEEP on.
+    part_codex: list[list] = [[] for _ in parts]
+    running_in: list[list[int]] = [[] for _ in parts]  # part index -> scope indexes
     for index, (part, part_vector) in enumerate(parts):
-        # A part's own names first, then the whole question's: a rewritten
-        # part may have dropped a name the question gave.
+        running = [si for si in active if runs_in(si, part)]
+        running_in[index] = running
         emit(on_event, "step", name="seeds", state="start", part=index, detail=None)
-        named = await named_seeds(kuzu, list(dict.fromkeys(
-            named_entity_ids(part, names) + named_in_question)))
-        seeds = await seed_entities(part, lance, kuzu, models.embed,
-                                    vector=part_vector, named=named)
-        emit(on_event, "seeds", part=index, entities=list(seeds))
+        # Per scope: a part's own names first, then the whole question's: a
+        # rewritten part may have dropped a name the question gave.
+        found_in: dict[int, tuple] = {}
+        for si in running:
+            ctx = contexts[si]
+            named = await named_seeds(kuzu, list(dict.fromkeys(
+                named_entity_ids(part, ctx.names) + ctx.named_in_question)),
+                exclude_names=ctx.book_names, book_ids=ctx.scope.books)
+            seeds = await seed_entities(part, lance, kuzu, models.embed,
+                                        vector=part_vector, named=named,
+                                        exclude_names=ctx.book_names,
+                                        book_ids=ctx.scope.books)
+            part_books = books_named(part, ctx.titles)
+            # A lens about a set of people that names none: drop whoever the
+            # question excludes and add the graph's candidates for the part's
+            # books, ranked by beat variety (judge.py).
+            judged = None
+            if (index < len(rparts) and rparts[index].lens
+                    and judge_module.wants_candidates(seeds, named)):
+                judged = await judge_module.judge_seeds(
+                    kuzu, ctx.names, part, question, seeds, named,
+                    part_books or ctx.scope.book_ids(), ctx.book_names, conn=conn)
+                seeds = judged.seeds
+            found_in[si] = (seeds, judged, part_books)
+        shown = [s for si in running for s in found_in[si][0]]
+        if len(running) > 1:  # one entry per entity, as first found
+            shown = list({s.id: s for s in reversed(shown)}.values())[::-1]
+        emit(on_event, "seeds", part=index, entities=list(shown))
         emit(on_event, "step", name="seeds", state="done", part=index,
-             detail=f"{len(seeds)} found")
-        if not seeds:
-            continue
-        seeded = True
-        for s in seeds:
-            if s.id not in seen_seed_ids:
-                seen_seed_ids.add(s.id)
-                all_seeds.append(s)
-        emit(on_event, "step", name="search", state="start", part=index, detail=None)
-        call, model = await _select(part, seeds, models)
-        if model and model not in chosen_by:
-            chosen_by.append(model)
-        if call is None:
+             detail=f"{len(shown)} found")
+        named_books[index] = _dedupe(b for si in running for b in found_in[si][2])
+        searched = False
+        called: list[str] = []
+        found_rows: list[EdgeRow] = []
+        for si in running:
+            seeds, judged, part_books = found_in[si]
+            scope = contexts[si].scope
+            if not seeds:
+                if part_books:
+                    scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
+                    scoped_books[index] = _dedupe(scoped_books.get(index, []) + part_books)
+                continue
+            seeded = True
+            for s in seeds:
+                if s.id not in seen_seed_ids:
+                    seen_seed_ids.add(s.id)
+                    all_seeds.append(s)
+            if timeline_module.TIMELINE:
+                # A part that names books keeps their beats; a world's part, its own.
+                beat_books = part_books or scope.book_ids()
+                if judged is not None and judged.candidates:
+                    part_beats[index] += timeline_module.judgement_timeline(
+                        conn, lance, judged.named, judged.candidates, part_vector, books,
+                        beat_books)
+                else:
+                    part_beats[index] += timeline_module.part_timeline(
+                        conn, lance, seeds, part_vector, books, beat_books)
+            if codexslice.active():
+                part_codex[index] += codexslice.part_codex(
+                    conn, lance, seeds, part_vector, books, part_books or scope.book_ids())
+            if not searched:
+                searched = True
+                emit(on_event, "step", name="search", state="start", part=index, detail=None)
+            call, model = await _select(part, seeds, models)
+            if model and model not in chosen_by:
+                chosen_by.append(model)
+            if call is None:
+                if part_books:
+                    scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
+                    scoped_books[index] = _dedupe(scoped_books.get(index, []) + part_books)
+                continue
+            if call.template not in templates:
+                templates.append(call.template)
+            called.append(call.template)
+            found = run_template(kuzu, call)
+            if scope.books is not None:  # an entity's edges in another world's books
+                found = [r for r in found if scope.allows(r.book_id)]
+            rows.extend(found)
+            found_rows += found
+            if part_books and len({r.chunk_id for r in found}) < WEAK_EVIDENCE:
+                scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
+                scoped_books[index] = _dedupe(scoped_books.get(index, []) + part_books)
+        if searched and not called:
             emit(on_event, "edges", part=index, template=None, total=0, edges=[])
             emit(on_event, "step", name="search", state="done", part=index,
                  detail="no graph search fitted")
-            continue
-        if call.template not in templates:
-            templates.append(call.template)
-        found = run_template(kuzu, call)
-        rows.extend(found)
-        emit(on_event, "edges", part=index, template=call.template, total=len(found),
-             edges=found[:EDGES_PER_PART_CAP])
-        emit(on_event, "step", name="search", state="done", part=index,
-             detail=f"{call.template.replace('_', ' ')} · {len(found)} relationships")
+        elif called:
+            template = "+".join(_dedupe(called))
+            emit(on_event, "edges", part=index, template=template, total=len(found_rows),
+                 edges=found_rows[:EDGES_PER_PART_CAP])
+            emit(on_event, "step", name="search", state="done", part=index,
+                 detail=f"{template.replace('_', ' ')} · {len(found_rows)} relationships")
 
-    if not seeded:
+    if not seeded and not scoped:
         # None of the nearest passages bridges to a live entity.
         return await _synthesize(question, empty, models, mode="empty",
-                                 book_titles=titles)
+                                 book_titles=titles, books=books)
 
     # The graph decided what is connected and vector search what is near;
     # each part of the question decides what matters for it.
+    used = {(si, tuple(vector)) for si in active}
+    used |= {(si, tuple(parts[i][1])) for i, running in enumerate(running_in) for si in running}
     extra = [(str(row["chunk_id"]), str(row.get("book_id", "")),
               int(row.get("chapter_seq", 0)))
-             for found in nearest.values() for row in found]
-    keyword_hits = _keyword_hits(conn, [part for part, _ in parts])
+             for key, found in nearest.items() if key in used for row in found]
+    keyword_hits = _keyword_hits(
+        conn, [part for part, _ in parts],
+        None if len(scopes) == 1 and scopes[0].books is None
+        else [[scopes[si] for si in running] for running in running_in])
     extra += [hit for hits in keyword_hits for hit in hits]
+    extra += scoped
+    # A timeline's passages are candidates too: ranked like any other, and
+    # (when their part has a timeline slice) kept whatever their rank.
+    extra += [(b.chunk_id, b.book_id, b.chapter_seq) for beats in part_beats for b in beats]
+    extra += [(l.chunk_id, l.book_id, l.chapter_seq) for lines in part_codex for l in lines]
+    books_of = {r.chunk_id: r.book_id for r in rows} | {c: b for c, b, _ in extra}
     candidates = sorted({row.chunk_id for row in rows} | {c for c, _, _ in extra})
     stored = lance.chunk_vectors(candidates)
     score_lists = [relevance(v, stored) for _, v in parts]
+    # A scoped part ranks its own book's passages first: another book's chunk
+    # (nearest globally, or reached by a graph edge) is demoted below all of them.
+    for index, book_ids in scoped_books.items():
+        score_lists[index] = {c: v if books_of.get(c) in book_ids else v - SCOPE_PENALTY
+                              for c, v in score_lists[index].items()}
     if KEYWORD_K > 0:
         score_lists = [fused(scores, [c for c, _, _ in hits])
                        for scores, hits in zip(score_lists, keyword_hits)]
@@ -560,10 +876,16 @@ async def answer_question(
     # cross-book answer keeps both books survives there.
     book_fair = len(parts) == 1 and (not decomposed or "across_books" in templates)
     emit(on_event, "step", name="rank", state="start", part=None, detail=None)
+    timelines = ({"timelines": [timeline_module.timeline_beats(beats) for beats in part_beats],
+                  "timeline_share": timeline_module.TIMELINE_SHARE}
+                 if any(part_beats) else {})
+    if any(part_codex):
+        timelines |= {"codexes": [tuple(dict.fromkeys(lines)) for lines in part_codex],
+                      "codex_share": codexslice.CODEX_SHARE}
     evidence = assemble_ranked(conn, rows, extra_chunks=extra,
                                max_chars=models.evidence_chars,
                                score_lists=score_lists,
-                               book_fair=book_fair)
+                               book_fair=book_fair, part_books=named_books, **timelines)
     emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in evidence.passages],
          edge_keys=[edge_key(e) for e in evidence.edges])
     emit(on_event, "step", name="rank", state="done", part=None,
@@ -571,19 +893,31 @@ async def answer_question(
     emit(on_event, "step", name="write", state="start", part=None, detail=None)
     # One synthesis call per part, over its own share (synthesize_parts).
     answer = None
+    # An interpretive or beyond part: its answer takes the interpretive shape.
+    shaped = ({"plan": plan.parts, "retrieval": rparts, "viewpoint": models.viewpoint}
+              if shaped_plan else {})
     try:
-        if rows:
+        if shaped_plan and decompose_module.DEEP and depth == "deep":
+            # One section per lens, each written in full; plain models: this path
+            # announces its own steps.
+            answer = await deep_module.answer_lenses(
+                question, plan.parts, rparts, evidence, plain_models,
+                mode="graph" if rows else "vector-fallback",
+                template="+".join(templates) if rows else None,
+                note=None if rows else GRAPH_EMPTY_NOTE, book_titles=titles,
+                books=books, on_event=on_event)
+        elif rows:
             answer = await _synthesize(question, evidence, models, mode="graph",
                                        template="+".join(templates), book_titles=titles,
-                                       sub_questions=sub_questions)
+                                       books=books, sub_questions=sub_questions, **shaped)
         else:
             answer = await _synthesize(question, evidence, models, mode="vector-fallback",
                                        note=GRAPH_EMPTY_NOTE, book_titles=titles,
-                                       sub_questions=sub_questions)
+                                       books=books, sub_questions=sub_questions, **shaped)
     finally:
         if check_steps is not None:
             check_steps.close(answer)
-    if check_steps is None or not check_steps.ran:
+    if check_steps is None or not (check_steps.ran or check_steps.composed):
         emit(on_event, "step", name="write", state="done", part=None,
              detail=f"{len(answer.claims)} claims")
     # The subgraph the UI draws: the evidence edges rows came from, and the

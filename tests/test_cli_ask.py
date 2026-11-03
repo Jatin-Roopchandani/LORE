@@ -442,3 +442,51 @@ def test_ask_prints_no_sub_question_line_for_one_part(env: Path, subs) -> None:
     assert result.exit_code == 0, result.output
     assert "sub-questions" not in result.output
     assert result.output.strip().splitlines()[-1].startswith("mode: graph")
+
+
+# --- depth, world and the answer reserve ------------------------------------
+
+def test_ask_passes_depth_and_world_only_when_given(env: Path) -> None:
+    _library(env, graphed=True)
+    fake, calls = _returning(ANSWER)
+    with patch("lore.cli.answer_question", fake):
+        assert runner.invoke(app, ["ask", "q"]).exit_code == 0
+        result = runner.invoke(app, ["ask", "q", "--depth", "deep", "--world", "Alpha Saga"])
+    assert result.exit_code == 0, result.output
+    assert "depth" not in calls[0][1] and "world" not in calls[0][1]
+    assert calls[1][1]["depth"] == "deep" and calls[1][1]["world"] == "Alpha Saga"
+
+
+def test_ask_depth_auto_is_the_default_and_a_bad_depth_is_refused(env: Path) -> None:
+    _library(env, graphed=True)
+    fake, calls = _returning(ANSWER)
+    with patch("lore.cli.answer_question", fake):
+        assert runner.invoke(app, ["ask", "q", "--depth", "auto"]).exit_code == 0
+        assert runner.invoke(app, ["ask", "q", "--depth", "focused"]).exit_code == 0
+        bad = runner.invoke(app, ["ask", "q", "--depth", "deeper"])
+    assert "depth" not in calls[0][1] and calls[1][1]["depth"] == "focused"
+    assert bad.exit_code == 2 and "auto, deep or focused" in bad.output and len(calls) == 2
+
+
+def test_ask_gives_the_models_the_answer_reserve_check(env: Path) -> None:
+    from lore.mcp import tools
+    _library(env, graphed=True)
+    fake, calls = _returning(ANSWER)
+    with patch("lore.cli.answer_question", fake):
+        assert runner.invoke(app, ["ask", "q"]).exit_code == 0
+    models = calls[0][0][4]
+    verdicts = iter([None, "every model is at its cap"])
+    with patch.object(tools, "_check_synthesis_budget", lambda cfg: next(verdicts)):
+        assert models.spend_ok() is True
+        assert models.spend_ok() is False
+
+
+def test_ask_names_an_unknown_world_without_a_traceback(env: Path) -> None:
+    _library(env, graphed=True)
+
+    async def refuse(*args, **kwargs):
+        from lore.query.scope import UnknownWorld
+        raise UnknownWorld("no world called 'Nowhere'")
+    with patch("lore.cli.answer_question", refuse):
+        result = runner.invoke(app, ["ask", "q", "--world", "Nowhere"])
+    assert result.exit_code == 1 and "Nowhere" in result.output

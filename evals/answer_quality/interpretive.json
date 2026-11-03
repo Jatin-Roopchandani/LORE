@@ -1,0 +1,844 @@
+[
+ {
+  "id": "I1",
+  "type": "evaluation",
+  "question": "Is Jefferson Hope better understood as a murderer or as an avenger, and how does the book steer the reader's sympathy?",
+  "verified": "Type: evaluation.\n\nDefensible positions:\n- Avenger: the grievance is grave, the restraint and the pills-as-ordeal give it a sense of fairness, and the closing image of the placid smile invites sympathy\n- Murderer: twenty years of planned killing, a rigged-looking ordeal, and open delight in the victim's terror make it vengeance, whatever the cause\n- Both: the book gives the reader sympathy for him without denying that he kills; a strong answer says which reading the evidence favours and how strongly\n\nMain counter-case: Against the avenger reading: Hope savours Drebber's horror ('vengeance would be sweet'), and Stangerson is killed although he was only a follower in the pursuit. Against the murderer reading: the narrative voice, the dead Lucy's ring, and the peaceful death all lean toward him; Watson also notes that the victim's depravity does not condone murder in law.\n\nEvidence (verbatim):\n- [05ab674df048d13f:16:6] \"If there was nothing else left to him, he could at least devote his life to revenge.\"\n- [05ab674df048d13f:16:12] \"The hunter’s mind was of a hard, unyielding nature, and the predominant idea of revenge had taken such complete possession of it that there was no room for any other emotion.\"\n- [05ab674df048d13f:17:10] \"Don’t imagine that I intended to kill him in cold blood. It would only have been rigid justice if I had done so, but I could not bring myself to do it.\"\n- [05ab674df048d13f:17:13] \"Let us see if there is justice upon the earth, or if we are ruled by chance.\"\n- [05ab674df048d13f:17:12] \"I had always known that vengeance would be sweet, but I had never hoped for the contentment of soul which now possessed me.\"\n- [05ab674df048d13f:17:15] \"In self-defence I stabbed him to the heart.\"\n- [05ab674df048d13f:17:16] \"You may consider me to be a murderer; but I hold that I am just as much an officer of justice as you are.\"\n- [05ab674df048d13f:18:0] \"with a placid smile upon his face, as though he had been able in his dying moments to look back upon a useful life, and on work well done.\"\n- [05ab674df048d13f:9:0] \"Still I recognized that justice must be done, and that the depravity of the victim was no condonement in the eyes of the law.\"",
+  "key_facts": [
+   "Hope's cause is real: Lucy was forced into marriage and her father killed, and Hope vowed revenge",
+   "He pursued Drebber and Stangerson for about twenty years across two continents",
+   "He gave Drebber a choice between two pills instead of simply shooting him, and says he did not mean to kill in cold blood",
+   "He killed Stangerson with a knife after Stangerson attacked him, and took pleasure in Drebber's terror",
+   "He calls himself an officer of justice, and the narrative ends with him dying peacefully before trial"
+  ],
+  "positions": [
+   "Avenger: the grievance is grave, the restraint and the pills-as-ordeal give it a sense of fairness, and the closing image of the placid smile invites sympathy",
+   "Murderer: twenty years of planned killing, a rigged-looking ordeal, and open delight in the victim's terror make it vengeance, whatever the cause",
+   "Both: the book gives the reader sympathy for him without denying that he kills; a strong answer says which reading the evidence favours and how strongly"
+  ],
+  "counter_case": "Against the avenger reading: Hope savours Drebber's horror ('vengeance would be sweet'), and Stangerson is killed although he was only a follower in the pursuit. Against the murderer reading: the narrative voice, the dead Lucy's ring, and the peaceful death all lean toward him; Watson also notes that the victim's depravity does not condone murder in law.",
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:16:6",
+    "quote": "If there was nothing else left to him, he could at least devote his life to revenge."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:12",
+    "quote": "The hunter’s mind was of a hard, unyielding nature, and the predominant idea of revenge had taken such complete possession of it that there was no room for any other emotion."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:10",
+    "quote": "Don’t imagine that I intended to kill him in cold blood. It would only have been rigid justice if I had done so, but I could not bring myself to do it."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:13",
+    "quote": "Let us see if there is justice upon the earth, or if we are ruled by chance."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:12",
+    "quote": "I had always known that vengeance would be sweet, but I had never hoped for the contentment of soul which now possessed me."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:15",
+    "quote": "In self-defence I stabbed him to the heart."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:16",
+    "quote": "You may consider me to be a murderer; but I hold that I am just as much an officer of justice as you are."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:0",
+    "quote": "with a placid smile upon his face, as though he had been able in his dying moments to look back upon a useful life, and on work well done."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:0",
+    "quote": "Still I recognized that justice must be done, and that the depravity of the victim was no condonement in the eyes of the law."
+   }
+  ]
+ },
+ {
+  "id": "I2",
+  "type": "evaluation",
+  "question": "Is Jonathan Small more sinned against than sinning?",
+  "verified": "Type: evaluation.\n\nDefensible positions:\n- Sinned against: the officers cheated a convict who trusted them, and he kept his oath and his word throughout, while the murder he commits is Tonga's doing\n- Sinning: he helped murder an innocent man for gain, killed the guard in the escape, and his later wrongs are paid for by others\n- Balance: the wrong done to him is real but does not cancel his own crime at Agra; a strong answer weighs the two rather than choosing by sympathy\n\nMain counter-case: Against 'sinned against': he admits that the thought of treasure 'turned me hard and bitter' when Achmet nearly escaped, and that he killed a guard in the escape. Against 'sinning': Sholto and Morstan broke their conditions and took everything, and Holmes says it is not yet clear how far justice was on Small's side.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:16] \"Whether Achmet the merchant lived or died was a thing as light as air to me, but at the talk about the treasure my heart turned to it\"\n- [0ee225a9a3b5fbc2:15:20] \"My heart softened to him, but again the thought of his treasure turned me hard and bitter.\"\n- [0ee225a9a3b5fbc2:15:20] \"I cast my firelock between his legs as he raced past, and he rolled twice over like a shot rabbit.\"\n- [0ee225a9a3b5fbc2:15:24] \"That is an oath that I can put my hand to my heart and swear that I have never broken.\"\n- [0ee225a9a3b5fbc2:15:34] \"The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret.\"\n- [0ee225a9a3b5fbc2:15:34] \"From that day I lived only for vengeance.\"\n- [0ee225a9a3b5fbc2:15:35] \"He put his carbine to his shoulder, but I struck him full, and knocked the whole front of his skull in.\"\n- [0ee225a9a3b5fbc2:14:0] \"It was that little hell-hound Tonga who shot one of his cursed darts into him.\"\n- [0ee225a9a3b5fbc2:15:22] \"I had now conceived the utmost horror of the man, not only for this cold-blooded business in which he had been concerned, but even more for the somewhat flippant and careless way in which he narrated it.\"\n- [0ee225a9a3b5fbc2:15:39] \"let all the world know how badly I have myself been served by Major Sholto, and how innocent I am of the death of his son.\"",
+  "key_facts": [
+   "Small was betrayed by Major Sholto and Captain Morstan, who took the treasure after promising help",
+   "Small took part in the murder of Achmet out of desire for the treasure and says so himself",
+   "He swore an oath to the other three of the four and says he never broke it",
+   "He denies killing Bartholomew Sholto and blames Tonga",
+   "He lived for vengeance after the betrayal; Watson says he felt horror at the man's flippant telling"
+  ],
+  "positions": [
+   "Sinned against: the officers cheated a convict who trusted them, and he kept his oath and his word throughout, while the murder he commits is Tonga's doing",
+   "Sinning: he helped murder an innocent man for gain, killed the guard in the escape, and his later wrongs are paid for by others",
+   "Balance: the wrong done to him is real but does not cancel his own crime at Agra; a strong answer weighs the two rather than choosing by sympathy"
+  ],
+  "counter_case": "Against 'sinned against': he admits that the thought of treasure 'turned me hard and bitter' when Achmet nearly escaped, and that he killed a guard in the escape. Against 'sinning': Sholto and Morstan broke their conditions and took everything, and Holmes says it is not yet clear how far justice was on Small's side.",
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:16",
+    "quote": "Whether Achmet the merchant lived or died was a thing as light as air to me, but at the talk about the treasure my heart turned to it"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:20",
+    "quote": "My heart softened to him, but again the thought of his treasure turned me hard and bitter."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:20",
+    "quote": "I cast my firelock between his legs as he raced past, and he rolled twice over like a shot rabbit."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:24",
+    "quote": "That is an oath that I can put my hand to my heart and swear that I have never broken."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "From that day I lived only for vengeance."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:35",
+    "quote": "He put his carbine to his shoulder, but I struck him full, and knocked the whole front of his skull in."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:0",
+    "quote": "It was that little hell-hound Tonga who shot one of his cursed darts into him."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:22",
+    "quote": "I had now conceived the utmost horror of the man, not only for this cold-blooded business in which he had been concerned, but even more for the somewhat flippant and careless way in which he narrated it."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:39",
+    "quote": "let all the world know how badly I have myself been served by Major Sholto, and how innocent I am of the death of his son."
+   }
+  ]
+ },
+ {
+  "id": "I3",
+  "type": "judgement",
+  "question": "Which character in The Sign of the Four is the most morally complicated, and why?",
+  "verified": "Type: judgement.\n\nDefensible positions:\n- Major Sholto: thief, cheat and coward who knows what he did and cannot make it right, shown by his deathbed speech\n- Jonathan Small: the only character who is at once wronged, loyal, violent and candid\n- Thaddeus Sholto: the one decent Sholto, yet he too acts only in part and for himself; a defensible but weaker answer\n\nMain counter-case: Against Major Sholto: his repentance comes only at the moment of death and does not lead to action, so he may be simple greed rather than complexity. Against Small: his account is told in his own defence and may be self-serving.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:7:7] \"The cursed greed which has been my besetting sin through life has withheld from her the treasure, half at least of which should have been hers.\"\n- [0ee225a9a3b5fbc2:7:7] \"The mere feeling of possession has been so dear to me that I could not bear to share it with another.\"\n- [0ee225a9a3b5fbc2:7:9] \"“I did not kill him,” said I.\"\n- [0ee225a9a3b5fbc2:7:9] \"My fault lies in the fact that we concealed not only the body, but also the treasure, and that I have clung to Morstan’s share as well as to my own.\"\n- [0ee225a9a3b5fbc2:15:28] \"Mind, I don’t say that there was anything unfair, but so it was.\"\n- [0ee225a9a3b5fbc2:7:13] \"It was all that I could do to persuade him to let me find out Miss Morstan’s address and send her a detached pearl at fixed intervals, so that at least she might never feel destitute.\"\n- [0ee225a9a3b5fbc2:15:35] \"He was stanch and true, was little Tonga.\"\n- [0ee225a9a3b5fbc2:15:22] \"“It was all very bad, no doubt,” said he.\"",
+  "key_facts": [
+   "Major Sholto cheated Small, kept Morstan's share and left Mary Morstan without it, but confessed it as a burden on his deathbed",
+   "He says greed was his besetting sin and that possession mattered more to him than use",
+   "Small is a murderer and a man who keeps his oath; Tonga's loyalty is bound up with Small's crimes",
+   "Thaddeus Sholto wants restitution and sends Mary a pearl each year, while his brother holds back"
+  ],
+  "positions": [
+   "Major Sholto: thief, cheat and coward who knows what he did and cannot make it right, shown by his deathbed speech",
+   "Jonathan Small: the only character who is at once wronged, loyal, violent and candid",
+   "Thaddeus Sholto: the one decent Sholto, yet he too acts only in part and for himself; a defensible but weaker answer"
+  ],
+  "counter_case": "Against Major Sholto: his repentance comes only at the moment of death and does not lead to action, so he may be simple greed rather than complexity. Against Small: his account is told in his own defence and may be self-serving.",
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:7",
+    "quote": "The cursed greed which has been my besetting sin through life has withheld from her the treasure, half at least of which should have been hers."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:7",
+    "quote": "The mere feeling of possession has been so dear to me that I could not bear to share it with another."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:9",
+    "quote": "“I did not kill him,” said I."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:9",
+    "quote": "My fault lies in the fact that we concealed not only the body, but also the treasure, and that I have clung to Morstan’s share as well as to my own."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:28",
+    "quote": "Mind, I don’t say that there was anything unfair, but so it was."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:13",
+    "quote": "It was all that I could do to persuade him to let me find out Miss Morstan’s address and send her a detached pearl at fixed intervals, so that at least she might never feel destitute."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:35",
+    "quote": "He was stanch and true, was little Tonga."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:22",
+    "quote": "“It was all very bad, no doubt,” said he."
+   }
+  ]
+ },
+ {
+  "id": "I4",
+  "type": "judgement",
+  "question": "Across both books, which character shows the most loyalty, and what does that loyalty cost?",
+  "verified": "Type: judgement.\n\nDefensible positions:\n- Tonga: the one who gives everything and asks for nothing\n- Small: loyal to his sworn comrades even when it cost him the escape and, in the end, the treasure\n- Hope: loyal to Lucy for twenty years; a defensible but different kind of fidelity\n\nMain counter-case: Loyalty is not always good here: Small's loyalty to the oath is also what makes him a murderer and a thief, Lal Chowdar's loyalty covers up a death, and Tonga's devotion is shown through acts the narrator finds horrifying.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:35] \"He was stanch and true, was little Tonga. No man ever had a more faithful mate.\"\n- [0ee225a9a3b5fbc2:15:32] \"‘None or all,’ I answered. ‘We have sworn it. The four of us must always act together.\"\n- [0ee225a9a3b5fbc2:15:32] \"‘Black or blue,’ said I, ‘they are in with me, and we all go together.\"\n- [0ee225a9a3b5fbc2:15:1] \"I have acted all through for them as much as for myself.\"\n- [05ab674df048d13f:5:0] \"the devotion and courage shown by Murray, my orderly, who threw me across a pack-horse, and succeeded in bringing me safely to the British lines.\"\n- [05ab674df048d13f:17:14] \"I was thunderstruck at this, for it was the only memento that I had of her.\"\n- [05ab674df048d13f:17:14] \"for I was ready to dare anything rather than lose the ring.\"\n- [0ee225a9a3b5fbc2:7:9] \"“Do not fear, Sahib,” he said. “No one need know that you have killed him.\"",
+  "key_facts": [
+   "Tonga stood by Small at every stage, and Small says he was a faithful mate",
+   "Small keeps the oath of the four and insists on the other three's inclusion",
+   "Hope keeps Lucy's wedding ring and risks arrest to recover it",
+   "Watson's orderly Murray saved him at Maiwand",
+   "Lal Chowdar helped hide Morstan's body for the Major"
+  ],
+  "positions": [
+   "Tonga: the one who gives everything and asks for nothing",
+   "Small: loyal to his sworn comrades even when it cost him the escape and, in the end, the treasure",
+   "Hope: loyal to Lucy for twenty years; a defensible but different kind of fidelity"
+  ],
+  "counter_case": "Loyalty is not always good here: Small's loyalty to the oath is also what makes him a murderer and a thief, Lal Chowdar's loyalty covers up a death, and Tonga's devotion is shown through acts the narrator finds horrifying.",
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:35",
+    "quote": "He was stanch and true, was little Tonga. No man ever had a more faithful mate."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:32",
+    "quote": "‘None or all,’ I answered. ‘We have sworn it. The four of us must always act together."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:32",
+    "quote": "‘Black or blue,’ said I, ‘they are in with me, and we all go together."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:1",
+    "quote": "I have acted all through for them as much as for myself."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:0",
+    "quote": "the devotion and courage shown by Murray, my orderly, who threw me across a pack-horse, and succeeded in bringing me safely to the British lines."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:14",
+    "quote": "I was thunderstruck at this, for it was the only memento that I had of her."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:14",
+    "quote": "for I was ready to dare anything rather than lose the ring."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:9",
+    "quote": "“Do not fear, Sahib,” he said. “No one need know that you have killed him."
+   }
+  ]
+ },
+ {
+  "id": "I5",
+  "type": "significance",
+  "question": "Why does the wedding ring matter so much in A Study in Scarlet?",
+  "verified": "Type: significance.\n\nDefensible positions:\n- The ring ties the murder to the Utah past and to Lucy: it is the clue that shows the crime concerned a woman and love\n- It is the hinge of the plot: Hope's attachment to it is what exposes him to Holmes's trap\n- It shows the human cost behind the crime: Hope's single sentimental weakness against his careful planning\n\nMain counter-case: The ring may be only a plot device that Holmes uses as bait, and the sentimental reading can be overstated: Holmes never discusses it as a symbol, and Hope's tenderness sits beside cold planning.\n\nEvidence (verbatim):\n- [05ab674df048d13f:7:9] \"a ring tinkled down and rolled across the floor\"\n- [05ab674df048d13f:7:9] \"It’s a woman’s wedding-ring.\"\n- [05ab674df048d13f:16:10] \"Stooping over her, he pressed his lips reverently to her cold forehead, and then, snatching up her hand, he took the wedding-ring from her finger.\"\n- [05ab674df048d13f:17:4] \"I took the marriage ring from her dead finger, and I vowed that his dying eyes should rest upon that very ring, and that his last thoughts should be of the crime for which he was punished.\"\n- [05ab674df048d13f:17:14] \"I had driven some distance when I put my hand into the pocket in which I usually kept Lucy’s ring, and found that it was not there.\"\n- [05ab674df048d13f:9:2] \"a plain gold wedding ring, found in the roadway between the ‘White Hart’ Tavern and Holland Grove.\"\n- [05ab674df048d13f:17:16] \"Who was your accomplice who came for the ring which I advertised?\"\n- [05ab674df048d13f:9:6] \"It belongs to my girl Sally, as was married only this time twelvemonth\"",
+  "key_facts": [
+   "Lucy's ring falls from Drebber's body at the scene and Lestrade says there has been a woman there",
+   "Hope took it from Lucy's dead finger and vowed Drebber would see it as he died",
+   "Holmes advertises it as found in the Brixton Road, and an old woman comes for it, who proves to be Hope's accomplice",
+   "Hope went back to the house for it, which let the police see him",
+   "It was the only memento Hope had of Lucy"
+  ],
+  "positions": [
+   "The ring ties the murder to the Utah past and to Lucy: it is the clue that shows the crime concerned a woman and love",
+   "It is the hinge of the plot: Hope's attachment to it is what exposes him to Holmes's trap",
+   "It shows the human cost behind the crime: Hope's single sentimental weakness against his careful planning"
+  ],
+  "counter_case": "The ring may be only a plot device that Holmes uses as bait, and the sentimental reading can be overstated: Holmes never discusses it as a symbol, and Hope's tenderness sits beside cold planning.",
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:7:9",
+    "quote": "a ring tinkled down and rolled across the floor"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:7:9",
+    "quote": "It’s a woman’s wedding-ring."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:10",
+    "quote": "Stooping over her, he pressed his lips reverently to her cold forehead, and then, snatching up her hand, he took the wedding-ring from her finger."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:4",
+    "quote": "I took the marriage ring from her dead finger, and I vowed that his dying eyes should rest upon that very ring, and that his last thoughts should be of the crime for which he was punished."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:14",
+    "quote": "I had driven some distance when I put my hand into the pocket in which I usually kept Lucy’s ring, and found that it was not there."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:2",
+    "quote": "a plain gold wedding ring, found in the roadway between the ‘White Hart’ Tavern and Holland Grove."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:16",
+    "quote": "Who was your accomplice who came for the ring which I advertised?"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:6",
+    "quote": "It belongs to my girl Sally, as was married only this time twelvemonth"
+   }
+  ]
+ },
+ {
+  "id": "I6",
+  "type": "significance",
+  "question": "What does it mean that Jonathan Small throws the treasure into the Thames, and what does the act do to the people around him?",
+  "verified": "Type: significance.\n\nDefensible positions:\n- A last act of loyalty and revenge: denying the Sholtos' heirs what the Sholtos had stolen is the oath kept in the only way left\n- An act of moral release: the treasure had corrupted everyone who touched it, and its loss frees Watson and Mary\n- A spiteful or practical act: with capture certain, it simply keeps the prize from his captors\n\nMain counter-case: Small's own words allow a plain, practical reading: 'There are no rupees for you this journey.' Jones also notes that throwing the whole box would have been easier, which suggests Small's tale may hide a different motive.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:1] \"throw the treasure into the Thames rather than let it go to kith or kin of Sholto or of Morstan\"\n- [0ee225a9a3b5fbc2:15:1] \"It was not to make them rich that we did for Achmet.\"\n- [0ee225a9a3b5fbc2:15:1] \"It’s been the sign of four with us always.\"\n- [0ee225a9a3b5fbc2:15:2] \"It went to my heart to do it, though.\"\n- [0ee225a9a3b5fbc2:15:1] \"There are no rupees for you this journey.\"\n- [0ee225a9a3b5fbc2:15:2] \"If you had helped justice, instead of thwarting it in this way, you would have had a better chance at your trial.\"\n- [0ee225a9a3b5fbc2:14:9] \"I did not know how this Agra treasure had weighed me down, until now that it was finally removed.\"\n- [0ee225a9a3b5fbc2:14:9] \"but I could realise nothing save that the golden barrier was gone from between us.\"",
+  "key_facts": [
+   "Small says he threw the treasure into the river rather than let it go to kith or kin of Sholto or Morstan",
+   "He says he was acting for his three comrades as much as for himself, in keeping with the sign of the four",
+   "Athelney Jones is angry at the loss, and Small says it went to his heart to do it",
+   "Watson is relieved because it removes the Agra treasure that stood between him and Mary"
+  ],
+  "positions": [
+   "A last act of loyalty and revenge: denying the Sholtos' heirs what the Sholtos had stolen is the oath kept in the only way left",
+   "An act of moral release: the treasure had corrupted everyone who touched it, and its loss frees Watson and Mary",
+   "A spiteful or practical act: with capture certain, it simply keeps the prize from his captors"
+  ],
+  "counter_case": "Small's own words allow a plain, practical reading: 'There are no rupees for you this journey.' Jones also notes that throwing the whole box would have been easier, which suggests Small's tale may hide a different motive.",
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:1",
+    "quote": "throw the treasure into the Thames rather than let it go to kith or kin of Sholto or of Morstan"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:1",
+    "quote": "It was not to make them rich that we did for Achmet."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:1",
+    "quote": "It’s been the sign of four with us always."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:2",
+    "quote": "It went to my heart to do it, though."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:1",
+    "quote": "There are no rupees for you this journey."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:2",
+    "quote": "If you had helped justice, instead of thwarting it in this way, you would have had a better chance at your trial."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:9",
+    "quote": "I did not know how this Agra treasure had weighed me down, until now that it was finally removed."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:9",
+    "quote": "but I could realise nothing save that the golden barrier was gone from between us."
+   }
+  ]
+ },
+ {
+  "id": "I7",
+  "type": "theme",
+  "question": "What do the two books suggest about the difference between the law and justice?",
+  "verified": "Type: theme.\n\nDefensible positions:\n- Law and justice come apart: in both books the formal process is overtaken, and the book lets the culprit's account stand as an argument over what justice is\n- The books still defend the law: Holmes and the police catch both men, and Watson insists the victim's character is no excuse\n- Justice is shown as always partial: private vengeance, a church council and the courts each claim it\n\nMain counter-case: The strongest counter to 'law and justice come apart' is that both culprits are caught by lawful means and neither is excused in the narrator's own terms; the books never say the killings were right.\n\nEvidence (verbatim):\n- [05ab674df048d13f:17:16] \"You may consider me to be a murderer; but I hold that I am just as much an officer of justice as you are.\"\n- [05ab674df048d13f:18:0] \"On the very night after his capture the aneurism burst, and he was found in the morning stretched upon the floor of the cell\"\n- [05ab674df048d13f:9:0] \"Still I recognized that justice must be done, and that the depravity of the victim was no condonement in the eyes of the law.\"\n- [0ee225a9a3b5fbc2:15:2] \"“Justice!” snarled the ex-convict.\"\n- [0ee225a9a3b5fbc2:15:3] \"We have not heard your story, and we cannot tell how far justice may originally have been on your side.\"\n- [05ab674df048d13f:16:12] \"careless what became of his own life, as long as he obtained what he knew to be justice.\"\n- [05ab674df048d13f:14:4] \"Upon this one point your whole faith shall be tested—so it has been decided in the Sacred Council of Four.\"",
+  "key_facts": [
+   "Hope dies of his aneurism before trial; Watson says the victim's depravity is no excuse in law",
+   "Hope calls himself an officer of justice and puts his case to chance with the pills",
+   "Small snarls 'Justice!' at Jones, and Holmes says justice may have been on Small's side",
+   "Jones tells Small he would have done better at trial to help justice",
+   "Young's 'Sacred Council' decides Lucy's fate by force"
+  ],
+  "positions": [
+   "Law and justice come apart: in both books the formal process is overtaken, and the book lets the culprit's account stand as an argument over what justice is",
+   "The books still defend the law: Holmes and the police catch both men, and Watson insists the victim's character is no excuse",
+   "Justice is shown as always partial: private vengeance, a church council and the courts each claim it"
+  ],
+  "counter_case": "The strongest counter to 'law and justice come apart' is that both culprits are caught by lawful means and neither is excused in the narrator's own terms; the books never say the killings were right.",
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:17:16",
+    "quote": "You may consider me to be a murderer; but I hold that I am just as much an officer of justice as you are."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:18:0",
+    "quote": "On the very night after his capture the aneurism burst, and he was found in the morning stretched upon the floor of the cell"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:9:0",
+    "quote": "Still I recognized that justice must be done, and that the depravity of the victim was no condonement in the eyes of the law."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:2",
+    "quote": "“Justice!” snarled the ex-convict."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:3",
+    "quote": "We have not heard your story, and we cannot tell how far justice may originally have been on your side."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:12",
+    "quote": "careless what became of his own life, as long as he obtained what he knew to be justice."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:4",
+    "quote": "Upon this one point your whole faith shall be tested—so it has been decided in the Sacred Council of Four."
+   }
+  ]
+ },
+ {
+  "id": "I8",
+  "type": "theme",
+  "question": "Is greed the engine of the wrongs in these books, and does the Agra treasure corrupt everyone who touches it?",
+  "verified": "Type: theme.\n\nDefensible positions:\n- Yes: greed starts the crime chain in The Sign of the Four, and the treasure's loss is what frees the survivors\n- Greed is one cause among several: revenge and loyalty are as strong, and A Study in Scarlet runs mostly on vengeance and fanaticism\n- The treasure tests people rather than corrupts them: some pass (Mary, Thaddeus in part)\n\nMain counter-case: Mary Morstan never wants the treasure, Thaddeus tries to put things right, and A Study in Scarlet's central wrongs come from faith and revenge rather than money; Small, too, says vengeance became bigger to him than the treasure.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:7:7] \"The cursed greed which has been my besetting sin through life has withheld from her the treasure, half at least of which should have been hers.\"\n- [0ee225a9a3b5fbc2:7:7] \"so blind and foolish a thing is avarice\"\n- [0ee225a9a3b5fbc2:7:13] \"for, between friends, my brother was himself a little inclined to my father’s fault.\"\n- [0ee225a9a3b5fbc2:15:16] \"at the talk about the treasure my heart turned to it\"\n- [0ee225a9a3b5fbc2:10:0] \"This Agra treasure intervened like an impassable barrier between us.\"\n- [05ab674df048d13f:16:10] \"Her sottish husband, who had married her principally for the sake of John Ferrier’s property\"\n- [0ee225a9a3b5fbc2:15:34] \"Even the Agra treasure had come to be a smaller thing in my mind than the slaying of Sholto.\"",
+  "key_facts": [
+   "Major Sholto calls greed his besetting sin and says avarice made him blind and foolish",
+   "Bartholomew shares his father's fault, Thaddeus is the exception who wants Mary to have a share",
+   "Small's heart turned to the treasure at Achmet's murder",
+   "The Agra treasure stands between Watson and Mary as a barrier until it is lost",
+   "Drebber married Lucy for Ferrier's property"
+  ],
+  "positions": [
+   "Yes: greed starts the crime chain in The Sign of the Four, and the treasure's loss is what frees the survivors",
+   "Greed is one cause among several: revenge and loyalty are as strong, and A Study in Scarlet runs mostly on vengeance and fanaticism",
+   "The treasure tests people rather than corrupts them: some pass (Mary, Thaddeus in part)"
+  ],
+  "counter_case": "Mary Morstan never wants the treasure, Thaddeus tries to put things right, and A Study in Scarlet's central wrongs come from faith and revenge rather than money; Small, too, says vengeance became bigger to him than the treasure.",
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:7",
+    "quote": "The cursed greed which has been my besetting sin through life has withheld from her the treasure, half at least of which should have been hers."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:7",
+    "quote": "so blind and foolish a thing is avarice"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:13",
+    "quote": "for, between friends, my brother was himself a little inclined to my father’s fault."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:16",
+    "quote": "at the talk about the treasure my heart turned to it"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:10:0",
+    "quote": "This Agra treasure intervened like an impassable barrier between us."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:10",
+    "quote": "Her sottish husband, who had married her principally for the sake of John Ferrier’s property"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "Even the Agra treasure had come to be a smaller thing in my mind than the slaying of Sholto."
+   }
+  ]
+ },
+ {
+  "id": "I9",
+  "type": "comparison",
+  "question": "Compare the way each novel uses its long backstory to explain a London crime. Which does it better, and what does each cost the story?",
+  "verified": "Type: comparison.\n\nDefensible positions:\n- A Study in Scarlet's separate narrated section makes the past feel like a different story, giving the motive weight and making Hope sympathetic, at the cost of breaking the detective plot in two\n- The Sign of the Four's backstory is stronger because it is a character's voice with an angle and a motive to lie, and the listeners react as it goes\n- Neither is better outright: they serve different aims, one to establish sympathy and one to enrich a character; a strong answer says which aim it values\n\nMain counter-case: A Study in Scarlet's narrator has authority the reader may trust more than Small's self-defence, so the first can be argued to be more reliable; the second's framing by listeners' reactions is also less intrusive.\n\nEvidence (verbatim):\n- [05ab674df048d13f:12:0] \"In the central portion of the great North American Continent there lies an arid and repulsive desert\"\n- [05ab674df048d13f:16:13] \"he travelled from town to town through the United States in quest of his enemies.\"\n- [05ab674df048d13f:17:16] \"That’s the whole of my story, gentlemen.\"\n- [0ee225a9a3b5fbc2:15:12] \"Maybe you gentlemen think that I am just making out a case for myself, but I give you my word\"\n- [0ee225a9a3b5fbc2:15:39] \"it is because I believe the best defence I can make is just to hold back nothing\"\n- [0ee225a9a3b5fbc2:15:22] \"I had now conceived the utmost horror of the man, not only for this cold-blooded business in which he had been concerned, but even more for the somewhat flippant and careless way in which he narrated it.\"",
+  "key_facts": [
+   "In A Study in Scarlet the Utah story is told in the third person, before Hope's own statement",
+   "In The Sign of the Four the backstory is Small's own account, told in his defence to Holmes, Watson and Jones",
+   "The first backstory gives the reader sympathy for the killer; the second makes the killer a witness who is himself guilty",
+   "Both give revenge as a motive, and both end with the culprit telling his story to the police and Holmes"
+  ],
+  "positions": [
+   "A Study in Scarlet's separate narrated section makes the past feel like a different story, giving the motive weight and making Hope sympathetic, at the cost of breaking the detective plot in two",
+   "The Sign of the Four's backstory is stronger because it is a character's voice with an angle and a motive to lie, and the listeners react as it goes",
+   "Neither is better outright: they serve different aims, one to establish sympathy and one to enrich a character; a strong answer says which aim it values"
+  ],
+  "counter_case": "A Study in Scarlet's narrator has authority the reader may trust more than Small's self-defence, so the first can be argued to be more reliable; the second's framing by listeners' reactions is also less intrusive.",
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:12:0",
+    "quote": "In the central portion of the great North American Continent there lies an arid and repulsive desert"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:13",
+    "quote": "he travelled from town to town through the United States in quest of his enemies."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:17:16",
+    "quote": "That’s the whole of my story, gentlemen."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:12",
+    "quote": "Maybe you gentlemen think that I am just making out a case for myself, but I give you my word"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:39",
+    "quote": "it is because I believe the best defence I can make is just to hold back nothing"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:22",
+    "quote": "I had now conceived the utmost horror of the man, not only for this cold-blooded business in which he had been concerned, but even more for the somewhat flippant and careless way in which he narrated it."
+   }
+  ]
+ },
+ {
+  "id": "I10",
+  "type": "character analysis",
+  "question": "What kind of man is John Ferrier, and was his fate partly his own doing?",
+  "verified": "Type: character analysis.\n\nDefensible positions:\n- A man of integrity who held one line, and was crushed by a system he could not leave in time\n- A pragmatist who prospered inside a regime he disliked and so shares in the fate it brought on him\n- A decent but slow man: he waited out the month rather than leaving at once\n\nMain counter-case: For the 'own doing' reading: he accepted land and wealth from the Church while hiding his dissent. Against it: the Church took him in when he was starving, and his one act of refusal was a matter of conscience about his daughter.\n\nEvidence (verbatim):\n- [05ab674df048d13f:13:2] \"He was a man of a practical turn of mind, keen in his dealings and skilful with his hands.\"\n- [05ab674df048d13f:13:2] \"No argument or persuasion could ever induce him to set up a female establishment after the manner of his companions.\"\n- [05ab674df048d13f:13:3] \"In every other respect he conformed to the religion of the young settlement, and gained the name of being an orthodox and straight-walking man.\"\n- [05ab674df048d13f:14:0] \"He had always determined, deep down in his resolute heart, that nothing would ever induce him to allow his daughter to wed a Mormon.\"\n- [05ab674df048d13f:14:7] \"I’m a free-born American, and it’s all new to me. Guess I’m too old to learn.\"\n- [05ab674df048d13f:14:3] \"Have I not given to the common fund? Have I not attended at the Temple?\"\n- [05ab674df048d13f:14:3] \"allowed you to wax rich under our protection\"\n- [05ab674df048d13f:14:7] \"We have a clear month before us; at the end of that, I guess we had best shin out of Utah.\"\n- [05ab674df048d13f:14:7] \"he paid unusual care to the fastening of the doors that night\"",
+  "key_facts": [
+   "Ferrier is practical, keen in his dealings and skilful, and became the richest of the farmers",
+   "He refused to take wives and gave no reason, but otherwise conformed and was thought orthodox",
+   "He privately meant never to let Lucy marry a Mormon, and says he is a free-born American",
+   "When Young sets a month, he plans to leave Utah and arms himself",
+   "He chose to take Mormon help and protection and prospered in the system he disliked"
+  ],
+  "positions": [
+   "A man of integrity who held one line, and was crushed by a system he could not leave in time",
+   "A pragmatist who prospered inside a regime he disliked and so shares in the fate it brought on him",
+   "A decent but slow man: he waited out the month rather than leaving at once"
+  ],
+  "counter_case": "For the 'own doing' reading: he accepted land and wealth from the Church while hiding his dissent. Against it: the Church took him in when he was starving, and his one act of refusal was a matter of conscience about his daughter.",
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:13:2",
+    "quote": "He was a man of a practical turn of mind, keen in his dealings and skilful with his hands."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:2",
+    "quote": "No argument or persuasion could ever induce him to set up a female establishment after the manner of his companions."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:13:3",
+    "quote": "In every other respect he conformed to the religion of the young settlement, and gained the name of being an orthodox and straight-walking man."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:0",
+    "quote": "He had always determined, deep down in his resolute heart, that nothing would ever induce him to allow his daughter to wed a Mormon."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:7",
+    "quote": "I’m a free-born American, and it’s all new to me. Guess I’m too old to learn."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:3",
+    "quote": "Have I not given to the common fund? Have I not attended at the Temple?"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:3",
+    "quote": "allowed you to wax rich under our protection"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:7",
+    "quote": "We have a clear month before us; at the end of that, I guess we had best shin out of Utah."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:7",
+    "quote": "he paid unusual care to the fastening of the doors that night"
+   }
+  ]
+ },
+ {
+  "id": "I11",
+  "type": "character analysis",
+  "question": "Is Sherlock Holmes really without feeling, or does the text show something else under the cold reasoner?",
+  "verified": "Type: character analysis.\n\nDefensible positions:\n- Cold by principle and temperament: his stated beliefs and his refusal of marriage show a man who treats feeling as a danger\n- Not cold but intense: his cravings, his moods and his enthusiasm show strong feeling directed at problems rather than people\n- Both: he distrusts feeling in himself while evidently feeling a great deal; a strong answer says how much weight each text carries\n\nMain counter-case: Holmes's own statements are about method and may be a pose; his actions (the delight, the dumps, the praise of Mary) point the other way. The text does not give his inner life directly: Watson is the narrator.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:42] \"But love is an emotional thing, and whatever is emotional is opposed to that true cold reason which I place above all things.\"\n- [0ee225a9a3b5fbc2:15:42] \"I should never marry myself, lest I bias my judgment.\"\n- [0ee225a9a3b5fbc2:15:41] \"I really cannot congratulate you.\"\n- [0ee225a9a3b5fbc2:4:3] \"Detection is, or ought to be, an exact science, and should be treated in the same cold and unemotional manner.\"\n- [0ee225a9a3b5fbc2:4:2] \"But I abhor the dull routine of existence. I crave for mental exaltation.\"\n- [05ab674df048d13f:6:0] \"for days on end he would lie upon the sofa in the sitting-room, hardly uttering a word or moving a muscle from morning to night.\"\n- [05ab674df048d13f:5:9] \"Sherlock Holmes seemed delighted at the idea of sharing his rooms with me.\"\n- [0ee225a9a3b5fbc2:15:42] \"She had a decided genius that way: witness the way in which she preserved that Agra plan from all the other papers of her father.\"",
+  "key_facts": [
+   "Holmes says detection should be treated in a cold and unemotional manner and that love is opposed to cold reason",
+   "He cannot congratulate Watson on his engagement and says he would never marry lest he bias his judgment",
+   "He admits he abhors the dull routine of existence and craves mental exaltation",
+   "He goes through fits of deep inactivity, and he is delighted at the idea of sharing rooms with Watson",
+   "He praises Mary Morstan's genius for detection"
+  ],
+  "positions": [
+   "Cold by principle and temperament: his stated beliefs and his refusal of marriage show a man who treats feeling as a danger",
+   "Not cold but intense: his cravings, his moods and his enthusiasm show strong feeling directed at problems rather than people",
+   "Both: he distrusts feeling in himself while evidently feeling a great deal; a strong answer says how much weight each text carries"
+  ],
+  "counter_case": "Holmes's own statements are about method and may be a pose; his actions (the delight, the dumps, the praise of Mary) point the other way. The text does not give his inner life directly: Watson is the narrator.",
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "But love is an emotional thing, and whatever is emotional is opposed to that true cold reason which I place above all things."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "I should never marry myself, lest I bias my judgment."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:41",
+    "quote": "I really cannot congratulate you."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:3",
+    "quote": "Detection is, or ought to be, an exact science, and should be treated in the same cold and unemotional manner."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:4:2",
+    "quote": "But I abhor the dull routine of existence. I crave for mental exaltation."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:6:0",
+    "quote": "for days on end he would lie upon the sofa in the sitting-room, hardly uttering a word or moving a muscle from morning to night."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:9",
+    "quote": "Sherlock Holmes seemed delighted at the idea of sharing his rooms with me."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:42",
+    "quote": "She had a decided genius that way: witness the way in which she preserved that Agra plan from all the other papers of her father."
+   }
+  ]
+ },
+ {
+  "id": "I12",
+  "type": "counterfactual",
+  "question": "Suppose Major Sholto had kept his bargain with Small. How far would the later tragedies have been avoided?",
+  "verified": "Type: counterfactual.\n\nDefensible positions:\n- Most would be avoided: with no betrayal there is no vengeance, no Tonga at Pondicherry Lodge and no death of Bartholomew\n- Some would remain: Morstan's quarrel with Sholto was about greed and would have occurred anyway, and Mary would still lose her father\n- The counterfactual is unstable: the deal itself was built on the theft of a murdered man's treasure and may have failed on any of its conditions\n\nMain counter-case: Small's own terms ('None or all') were hard to meet, as the other side showed. The books do not say what would have happened; a strong answer labels its reasoning as inference, not as something the text states.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:32] \"‘Not so fast,’ said I, growing colder as he got hot.\"\n- [0ee225a9a3b5fbc2:15:32] \"What have three black fellows to do with our agreement?\"\n- [0ee225a9a3b5fbc2:15:32] \"the money would save our commissions handsomely\"\n- [0ee225a9a3b5fbc2:15:34] \"The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret.\"\n- [0ee225a9a3b5fbc2:15:34] \"From that day I lived only for vengeance.\"\n- [0ee225a9a3b5fbc2:15:34] \"Even the Agra treasure had come to be a smaller thing in my mind than the slaying of Sholto.\"\n- [0ee225a9a3b5fbc2:7:8] \"Morstan and I had a difference of opinion as to the division of the treasure, and we came to heated words.\"\n- [0ee225a9a3b5fbc2:7:6] \"He nearly fainted at the breakfast-table when he opened it, and from that day he sickened to his death.\"",
+  "key_facts": [
+   "Sholto and Morstan agreed to help Small and his three comrades escape in exchange for the secret of the treasure",
+   "Sholto and Morstan then took the treasure and left the four behind",
+   "Small says from that day he lived only for vengeance and that Sholto's slaying became bigger to him than the treasure",
+   "Morstan died in a quarrel over the division of the treasure, in Sholto's house",
+   "The Major was haunted by fear of a letter from India until his death"
+  ],
+  "positions": [
+   "Most would be avoided: with no betrayal there is no vengeance, no Tonga at Pondicherry Lodge and no death of Bartholomew",
+   "Some would remain: Morstan's quarrel with Sholto was about greed and would have occurred anyway, and Mary would still lose her father",
+   "The counterfactual is unstable: the deal itself was built on the theft of a murdered man's treasure and may have failed on any of its conditions"
+  ],
+  "counter_case": "Small's own terms ('None or all') were hard to meet, as the other side showed. The books do not say what would have happened; a strong answer labels its reasoning as inference, not as something the text states.",
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:32",
+    "quote": "‘Not so fast,’ said I, growing colder as he got hot."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:32",
+    "quote": "What have three black fellows to do with our agreement?"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:32",
+    "quote": "the money would save our commissions handsomely"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "The scoundrel had stolen it all, without carrying out one of the conditions on which we had sold him the secret."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "From that day I lived only for vengeance."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "Even the Agra treasure had come to be a smaller thing in my mind than the slaying of Sholto."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:8",
+    "quote": "Morstan and I had a difference of opinion as to the division of the treasure, and we came to heated words."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:6",
+    "quote": "He nearly fainted at the breakfast-table when he opened it, and from that day he sickened to his death."
+   }
+  ]
+ },
+ {
+  "id": "I13",
+  "type": "evaluation",
+  "question": "Who bears the most blame for Lucy Ferrier's death?",
+  "verified": "Type: evaluation.\n\nDefensible positions:\n- The Church's leaders and system: Young's decree and the Council made the marriage a matter of religious force\n- Drebber and Stangerson: they carried out the pursuit, killed Ferrier and took Lucy\n- Shared: the system, the two Elders' sons and the Ferriers' delay; a strong answer ranks them\n\nMain counter-case: Hope's absence and Ferrier's decision to wait out the month can be argued to share blame, and the book says it is unclear whether Lucy died of grief for her father or the hateful marriage.\n\nEvidence (verbatim):\n- [05ab674df048d13f:14:4] \"We Elders have many heifers,\"\n- [05ab674df048d13f:14:5] \"“She shall have a month to choose,” said Young, rising from his seat.\"\n- [05ab674df048d13f:16:9] \"Stangerson had shot her father, which seemed to give him the best claim\"\n- [05ab674df048d13f:16:10] \"Her sottish husband, who had married her principally for the sake of John Ferrier’s property, did not affect any great grief at his bereavement\"\n- [05ab674df048d13f:16:9] \"Whether it was the terrible death of her father or the effects of the hateful marriage into which she had been forced\"\n- [05ab674df048d13f:16:9] \"poor Lucy never held up her head again, but pined away and died within a month.\"\n- [05ab674df048d13f:14:7] \"We have a clear month before us; at the end of that, I guess we had best shin out of Utah.\"\n- [05ab674df048d13f:16:4] \"for he had been absent nearly five hours\"",
+  "key_facts": [
+   "Young gave Lucy a month to choose between two sons and threatened the Ferriers",
+   "Stangerson shot her father in the pursuit and Drebber was given Lucy",
+   "Drebber married her for her father's property and did not grieve",
+   "Lucy died within a month of the forced marriage",
+   "Hope was away hunting for about five hours when the pursuers took the camp"
+  ],
+  "positions": [
+   "The Church's leaders and system: Young's decree and the Council made the marriage a matter of religious force",
+   "Drebber and Stangerson: they carried out the pursuit, killed Ferrier and took Lucy",
+   "Shared: the system, the two Elders' sons and the Ferriers' delay; a strong answer ranks them"
+  ],
+  "counter_case": "Hope's absence and Ferrier's decision to wait out the month can be argued to share blame, and the book says it is unclear whether Lucy died of grief for her father or the hateful marriage.",
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:14:4",
+    "quote": "We Elders have many heifers,"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:5",
+    "quote": "“She shall have a month to choose,” said Young, rising from his seat."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:9",
+    "quote": "Stangerson had shot her father, which seemed to give him the best claim"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:10",
+    "quote": "Her sottish husband, who had married her principally for the sake of John Ferrier’s property, did not affect any great grief at his bereavement"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:9",
+    "quote": "Whether it was the terrible death of her father or the effects of the hateful marriage into which she had been forced"
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:9",
+    "quote": "poor Lucy never held up her head again, but pined away and died within a month."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:7",
+    "quote": "We have a clear month before us; at the end of that, I guess we had best shin out of Utah."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:16:4",
+    "quote": "for he had been absent nearly five hours"
+   }
+  ]
+ },
+ {
+  "id": "I14",
+  "type": "theme",
+  "question": "What does The Sign of the Four suggest about the way British rule in India shaped the crime, and does the book criticise it?",
+  "verified": "Type: theme.\n\nDefensible positions:\n- The book shows Empire as a source of loot and corruption: the treasure, the convict settlement and the officers' cheating all come from it\n- The book is an imperial adventure: the Mutiny is told from the settlers' side and the Indian characters are given little voice\n- Mixed: the corruption of British officers is shown clearly, but the book never questions British rule itself\n\nMain counter-case: The book's critical edge is directed at individuals (Sholto, Morstan), not at rule itself, and Small's narration is sympathetic to Britons; the counter-case is that it only criticises the greed of a few men.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:15:6] \"Suddenly, without a note of warning, the great mutiny broke upon us.\"\n- [0ee225a9a3b5fbc2:15:6] \"the next there were two hundred thousand black devils let loose, and the country was a perfect hell.\"\n- [0ee225a9a3b5fbc2:15:8] \"and the cruellest part of it was that these men that we fought against, foot, horse, and gunners, were our own picked troops, whom we had taught and trained, handling our own weapons, and blowing our own bugle-calls.\"\n- [0ee225a9a3b5fbc2:15:14] \"he is of a low nature and hoards his gold rather than spend it.\"\n- [0ee225a9a3b5fbc2:15:26] \"for the rajah had been deposed and driven out of India: so no one had any particular interest in them.\"\n- [0ee225a9a3b5fbc2:15:32] \"‘It’s a dirty business,’ the other answered.\"\n- [0ee225a9a3b5fbc2:7:5] \"He had prospered in India, and brought back with him a considerable sum of money, a large collection of valuable curiosities, and a staff of native servants.\"\n- [05ab674df048d13f:5:1] \"that great cesspool into which all the loungers and idlers of the Empire are irresistibly drained.\"",
+  "key_facts": [
+   "The treasure came from a rajah who hoards his gold and played both sides in the Mutiny",
+   "Small was a soldier and planter in India when the Mutiny broke out, and he describes the rebel troops as men the British had trained",
+   "Sholto and Morstan, officers on the Andamans, gambled and took the secret from a convict",
+   "Sholto came back from India with money and native servants",
+   "The narrator and Small speak of Indians in racial terms"
+  ],
+  "positions": [
+   "The book shows Empire as a source of loot and corruption: the treasure, the convict settlement and the officers' cheating all come from it",
+   "The book is an imperial adventure: the Mutiny is told from the settlers' side and the Indian characters are given little voice",
+   "Mixed: the corruption of British officers is shown clearly, but the book never questions British rule itself"
+  ],
+  "counter_case": "The book's critical edge is directed at individuals (Sholto, Morstan), not at rule itself, and Small's narration is sympathetic to Britons; the counter-case is that it only criticises the greed of a few men.",
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:6",
+    "quote": "Suddenly, without a note of warning, the great mutiny broke upon us."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:6",
+    "quote": "the next there were two hundred thousand black devils let loose, and the country was a perfect hell."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:8",
+    "quote": "and the cruellest part of it was that these men that we fought against, foot, horse, and gunners, were our own picked troops, whom we had taught and trained, handling our own weapons, and blowing our own bugle-calls."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:14",
+    "quote": "he is of a low nature and hoards his gold rather than spend it."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:26",
+    "quote": "for the rajah had been deposed and driven out of India: so no one had any particular interest in them."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:32",
+    "quote": "‘It’s a dirty business,’ the other answered."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:7:5",
+    "quote": "He had prospered in India, and brought back with him a considerable sum of money, a large collection of valuable curiosities, and a staff of native servants."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:5:1",
+    "quote": "that great cesspool into which all the loungers and idlers of the Empire are irresistibly drained."
+   }
+  ]
+ },
+ {
+  "id": "I15",
+  "type": "beyond",
+  "question": "Did Conan Doyle mean A Study in Scarlet's picture of the Mormons to be fair, and was it accurate to real history?",
+  "verified": "Type: beyond.\n\nDefensible positions:\n- The book's evidence: the text presents the Mormon community as coercive and the Danites as feared; it frames them partly as rumour\n- What it cannot settle: what Doyle intended, how fair or accurate the picture is to real history, and whether the Danite Band was as described\n- A strong answer separates what the text says from what it cannot show, and states that these limits need outside sources\n\nMain counter-case: Counter-case: the text presents some of this as fact in the narrator's voice rather than rumour, which supports a reading that the author intended it as truth; but the books do not say what Doyle meant or whether it was true.\n\nWhat the books can and cannot settle: The books can show what is said about the Mormons, which parts are rumour and which the narrator asserts, and the one footnote. They cannot show what Doyle meant, the accuracy of the portrayal, or what the real Church did.\n\nEvidence (verbatim):\n- [05ab674df048d13f:14:0] \"The victims of persecution had now turned persecutors on their own account, and persecutors of the most terrible description.\"\n- [05ab674df048d13f:14:0] \"Not the Inquisition of Seville, nor the German Vehmgericht, nor the Secret Societies of Italy, were ever able to put a more formidable machinery in motion than that which cast a cloud over the State of Utah.\"\n- [05ab674df048d13f:14:1] \"Strange rumours began to be bandied about—rumours of murdered immigrants and rifled camps in regions where Indians had never been seen.\"\n- [05ab674df048d13f:14:2] \"To this day, in the lonely ranches of the West, the name of the Danite Band, or the Avenging Angels, is a sinister and an ill-omened one.\"\n- [05ab674df048d13f:14:4] \"Heber C. Kemball, in one of his sermons, alludes to his hundred wives under this endearing epithet.\"\n- [05ab674df048d13f:14:1] \"Fresh women appeared in the harems of the Elders—women who pined and wept, and bore upon their faces the traces of an unextinguishable horror.\"\n- [05ab674df048d13f:12:15] \"Brigham Young has said it, and he has spoken with the voice of Joseph Smith, which is the voice of God.\"",
+  "key_facts": [
+   "The book calls the Danite Band sinister and tells of vanished men and rumours of murdered immigrants",
+   "It says the persecuted had become persecutors and compares the Church's machinery to the Inquisition",
+   "A footnote cites a Mormon leader's sermon on his hundred wives",
+   "The book's own text does not state the author's aims or its sources for the Mormon history"
+  ],
+  "positions": [
+   "The book's evidence: the text presents the Mormon community as coercive and the Danites as feared; it frames them partly as rumour",
+   "What it cannot settle: what Doyle intended, how fair or accurate the picture is to real history, and whether the Danite Band was as described",
+   "A strong answer separates what the text says from what it cannot show, and states that these limits need outside sources"
+  ],
+  "counter_case": "Counter-case: the text presents some of this as fact in the narrator's voice rather than rumour, which supports a reading that the author intended it as truth; but the books do not say what Doyle meant or whether it was true.",
+  "limits": "The books can show what is said about the Mormons, which parts are rumour and which the narrator asserts, and the one footnote. They cannot show what Doyle meant, the accuracy of the portrayal, or what the real Church did.",
+  "evidence": [
+   {
+    "chunk_id": "05ab674df048d13f:14:0",
+    "quote": "The victims of persecution had now turned persecutors on their own account, and persecutors of the most terrible description."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:0",
+    "quote": "Not the Inquisition of Seville, nor the German Vehmgericht, nor the Secret Societies of Italy, were ever able to put a more formidable machinery in motion than that which cast a cloud over the State of Utah."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:1",
+    "quote": "Strange rumours began to be bandied about—rumours of murdered immigrants and rifled camps in regions where Indians had never been seen."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:2",
+    "quote": "To this day, in the lonely ranches of the West, the name of the Danite Band, or the Avenging Angels, is a sinister and an ill-omened one."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:4",
+    "quote": "Heber C. Kemball, in one of his sermons, alludes to his hundred wives under this endearing epithet."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:14:1",
+    "quote": "Fresh women appeared in the harems of the Elders—women who pined and wept, and bore upon their faces the traces of an unextinguishable horror."
+   },
+   {
+    "chunk_id": "05ab674df048d13f:12:15",
+    "quote": "Brigham Young has said it, and he has spoken with the voice of Joseph Smith, which is the voice of God."
+   }
+  ]
+ },
+ {
+  "id": "I16",
+  "type": "beyond",
+  "question": "How does The Sign of the Four portray Tonga and the Andaman islanders, and what can the book tell us about how true or fair that portrayal is?",
+  "verified": "Type: beyond.\n\nDefensible positions:\n- The portrayal is a mix of stereotype and loyalty: the islander is drawn as savage and yet is the most faithful figure in the story\n- The book treats Tonga as an object of horror and spectacle, and his loyalty serves Small\n- A strong answer states that the book cannot settle whether the portrayal matches real Andaman Islanders or what the author thought\n\nMain counter-case: A counter-case is that the quoted gazetteer and the characters' views are the book's voice, so the portrayal may be read as the author's own; the books do not reveal Doyle's attitude.\n\nWhat the books can and cannot settle: The books can show how characters and the narrator describe Tonga and what the gazetteer says. They cannot show whether any of it was true of real Andamanese, or what Doyle believed.\n\nEvidence (verbatim):\n- [0ee225a9a3b5fbc2:13:11] \"that face was enough to give a man a sleepless night.\"\n- [0ee225a9a3b5fbc2:11:13] \"They are a fierce, morose, and intractable people, though capable of forming most devoted friendships when their confidence has once been gained.\"\n- [0ee225a9a3b5fbc2:11:13] \"They are naturally hideous, having large, misshapen heads, small, fierce eyes, and distorted features.\"\n- [0ee225a9a3b5fbc2:15:38] \"We earned a living at this time by my exhibiting poor Tonga at fairs and other such places as the black cannibal.\"\n- [0ee225a9a3b5fbc2:15:34] \"I took him in hand, though he was as venomous as a young snake\"\n- [0ee225a9a3b5fbc2:15:35] \"He was stanch and true, was little Tonga.\"\n- [0ee225a9a3b5fbc2:14:0] \"It was that little hell-hound Tonga who shot one of his cursed darts into him.\"\n- [0ee225a9a3b5fbc2:15:38] \"Tonga thought he had done something very clever in killing him, for when I came up by the rope I found him strutting about as proud as a peacock.\"",
+  "key_facts": [
+   "Holmes reads out a gazetteer entry that calls the islanders fierce, morose and intractable, yet capable of devoted friendship",
+   "Watson sees Tonga as a distorted savage whose face would give a man a sleepless night",
+   "Small calls him a hell-hound for the killing, and also stanch and true, and exhibited him at fairs as a black cannibal",
+   "Tonga kills Bartholomew Sholto and then struts about proud of it",
+   "The book's source for the islanders is a gazetteer quoted by a character"
+  ],
+  "positions": [
+   "The portrayal is a mix of stereotype and loyalty: the islander is drawn as savage and yet is the most faithful figure in the story",
+   "The book treats Tonga as an object of horror and spectacle, and his loyalty serves Small",
+   "A strong answer states that the book cannot settle whether the portrayal matches real Andaman Islanders or what the author thought"
+  ],
+  "counter_case": "A counter-case is that the quoted gazetteer and the characters' views are the book's voice, so the portrayal may be read as the author's own; the books do not reveal Doyle's attitude.",
+  "limits": "The books can show how characters and the narrator describe Tonga and what the gazetteer says. They cannot show whether any of it was true of real Andamanese, or what Doyle believed.",
+  "evidence": [
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:13:11",
+    "quote": "that face was enough to give a man a sleepless night."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:13",
+    "quote": "They are a fierce, morose, and intractable people, though capable of forming most devoted friendships when their confidence has once been gained."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:11:13",
+    "quote": "They are naturally hideous, having large, misshapen heads, small, fierce eyes, and distorted features."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "We earned a living at this time by my exhibiting poor Tonga at fairs and other such places as the black cannibal."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:34",
+    "quote": "I took him in hand, though he was as venomous as a young snake"
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:35",
+    "quote": "He was stanch and true, was little Tonga."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:14:0",
+    "quote": "It was that little hell-hound Tonga who shot one of his cursed darts into him."
+   },
+   {
+    "chunk_id": "0ee225a9a3b5fbc2:15:38",
+    "quote": "Tonga thought he had done something very clever in killing him, for when I came up by the rope I found him strutting about as proud as a peacock."
+   }
+  ]
+ }
+]

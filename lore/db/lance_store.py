@@ -24,6 +24,22 @@ _ENTITIES_SCHEMA = pa.schema([
     pa.field("kind", pa.string()),
 ])
 
+_BEATS_SCHEMA = pa.schema([
+    pa.field("vector", pa.list_(pa.float32(), EMBED_DIM)),
+    pa.field("id", pa.string()),
+    pa.field("book_id", pa.string()),
+])
+
+
+_CODEX_SCHEMA = pa.schema([
+    pa.field("vector", pa.list_(pa.float32(), EMBED_DIM)),
+    pa.field("id", pa.string()),
+])
+
+
+def _quoted(values) -> str:
+    return ", ".join("'" + v.replace("'", "''") + "'" for v in sorted(set(values)))
+
 
 class LanceStore:
     def __init__(self, path: Path) -> None:
@@ -34,6 +50,10 @@ class LanceStore:
             self._db.create_table("chunks", schema=_CHUNKS_SCHEMA)
         if "entities" not in existing:
             self._db.create_table("entities", schema=_ENTITIES_SCHEMA)
+        if "beats" not in existing:
+            self._db.create_table("beats", schema=_BEATS_SCHEMA)
+        if "codex" not in existing:
+            self._db.create_table("codex", schema=_CODEX_SCHEMA)
 
     def table_names(self) -> set[str]:
         return set(self._db.list_tables().tables)
@@ -59,6 +79,21 @@ class LanceStore:
             self._db.open_table("chunks")
             .search(vector)
             .where(f"book_id = '{escaped}'", prefilter=True)
+            .limit(limit)
+            .to_list()
+        )
+
+    def search_chunks_in_books(
+        self, vector: list[float], book_ids: list[str], limit: int = 5
+    ) -> list[dict]:
+        """Nearest chunks of these books (a world's), prefiltered like
+        `search_chunks_in_book`. No books, no rows."""
+        if not book_ids:
+            return []
+        return (
+            self._db.open_table("chunks")
+            .search(vector)
+            .where(f"book_id IN ({_quoted(book_ids)})", prefilter=True)
             .limit(limit)
             .to_list()
         )
@@ -140,6 +175,64 @@ class LanceStore:
             return
         quoted = ", ".join("'" + e.replace("'", "''") + "'" for e in entity_ids)
         self._db.open_table("entities").delete(f"entity_id IN ({quoted})")
+
+    def upsert_beats(self, rows: list[dict]) -> None:
+        """Rows {id, book_id, vector}; an existing id is replaced."""
+        if not rows:
+            return
+        self.delete_beats([r["id"] for r in rows])
+        self._db.open_table("beats").add(rows)
+
+    def delete_beats(self, beat_ids: list[str]) -> None:
+        if beat_ids:
+            self._db.open_table("beats").delete(f"id IN ({_quoted(beat_ids)})")
+
+    def search_beats(
+        self, vector: list[float], beat_ids: list[str], k: int
+    ) -> list[dict]:
+        """The `k` nearest of THESE beats. Beats carry no entity column (the
+        entity links change on every relink), so the caller passes the ids
+        it got from `beats_for_entities`. The filter runs inside the search.
+        """
+        if not beat_ids or k <= 0:
+            return []
+        return (
+            self._db.open_table("beats")
+            .search(vector)
+            .where(f"id IN ({_quoted(beat_ids)})", prefilter=True)
+            .limit(k)
+            .to_list()
+        )
+
+    def upsert_codex(self, rows: list[dict]) -> None:
+        """Rows {id, vector}, one per codex statement; an existing id is
+        replaced."""
+        if not rows:
+            return
+        self.delete_codex([r["id"] for r in rows])
+        self._db.open_table("codex").add(rows)
+
+    def delete_codex(self, statement_ids: list[str]) -> None:
+        if statement_ids:
+            self._db.open_table("codex").delete(
+                f"id IN ({_quoted(statement_ids)})")
+
+    def search_codex(
+        self, vector: list[float], statement_ids: list[str], k: int
+    ) -> list[dict]:
+        """The `k` nearest of THESE codex statements. Like `search_beats`, the
+        caller passes the ids it got from SQLite (an entry's entity link moves
+        on relink, so the vector rows carry none). The filter runs inside the
+        search."""
+        if not statement_ids or k <= 0:
+            return []
+        return (
+            self._db.open_table("codex")
+            .search(vector)
+            .where(f"id IN ({_quoted(statement_ids)})", prefilter=True)
+            .limit(k)
+            .to_list()
+        )
 
     def count(self, table: str) -> int:
         return self._db.open_table(table).count_rows()

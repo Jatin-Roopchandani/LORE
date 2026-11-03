@@ -1532,3 +1532,174 @@ async def test_a_bare_name_answer_does_not_carry_a_conflicting_title_with_it() -
         target["Major John Sholto"], target["Thaddeus Sholto"],
         target["Bartholomew Sholto"],
     }
+
+
+# --------------------------------------------------------------------------
+# The Sign of the Four left `Small` (60 edges, the confession) and `Jonathan
+# Small` as two nodes. Root cause, measured on the real extraction: a bare
+# GIVEN name, `Jonathan`, nests in exactly one longer name and merges into
+# `Jonathan Small` first (it sorts before it). The entity then carries the
+# aliases {jonathan, jonathan small}, and the bare surname `small` — also
+# nesting in exactly one longer name — had to nest with EVERY alias, which
+# `jonathan` is not. The candidate was dropped silently: no merge, and no
+# refusal either, so it was never queued for `lore disambiguate`.
+#
+# The vectors are orthogonal so a merge can only come from the name rule.
+
+
+def _orthogonal(*names: str):
+    return _embedder({
+        name: [1.0 if i == j else 0.0 for j in range(len(names))]
+        for i, name in enumerate(names)
+    })
+
+
+@pytest.mark.asyncio
+async def test_a_bare_surname_joins_a_full_name_that_already_took_the_given_name(
+) -> None:
+    names = ("Jonathan", "Jonathan Small", "Small")
+    result = await resolve_mentions(
+        [Mention(name, "Character", "b1", "ev") for name in names],
+        _orthogonal(*names),
+        _never,
+    )
+    assert len(result.entities) == 1
+    assert result.entities[0].name == "Jonathan Small"
+    assert set(result.entities[0].aliases) == {
+        "jonathan", "jonathan small", "small",
+    }
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "Known residual, not present in either graphed book: when TWO bare names"
+    " (`brown`, `john`) each made their own entity before `john brown` arrived,"
+    " the full name joins only one of them and the other is stranded. Folding"
+    " entities together mid-stream is a bigger change than this fix; the"
+    " measured data has no instance of it."
+))
+@pytest.mark.asyncio
+async def test_two_bare_names_that_both_precede_the_full_name_are_stranded() -> None:
+    """Documents the residual: `Brown` sorts before `John`."""
+    names = ("Brown", "John", "John Brown")
+    result = await resolve_mentions(
+        [Mention(name, "Character", "b1", "ev") for name in names],
+        _orthogonal(*names),
+        _never,
+    )
+    assert len(result.entities) == 1
+    assert set(result.entities[0].aliases) == {"brown", "john", "john brown"}
+
+
+@pytest.mark.asyncio
+async def test_the_surname_is_still_refused_when_two_full_names_share_it() -> None:
+    """The Sholto guard, through the bridge: `Thaddeus` merged with `Thaddeus
+    Sholto` must not let `Sholto` (Major Sholto, the father) follow."""
+    names = ("Thaddeus", "Thaddeus Sholto", "Bartholomew Sholto", "Major Sholto")
+    recorded = []
+    result = await resolve_mentions(
+        [Mention(name, "Character", "b1", "ev") for name in names],
+        _orthogonal(*names),
+        _always,
+        record_ambiguous=recorded.append,
+    )
+    assert len(result.entities) == 3
+    thaddeus = next(e for e in result.entities if "thaddeus" in e.aliases)
+    assert "sholto" not in thaddeus.aliases
+    # ... and the refusal is now ASKED, not silently dropped.
+    assert [q.mention for q in recorded] == ["Major Sholto"]
+
+
+@pytest.mark.asyncio
+async def test_the_surname_stays_out_when_the_given_name_is_ambiguous_too() -> None:
+    """`John` nests in two longer names, so it is no proof that `John Small`
+    and the bare `Small` are one man."""
+    names = ("John", "John Small", "John Watson", "Small")
+    result = await resolve_mentions(
+        [Mention(name, "Character", "b1", "ev") for name in names],
+        _orthogonal(*names),
+        _never,
+    )
+    small = next(e for e in result.entities if "small" in e.aliases)
+    assert "john small" in small.aliases
+    john = next(e for e in result.entities if "john" in e.aliases)
+    assert "john small" not in john.aliases
+    assert len(result.entities) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_description_superset_still_makes_a_bare_name_ambiguous() -> None:
+    """Pinned, not changed: `Lucy Ferrier's father` is evidence that another
+    Ferrier exists, so it counts as a rival (see the Lucy test above)."""
+    names = ("Jonathan", "Jonathan Small", "Small", "Small’s father")
+    result = await resolve_mentions(
+        [Mention(name, "Character", "b1", "ev") for name in names],
+        _orthogonal(*names),
+        _never,
+    )
+    small = [e for e in result.entities if e.aliases == ("small",)]
+    assert len(small) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_ambiguous_surname_cannot_slip_into_a_bridged_entity() -> None:
+    """The back door the silent skip left open.
+
+    `Adam` joined `Adam Smith`, so that entity holds {adam, adam smith} and
+    the bare `Smith` — which sorts AFTER both — used to be skipped by the
+    every-alias rule without being refused. Skipped candidates stay in the
+    similarity pass, and `Smith` shares an evidence sentence with Adam Smith
+    (the embedding measures co-occurrence), so an approving embedder fused
+    Adam Smith with a surname that is equally Will Smith's. Now it is a
+    refusal, and an asked one.
+    """
+    names = ("Adam", "Adam Smith", "Will Smith", "Smith")
+    shared = [1.0, 0.0, 0.0, 0.0]
+    embed = _embedder({
+        "Adam": shared,   # the entity's own vector is its FIRST name's
+        "Adam Smith": shared,
+        "Will Smith": [0.0, 0.0, 1.0, 0.0],
+        "Smith": shared,
+    })
+    recorded = []
+    result = await resolve_mentions(
+        [Mention(name, "Character", "b1", "ev") for name in names],
+        embed,
+        _always,
+        record_ambiguous=recorded.append,
+    )
+    adam = next(e for e in result.entities if "adam" in e.aliases)
+    assert "smith" not in adam.aliases
+    assert [(q.mention, sorted(c.name for c in q.candidates)) for q in recorded] == [
+        ("Smith", ["Adam Smith", "Will Smith"]),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_bridged_question_is_about_the_name_asked_not_the_given_name() -> None:
+    """`Charpentier` meeting {arthur, arthur charpentier} is a question about
+    `Charpentier`, never about `Arthur` (which has one superset and is not
+    ambiguous at all)."""
+    names = ("Arthur", "Arthur Charpentier", "Madame Charpentier", "Charpentier")
+    recorded = []
+    await resolve_mentions(
+        [Mention(name, "Character", "b1", "ev") for name in names],
+        _orthogonal(*names),
+        _never,
+        record_ambiguous=recorded.append,
+    )
+    assert [q.mention for q in recorded] == ["Charpentier"]
+
+
+@pytest.mark.asyncio
+async def test_a_house_number_alias_is_not_a_bridge() -> None:
+    """`No. 3` and `No. 7` are both the token set {no}, so an entity holding
+    them is weak evidence of identity. The street `Pinchin Lane` must not be
+    pulled into the house through them (measured on The Sign of the Four)."""
+    names = ("No. 3", "No. 7", "No. 3, Pinchin Lane", "Pinchin Lane")
+    result = await resolve_mentions(
+        [Mention(name, "Place", "b1", "ev") for name in names],
+        _orthogonal(*names),
+        _never,
+    )
+    street = next(e for e in result.entities if "pinchin lane" in e.aliases)
+    assert street.aliases == ("pinchin lane",)

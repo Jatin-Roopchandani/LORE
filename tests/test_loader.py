@@ -8,6 +8,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from lore import worlds
 from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import EMBED_DIM, LanceStore
@@ -213,11 +214,20 @@ def _write_unit(config, book_id, triplet_rows, chunk_ids, firsts=None):
     return unit
 
 
+def _world_id(conn, name: str) -> int:
+    """The id of world `name`, created on first use."""
+    found = worlds.get_world(conn, name)
+    return found.id if found else worlds.create_world(conn, name)
+
+
 def _add_book(config, conn, book_id, chunks, triplet_rows, *, embedded=None,
-              title=None, firsts=None):
+              title=None, firsts=None, world="shared"):
+    """Register a book in `world`. Books default to ONE shared world, so the
+    cross-book merges these tests exercise are in scope; a test that wants
+    two worlds names them."""
     ingest_book(conn, book_id=book_id, title=title or f"title-{book_id}",
                 author="A", source="upload", file_path=f"/x/{book_id}.epub",
-                chunks=chunks)
+                chunks=chunks, world_id=_world_id(conn, world))
     ids = [c.id for c in chunks] if embedded is None else embedded
     unit = _write_unit(config, book_id, triplet_rows, ids, firsts)
     set_unit_state(conn, book_id, unit, "completed")
@@ -1264,14 +1274,14 @@ async def test_probe_two_same_base_generic_candidates_take_free_slots(
 
 # --------------------------------------------------------------------------
 # Task 1i defect 1: cross-book merging used to fire only on IDENTICAL names.
-# `Watson` (book one) and `Dr. John Watson` (book two) normalize to `watson`
-# and `john watson`, so their content-derived ids never collided and
+# `Whitlock` (book one) and `Dr. Joran Whitlock` (book two) normalize to `whitlock`
+# and `joran whitlock`, so their content-derived ids never collided and
 # `_reconcile_ids` never considered them. The same-book path got a token
 # subset rule in Task 1g; these tests extend it to the cross-book path.
 
 
-def _two_watsons(config, conn, *, kind_a="Character", kind_b="Character",
-                 name_a="Dr. John Watson", name_b="Watson") -> None:
+def _two_whitlocks(config, conn, *, kind_a="Character", kind_b="Character",
+                 name_a="Dr. Joran Whitlock", name_b="Whitlock") -> None:
     """Book A names him in full, book B by surname alone."""
     a = [_chunk(BOOK, 1, 0)]
     _add_book(config, conn, BOOK, a, [
@@ -1285,12 +1295,12 @@ def _two_watsons(config, conn, *, kind_a="Character", kind_b="Character",
     ])
 
 
-def _watsons(kuzu) -> list[tuple]:
+def _whitlocks(kuzu) -> list[tuple]:
     return sorted(
         (r[0], r[1], tuple(sorted(r[2] or ())), tuple(sorted(r[3] or ())))
         for r in _rows(
             kuzu,
-            "MATCH (e:Entity) WHERE e.name IN ['Dr. John Watson', 'Watson']"
+            "MATCH (e:Entity) WHERE e.name IN ['Dr. Joran Whitlock', 'Whitlock']"
             " RETURN e.id, e.name, e.books, e.aliases",
         )
     )
@@ -1298,20 +1308,20 @@ def _watsons(kuzu) -> list[tuple]:
 
 @pytest.mark.asyncio
 async def test_a_cross_book_name_variant_merges(tmp_path: Path) -> None:
-    """`watson` nests inside `john watson`, both distinctive: one entity."""
+    """`whitlock` nests inside `joran whitlock`, both distinctive: one entity."""
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn)
+    _two_whitlocks(config, conn)
     spy = _AdjudicateSpy(False)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
     assert spy.calls == []  # decided by rule, never by the 3B model
 
-    watsons = _watsons(kuzu)
-    assert len(watsons) == 1  # one node, not two
-    node_id, name, books, aliases = watsons[0]
+    whitlocks = _whitlocks(kuzu)
+    assert len(whitlocks) == 1  # one node, not two
+    node_id, name, books, aliases = whitlocks[0]
     assert books == tuple(sorted((BOOK, BOOK_B)))
-    assert name == "Dr. John Watson"  # the longest raw surface form
-    assert aliases == ("john watson", "watson")
+    assert name == "Dr. Joran Whitlock"  # the longest raw surface form
+    assert aliases == ("joran whitlock", "whitlock")
 
     edges = sorted(
         (r[0], r[1], r[2])
@@ -1365,17 +1375,17 @@ async def test_a_generic_cross_book_name_variant_does_not_merge(
 async def test_a_cross_book_name_variant_of_another_kind_does_not_merge(
     tmp_path: Path,
 ) -> None:
-    """A Place named `Watson` is not the Character `Dr. John Watson`."""
+    """A Place named `Whitlock` is not the Character `Dr. Joran Whitlock`."""
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn, kind_b="Place")
+    _two_whitlocks(config, conn, kind_b="Place")
     spy = _AdjudicateSpy(True)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
     assert spy.calls == []
 
-    watsons = _watsons(kuzu)
-    assert len(watsons) == 2
-    assert {books for _id, _n, books, _a in watsons} == {(BOOK,), (BOOK_B,)}
+    whitlocks = _whitlocks(kuzu)
+    assert len(whitlocks) == 2
+    assert {books for _id, _n, books, _a in whitlocks} == {(BOOK,), (BOOK_B,)}
     conn.close(); kuzu.close()
 
 
@@ -1393,15 +1403,15 @@ async def test_cross_book_variant_merge_is_independent_of_load_order(
     is asserted in the probe below.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn)
+    _two_whitlocks(config, conn)
     for book_id in order:
         await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
 
-    watsons = _watsons(kuzu)
-    assert len(watsons) == 1
-    node_id, name, books, aliases = watsons[0]
+    whitlocks = _whitlocks(kuzu)
+    assert len(whitlocks) == 1
+    node_id, name, books, aliases = whitlocks[0]
     assert (name, books, aliases) == (
-        "Dr. John Watson", tuple(sorted((BOOK, BOOK_B))), ("john watson", "watson")
+        "Dr. Joran Whitlock", tuple(sorted((BOOK, BOOK_B))), ("joran whitlock", "whitlock")
     )
     edges = sorted(
         (r[0], r[1], r[2])
@@ -1426,14 +1436,14 @@ async def test_a_variant_merge_survives_a_reload_of_either_book(
     node and strip this book from the merged one's `books`.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn)
+    _two_whitlocks(config, conn)
     for book_id in order:
         await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
     snapshot = _snapshot(kuzu, lance)
     for book_id in list(reversed(order)) + order:
         await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
     assert _snapshot(kuzu, lance) == snapshot
-    assert len(_watsons(kuzu)) == 1
+    assert len(_whitlocks(kuzu)) == 1
     conn.close(); kuzu.close()
 
 
@@ -1655,7 +1665,7 @@ async def test_a_variant_pair_with_one_generic_side_does_not_merge(
     below with `Inspector` itself.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn, name_a=persisted_name, name_b=incoming_name)
+    _two_whitlocks(config, conn, name_a=persisted_name, name_b=incoming_name)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
     rows = sorted(
@@ -1686,7 +1696,7 @@ async def test_a_bare_generic_never_merges_into_a_distinctive_name(
     different person in the other novel.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn, name_a=persisted_name, name_b=incoming_name)
+    _two_whitlocks(config, conn, name_a=persisted_name, name_b=incoming_name)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
     rows = sorted(
@@ -1721,16 +1731,16 @@ async def test_probe_the_variant_merge_adopts_the_first_loaded_books_id(
         root = tmp_path / order[0]
         root.mkdir()
         config, conn, kuzu, lance = _env(root)
-        _two_watsons(config, conn)
+        _two_whitlocks(config, conn)
         for book_id in order:
             await load_book(config, conn, kuzu, lance, book_id, _embed, _never)
-        watsons = _watsons(kuzu)
-        assert len(watsons) == 1
-        ids[order[0]] = watsons[0][0]
+        whitlocks = _whitlocks(kuzu)
+        assert len(whitlocks) == 1
+        ids[order[0]] = whitlocks[0][0]
         conn.close(); kuzu.close()
 
-    assert ids[BOOK] == entity_id("john watson", "Character")   # A minted it
-    assert ids[BOOK_B] == entity_id("watson", "Character")      # B minted it
+    assert ids[BOOK] == entity_id("joran whitlock", "Character")   # A minted it
+    assert ids[BOOK_B] == entity_id("whitlock", "Character")      # B minted it
     assert ids[BOOK] != ids[BOOK_B]
 
 
@@ -1998,21 +2008,21 @@ async def test_a_cross_book_possessive_description_does_not_swallow_the_name(
 
 
 @pytest.mark.asyncio
-async def test_the_cross_book_guard_leaves_watson_alone(tmp_path: Path) -> None:
+async def test_the_cross_book_guard_leaves_whitlock_alone(tmp_path: Path) -> None:
     """The guard must not cost the one merge the cross-book rule exists for.
 
     Same body as `test_a_cross_book_name_variant_merges`, restated here so a
     regression in the Task 1k guard names itself.
     """
     config, conn, kuzu, lance = _env(tmp_path)
-    _two_watsons(config, conn)
+    _two_whitlocks(config, conn)
     spy = _AdjudicateSpy(False)
     await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
     await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
-    watsons = _watsons(kuzu)
-    assert len(watsons) == 1
-    assert watsons[0][1] == "Dr. John Watson"
-    assert watsons[0][3] == ("john watson", "watson")
+    whitlocks = _whitlocks(kuzu)
+    assert len(whitlocks) == 1
+    assert whitlocks[0][1] == "Dr. Joran Whitlock"
+    assert whitlocks[0][3] == ("joran whitlock", "whitlock")
     conn.close(); kuzu.close()
 
 
@@ -2109,31 +2119,31 @@ async def test_self_loop_edges_are_dropped_and_counted(tmp_path: Path) -> None:
     conn.close(); kuzu.close()
 
 
-def _watson_alias_in_one_book(config, conn) -> None:
+def _whitlock_alias_in_one_book(config, conn) -> None:
     """Book A writes the full name and the bare one; book B only the bare one.
 
-    A resolves `watson` into `john watson`, so `Watson` is only an ALIAS node
-    in A. B's own canonical `watson` hashes to that alias node's id.
+    A resolves `whitlock` into `joran whitlock`, so `Whitlock` is only an ALIAS node
+    in A. B's own canonical `whitlock` hashes to that alias node's id.
     """
     a = [_chunk(BOOK, 1, 0)]
     _add_book(config, conn, BOOK, a, [
-        _row(a[0].id, BOOK, "John Watson", "LOVES", "Bo",
-             ["John Watson", "Bo"], ["Character", "Character"]),
-        _row(a[0].id, BOOK, "Watson", "OPPOSES", "Cy",
-             ["Watson", "Cy"], ["Character", "Character"]),
+        _row(a[0].id, BOOK, "Joran Whitlock", "LOVES", "Bo",
+             ["Joran Whitlock", "Bo"], ["Character", "Character"]),
+        _row(a[0].id, BOOK, "Whitlock", "OPPOSES", "Cy",
+             ["Whitlock", "Cy"], ["Character", "Character"]),
     ])
     b = [_chunk(BOOK_B, 1, 0)]
     _add_book(config, conn, BOOK_B, b, [
-        _row(b[0].id, BOOK_B, "Dr. Watson", "LOVES", "Zed",
-             ["Dr. Watson", "Zed"], ["Character", "Character"]),
+        _row(b[0].id, BOOK_B, "Dr. Whitlock", "LOVES", "Zed",
+             ["Dr. Whitlock", "Zed"], ["Character", "Character"]),
     ])
 
 
-def _watson_edge_nodes(kuzu) -> dict[str, set[str]]:
-    """Watson-named node -> the books of the REL edges hanging on it."""
+def _whitlock_edge_nodes(kuzu) -> dict[str, set[str]]:
+    """Whitlock-named node -> the books of the REL edges hanging on it."""
     found: dict[str, set[str]] = {}
     for name, book in _rows(
-        kuzu, "MATCH (s:Entity)-[r:REL]->(:Entity) WHERE s.name CONTAINS 'Watson'"
+        kuzu, "MATCH (s:Entity)-[r:REL]->(:Entity) WHERE s.name CONTAINS 'Whitlock'"
               " RETURN s.name, r.book_id"):
         found.setdefault(name, set()).add(book)
     return found
@@ -2144,15 +2154,15 @@ def _watson_edge_nodes(kuzu) -> dict[str, set[str]]:
 async def test_a_bare_name_that_is_an_alias_in_another_book_joins_its_canonical(
     tmp_path: Path, order: list[str]
 ) -> None:
-    # Task 11a, measured: on A Study in Scarlet `watson` became an alias of
-    # "John H. Watson, M.D."; The Sign of the Four's own `watson` has the
-    # alias node's id, fused into THAT node by id collision, and Watson ended
+    # Task 11a, measured: on A Study in Scarlet `whitlock` became an alias of
+    # "Joran H. Whitlock, M.D."; The Sign of the Four's own `whitlock` has the
+    # alias node's id, fused into THAT node by id collision, and Whitlock ended
     # up as two nodes, 110 edges on the alias and 56 on the canonical.
     config, conn, kuzu, lance = _env(tmp_path)
-    _watson_alias_in_one_book(config, conn)
+    _whitlock_alias_in_one_book(config, conn)
     for book in order:
         await load_book(config, conn, kuzu, lance, book, _embed, _never)
-    assert _watson_edge_nodes(kuzu) == {"John Watson": {BOOK, BOOK_B}}
+    assert _whitlock_edge_nodes(kuzu) == {"Joran Whitlock": {BOOK, BOOK_B}}
     snapshot = _snapshot(kuzu, lance)
     for book in order + order:
         await load_book(config, conn, kuzu, lance, book, _embed, _never)
@@ -2218,4 +2228,206 @@ async def test_a_reload_after_reextraction_equals_a_fresh_load(tmp_path: Path) -
     _write_unit(config, BOOK, _smiths(True, "Captain"), [f"{BOOK}:1:0"])
     await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     assert _snapshot(kuzu, lance) == expected
+    conn.close(); kuzu.close()
+
+
+# --------------------------------------------------------------------------
+# Worlds, Task 2: the cross-book steps only see entities of the loading
+# book's own world. All names below are invented.
+
+
+def _two_vexes(config, conn, *, world_a: str, world_b: str,
+               name_a="Maren Vex", name_b="Maren Vex") -> None:
+    """Both books name a distinctive character, in the given worlds."""
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, name_a, "OPPOSES", "Bo",
+             [name_a, "Bo"], ["Character", "Character"]),
+    ], world=world_a)
+    b = [_chunk(BOOK_B, 1, 0)]
+    _add_book(config, conn, BOOK_B, b, [
+        _row(b[0].id, BOOK_B, name_b, "LOVES", "Zed",
+             [name_b, "Zed"], ["Character", "Character"]),
+    ], world=world_b)
+
+
+def _named(kuzu, *names) -> list[tuple]:
+    return sorted(
+        (r[0], r[1], tuple(sorted(r[2] or ())))
+        for r in _rows(
+            kuzu,
+            f"MATCH (e:Entity) WHERE e.name IN {list(names)!r}"
+            " RETURN e.id, e.name, e.books",
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_distinctive_homonym_stays_two_entities_across_worlds(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="south")
+    spy = _AdjudicateSpy(True)  # a model that would merge; it is never asked
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, spy)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, spy)
+    assert spy.calls == []
+
+    vexes = _named(kuzu, "Maren Vex")
+    assert len(vexes) == 2
+    assert {v[2] for v in vexes} == {(BOOK,), (BOOK_B,)}
+    # Each book's edge hangs on its own node, never on the other's.
+    edges = _rows(kuzu, "MATCH (s:Entity)-[r:REL]->(o:Entity)"
+                        " RETURN s.id, r.book_id")
+    by_book = {book: sid for sid, book in edges}
+    assert by_book[BOOK] != by_book[BOOK_B]
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_distinctive_homonym_stays_two_in_either_load_order(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="south")
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    assert {v[2] for v in _named(kuzu, "Maren Vex")} == {(BOOK,), (BOOK_B,)}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_distinctive_homonym_merges_within_one_world(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="north")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    vexes = _named(kuzu, "Maren Vex")
+    assert len(vexes) == 1
+    assert vexes[0][2] == tuple(sorted((BOOK, BOOK_B)))
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_cross_book_variant_does_not_fuse_across_worlds(
+    tmp_path: Path,
+) -> None:
+    """A bare surname in one world, the full name in another: two entities."""
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="south",
+               name_a="Dr. Maren Vex", name_b="Vex")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    found = _named(kuzu, "Dr. Maren Vex", "Vex")
+    assert len(found) == 2
+    assert {f[2] for f in found} == {(BOOK,), (BOOK_B,)}
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_cross_book_variant_still_fuses_within_one_world(
+    tmp_path: Path,
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="north",
+               name_a="Dr. Maren Vex", name_b="Vex")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    found = _named(kuzu, "Dr. Maren Vex", "Vex")
+    assert len(found) == 1
+    assert found[0][2] == tuple(sorted((BOOK, BOOK_B)))
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_an_alias_node_in_another_world_is_not_a_redirect_target(
+    tmp_path: Path,
+) -> None:
+    """Step 2c: a candidate may not be moved onto another world's canonical."""
+    from lore.graph.loader import _reconcile_ids
+
+    config, conn, kuzu, lance = _env(tmp_path)
+    a = [_chunk(BOOK, 1, 0)]
+    _add_book(config, conn, BOOK, a, [
+        _row(a[0].id, BOOK, "Dr. Maren Vex", "OPPOSES", "Bo",
+             ["Dr. Maren Vex", "Vex", "Bo"],
+             ["Character", "Character", "Character"]),
+    ], world="north")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    ids = {r[1]: r[0] for r in _rows(kuzu, "MATCH (e:Entity) RETURN e.id, e.name")}
+
+    candidate = _candidate("Vex")
+    open_scope = (await _reconcile_ids(kuzu, BOOK_B, [candidate]))[0]
+    walled = (await _reconcile_ids(
+        kuzu, BOOK_B, [candidate], world_books=frozenset({BOOK_B})))[0]
+    assert open_scope[candidate.id] in ids.values()  # unscoped: fuses
+    assert walled[candidate.id] not in ids.values()  # scoped: a fresh node
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("worlds_of", [("north", "south"), ("north", "north")])
+async def test_a_reload_of_either_book_changes_nothing(
+    tmp_path: Path, worlds_of: tuple[str, str]
+) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a=worlds_of[0], world_b=worlds_of[1])
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    snapshot = _snapshot(kuzu, lance)
+    for book in (BOOK, BOOK_B, BOOK_B, BOOK):
+        await load_book(config, conn, kuzu, lance, book, _embed, _never)
+        assert _snapshot(kuzu, lance) == snapshot
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_the_world_invariant_holds_after_every_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lore.graph import loader
+
+    checked = []
+    real = loader.check_world_invariant
+    monkeypatch.setattr(
+        loader, "check_world_invariant",
+        lambda c, k, **kw: (checked.append(kw), real(c, k, **kw))[1])
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="south")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    assert len(checked) == 2  # every load checks, and neither raised
+    assert all(kw.get("world_id") for kw in checked)  # scoped to the loaded world
+    real(conn, kuzu)
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_an_entity_spanning_two_worlds_is_reported_loudly(
+    tmp_path: Path,
+) -> None:
+    from lore.graph.loader import WorldInvariantError, check_world_invariant
+
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="north")
+    await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
+    await load_book(config, conn, kuzu, lance, BOOK_B, _embed, _never)
+    # Re-pointing a book without taking it out of the graph first (what the
+    # move job's remove stage is for) leaves the merged entity in two worlds.
+    worlds.assign(conn, BOOK_B, _world_id(conn, "south"))
+    with pytest.raises(WorldInvariantError, match="Maren Vex"):
+        check_world_invariant(conn, kuzu)
+    conn.close(); kuzu.close()
+
+
+@pytest.mark.asyncio
+async def test_a_book_with_no_world_cannot_be_loaded(tmp_path: Path) -> None:
+    config, conn, kuzu, lance = _env(tmp_path)
+    _two_vexes(config, conn, world_a="north", world_b="north")
+    conn.execute("UPDATE books SET world_id = NULL WHERE id = ?", (BOOK,))
+    conn.commit()
+    with pytest.raises(ValueError, match="no world"):
+        await load_book(config, conn, kuzu, lance, BOOK, _embed, _never)
     conn.close(); kuzu.close()

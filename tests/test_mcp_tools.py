@@ -12,7 +12,8 @@ from lore.mcp import tools as tools_module
 from lore.mcp.stores import StoresUnavailable
 from lore.db.lance_store import EMBED_DIM, LanceStore
 from lore.mcp.tools import (
-    cypher_query, entity, ingest_status, library, subgraph, vector_search,
+    cypher_query, entity, ingest_status, library, overview, subgraph,
+    vector_search,
 )
 from tests.mcp_fixtures import build_store_triple
 from tests.mcp_fixtures import empty_config as _empty_config
@@ -660,8 +661,10 @@ async def test_vector_search_limit_ceiling_is_documented_and_applied(
         return real(self, vector, limit)
 
     monkeypatch.setattr(LanceStore, "search_chunks", spy)
-    await vector_search(search_config, "q", limit=10**6, embed=_fake_embed)
-    assert asked == [tools.VECTOR_LIMIT_MAX]
+    result = await vector_search(search_config, "q", limit=10**6, embed=_fake_embed)
+    # Read a little past the ceiling (boilerplate is filtered out), return no more.
+    assert asked and asked[0] >= tools.VECTOR_LIMIT_MAX
+    assert len(result["chunks"]) <= tools.VECTOR_LIMIT_MAX
 
 
 async def test_vector_search_distance_is_strict_json(search_config, monkeypatch):
@@ -1075,3 +1078,161 @@ def test_entities_by_ids_caps_the_lookup(graph_config, monkeypatch):
 def test_entities_by_ids_without_a_graph_is_no_graph(empty_config):
     from lore.mcp.tools import entities_by_ids
     assert entities_by_ids(empty_config, ["h"])["error"]["code"] == "no_graph"
+
+
+# --- overview ------------------------------------------------------------------
+# The web UI draws this before any question: the most-connected canonical
+# entities and the links among them only.
+
+@pytest.fixture
+def overview_config(tmp_path: Path) -> LoreConfig:
+    def row(i, name, kind="Character"):
+        return (i, name, kind, [BOOK_ID], [])
+
+    def edge(s, o, chunk, p="knows"):
+        return (s, o, p, chunk, BOOK_ID, 1)
+
+    return build_store_triple(
+        tmp_path,
+        books=[(BOOK_ID, "A Study")],
+        entities=[row("a", "Alpha"), row("b", "Beta"), row("c", "Gamma"),
+                  row("d", "Delta Place", "Place"), row("e", "Epsilon"),
+                  row("stub", "Mr. Alpha"), row("lonely", "Lonely")],
+        aliases=[("stub", "a")],
+        edges=[
+            # degrees: a 5, b 4, c 3, d 3, e 2; stub 3 (but an alias stub)
+            edge("a", "b", "c1"), edge("a", "b", "c2"), edge("b", "a", "c3"),
+            edge("a", "c", "c4"), edge("d", "a", "c5"),
+            edge("c", "d", "c6"), edge("e", "b", "c7"),
+            edge("stub", "e", "c8"), edge("stub", "c", "c9"),
+            edge("stub", "d", "c10"),
+        ],
+    )
+
+
+def test_overview_ranks_canonical_entities_by_degree(overview_config):
+    result = overview(overview_config)
+    assert [n["id"] for n in result["nodes"]] == ["a", "b", "c", "d", "e"]
+    assert result["depth"] == 0 and result["note"] is None
+    assert result["nodes"][3]["kind"] == "Place"
+
+
+def test_overview_skips_alias_stubs_and_edgeless_entities(overview_config):
+    ids = {n["id"] for n in overview(overview_config)["nodes"]}
+    assert "stub" not in ids and "lonely" not in ids
+
+
+def test_overview_links_only_among_the_top_entities(overview_config):
+    result = overview(overview_config, limit=3)
+    assert [n["id"] for n in result["nodes"]] == ["a", "b", "c"]
+    pairs = [(l["subject_id"], l["object_id"]) for l in result["edges"]]
+    # Strongest first: a->b backs two passages.
+    assert pairs == [("a", "b"), ("a", "c"), ("b", "a")]
+    assert result["edges"][0]["count"] == 2
+    assert result["edges"][0]["predicates"] == {"knows": 2}
+    assert result["truncated"] is True
+
+
+def test_overview_clamps_the_limit(overview_config):
+    assert [n["id"] for n in overview(overview_config, limit=0)["nodes"]] == ["a"]
+    assert len(overview(overview_config, limit=1000)["nodes"]) == 5
+    assert overview(overview_config, limit=1000)["truncated"] is False
+
+
+def test_overview_caps_links(overview_config, monkeypatch):
+    assert tools_module.OVERVIEW_LINK_CAP == 60
+    monkeypatch.setattr(tools_module, "OVERVIEW_LINK_CAP", 2)
+    result = overview(overview_config)
+    assert len(result["edges"]) == 2 and result["truncated"] is True
+
+
+def test_overview_without_a_graph_returns_no_graph(empty_config):
+    assert overview(empty_config)["error"]["code"] == "no_graph"
+
+
+def test_search_result_carries_prose():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)),), answer_style="prose")
+    out = to_search_result(answer, {}).model_dump()
+    assert out["answer_style"] == "prose"
+    assert out["prose"] == [{"text": "A.", "claims": [1], "passages": [1], "new_paragraph": False,
+                                "kind": "fact", "label": ""}]
+
+
+def test_search_result_carries_the_interpretive_kinds():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)),
+                           ProseSentence("On balance, A.", (1,), (1,), True, "reading"),
+                           ProseSentence("Against that, B.", (1,), (1,), False, "counter"),
+                           ProseSentence("The books don't settle: C.", (), (), True, "limit")),
+                    answer_style="prose")
+    out = to_search_result(answer, {}).model_dump()
+    assert [p["kind"] for p in out["prose"]] == ["fact", "reading", "counter", "limit"]
+    assert out["prose"][3]["claims"] == [] and out["prose"][3]["passages"] == []
+
+
+def test_search_result_carries_the_short_answer_and_the_unwritten_count():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)),), answer_style="prose",
+                    short_answer=(ProseSentence("On balance, A.", (1,), (1,), True, "reading", True),
+                                  ProseSentence("B? No clear position.", (), (), True, "limit", True)),
+                    unwritten=2)
+    out = to_search_result(answer, {}).model_dump()
+    assert [(p["kind"], p["text"]) for p in out["short_answer"]] == [
+        ("reading", "On balance, A."), ("limit", "B? No clear position.")]
+    assert out["short_answer"][0]["claims"] == [1] and out["short_answer"][1]["claims"] == []
+    assert out["unwritten_sections"] == 2
+    # Every other answer: no short answer, nothing unwritten.
+    plain = to_search_result(Answer(text="x", passages=(), mode="graph", template=None, note=None), {})
+    assert plain.short_answer == [] and plain.unwritten_sections == 0
+
+
+def test_search_result_maps_new_paragraph():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]\n\nB. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)), ProseSentence("B.", (1,), (1,), True)),
+                    answer_style="prose")
+    out = to_search_result(answer, {}).model_dump()
+    assert [p["new_paragraph"] for p in out["prose"]] == [False, True]
+
+
+def test_search_result_without_prose_is_claims_style():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer
+    out = to_search_result(Answer(text="x", passages=(), mode="graph", template=None, note=None),
+                           {}).model_dump()
+    assert out["prose"] == [] and out["answer_style"] == "claims"
+
+
+def test_search_result_carries_unanswered():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer
+    base = dict(text="x", passages=(), mode="graph", template=None, note=None)
+    assert to_search_result(Answer(**base), {}).model_dump()["unanswered"] == []
+    out = to_search_result(Answer(**base, unanswered=("How?",)), {}).model_dump()
+    assert out["unanswered"] == ["How?"]
+
+
+def test_search_result_carries_gaps():
+    from lore.mcp.shapes import to_search_result
+    from lore.query.models import Answer, Claim, ProseSentence
+    answer = Answer(text="A. [1]", passages=(), mode="graph", template=None, note=None,
+                    claims=(Claim(text="A", passage=1, quote="a b c d"),),
+                    prose=(ProseSentence("A.", (1,), (1,)),), answer_style="prose",
+                    gaps=("whether it was used later",))
+    out = to_search_result(answer, {}).model_dump()
+    assert out["gaps"] == ["whether it was used later"]
+    plain = to_search_result(Answer(text="x", passages=(), mode="graph", template=None, note=None),
+                             {}).model_dump()
+    assert plain["gaps"] == []

@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lore-lockup-dark.svg">
+    <img src="docs/brand/lore-lockup.svg" alt="LORE" width="260">
+  </picture>
+</p>
+
 # LORE — Local Orchestration & Relational Extraction
 
 A local-first literary knowledge graph: e-books in, entities/relationships out
@@ -12,15 +19,20 @@ See `SPEC.md` for the full design. Status: Phase 3 (the query agent) complete �
     uv sync
     uv run lore doctor            # checks config, stores, ollama, kaggle auth
     uv run lore doctor --kaggle   # + full free-tier GPU round trip (slow)
-    uv run lore ingest book.epub  # parse + chunk + register a book (.epub/.pdf)
+    uv run lore ingest book.epub --world "My Series"   # parse + chunk + register a book in a world
     uv run lore books             # list the ingested library
     uv run lore extract <book_id> # extract entities + relationships (Gemini in this lore.toml)
     uv run lore extract <book_id> --resume   # continue after an interrupted run
     uv run lore process <book_id> # extract, resolve entities, load the graph
     uv run lore process <book_id> --skip-extract   # reload the graph only
+    uv run lore process <book_id> --resume   # continue after the daily Gemini limit (--force: before the reset)
+    uv run lore world list        # worlds and their books (also: rename, delete, reconcile)
+    uv run lore book move <book_id> --world "Other"   # move a book to another world (no Gemini requests)
+    uv run lore book series <book_id> --series "Name" --index 2   # set a book's place in its series
     uv run lore graph             # node/edge counts and the busiest entities
     uv run lore ask "how are Holmes and Watson connected?"   # cited answer from the graph
     uv run lore ask "..." --baseline   # vector search alone, for comparison
+    uv run lore ask "..." --depth deep --world "My Series"   # a long, sectioned answer within one world
     uv run lore quota             # this week's free-tier GPU budget (Kaggle only)
 
 `extraction_provider` picks who reads the chunks:
@@ -86,8 +98,14 @@ lore ui                                   # http://127.0.0.1:8766
 ```
 
 Ask a question and watch LORE work: live steps in the chat, and the evidence
-graph lighting up as it searches. Click a citation to read the passage, click
-a node for its entity card, and expand its neighbours. Loopback only, with no
+graph lighting up as it searches. Click a citation to read the passage. The
+graph pane switches between **This answer** and the **Library** overview; click
+a node for its entity panel (codex profile, story timeline, relationships with
+their evidence, and one-click follow-up questions), click an edge for what
+connects two entities, search for any entity, or **Connect to…** another to see
+the path between them. **History** opens as a drawer, and **Ctrl+K** jumps to
+any past question. The **Books** panel shows each book's processing and a
+**Continue** button once the daily Gemini limit resets. Loopback only, with no
 authentication. Asking spends Gemini requests, like `lore ask`.
 
 For frontend development, run `lore ui --dev` with `cd web && npm run dev`
@@ -98,6 +116,41 @@ it only while developing.
 
 Packaging a wheel needs `cd web && npm run build` first: the built app in
 `lore/web/static` is what ships.
+
+## Worlds
+
+Every book belongs to a **world**, chosen when it is added (`lore ingest --world`,
+or the World picker in the UI's Add book dialog). Characters merge across books
+only inside one world, so two unrelated series with a same-named character stay
+apart, while series that share a universe can share a world. Questions, the
+graph and MCP tools take an optional `world`; "all worlds" searches each world
+separately and never merges entities across them. A book in the wrong world is
+moved with `lore book move` (or "Move to world…" in the Books panel); its cached
+extraction and answers are reused, so a move costs no Gemini requests.
+
+## Answers: prose, interpretive and deep
+
+Answers are written as cited prose over checked claims, in story order (books
+ordered by `lore book series`, then chapters). Every sentence cites the claims it
+rests on, and a separate check judges each sentence; anything unsupported is
+dropped, and an answer that fails falls back to its claim list.
+
+- **Interpretive questions** (analysis, judgement, theme, comparison) are split
+  into *lenses* that gather evidence for each side. The answer opens with a
+  **short answer**, then the evidence by lens, LORE's labelled reading, the
+  strongest counter-case and what the books don't settle. The editorial policy
+  is `lore/query/viewpoint.md`, replaceable via `[lore.answers] viewpoint`.
+- **Deep answers** (broad questions, or the UI's *Deep dive* toggle, or
+  `--depth deep`) are planned as sections around the question's aspects, each
+  written and checked on its own. A full deep answer can use around 40 Gemini
+  requests.
+- **Story beats** and the **codex** (quote-verified moments and entity profiles)
+  are built once per book as processing stages and feed both. Turn them off with
+  `[lore.beats] enabled = false` / `[lore.codex] enabled = false`.
+
+Most of these behaviours are module switches that default on
+(`PROSE_ANSWERS`, `STORY_ORDER`, `INTERPRETIVE`, `DEEP`, `TIMELINE`, …); each has
+an `evals/answer_quality/run_pair.py` arm for paired evaluation.
 
 ## Ask LORE from an MCP client
 

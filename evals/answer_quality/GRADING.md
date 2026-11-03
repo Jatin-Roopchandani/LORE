@@ -104,6 +104,98 @@ on 2026-10-07, clear of every dev and held-out topic) because the ±4-fact
 noise floor on 26 questions was as large as the effects being measured.
 Re-measure the noise floor on the larger set before relying on it.
 
+## Grading prose answers
+
+The prose comparison (`prose_answers`, lore/query/write.py) grades the text
+each arm shows the user, not the claims behind it.
+
+- Build the packet with `grade_pair.py packet --answer-only`. Each A and B
+  holds only the `answer` text, so the grader never sees the claim list.
+- A key fact counts only if the answer text states it. A citation to a
+  passage that holds the fact does not count.
+- False claims are judged sentence by sentence.
+- Duplicates are counted as in the per-answer rules above.
+- Each pair also gets `"preferred": "A" | "B" | "tie"`: which reads better as
+  an answer to the question (clear, direct, well organised). Judge this
+  independently of correctness, and write `tie` when neither reads better.
+- `grade_pair.py styles --run <label> --arms <a1> <a2>` prints the
+  `answer_style` counts and the fallback rate (the share of answers with at
+  least two claims that fell back to the claim view).
+
+**Pre-registered bar for prose (spec section 6; it does not move after the run):**
+1. False claims no higher than control, on both dev and held-out.
+2. Key facts no worse than -4 on dev, and no loss on held-out.
+3. Readability: prose preferred on dev, with a two-sided sign test p < 0.05
+   over the non-tie pairs (`score` prints it).
+4. The fallback rate is reported. Above 25% means the writer needs work
+   before adoption.
+
+## Arc set
+
+`arc.json` (A1-A16, written 2026-10-28) is a third set for change over time,
+relationships, arcs and loyalty, within one book or across the two graphed
+books (A Study in Scarlet and The Sign of the Four). Several answers are shown
+through actions rather than stated. It was written from the text before any
+timeline-beats results existed, and every quote in `verified` was checked as an
+exact substring of its chunk. Like the held-out set it is never used to tune:
+run it with `run_pair.py --set arc` only to measure the story-beats feature,
+grade it with the rules above, and keep its text out of every prompt (the leak
+test scans it).
+
+## Interpretive set
+
+`interpretive.json` (I1-I16, written 2026-10-30) holds 16 questions that ask
+for a reading, not a fact, across the two graphed books. It covers every type:
+evaluation (I1, I2, I13), judgement (I3, I4), significance (I5, I6), theme
+(I7, I8, I14), comparison (I9), in-depth character analysis (I10, I11), a
+counterfactual (I12) and two beyond-the-books questions (I15, I16). Each entry
+holds `key_facts`, the `evidence` a good answer draws on (verbatim quotes, each
+checked as an exact substring of its chunk), the defensible `positions`, the
+main `counter_case` and, for the beyond questions, `limits` (what the books can
+and cannot settle). It was written before any results existed. It is never used
+to tune, and the leak test scans it.
+
+Grade each answer blind, with no one told which arm wrote it:
+1. **Grounded.** Every stated fact is supported by the books. Count false facts
+   as for the other sets.
+2. **Position.** The answer takes one where the evidence supports one, at a
+   fair strength. Any listed position counts, and so does a reasoned one the
+   list leaves out. Mark `yes` or `no`.
+3. **Counter-case.** It is present and fair where `counter_case` says one
+   exists. Mark `yes` or `no`.
+4. **Labelling.** Interpretation is never stated as a fact of the book. Count
+   answers that present an inference as a book statement.
+5. **Limits** (I15, I16 only). The answer says what the books cannot settle.
+6. **Readability.** Pairwise preference against the control arm, as for the
+   other sets.
+
+Bar (spec section 7): false facts no higher than control on dev, held-out and
+this set; a position taken in at least 12 of 16 answers; the counter-case
+present in at least 10 of 16; zero inferences presented as book statements;
+readers prefer the interpretive arm (sign test p < 0.05).
+
+## Deep set
+
+`deep.json` (W1-W10, written 2026-10-30) holds 10 broad questions: the world of
+each book (W1, W2), a whole life (W3 Hope, W4 Small), an institution (W5 the
+Mormon community), the treasure's history (W6), one character across both books
+(W7 Holmes, W8 Watson), a family (W9 the Sholtos) and a theme across both
+(W10 love, marriage and family). Each entry lists 10-12 `aspects` a complete
+answer covers, each with verbatim evidence checked against its chunk. It was
+written before any results existed, and the leak test scans it.
+
+Grade each answer blind:
+1. **Coverage.** Mark each aspect `covered` or `missing`. An aspect counts only
+   if a claim in the answer states it, not if a passage that contains it
+   appears. Coverage is covered aspects over listed aspects.
+2. **False facts.** Check sentence by sentence.
+3. **Organisation and readability.** Pairwise preference against the control
+   arm.
+
+Bar (spec, Evaluation additions): false facts no higher than control; coverage
+at least 70% on average and higher than control on at least 8 of 10 questions;
+readers prefer the deep answer (sign test p < 0.05).
+
 ## Decisions
 
 **2026-10-12: FULL_ANSWERS + NO_RESTATE adopted as the default** (lore/query/synthesize.py).

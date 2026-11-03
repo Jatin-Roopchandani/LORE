@@ -21,7 +21,7 @@ from lore.query.agent import (
     answer_question,
     make_query_models,
 )
-from lore.query.decompose import SubQuestions
+from lore.query.decompose import Decomposition, SubQuestions
 from lore.query.models import Answer
 from lore.query.select import TemplateChoice
 from lore.query.synthesize import (
@@ -296,7 +296,7 @@ async def test_book_titles_reach_synthesis_on_every_path(tmp_path: Path, edges, 
     answer = await answer_question(conn, FakeKuzu(edges), FakeLance([SEED_ROW]), "q", models)
     assert answer.mode == mode
     (prompt, _, _), = _synthesis_calls(ollama)
-    assert f"({TITLE}, chapter 1)" in prompt
+    assert f"({TITLE}, chapter 1," in prompt
     conn.close()
 
 
@@ -306,7 +306,7 @@ async def test_titles_reach_synthesis_on_the_baseline_path(tmp_path: Path) -> No
     await answer_question(conn, ExplodingKuzu(), FakeLance([SEED_ROW]), "q", models,
                           baseline=True)
     (prompt, _, _), = _synthesis_calls(ollama)
-    assert f"({TITLE}, chapter 1)" in prompt
+    assert f"({TITLE}, chapter 1," in prompt
     conn.close()
 
 
@@ -330,10 +330,12 @@ async def test_gemini_answers_while_selection_stays_local(tmp_path: Path) -> Non
     # Task 12 changed this. It was `== [SubQuestions, Synthesis]` and failed
     # with "Left contains one more item: Faithfulness": the faithfulness
     # check is a third call on the same synthesis client.
-    assert [schema for _, schema in gemini.prompts] == [SubQuestions, Synthesis,
+    # Deep/interpretive Task 1: the decomposition's schema is Decomposition
+    # while a switch is on (SubQuestions only when both are off).
+    assert [schema for _, schema in gemini.prompts] == [Decomposition, Synthesis,
                                                         Faithfulness]
     prompt = gemini.prompts[1][0]
-    assert f"({TITLE}, chapter 1)" in prompt
+    assert f"({TITLE}, chapter 1," in prompt
     conn.close()
 
 
@@ -499,10 +501,10 @@ async def test_both_steps_on_gemini_share_one_client_and_name_each_model(
                                 "gemini-3.5-flash-lite"])
     models = make_query_models(BOTH_GEMINI_CONFIG, ollama=ollama, gemini=gemini)
     answer = await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
-    # Task 12 changed this. It was `== [SubQuestions, TemplateChoice,
+    # Task 12 changed this. It was `== [Decomposition, TemplateChoice,
     # Synthesis]` and failed with "Left contains one more item:
     # Faithfulness": the check is a fourth call on the shared client.
-    assert [schema for _, schema in gemini.prompts] == [SubQuestions, TemplateChoice,
+    assert [schema for _, schema in gemini.prompts] == [Decomposition, TemplateChoice,
                                                         Synthesis, Faithfulness]
     assert ollama.generated == []
     assert answer.selection_model == "gemini-3.1-flash-lite"
@@ -798,7 +800,8 @@ async def test_the_union_adds_a_vector_only_chunk_to_the_evidence(tmp_path: Path
     assert [p.chunk_id for p in answer.passages] == ["b1:1:0", "b1:9:0"]
     assert "VECTORONLY" in calls["synthesize"][0]
     # The union takes CANDIDATE_K per vector, the question's own included.
-    assert (tuple(Q), CANDIDATE_K) in lance.searches
+    # (read a little wider: boilerplate is filtered out and the result cut back)
+    assert any(v == tuple(Q) and n >= CANDIDATE_K for v, n in lance.searches)
     conn.close()
 
 
@@ -833,15 +836,15 @@ async def test_decomposition_runs_on_the_synthesis_provider_deterministically(
     conn = _conn(tmp_path)
     ollama, models = _local()
     await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
-    (_, _, options), = [c for c in ollama.generated if c[1] is SubQuestions]
+    (_, _, options), = [c for c in ollama.generated if c[1] is Decomposition]
     assert options == SELECTION_OPTIONS
 
     ollama = FakeOllama(CHOICE)
     gemini = FakeGemini()
     models = make_query_models(GEMINI_CONFIG, ollama=ollama, gemini=gemini)
     await answer_question(conn, FakeKuzu(EDGE), FakeLance([SEED_ROW]), "q", models)
-    assert [s for _, s in gemini.prompts][0] is SubQuestions
-    assert not [c for c in ollama.generated if c[1] is SubQuestions]
+    assert [s for _, s in gemini.prompts][0] is Decomposition
+    assert not [c for c in ollama.generated if c[1] is Decomposition]
     conn.close()
 
 
@@ -883,8 +886,8 @@ async def test_a_two_part_question_gets_both_parts_before_a_second_for_either(
     first, second = calls["synthesize"]
     assert "Question: Who is A?" in first and "Question: Why B?" in second
     assert question in first and question in second
-    assert "[1] (A Study in Scarlet, chapter 2)\nMARK2" in first and "MARK4" not in first
-    assert "[2] (A Study in Scarlet, chapter 4)\nMARK4" in second and "MARK2" not in second
+    assert "[1] (A Study in Scarlet, chapter 2, passage 1 in the chapter)\nMARK2" in first and "MARK4" not in first
+    assert "[2] (A Study in Scarlet, chapter 4, passage 1 in the chapter)\nMARK4" in second and "MARK2" not in second
     # Decomposition is told the graph's books, so "in each novel" can split.
     assert "A Study in Scarlet" in calls["decompose"][0]
     conn.close()
@@ -1002,7 +1005,7 @@ async def test_baseline_stays_undecomposed(tmp_path: Path) -> None:
     ollama, models = _local()
     answer = await answer_question(conn, ExplodingKuzu(), FakeLance([SEED_ROW]), "q", models,
                                    baseline=True)
-    assert not [c for c in ollama.generated if c[1] is SubQuestions]
+    assert not [c for c in ollama.generated if c[1] is Decomposition]
     assert answer.sub_questions == ()
     conn.close()
 
@@ -1377,5 +1380,123 @@ async def test_the_baseline_still_answers_from_vector_k_passages(tmp_path: Path)
     lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1)]}, {"b1:1:0": Q})
     models, _ = _scripted({QUERY_PREFIX + "who?": Q}, ["who?"], [])
     await answer_question(conn, EntityKuzu({}), lance, "who?", models, baseline=True)
-    assert lance.searches == [(tuple(Q), VECTOR_K)]
+    # One search, read a little wider than VECTOR_K so boilerplate can be dropped.
+    (vector, asked), = lance.searches
+    assert vector == tuple(Q) and asked >= VECTOR_K
     conn.close()
+
+
+# --- prose answers: the compose step ------------------------------------------
+
+
+def _compose_setup(tmp_path: Path, subs=("who?",), qtext="who?"):
+    from dataclasses import replace as dc_replace
+    from lore.query.models import Claim
+    from lore.query.synthesize import Faithfulness, Judgement, Synthesis
+    from lore.query.write import Prose, Sentence
+
+    conn = _conn(tmp_path)
+    _chunk(conn, "b1:2:0", "Watson kept a bull pup in the rooms.", 2)
+    lance = VectorLance({tuple(Q): [_row("b1:1:0", ["e1"], 0.2, 1), _row("b1:2:0", [], 0.25, 2)]},
+                        {"b1:1:0": Q, "b1:2:0": Q})
+    kuzu = EntityKuzu({"e1": [_edge_row("b1:1:0", 1, "Holmes")]})
+    two = Synthesis(claims=[Claim(text="Holmes talked the case over with Watson.", passage=1, quote=QUOTE),
+                            Claim(text="Watson kept a bull pup.", passage=2, quote="Watson kept a bull pup")],
+                    can_answer=True)
+    vectors = {QUERY_PREFIX + t: Q for t in (qtext, *subs)}
+    models, _ = _scripted(vectors, list(subs),
+                          [TemplateChoice(template="neighbours", entities=[1])] * 4, two)
+
+    async def write(prompt, schema):
+        return Prose(sentences=[Sentence(text="Holmes discussed the case with Watson, who kept a bull pup.", claims=[1, 2])])
+
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[Judgement(claim=1, verdict="supported"), Judgement(claim=2, verdict="supported")],
+                            sentence_judgements=[Judgement(claim=1, verdict="supported")])
+
+    return conn, kuzu, lance, dc_replace(models, write=write, check=check), qtext
+
+
+def _steps(events):
+    return [(e["name"], e["state"], e.get("detail")) for e in events if e["type"] == "step"]
+
+
+async def test_the_compose_step_sits_between_write_and_check(tmp_path: Path) -> None:
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path)
+    events = []
+    answer = await answer_question(conn, kuzu, lance, q, models, on_event=events.append)
+    conn.close()
+    steps = _steps(events)
+    assert [(n, st) for n, st, _ in steps[-6:]] == [
+        ("write", "start"), ("write", "done"), ("compose", "start"),
+        ("check", "start"), ("check", "done"), ("compose", "done")]
+    assert steps[-1][2] == "1 sentence"
+    assert answer.answer_style == "prose"
+
+
+@pytest.mark.parametrize("mode", ["none", "raises"])
+async def test_a_failed_writer_closes_compose_as_a_fallback(tmp_path: Path, mode) -> None:
+    from dataclasses import replace as dc_replace
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path)
+
+    async def write(prompt, schema):
+        if mode == "raises":
+            raise RuntimeError("boom")
+        return None
+
+    models = dc_replace(models, write=write)
+    events = []
+    answer = await answer_question(conn, kuzu, lance, q, models, on_event=events.append)
+    conn.close()
+    steps = _steps(events)
+    assert answer.answer_style == "claims"
+    assert steps.count(("compose", "start", None)) == 1
+    assert steps.count(("compose", "done", "fell back to facts")) == 1
+    assert sum(1 for n, st, _ in steps if (n, st) == ("write", "done")) == 1
+
+
+async def test_prose_off_emits_no_compose_events(tmp_path: Path, monkeypatch) -> None:
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "PROSE_ANSWERS", False)
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path)
+    events = []
+    answer = await answer_question(conn, kuzu, lance, q, models, on_event=events.append)
+    conn.close()
+    assert not [e for e in _steps(events) if e[0] == "compose"]
+    assert answer.answer_style == "claims"
+
+
+async def test_the_parts_path_emits_compose(tmp_path: Path) -> None:
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path, subs=("a?", "b?"), qtext="a? and b?")
+    events = []
+    answer = await answer_question(conn, kuzu, lance, q, models, on_event=events.append)
+    conn.close()
+    steps = _steps(events)
+    assert answer.sub_questions == ("a?", "b?") or list(answer.sub_questions) == ["a?", "b?"]
+    assert sum(1 for n, st, _ in steps if (n, st) == ("compose", "start")) == 1
+    assert sum(1 for n, st, _ in steps if (n, st) == ("compose", "done")) == 1
+    assert sum(1 for n, st, _ in steps if (n, st) == ("write", "done")) == 1
+
+
+async def test_the_books_series_reaches_the_writer_and_the_check(tmp_path: Path) -> None:
+    from dataclasses import replace as dc_replace
+    from lore.ingest.registry import set_series
+    conn, kuzu, lance, models, q = _compose_setup(tmp_path)
+    prompts = {"write": [], "check": []}
+    write, check = models.write, models.check
+
+    async def spy_write(prompt, schema):
+        prompts["write"].append(prompt)
+        return await write(prompt, schema)
+
+    async def spy_check(prompt, schema):
+        prompts["check"].append(prompt)
+        return await check(prompt, schema)
+
+    models = dc_replace(models, write=spy_write, check=spy_check)
+    (book_id,) = [r[0] for r in conn.execute("SELECT id FROM books")]
+    assert set_series(conn, book_id, "The Saga", 2.0)
+    await answer_question(conn, kuzu, lance, q, models)
+    conn.close()
+    assert "book 2 of The Saga, chapter 1" in prompts["write"][0]
+    assert "book 2 of The Saga, chapter 2" in prompts["check"][0]

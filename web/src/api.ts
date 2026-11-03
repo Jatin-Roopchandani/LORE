@@ -1,4 +1,5 @@
-import type { ApiError, AskEvent, Book, EntityCardData, EntityKind, McpInfo, Quota, SubgraphData } from "./types";
+import type { ApiError, AskEvent, Depth, Book, EdgeDetail, EntityCardData, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult,
+  PassageText, PathResult, Quota, Relations, SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   const events: AskEvent[] = [];
@@ -19,13 +20,15 @@ export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
 
 const errorEvent = (code: string, message: string): AskEvent => ({ type: "error", t: 0, error: { code, message } });
 
-export async function* streamAsk(question: string, signal: AbortSignal): AsyncGenerator<AskEvent> {
+// `world`: a world id as a string, or "all" (the same value the graph calls take).
+// `depth`: auto, deep or focused; left out of the body when not given.
+export async function* streamAsk(question: string, signal: AbortSignal, world?: string, depth?: Depth): AsyncGenerator<AskEvent> {
   let response: Response;
   try {
     response = await fetch("/api/ask", {
       method: "POST", signal,
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, ...(world ? { world } : {}), ...(depth ? { depth } : {}) }),
     });
   } catch {
     if (signal.aborted) return;
@@ -70,11 +73,56 @@ export async function getJson<T>(path: string): Promise<T | { error: ApiError }>
 export const isError = (x: unknown): x is { error: ApiError } =>
   typeof x === "object" && x !== null && "error" in x;
 
+// Starts or resumes a book's processing. 202 gives {started: true}; 409 gives {error: {code, message}}.
+export async function postContinue(id: string): Promise<{ started: true } | { error: ApiError }> {
+  try {
+    const r = await fetch(`/api/books/${encodeURIComponent(id)}/continue`, { method: "POST", headers: { Accept: "application/json" } });
+    if (r.status === 404) return { error: { code: "not_found", message: "" } };
+    return (await r.json()) as { started: true } | { error: ApiError };
+  } catch {
+    return { error: { code: "unreachable", message: "" } };
+  }
+}
+
+const withWorld = (path: string, world?: string) =>
+  world ? `${path}${path.includes("?") ? "&" : "?"}world=${encodeURIComponent(world)}` : path;
+
+async function sendJson<T>(method: string, path: string, body?: object): Promise<T | { error: ApiError }> {
+  try {
+    const r = await fetch(path, { method, headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined });
+    return (await r.json()) as T | { error: ApiError };
+  } catch {
+    return { error: { code: "unreachable", message: "" } };
+  }
+}
+
 export const api = {
-  library: () => getJson<{ books: Book[]; note: string | null }>("/api/library"),
-  entity: (id: string) => getJson<EntityCardData>(`/api/entity?id=${encodeURIComponent(id)}`),
-  entities: (ids: string[]) => getJson<{ entities: EntityKind[] }>(`/api/entities?ids=${encodeURIComponent(ids.join(","))}`),
-  subgraph: (id: string) => getJson<SubgraphData>(`/api/subgraph?id=${encodeURIComponent(id)}&depth=1`),
+  books: () => getJson<LibraryStatus>("/api/books"),
+  continueBook: postContinue,
+  library: (world?: string) => getJson<{ books: Book[]; note: string | null }>(withWorld("/api/library", world)),
+  entity: (id: string, world?: string) => getJson<EntityCardData>(withWorld(`/api/entity?id=${encodeURIComponent(id)}`, world)),
+  entities: (ids: string[], world?: string) => getJson<{ entities: EntityKind[] }>(withWorld(`/api/entities?ids=${encodeURIComponent(ids.join(","))}`, world)),
+  subgraph: (id: string, world?: string) => getJson<SubgraphData>(withWorld(`/api/subgraph?id=${encodeURIComponent(id)}&depth=1`, world)),
+  overview: (world?: string) => getJson<SubgraphData>(withWorld("/api/overview?limit=40", world)),
+  worlds: () => getJson<World[]>("/api/worlds"),
+  // The graph explorer's reads: stored data only, no model calls.
+  profile: (id: string, world?: string) => getJson<EntityProfile>(withWorld(`/api/entity/${encodeURIComponent(id)}/profile`, world)),
+  timeline: (id: string, world?: string) => getJson<Timeline>(withWorld(`/api/entity/${encodeURIComponent(id)}/timeline`, world)),
+  relations: (id: string, world?: string) => getJson<Relations>(withWorld(`/api/entity/${encodeURIComponent(id)}/relations`, world)),
+  edge: (a: string, b: string, world?: string) =>
+    getJson<EdgeDetail>(withWorld(`/api/edge?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`, world)),
+  search: (q: string, world?: string, limit = 8) =>
+    getJson<{ results: SearchHit[] }>(withWorld(`/api/search?q=${encodeURIComponent(q)}&limit=${limit}`, world)),
+  path: (a: string, b: string, world?: string) =>
+    getJson<PathResult>(withWorld(`/api/path?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&max=4`, world)),
+  passage: (chunkId: string, world?: string) => getJson<PassageText>(withWorld(`/api/passage/${encodeURIComponent(chunkId)}`, world)),
+  // A world given by name with `create` is made first; 202 starts the move job, 200 {started:false} means already there.
+  moveBook: (id: string, world: string | number, create = false) =>
+    sendJson<MoveResult>("POST", `/api/books/${encodeURIComponent(id)}/move`, { world, create }),
+  createWorld: (name: string) => sendJson<WorldRef>("POST", "/api/worlds", { name }),
+  renameWorld: (id: number, name: string) => sendJson<WorldRef>("PATCH", `/api/worlds/${id}`, { name }),
+  deleteWorld: (id: number) => sendJson<{ deleted: true }>("DELETE", `/api/worlds/${id}`),
   quota: () => getJson<Quota>("/api/quota"),
   mcp: () => getJson<McpInfo>("/api/mcp"),
   settings: () => getJson<{ show_internals: boolean }>("/api/settings"),

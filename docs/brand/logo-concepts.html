@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LORE logo concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #17212B; --muted: #5A6774; --bg: #ECEFF2; --panel: #F8FAFB; --line: #D3DAE0;
+    --accent: #1E5AA0; --glow: #B97808;
+    --d-bg: #0E141A; --d-panel: #151D25; --d-ink: #E3E9EF; --d-accent: #78AEEA; --d-glow: #EBAA3C;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Public Sans", system-ui, sans-serif; }
+  header { max-width: 1180px; margin: 0 auto; padding: 40px 20px 8px; }
+  h1 { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 34px; margin: 0 0 6px; }
+  header p { margin: 0; color: var(--muted); max-width: 720px; line-height: 1.5; }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 20px 64px; display: grid; gap: 24px; }
+  .concept { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+  .concept h2 { margin: 0 0 4px; font-size: 18px; }
+  .concept .why { margin: 0 0 18px; color: var(--muted); font-size: 14px; line-height: 1.5; max-width: 760px; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .tile { border-radius: 10px; padding: 22px; display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 150px; }
+  .light { background: #fff; border: 1px solid var(--line); color: var(--ink); --a: var(--accent); --g: var(--glow); }
+  .dark { background: var(--d-bg); color: var(--d-ink); --a: var(--d-accent); --g: var(--d-glow); }
+  .icon { width: 96px; height: 96px; }
+  .lockup { display: flex; align-items: center; gap: 12px; }
+  .lockup svg { width: 52px; height: 52px; }
+  .word { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 44px; letter-spacing: 0.06em; line-height: 1; }
+  .sizes { display: flex; align-items: end; gap: 14px; }
+  .sizes svg:nth-child(1) { width: 16px; height: 16px; }
+  .sizes svg:nth-child(2) { width: 32px; height: 32px; }
+  .sizes svg:nth-child(3) { width: 48px; height: 48px; }
+  .label { font-size: 12px; color: inherit; opacity: .7; }
+  footer { max-width: 1180px; margin: 0 auto; padding: 0 20px 48px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LORE — logo concepts</h1>
+  <p>Five directions, sitting between literary and technical: a Fraunces serif wordmark, geometric graph icons. Each shows the icon on light and dark, a wordmark lockup, and favicon sizes (16, 32, 48 px). Colours are the UI's own: deep blue accent, warm amber glow.</p>
+</header>
+
+<!-- Icon symbols: drawn once, reused below. Strokes use --a (accent), highlights use --g (glow). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- 1. Constellation book -->
+    <symbol id="i1" viewBox="0 0 64 64">
+      <path d="M32 50 C24 45 14 44 6 46 V20 C14 18 24 19 32 24 C40 19 50 18 58 20 V46 C50 44 40 45 32 50 Z" fill="none" stroke="var(--a)" stroke-width="3.2" stroke-linejoin="round"/>
+      <path d="M32 24 V50" stroke="var(--a)" stroke-width="3.2"/>
+      <path d="M16 13 L28 7 L40 11 L50 5" fill="none" stroke="var(--a)" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="16" cy="13" r="3" fill="var(--a)"/><circle cx="28" cy="7" r="3" fill="var(--g)"/>
+      <circle cx="40" cy="11" r="3" fill="var(--a)"/><circle cx="50" cy="5" r="3" fill="var(--a)"/>
+    </symbol>
+    <!-- 2. The O as a node -->
+    <symbol id="i2" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="13" fill="none" stroke="var(--a)" stroke-width="5"/>
+      <circle cx="32" cy="32" r="4.5" fill="var(--g)"/>
+      <path d="M41 23 L52 12 M23 41 L12 52 M45 36 L58 40" stroke="var(--a)" stroke-width="2.6" stroke-linecap="round"/>
+      <circle cx="52" cy="12" r="4" fill="var(--a)"/><circle cx="12" cy="52" r="4" fill="var(--a)"/><circle cx="58" cy="40" r="3.5" fill="var(--a)"/>
+    </symbol>
+    <!-- 3. Bookmark thread -->
+    <symbol id="i3" viewBox="0 0 64 64">
+      <path d="M20 4 H40 V30 L30 24 L20 30 Z" fill="var(--a)"/>
+      <path d="M30 26 V38 M30 38 L16 50 M30 38 L30 56 M30 38 L46 48 M46 48 L56 40" fill="none" stroke="var(--a)" stroke-width="2.6" stroke-linecap="round"/>
+      <circle cx="30" cy="38" r="4" fill="var(--g)"/>
+      <circle cx="16" cy="50" r="3.6" fill="var(--a)"/><circle cx="30" cy="57" r="3.6" fill="var(--a)"/>
+      <circle cx="46" cy="48" r="3.6" fill="var(--a)"/><circle cx="56" cy="40" r="3" fill="var(--a)"/>
+    </symbol>
+    <!-- 4. Quill tracing a graph -->
+    <symbol id="i4" viewBox="0 0 64 64">
+      <path d="M58 4 C40 8 28 20 24 36 L28 40 C44 36 56 24 60 6 Z" fill="none" stroke="var(--a)" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M58 6 L26 38" stroke="var(--a)" stroke-width="1.8"/>
+      <path d="M26 38 L18 46 L8 44 M18 46 L14 58" fill="none" stroke="var(--a)" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="0.1 0"/>
+      <circle cx="18" cy="46" r="3.8" fill="var(--g)"/><circle cx="8" cy="44" r="3.4" fill="var(--a)"/><circle cx="14" cy="58" r="3.4" fill="var(--a)"/>
+    </symbol>
+    <!-- 5. Spine glyph -->
+    <symbol id="i5" viewBox="0 0 64 64">
+      <rect x="8" y="10" width="10" height="46" rx="2" fill="var(--a)"/>
+      <rect x="22" y="16" width="10" height="40" rx="2" fill="var(--a)" opacity=".75"/>
+      <rect x="36" y="6" width="10" height="50" rx="2" fill="var(--a)" opacity=".55"/>
+      <path d="M13 20 V48 H41 V14" fill="none" stroke="var(--g)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="13" cy="20" r="3.4" fill="var(--g)"/><circle cx="27" cy="48" r="3.4" fill="var(--g)"/><circle cx="41" cy="14" r="3.4" fill="var(--g)"/>
+      <rect x="50" y="20" width="6" height="36" rx="2" fill="var(--a)" opacity=".35"/>
+    </symbol>
+  </defs>
+</svg>
+
+<main>
+  <section class="concept">
+    <h2>1 · Constellation book</h2>
+    <p class="why">An open book whose story lines rise into a small star-map of linked nodes: the books become the graph. One node glows, the passage a claim traces back to.</p>
+    <div class="row">
+      <div class="tile light"><svg class="icon" role="img" aria-label="Constellation book icon"><use href="#i1"/></svg></div>
+      <div class="tile dark"><svg class="icon" role="img" aria-label="Constellation book icon"><use href="#i1"/></svg></div>
+      <div class="tile light"><div class="lockup"><svg aria-hidden="true"><use href="#i1"/></svg><span class="word">LORE</span></div></div>
+      <div class="tile dark"><div class="sizes"><svg aria-hidden="true"><use href="#i1"/></svg><svg aria-hidden="true"><use href="#i1"/></svg><svg aria-hidden="true"><use href="#i1"/></svg></div><span class="label">16 · 32 · 48</span></div>
+    </div>
+  </section>
+
+  <section class="concept">
+    <h2>2 · The O as a node</h2>
+    <p class="why">The wordmark's O is a graph node with edges reaching out. The simplest of the five, and the O alone works as the app icon.</p>
+    <div class="row">
+      <div class="tile light"><svg class="icon" role="img" aria-label="Node O icon"><use href="#i2"/></svg></div>
+      <div class="tile dark"><svg class="icon" role="img" aria-label="Node O icon"><use href="#i2"/></svg></div>
+      <div class="tile light"><div class="lockup"><span class="word">L</span><svg aria-hidden="true" style="width:44px;height:44px;margin:0 -4px"><use href="#i2"/></svg><span class="word">RE</span></div></div>
+      <div class="tile dark"><div class="sizes"><svg aria-hidden="true"><use href="#i2"/></svg><svg aria-hidden="true"><use href="#i2"/></svg><svg aria-hidden="true"><use href="#i2"/></svg></div><span class="label">16 · 32 · 48</span></div>
+    </div>
+  </section>
+
+  <section class="concept">
+    <h2>3 · Bookmark thread</h2>
+    <p class="why">A ribbon bookmark that branches into a graph, like a thread through the story. Reads as "reading" first and "connections" second.</p>
+    <div class="row">
+      <div class="tile light"><svg class="icon" role="img" aria-label="Bookmark thread icon"><use href="#i3"/></svg></div>
+      <div class="tile dark"><svg class="icon" role="img" aria-label="Bookmark thread icon"><use href="#i3"/></svg></div>
+      <div class="tile light"><div class="lockup"><svg aria-hidden="true"><use href="#i3"/></svg><span class="word">LORE</span></div></div>
+      <div class="tile dark"><div class="sizes"><svg aria-hidden="true"><use href="#i3"/></svg><svg aria-hidden="true"><use href="#i3"/></svg><svg aria-hidden="true"><use href="#i3"/></svg></div><span class="label">16 · 32 · 48</span></div>
+    </div>
+  </section>
+
+  <section class="concept">
+    <h2>4 · Quill tracing a graph</h2>
+    <p class="why">A quill whose stroke becomes the edges between nodes: every claim traced to the text. The most literary of the five.</p>
+    <div class="row">
+      <div class="tile light"><svg class="icon" role="img" aria-label="Quill graph icon"><use href="#i4"/></svg></div>
+      <div class="tile dark"><svg class="icon" role="img" aria-label="Quill graph icon"><use href="#i4"/></svg></div>
+      <div class="tile light"><div class="lockup"><svg aria-hidden="true"><use href="#i4"/></svg><span class="word">LORE</span></div></div>
+      <div class="tile dark"><div class="sizes"><svg aria-hidden="true"><use href="#i4"/></svg><svg aria-hidden="true"><use href="#i4"/></svg><svg aria-hidden="true"><use href="#i4"/></svg></div><span class="label">16 · 32 · 48</span></div>
+    </div>
+  </section>
+
+  <section class="concept">
+    <h2>5 · Spine glyph</h2>
+    <p class="why">Book spines on a shelf, with an L-shaped path joining nodes across them: a library you can walk through. Geometric and calm; strong at small sizes.</p>
+    <div class="row">
+      <div class="tile light"><svg class="icon" role="img" aria-label="Spine glyph icon"><use href="#i5"/></svg></div>
+      <div class="tile dark"><svg class="icon" role="img" aria-label="Spine glyph icon"><use href="#i5"/></svg></div>
+      <div class="tile light"><div class="lockup"><svg aria-hidden="true"><use href="#i5"/></svg><span class="word">LORE</span></div></div>
+      <div class="tile dark"><div class="sizes"><svg aria-hidden="true"><use href="#i5"/></svg><svg aria-hidden="true"><use href="#i5"/></svg><svg aria-hidden="true"><use href="#i5"/></svg></div><span class="label">16 · 32 · 48</span></div>
+    </div>
+  </section>
+</main>
+<footer>Pick one (or a mix: e.g. concept 2's O with concept 1's glow) and the next round refines it: proportions, the exact serif, and the final SVG files for the UI, favicon and README.</footer>
+</body>
+</html>

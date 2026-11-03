@@ -287,3 +287,31 @@ def is_gutenberg_boilerplate(text: str) -> bool:
     """
     lowered = text.casefold()
     return any(marker in lowered for marker in _GUTENBERG_MARKERS)
+
+
+# A table of contents is not licence text, so `is_gutenberg_boilerplate`
+# does not see it, yet it is as useless as a passage: "A STUDY IN SCARLET.
+# PART I. CHAPTER I. MR. SHERLOCK HOLMES. CHAPTER II. ..." is a list of
+# chapter headings, and "Heading to Chapter XIV. 84" a list of plates.
+# Measured over every chunk of the three real books, a chunk naming FOUR or
+# more chapters ("Chapter I", "Chapter: II", "Chapter 12") is a table of
+# contents or list of illustrations and no story chunk does; a story
+# passage that says "chapter" does so once. "list of illustrations" and
+# "heading to chapter" are front matter wording with the same measurement.
+_CHAPTER_REF = re.compile(r"\bchapter:?\s+(?:[ivxlc]+|\d+)\b", re.IGNORECASE)
+_MIN_CHAPTER_REFS = 4
+_TOC_MARKERS = ("list of illustrations", "heading to chapter")
+
+
+def is_table_of_contents(text: str) -> bool:
+    """True when a chunk's text is a table of contents or list of plates."""
+    lowered = text.casefold()
+    return (len(_CHAPTER_REF.findall(text)) >= _MIN_CHAPTER_REFS
+            or any(marker in lowered for marker in _TOC_MARKERS))
+
+
+def is_boilerplate_chunk(text: str) -> bool:
+    """A chunk that is no story: Gutenberg front matter or licence (the
+    loader's own test) or a table of contents. The query side's filter, so
+    retrieval never hands such a passage to the model."""
+    return is_gutenberg_boilerplate(text) or is_table_of_contents(text)

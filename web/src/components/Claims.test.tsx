@@ -9,9 +9,9 @@ const result = { answer: "", mode: "graph", template: "neighbours", note: null, 
 
 test("a citation opens its passage with the quote marked; hover reports the chunk", () => {
   const onHover = vi.fn();
-  render(<Claims result={result} onHoverChunk={onHover} />);
+  render(<Claims result={result} onHoverChunks={onHover} />);
   fireEvent.mouseEnter(screen.getByText("Hope was to marry Lucy.").closest("li")!);
-  expect(onHover).toHaveBeenCalledWith("c3");
+  expect(onHover).toHaveBeenCalledWith(["c3"]);
   fireEvent.click(screen.getByRole("button", { name: /ch\.17/ }));
   expect(screen.getByText("was to have married me twenty years ago").tagName).toBe("MARK");
 });

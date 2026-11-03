@@ -43,8 +43,36 @@ ARM_SETTINGS = {
     "max_claims": ("lore.query.synthesize", "MAX_CLAIMS", int),
     "no_restate": ("lore.query.synthesize", "NO_RESTATE",
                    lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "attribute_speech": ("lore.query.synthesize", "ATTRIBUTE_SPEECH",
+                         lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "strict_links": ("lore.query.synthesize", "STRICT_LINKS",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "thematic_parts": ("lore.query.decompose", "THEMATIC_PARTS",
+                       lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "role_coverage": ("lore.query.synthesize", "ROLE_COVERAGE",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     "full_answers": ("lore.query.synthesize", "FULL_ANSWERS",
                      lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "prose_answers": ("lore.query.write", "PROSE_ANSWERS",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Story order, own words and gaps in the writer and the check.
+    "story_order": ("lore.query.write", "STORY_ORDER",
+                    lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Labelled, checked readings of what actions show (write.READINGS).
+    "readings": ("lore.query.write", "READINGS",
+                 lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Kinds, lenses and the interpretive answer (reading, counter-case, limits):
+    # lore/query/decompose.py, interpret.py.
+    "interpretive": ("lore.query.decompose", "INTERPRETIVE",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # The deep answer: an outline planned from the graph and codex, one section
+    # per entry (lore/query/deep.py). `deep=true` also asks every question at
+    # depth "deep"; `deep=false` is the code before it existed.
+    "deep": ("lore.query.decompose", "DEEP",
+             lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # The story timeline of the question's entities (lore/query/timeline.py).
+    "timeline": ("lore.query.timeline", "TIMELINE",
+                 lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
 
 
@@ -86,11 +114,14 @@ def _pinned(config, model: str):
 
 
 async def ask(config, question: str, overrides, trace: list | None):
+    # The `deep` arm asks at depth "deep"; any other arm lets the decomposer decide.
+    depth = "deep" if overrides.get(("lore.query.decompose", "DEEP")) is True else None
+    kw = {"depth": depth} if depth else {}
     with _Applied(overrides):
         models = _real_models(config)
         if trace is not None:
             models = _traced(models, trace)
-        result = await tools.lore_search(config, question, models=models)
+        result = await tools.lore_search(config, question, models=models, **kw)
         for _ in range(2):  # transient refusals are not a quality signal
             err = result.get("error")
             if not err or err["code"] != "upstream_unavailable":
@@ -100,7 +131,7 @@ async def ask(config, question: str, overrides, trace: list | None):
             if trace is not None:
                 trace.clear()
                 models = _traced(models, trace)
-            result = await tools.lore_search(config, question, models=models)
+            result = await tools.lore_search(config, question, models=models, **kw)
     return result
 
 

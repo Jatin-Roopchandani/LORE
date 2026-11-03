@@ -66,3 +66,22 @@ test("replay caps the wait between events at 600ms", async () => {
   expect(times[1] - times[0]).toBe(600);
   vi.useRealTimers();
 });
+
+test("a replayed deep answer brings its sections in one after another, in their own time", async () => {
+  const { askReducer, initialState } = await import("./askReducer");
+  const deep = await import("./fixtures/deep");
+  vi.useFakeTimers();
+  let state = initialState("q");
+  const timed = (e: AskEvent, t: number) => ({ ...e, t }) as AskEvent;
+  const s = createScheduler((e) => { state = askReducer(state, e); }, { reduceMotion: false, replay: true });
+  [...deep.head, ...deep.sec0.slice(0, 2)].forEach((e) => s.push(timed(e, 0)));
+  s.push(timed(deep.sec0[2], 2));
+  s.push(timed(deep.sec1[1], 4));
+  await vi.advanceTimersByTimeAsync(100);
+  expect(state.sections.map((x) => x.state)).toEqual(["writing"]);
+  await vi.advanceTimersByTimeAsync(600);
+  expect(state.sections.map((x) => x.state)).toEqual(["done"]);
+  await vi.advanceTimersByTimeAsync(600);
+  expect(state.sections.map((x) => x.state)).toEqual(["done", "writing"]);
+  vi.useRealTimers();
+});

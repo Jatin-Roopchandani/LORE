@@ -57,3 +57,8 @@ provider = "gemini"
 # `lore process --skip-extract` applies the answers.
 [lore.disambiguation]
 enabled = true
+
+# Processing stops while this many of the day's Gemini requests remain, so
+# questions in the UI keep working during a long book (about 8 questions).
+[lore.processing]
+answer_reserve = 60

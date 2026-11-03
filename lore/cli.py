@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import math
 import sqlite3
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -23,7 +26,12 @@ from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
 from lore.ingest.models import IngestError, book_id_for_file
 from lore.ingest.pdf import parse_pdf
-from lore.ingest.registry import forget_book, ingest_book, list_books
+from lore.worlds import (
+    WorldError, create_world, delete_world, get_world, list_worlds, rename_world,
+    books_in, ensure_reconciled, reconcile_worlds_from_graph, suggest_world,
+    world_of,
+)
+from lore.ingest.registry import find_books, forget_book, ingest_book, list_books, set_series
 from lore.inference.base import ProviderOutputError
 from lore.inference.gemini import (
     GeminiClient,
@@ -37,9 +45,32 @@ from lore.inference.ollama import OllamaProvider
 from lore.kaggle_api.client import KaggleClient
 from lore.kaggle_api.hello import run_hello_roundtrip
 from lore.orchestrator.gemini_budget import day_report, recorder_for, today
+from lore.graph.remove import remove_book_from_graph
+from lore.orchestrator.jobs import (
+    DONE,
+    FAILED,
+    WAITING_QUOTA,
+    fail as fail_job,
+    finish_stage,
+    get_job,
+    is_fresh,
+    list_jobs,
+)
+from lore.orchestrator.move import prepare_move
+from lore.orchestrator.extract_stage import ExtractStage
 from lore.orchestrator.local import missing_gemini_key_message
+from lore.orchestrator.pipeline import JobRefused, QuotaStop, run_book
 from lore.orchestrator.quota import iso_week, week_report
 from lore.orchestrator.run import run_extraction
+from lore.orchestrator.stages import (
+    BeatsStage,
+    ChunkStage,
+    CodexStage,
+    DisambiguateStage,
+    LoadStage,
+    ReassignStage,
+    RemoveStage,
+)
 from lore.query.agent import answer_question, make_query_models
 from lore.resolve.disambiguation import (
     MAX_BATCH,
@@ -142,6 +173,10 @@ def ingest(
         "--force",
         help="drop the book's existing rows first and re-ingest it",
     ),
+    world: str | None = typer.Option(
+        None, "--world", help="the world to put the book in (created if missing)"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="accept the world prompt without asking"),
 ) -> None:
     """Parse, chunk, and register an EPUB or PDF."""
     config = LoreConfig.load()
@@ -163,9 +198,14 @@ def ingest(
         # Drop first, then re-insert, so a re-chunk lands cleanly instead
         # of colliding with the old content-addressed chunk IDs.
         forgotten = forget_book(conn, book_id) if force else False
+        world_id = None
+        if not conn.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone():
+            world_id = _choose_world(conn, world, parsed.series, parsed.title, yes)
         created = ingest_book(
             conn, book_id=book_id, title=parsed.title, author=parsed.author,
             source="upload", file_path=str(path), chunks=chunks,
+            series=parsed.series, series_index=parsed.series_index,
+            world_id=world_id,
         )
     finally:
         conn.close()
@@ -180,6 +220,34 @@ def ingest(
     )
 
 
+def _choose_world(conn, world: str | None, series: str | None, title: str,
+                  yes: bool) -> int | None:
+    """The world id a new book goes in, asking before creating one (unless
+    --yes). None means ingest_book makes the suggested new world itself."""
+    if world is not None:
+        try:
+            found = get_world(conn, world)
+            if found is not None:
+                return found.id
+            if not yes and not typer.confirm(f"create world {world.strip()!r}?"):
+                raise typer.Exit(1)
+            return create_world(conn, world)
+        except WorldError as exc:
+            typer.echo(f"ingest failed: {exc}")
+            raise typer.Exit(2)
+    world_id, name = suggest_world(conn, series, title)
+    if world_id is not None:
+        typer.echo(f"world: {name!r} (existing world, same series)")
+        if not yes and not typer.confirm("put the book there?", default=True):
+            raise typer.Exit(1)
+        return world_id
+    typer.echo(f"world: {name!r} (new world)")
+    if not yes and not typer.confirm("create it?", default=True):
+        typer.echo("nothing ingested; pass --world NAME to choose")
+        raise typer.Exit(1)
+    return None
+
+
 @app.command()
 def books() -> None:
     """List the ingested library."""
@@ -188,16 +256,322 @@ def books() -> None:
     conn = open_db(config.sqlite_path)
     try:
         rows = list_books(conn)
+        job_by_book = {job.book_id: job for job in list_jobs(conn)}
     finally:
         conn.close()
     if not rows:
         typer.echo("library is empty")
         return
     for row in rows:
+        where = (f"  ({row['series']} #{row['series_index']:g})"
+                 if row["series"] and row["series_index"] is not None else
+                 f"  ({row['series']})" if row["series"] else "")
         typer.echo(
             f"{row['id']}  {row['title']}  [{row['status']}]  "
-            f"{row['chunk_count']} chunks"
+            f"{row['chunk_count']} chunks{where}  world: {row['world'] or '-'}{_job_note(job_by_book.get(row['id']))}"
         )
+
+
+def _job_note(job) -> str:
+    """` — job: state at stage (done/total)` for `lore books`, or nothing."""
+    if job is None:
+        return ""
+    note = f"  job: {job.state}, stage {job.stage}"
+    if job.total_items:
+        note += f" ({job.done_items}/{job.total_items})"
+    if job.state == WAITING_QUOTA and job.resumable_at is not None:
+        note += f", resumes after {job.resumable_at.astimezone():%H:%M} local"
+    return note
+
+
+world_app = typer.Typer(help="Worlds: groups of books that share characters.",
+                        no_args_is_help=True)
+app.add_typer(world_app, name="world")
+
+
+def _world_or_exit(conn, ref: str):
+    found = get_world(conn, ref)
+    if found is None:
+        typer.echo(f"no world named {ref!r}")
+        raise typer.Exit(1)
+    return found
+
+
+@world_app.command("list")
+def world_list() -> None:
+    """List worlds and the books in each."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        worlds = list_worlds(conn)
+        if not worlds:
+            typer.echo("no worlds")
+            return
+        titles = {b["id"]: b["title"] for b in list_books(conn)}
+        for w in worlds:
+            members = [titles.get(b, b) for b in books_in(conn, w.id)]
+            typer.echo(f"{w.id}  {w.name}  ({len(members)} books)"
+                       + (f": {'; '.join(members)}" if members else ""))
+    finally:
+        conn.close()
+
+
+@world_app.command("rename")
+def world_rename(world: str, new_name: str) -> None:
+    """Rename a world."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        found = _world_or_exit(conn, world)
+        try:
+            rename_world(conn, found.id, new_name)
+        except WorldError as exc:
+            typer.echo(str(exc))
+            raise typer.Exit(1)
+    finally:
+        conn.close()
+    typer.echo(f"{found.name} -> {new_name.strip()}")
+
+
+@world_app.command("reconcile")
+def world_reconcile() -> None:
+    """Merge the worlds of books that share an entity in the graph.
+
+    For a library graphed before worlds existed: books joined by a shared
+    character must live in one world. The world holding the most books is
+    kept (a tie goes to a series world, then the oldest). It runs by itself
+    once, at the first load after upgrading; this reruns it by hand.
+    """
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        kuzu = KuzuStore(config.kuzu_dir / "graph")
+        try:
+            report = reconcile_worlds_from_graph(conn, kuzu)
+            ensure_reconciled(conn, kuzu)  # a manual run also settles the marker
+        finally:
+            kuzu.close()
+    finally:
+        conn.close()
+    if not report.merges:
+        typer.echo("no world spans a shared entity - nothing to merge")
+        return
+    for m in report.merges:
+        typer.echo(f"merged {', '.join(repr(n) for n in m.absorbed)} into"
+                   f" {m.kept!r} ({len(m.books)} book(s) moved)")
+    typer.echo(f"{report.merged} world(s) merged")
+
+
+@world_app.command("delete")
+def world_delete(world: str) -> None:
+    """Delete an empty world."""
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        found = _world_or_exit(conn, world)
+        try:
+            delete_world(conn, found.id)
+        except WorldError as exc:
+            typer.echo(str(exc))
+            raise typer.Exit(1)
+    finally:
+        conn.close()
+    typer.echo(f"deleted world {found.name}")
+
+
+book_app = typer.Typer(help="Per-book settings.", no_args_is_help=True)
+app.add_typer(book_app, name="book")
+
+
+@book_app.command("series")
+def book_series(
+    book: str = typer.Argument(..., help="book id, or its title (or part of it)"),
+    series: str | None = typer.Option(None, "--series", help="the series' name"),
+    index: float | None = typer.Option(
+        None, "--index", help="the book's place in the series: 1, 2, 2.5 ..."),
+    clear: bool = typer.Option(False, "--clear", help="forget the book's series"),
+) -> None:
+    """Set or clear a book's place in a series.
+
+    Answers put facts from books of one series in story order. Books are
+    ordered against each other only when both have the same series and an
+    index; otherwise their order is treated as unknown.
+    """
+    if clear == bool(series or index is not None):
+        typer.echo("give --series NAME with --index N, or --clear")
+        raise typer.Exit(2)
+    if not clear and (not (series or "").strip() or index is None):
+        typer.echo("--series and --index go together")
+        raise typer.Exit(2)
+    if index is not None and not math.isfinite(index):
+        typer.echo("--index must be a finite number")
+        raise typer.Exit(2)
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        matches = find_books(conn, book)
+        if not matches:
+            typer.echo(f"no book matches {book!r} (see: lore books)")
+            raise typer.Exit(1)
+        if len(matches) > 1:
+            typer.echo(f"more than one book matches {book!r}; use its id:")
+            for m in matches:
+                typer.echo(f"  {m['id']}  {m['title']}")
+            raise typer.Exit(1)
+        target = matches[0]
+        set_series(conn, target["id"], None if clear else series.strip(),
+                   None if clear else index)
+    finally:
+        conn.close()
+    typer.echo(f"{target['title']}: series cleared" if clear
+               else f"{target['title']}: {series.strip()} #{index:g}")
+
+
+def _one_book(conn, ref: str) -> dict:
+    """The one book `ref` names (id, or part of its title), or exit."""
+    matches = find_books(conn, ref)
+    if not matches:
+        typer.echo(f"no book matches {ref!r} (see: lore books)")
+        raise typer.Exit(1)
+    if len(matches) > 1:
+        typer.echo(f"more than one book matches {ref!r}; use its id:")
+        for m in matches:
+            typer.echo(f"  {m['id']}  {m['title']}")
+        raise typer.Exit(1)
+    return matches[0]
+
+
+@book_app.command("move")
+def book_move(
+    book: str = typer.Argument(..., help="book id, or its title (or part of it)"),
+    world: str = typer.Option(
+        ..., "--world", help="the world to move the book to (created if missing)"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="create a missing world without asking"),
+) -> None:
+    """Move a book to another world.
+
+    The book leaves the graph, changes world and is loaded into the new one,
+    from the saved extraction and answers. Interrupted? Run the same command
+    again and it continues. To undo a move, move the book back.
+    """
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        target = _one_book(conn, book)
+        book_id = target["id"]
+        found = get_world(conn, world)
+        current = world_of(conn, book_id)
+        if (found is not None and current is not None and current.id == found.id
+                and not _unfinished(conn, book_id)):
+            typer.echo(f"{target['title']} is already in world {found.name!r}"
+                       " - nothing to do")
+            return
+        api_key = _graph_build_key(config, "move", extracting=False, loading=True)
+        created = False
+        if found is None:
+            if not yes and not typer.confirm(f"create world {world.strip()!r}?"):
+                raise typer.Exit(1)
+            try:
+                found = get_world(conn, world) or get_world(
+                    conn, create_world(conn, world))
+            except WorldError as exc:
+                typer.echo(f"move failed: {exc}")
+                raise typer.Exit(2)
+            created = True
+        stages = [_Recording(s) for s in move_stages(config, found.id,
+                                                     api_key=api_key)]
+        try:
+            run = prepare_move(conn, book_id, found.id)  # claims the row too
+        except JobRefused as exc:
+            if created:
+                delete_world(conn, found.id)
+            typer.echo(f"move refused: {exc}")
+            raise typer.Exit(1)
+        if not run:
+            if _unfinished(conn, book_id):
+                typer.echo(f"{target['title']} is already in world {found.name!r}"
+                           " with unfinished processing, which is not a move -"
+                           " continue it instead")
+            else:
+                typer.echo(f"{target['title']} is already in world {found.name!r}"
+                           " - nothing to do")
+            return
+        try:
+            job = run_book(conn, config, book_id, stages, claimed=True)
+        except BaseException as exc:  # the claimed row must not look running
+            fail_job(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000])
+            raise
+        failure = next((s.error for s in stages if s.error is not None), None)
+        if job.state == FAILED:
+            typer.echo(f"move failed: {failure or job.stopped_reason}")
+            typer.echo(f"run `lore book move {book_id} --world {found.name!r}`"
+                       " again to continue")
+            raise typer.Exit(1)
+        if job.state == WAITING_QUOTA:
+            typer.echo(f"move paused - {job.stopped_reason}")
+            if job.resumable_at is not None:
+                typer.echo(f"allowance resets at"
+                           f" {job.resumable_at.astimezone():%H:%M} (your local"
+                           " time); then run the same command again")
+            raise typer.Exit(1)
+    finally:
+        conn.close()
+    typer.echo(f"{target['title']}: moved to world {found.name!r}")
+
+
+def _unfinished(conn, book_id: str) -> bool:
+    saved = get_job(conn, book_id)
+    return saved is not None and saved.state != DONE
+
+
+@book_app.command("remove-from-graph")
+def book_remove_from_graph(
+    book: str = typer.Argument(..., help="book id, or its title (or part of it)"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="do not ask for confirmation"),
+) -> None:
+    """Take a book out of the graph and the vector indexes.
+
+    Its chunks, extraction and every cache stay, so `lore process BOOK
+    --skip-extract` (or Continue in the library) puts it back.
+    """
+    config = LoreConfig.load()
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    try:
+        target = _one_book(conn, book)
+        book_id = target["id"]
+        saved = get_job(conn, book_id)
+        if saved is not None and is_fresh(saved, datetime.now(timezone.utc)):
+            typer.echo("remove refused: a job is running for this book")
+            raise typer.Exit(1)
+        if not yes and not typer.confirm(
+                f"remove {target['title']!r} from the graph? Its chunks and"
+                " caches stay."):
+            raise typer.Exit(1)
+        kuzu = KuzuStore(config.kuzu_dir / "graph")
+        try:
+            report = remove_book_from_graph(
+                conn, kuzu, LanceStore(config.lancedb_dir), book_id)
+        finally:
+            kuzu.close()
+        if saved is not None:
+            # A finished job would read "ready" for a book that is no longer
+            # in the graph: leave it ready to load again.
+            finish_stage(conn, book_id, "load")
+    finally:
+        conn.close()
+    typer.echo(
+        f"{target['title']}: removed {report.chunks} chunks,"
+        f" {report.rel_edges} relationships, {report.entities_deleted} entities"
+        f" ({report.entities_released} shared entities kept), {report.beats} beats")
 
 
 def _graph_build_key(
@@ -349,15 +723,174 @@ def _load_book_sync(config: LoreConfig, conn, book_id: str, api_key: str | None 
         kuzu.close()
 
 
+class _RunExtractionStage:
+    """Today's extraction, wrapped as a pipeline stage (the ExtractStage seam).
+
+    Used by `default_stages` until a purpose-built ExtractStage is passed in
+    its place. A Gemini run that stopped early (quota, key, network) becomes
+    a QuotaStop so the job parks; any other stop (e.g. the weekly GPU quota)
+    only records the report, and `process` prints it as incomplete after the
+    load, as before.
+    """
+
+    name = "extract"
+
+    def __init__(self, config: LoreConfig, *, resume: bool,
+                 api_key: str | None) -> None:
+        self._config = config
+        self._resume = resume
+        self._api_key = api_key
+        self.report = None
+
+    def total(self, ctx) -> int:
+        return 0
+
+    def run(self, ctx, job_ctl) -> None:
+        job_ctl.advance(0)
+        # Looked up at call time, so tests may patch `lore.cli.run_extraction`.
+        self.report = run_extraction(
+            self._config, ctx.conn, ctx.book_id, resume=self._resume,
+            on_event=lambda message: typer.echo(f"       {message}"),
+            api_key=self._api_key,
+        )
+        if self._config.extraction_provider == "gemini" and self.report.stopped_reason:
+            # Loading a half-extracted book would spend adjudication requests
+            # on questions the finished book asks differently.
+            raise QuotaStop(self.report.stopped_reason)
+
+
+def _load_and_relink(config: LoreConfig, conn, book_id: str,
+                     api_key: str | None):
+    """A graph load, then the beats' entity names (and the codex's entity
+    ids) re-pointed at the new ids.
+
+    Beats store names, so a load that merges or splits entities moves them
+    without any request. Both lookups are at call time (tests patch them).
+    """
+    report = _load_book_sync(config, conn, book_id, api_key=api_key)
+    _relink_beats(config, conn)
+    _relink_codex(config, conn)
+    return report
+
+
+def _relink_beats(config: LoreConfig, conn) -> None:
+    from lore.beats.store import relink
+
+    path = config.kuzu_dir / "graph"
+    if not path.exists() or conn.execute(
+            "SELECT 1 FROM beats LIMIT 1").fetchone() is None:
+        return
+    graph = KuzuStore(path, read_only=True)
+    try:
+        relink(conn, graph)
+    finally:
+        graph.close()
+
+
+def _relink_codex(config: LoreConfig, conn) -> None:
+    from lore.codex.store import relink
+
+    path = config.kuzu_dir / "graph"
+    if not path.exists() or conn.execute(
+            "SELECT 1 FROM codex_summaries LIMIT 1").fetchone() is None:
+        return
+    graph = KuzuStore(path, read_only=True)
+    try:
+        relink(conn, graph)
+    finally:
+        graph.close()
+
+
+def default_stages(config: LoreConfig, *, skip_extract: bool = False,
+                   resume: bool = False, api_key: str | None = None,
+                   extract_stage=None) -> list:
+    """The stages `lore process` runs, in order.
+
+    `extract_stage` is the seam for extraction: pass a pipeline Stage named
+    "extract" to use it; None wraps today's `run_extraction`. With
+    `skip_extract` there is no extract stage at all.
+    """
+    stages: list = [ChunkStage()]
+    if not skip_extract:
+        if extract_stage is None:
+            extract_stage = (
+                ExtractStage(api_key=api_key,
+                             on_event=lambda m: typer.echo(f"       {m}"))
+                if config.extraction_provider == "gemini" else
+                _RunExtractionStage(config, resume=resume, api_key=api_key))
+        stages.append(extract_stage)
+    load_stage = LoadStage(
+        # Looked up at call time, so tests may patch `lore.cli._load_book_sync`.
+        lambda cfg, conn, book_id: _load_and_relink(cfg, conn, book_id, api_key))
+    stages.append(load_stage)
+    # New answers apply on one more (free) load, right after the request.
+    stages.append(DisambiguateStage(reload=load_stage.reload))
+    stages.append(BeatsStage())
+    stages.append(CodexStage())
+    return stages
+
+
+def move_stages(config: LoreConfig, world_id: int, *,
+                api_key: str | None = None) -> list:
+    """The stages of a move to `world_id`: out of the graph, new world, load
+    into it, beats rebuilt from their cache, the codex of both worlds rebuilt
+    (see orchestrator/move.py)."""
+
+    def load(cfg, conn, book_id):
+        report = _load_and_relink(cfg, conn, book_id, api_key)
+        _set_status(conn, book_id, "graphed")
+        return report
+
+    return [RemoveStage(), ReassignStage(world_id), LoadStage(load), BeatsStage(),
+            CodexStage(all_worlds=True)]
+
+
+def _set_status(conn, book_id: str, status: str) -> None:
+    with conn:
+        conn.execute("UPDATE books SET status = ? WHERE id = ?", (status, book_id))
+
+
+class _Recording:
+    """Wraps a stage to keep the exception that failed it.
+
+    run_book stores a failure as text on the job row; `process` needs the
+    exception itself to tell a half-loaded graph from an ordinary failure.
+    """
+
+    def __init__(self, stage) -> None:
+        self._stage = stage
+        self.name = stage.name
+        self.error: Exception | None = None
+
+    def total(self, ctx) -> int:
+        return self._stage.total(ctx)
+
+    def run(self, ctx, job_ctl) -> None:
+        try:
+            self._stage.run(ctx, job_ctl)
+        except Exception as exc:  # noqa: BLE001 - re-raised for the runner
+            if not isinstance(exc, QuotaStop):
+                self.error = exc
+            raise
+
+
 @app.command()
 def process(
     book_id: str,
-    resume: bool = typer.Option(False, "--resume", help="skip completed work units"),
+    resume: bool = typer.Option(
+        False, "--resume",
+        help="continue the saved job (skips completed work units and stages)"),
     skip_extract: bool = typer.Option(
         False, "--skip-extract", help="reload the graph from existing artifacts"
     ),
+    force: bool = typer.Option(
+        False, "--force",
+        help="start even though the Gemini allowance has not reset yet"),
 ) -> None:
     """Extract, resolve entities, and load the graph for a book.
+
+    Progress is saved per book (see `lore books`): a run stopped by the
+    daily Gemini allowance resumes from where it stopped.
 
     Note: even with --skip-extract, loading re-runs the resolver's
     adjudication against whatever the graph already holds, so a reload
@@ -372,45 +905,64 @@ def process(
     )
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
-    extraction = None
     try:
-        if not skip_extract:
-            extraction = run_extraction(
-                config, conn, book_id, resume=resume,
-                on_event=lambda message: typer.echo(f"       {message}"),
-                api_key=api_key,
-            )
-        # A Gemini run stops when no model can serve (quota, key, network).
-        # Loading the half-extracted book now would spend adjudication
-        # requests on questions the finished book will ask differently, so
-        # the load waits for --resume.
-        halted = (extraction is not None and config.extraction_provider == "gemini"
-                  and bool(extraction.stopped_reason))
-        if not halted:
-            report = _load_book_sync(config, conn, book_id, api_key=api_key)
-    except PartialLoadError as exc:
-        # The graph committed but the vector write did not: the book is
-        # genuinely half-loaded. Never report success or mark it ready —
-        # a plain re-run repairs it because the load is idempotent.
-        typer.echo(f"process failed: {exc}")
-        typer.echo(
-            f"book {book_id} is NOT fully processed — re-run "
-            f"`lore process {book_id} --skip-extract` to repair it"
-        )
-        raise typer.Exit(1)
-    except (ValueError, RuntimeError) as exc:
-        typer.echo(f"process failed: {exc}")
-        raise typer.Exit(1)
+        # The job row references the book, so an unregistered id is refused
+        # here with a message rather than as a foreign-key error.
+        if conn.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone() is None:
+            typer.echo(f"process failed: unknown book {book_id} (see `lore books`)")
+            raise typer.Exit(1)
+        saved = get_job(conn, book_id)
+        # A saved, unfinished job means finished extraction units are skipped.
+        resume_units = resume or (saved is not None and saved.state != DONE)
+        stages = [_Recording(stage) for stage in default_stages(
+            config, skip_extract=skip_extract, resume=resume_units, api_key=api_key)]
+        try:
+            job = run_book(conn, config, book_id, stages, force=force)
+        except JobRefused as exc:
+            typer.echo(f"process refused: {exc}")
+            if "resets at" in str(exc):
+                typer.echo("pass --force to try anyway")
+            raise typer.Exit(1)
+        by_name = {s.name: s._stage for s in stages}
+        failure = next((s.error for s in stages if s.error is not None), None)
+        if job.state == FAILED:
+            if isinstance(failure, PartialLoadError):
+                # The graph committed but the vector write did not: the book is
+                # genuinely half-loaded. Never report success or mark it ready —
+                # a plain re-run repairs it because the load is idempotent.
+                typer.echo(f"process failed: {failure}")
+                typer.echo(
+                    f"book {book_id} is NOT fully processed — re-run "
+                    f"`lore process {book_id} --skip-extract` to repair it"
+                )
+            else:
+                typer.echo(f"process failed: {failure or job.stopped_reason}")
+            raise typer.Exit(1)
     finally:
         conn.close()
-    if halted:
-        typer.echo(f"extraction stopped early — {extraction.stopped_reason}")
-        typer.echo(
-            f"extraction: {extraction.units_completed}/{extraction.units_total}"
-            f" units run; the graph was NOT loaded. Rerun `lore process"
-            f" {book_id} --resume` to finish it."
-        )
+    extraction = getattr(by_name.get("extract"), "report", None)
+    load_stage = by_name["load"]
+    if job.state == WAITING_QUOTA:
+        if job.stage == "extract" and extraction is not None:
+            typer.echo(f"extraction stopped early — {extraction.stopped_reason}")
+            typer.echo(
+                f"extraction: {extraction.units_completed}/{extraction.units_total}"
+                f" units run; the graph was NOT loaded. Rerun `lore process"
+                f" {book_id} --resume` to finish it."
+            )
+        else:
+            typer.echo(f"process paused — {job.stopped_reason}")
+        if job.resumable_at is not None:
+            typer.echo(
+                f"allowance resets at {job.resumable_at.astimezone():%H:%M}"
+                f" (your local time); then run `lore process {book_id} --resume`")
         raise typer.Exit(1)
+    report = load_stage.report
+    if report is None:
+        # Nothing ran: the job was already past load. Say where it stands.
+        typer.echo(f"{book_id}: nothing left to do")
+        _mark_graphed(config, book_id)
+        return
     typer.echo(
         # "canonical" because each merged alias is ALSO persisted as its own
         # node, linked by ALIAS_OF: `lore graph` counts those too, so the
@@ -497,6 +1049,10 @@ def process(
     # Success path only: every failure above has already exited non-zero.
     # Spec 5. `ask` does not gate on this (it asks the graph itself), so a
     # book loaded before this line existed stays queryable without a backfill.
+    _mark_graphed(config, book_id)
+
+
+def _mark_graphed(config: LoreConfig, book_id: str) -> None:
     conn = open_db(config.sqlite_path)
     try:
         conn.execute("UPDATE books SET status = 'graphed' WHERE id = ?", (book_id,))
@@ -660,6 +1216,12 @@ def ask(
     baseline: bool = typer.Option(
         False, "--baseline", help="answer from vector search alone, no graph"
     ),
+    depth: str = typer.Option(
+        "auto", "--depth",
+        help="auto (the question decides), deep (a sectioned chapter: many"
+             " requests) or focused (one short answer)"),
+    world: str | None = typer.Option(
+        None, "--world", help="answer from this world only (a name or an id)"),
 ) -> None:
     """Answer a question from the knowledge graph, with citations.
 
@@ -679,6 +1241,9 @@ def ask(
         # question still embeds to a vector, and Task 9's `lore ask ""`
         # came back with a confident answer about Jonathan Small.
         typer.echo("ask failed: the question is blank; ask a question in words.")
+        raise typer.Exit(2)
+    if depth not in ("auto", "deep", "focused"):
+        typer.echo("ask failed: --depth is one of auto, deep or focused.")
         raise typer.Exit(2)
     config = LoreConfig.load()
 
@@ -741,6 +1306,15 @@ def ask(
         lance = LanceStore(config.lancedb_dir)
         models = make_query_models(config, api_key,
                                    recorder=recorder_for(config.sqlite_path))
+        # A deep answer starts no further section once the ledger says every
+        # synthesis model is spent: the same check lore_search gives it.
+        from lore.mcp import tools as mcp_tools
+        models = dataclasses.replace(
+            models, spend_ok=lambda: mcp_tools._check_synthesis_budget(config) is None)
+        # Only what was asked for, so a plain `lore ask` is what it was.
+        scope = {} if world is None else {"world": world}
+        if depth != "auto":
+            scope["depth"] = depth
 
         async def _run():
             # The close MUST share the loop the requests ran on (see
@@ -748,7 +1322,7 @@ def ask(
             # raises "Event loop is closed" after a successful answer.
             try:
                 return await answer_question(conn, kuzu, lance, question, models,
-                                             baseline=baseline)
+                                             baseline=baseline, **scope)
             finally:
                 await models.aclose()
 

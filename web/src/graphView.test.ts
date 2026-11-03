@@ -1,9 +1,9 @@
-import { deriveGraph, unknownKinds } from "./graphView";
+import { deriveGraph, nodeLabel, unknownKinds, worldsIn } from "./graphView";
 import { askReducer, initialState } from "./askReducer";
 import two from "./fixtures/two-part.json";
-import type { AskEvent, Edge } from "./types";
+import type { AskEvent, Edge, SubgraphData } from "./types";
 
-const opts = { hiddenBooks: new Set<string>(), hoverChunk: null, expansions: [] };
+const opts = { hiddenBooks: new Set<string>(), hoverChunks: [], expansions: [] };
 const edge = (s: string, o: string, chunk: string, book = "b1", p = "KILLS"): Edge => ({ subject: s.toUpperCase(), predicate: p,
   predicate_raw: p, object: o.toUpperCase(), evidence: "", confidence: 1, book_id: book, chapter_seq: 1, chunk_id: chunk, subject_id: s, object_id: o });
 
@@ -41,7 +41,7 @@ test("after the answer, cited links glow and the rest fade; hover marks hot", ()
     claims: [{ text: "t", passage: 1, quote: "q" }], passages: [{ n: 1, chunk_id: "c2", book_id: "b1", book_title: null, chapter_seq: 1, text: "" }],
     edges: [], seeds: [] };
   const s = stateWith([...base, { type: "answer", t: 1, result }]);
-  const v = deriveGraph(s, { ...opts, hoverChunk: "c2" });
+  const v = deriveGraph(s, { ...opts, hoverChunks: ["c2"] });
   const hd = v.links.find((l) => l.target === "d")!;
   expect(hd.state).toBe("cited");
   expect(hd.hot).toBe(true);
@@ -147,4 +147,153 @@ test("a kinds map gives search-edge endpoints their kind and books", () => {
   expect(x.books).toEqual(["b2", "b3"]);
   expect(v.nodes.find((n) => n.id === "h")!.kind).toBe("Character"); // a seed's own kind stands
   expect(unknownKinds(v)).toEqual([]);
+});
+
+test("an overview draws its nodes and links with their kinds and marks nothing expanded", () => {
+  const overview: SubgraphData = { truncated: false, depth: 0, nodes: [
+    { id: "h", name: "Holmes", kind: "Character", books: ["b1"] }, { id: "p", name: "Baker Street", kind: "Place", books: ["b1"] },
+    { id: "w", name: "Watson", kind: "Character", books: ["b1"] }],
+  edges: [{ subject: "Holmes", subject_id: "h", object: "Baker Street", object_id: "p", count: 3, predicates: { LIVES_AT: 3 } },
+    { subject: "Watson", subject_id: "w", object: "Holmes", object_id: "h", count: 2, predicates: { KNOWS: 2 } }] };
+  const v = deriveGraph(initialState(), { ...opts, overview });
+  expect(v.nodes.map((n) => n.id)).toEqual(["h", "p", "w"]);
+  expect(v.nodes.some((n) => n.expanded)).toBe(false);
+  expect(v.nodes.find((n) => n.id === "p")!.kind).toBe("Place");
+  expect(v.links.map((l) => l.id).sort()).toEqual(["h<->p", "h<->w"]);
+  expect(v.overview).toBe(true);
+  // Overview links are faint and unlabelled: 40 hubs with labelled links are a hairball.
+  expect(v.links.every((l) => l.state === "faint" && l.label === "")).toBe(true);
+  expect(unknownKinds(v)).toEqual([]);
+  // An expansion on top of the overview still marks its own root.
+  const more = deriveGraph(initialState(), { ...opts, overview, expansions: [{ truncated: false, depth: 1,
+    nodes: [{ id: "w", name: "Watson", kind: "Character", books: ["b1"] }, { id: "m", name: "Mary", kind: "Character", books: ["b1"] }],
+    edges: [{ subject: "Watson", subject_id: "w", object: "Mary", object_id: "m", count: 1, predicates: { MARRIES: 1 } }] }] });
+  expect(more.nodes.filter((n) => n.expanded).map((n) => n.id)).toEqual(["w"]);
+  expect(more.links).toHaveLength(3);
+  // The expansion's links keep their labels and normal styling, even a pair the overview also drew.
+  expect(more.links.find((l) => l.id === "m<->w")).toMatchObject({ state: "shown", label: "marries" });
+  expect(more.links.find((l) => l.id === "h<->p")).toMatchObject({ state: "faint", label: "" });
+  const again = deriveGraph(initialState(), { ...opts, overview, expansions: [{ truncated: false, depth: 1,
+    nodes: [{ id: "w", name: "Watson", kind: "Character", books: ["b1"] }, { id: "h", name: "Holmes", kind: "Character", books: ["b1"] }],
+    edges: [{ subject: "Watson", subject_id: "w", object: "Holmes", object_id: "h", count: 2, predicates: { KNOWS: 2 } }] }] });
+  expect(again.links.find((l) => l.id === "h<->w")).toMatchObject({ state: "shown", label: "knows ×2" });
+  // Without an overview nothing is quiet.
+  expect(deriveGraph(stateWith(base), opts).overview).toBe(false);
+});
+
+test("hovering several chunks marks links of each as hot", () => {
+  const s = stateWith(base);
+  const links = deriveGraph(s, opts).links.filter((l) => l.chunkIds.length);
+  const a = links[0], b = links.find((l) => !l.chunkIds.some((c) => a.chunkIds.includes(c)))!;
+  const one = deriveGraph(s, { ...opts, hoverChunks: [a.chunkIds[0]] }).links.filter((l) => l.hot);
+  const both = deriveGraph(s, { ...opts, hoverChunks: [a.chunkIds[0], b.chunkIds[0]] }).links;
+  expect(both.find((l) => l.id === a.id)!.hot).toBe(true);
+  expect(both.find((l) => l.id === b.id)!.hot).toBe(true);
+  expect(one.some((l) => l.id === b.id)).toBe(false);
+});
+
+const A = { id: 1, name: "Alpha Saga" }, B = { id: 2, name: "Beta Realm" };
+const subOf = (nodes: SubgraphData["nodes"]): SubgraphData => ({ nodes, edges: [], truncated: false, depth: 0 });
+
+test("all-worlds: overview nodes keep their world, so same-named characters stay two marked nodes", () => {
+  const overview = subOf([{ id: "a_zed", name: "Zed Quill", kind: "Character", books: ["a1"], world: A },
+    { id: "b_zed", name: "Zed Quill", kind: "Character", books: ["b1"], world: B }]);
+  const v = deriveGraph(stateWith([]), { ...opts, overview });
+  expect(v.nodes.map((n) => [n.id, n.world?.name])).toEqual([["a_zed", "Alpha Saga"], ["b_zed", "Beta Realm"]]);
+  expect(v.nodes.map(nodeLabel)).toEqual(["Zed Quill · Alpha Saga", "Zed Quill · Beta Realm"]);
+  expect(worldsIn(v)).toEqual([A, B]);
+});
+
+test("a single world's nodes carry no world, so nothing is marked or listed", () => {
+  const v = deriveGraph(stateWith([]), { ...opts, overview: subOf([{ id: "a_zed", name: "Zed Quill", kind: "Character", books: ["a1"] }]) });
+  expect(v.nodes[0].world).toBeUndefined();
+  expect(nodeLabel(v.nodes[0])).toBe("Zed Quill");
+  expect(worldsIn(v)).toEqual([]);
+});
+
+test("a search node learns its world from the entity lookup", () => {
+  const v = deriveGraph(stateWith(base), { ...opts, kinds: { x: { kind: "Place", books: ["b2"], world: B } } });
+  expect(v.nodes.find((n) => n.id === "x")!.world).toEqual(B);
+  expect(v.nodes.find((n) => n.id === "h")!.world).toBeUndefined();
+});
+
+// ---- a lens-part stream: the graph is staged part by part, before any answer text ---------------------
+
+import * as lens from "./fixtures/lens";
+
+test("replaying a lens-part stream, the graph gains nodes part by part before the answer event", () => {
+  const counts: number[] = [];
+  let state = stateWith([]);
+  for (const e of lens.full) {
+    if (e.type === "answer") break;
+    state = askReducer(state, e);
+    if (e.type === "seeds" || e.type === "edges") counts.push(deriveGraph(state, opts).nodes.length);
+  }
+  // Nothing has been answered, yet the view has every part's entities, each part adding its own.
+  expect(state.result).toBeNull();
+  expect(counts[0]).toBeGreaterThan(0);
+  expect(counts.at(-1)).toBeGreaterThan(counts[0]);
+  expect(counts).toEqual([...counts].sort((a, b) => a - b));
+  const view = deriveGraph(state, opts);
+  expect(view.nodes.map((n) => n.id).sort()).toEqual(["joss", "mara", "rin", "tam"]);
+  expect(view.links.length).toBe(2);
+});
+
+test("a lens part's seeds take the part's own colour, and part indices are the parts event's", () => {
+  const state = lens.head.reduce(askReducer, initialState("q"));
+  expect(state.subQuestions).toEqual(lens.LENSES);
+  expect(state.lensOf).toEqual([0, 0, 1, 1]);
+  const view = deriveGraph(state, opts);
+  const part = (id: string) => view.nodes.find((n) => n.id === id)!.seedPart;
+  expect([part("rin"), part("tam"), part("joss")]).toEqual([0, 1, 1]);   // mara was first found by part 0
+  expect(part("mara")).toBe(0);
+});
+
+test("the staged replay of a lens stream shows graph nodes before the answer is dispatched", async () => {
+  const { createScheduler } = await import("./scheduler");
+  vi.useFakeTimers();
+  let state = initialState("q");
+  const sizes: { type: string; nodes: number }[] = [];
+  const s = createScheduler((e) => { state = askReducer(state, e); sizes.push({ type: e.type, nodes: deriveGraph(state, opts).nodes.length }); },
+    { reduceMotion: false });
+  lens.full.forEach((e) => s.push(e));
+  await vi.runAllTimersAsync();
+  const at = sizes.findIndex((x) => x.type === "answer");
+  expect(sizes[at - 1].nodes).toBe(4);
+  expect(sizes.slice(0, at).some((x) => x.nodes > 0 && x.nodes < 4)).toBe(true);   // staged, not all at once
+  vi.useRealTimers();
+});
+
+// The explorer's marks and filters.
+const mini = (nodes: [string, string, string[]][], links: [string, string][]): SubgraphData => ({ truncated: false, depth: 1,
+  nodes: nodes.map(([id, kind, books]) => ({ id, name: id.toUpperCase(), kind, books })),
+  edges: links.map(([s, o]) => ({ subject: s, subject_id: s, object: o, object_id: o, count: 1, predicates: { KNOWS: 1 } })) });
+const lib = mini([["a", "Character", ["b1"]], ["p", "Place", ["b1"]], ["c", "Character", ["b2"]]], [["a", "p"], ["a", "c"]]);
+
+test("the selected node, the open edge and the path are marked", () => {
+  const v = deriveGraph(initialState(), { ...opts, overview: lib, selected: "a", edge: { a: "p", b: "a" }, path: { nodes: ["a", "c"], hops: [{ from: "c", to: "a" }] } });
+  expect(v.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(["a"]);
+  expect(v.nodes.filter((n) => n.onPath).map((n) => n.id)).toEqual(["a", "c"]);
+  expect(v.links.find((l) => l.picked)!.id).toBe("a<->p");
+  expect(v.links.find((l) => l.onPath)!.id).toBe("a<->c");
+});
+
+test("a kind filter hides those nodes and the links to them", () => {
+  const v = deriveGraph(initialState(), { ...opts, overview: lib, filters: { kinds: new Set(["Place"]), books: new Set() } });
+  expect(v.nodes.map((n) => n.id)).toEqual(["a", "c"]);
+  expect(v.links.map((l) => l.id)).toEqual(["a<->c"]);
+  expect(v.hiddenByFilters).toBe(1);
+});
+
+test("a book filter hides nodes only in hidden books; the selected node and the path stay", () => {
+  const f = { kinds: new Set<string>(), books: new Set(["b2"]) };
+  expect(deriveGraph(initialState(), { ...opts, overview: lib, filters: f }).nodes.map((n) => n.id)).toEqual(["a", "p"]);
+  expect(deriveGraph(initialState(), { ...opts, overview: lib, filters: f, selected: "c" }).nodes.map((n) => n.id)).toEqual(["a", "p", "c"]);
+  expect(deriveGraph(initialState(), { ...opts, overview: lib, filters: f, path: { nodes: ["c"], hops: [] } }).nodes.map((n) => n.id)).toEqual(["a", "p", "c"]);
+});
+
+test("no filters changes nothing", () => {
+  const v = deriveGraph(initialState(), { ...opts, overview: lib, filters: { kinds: new Set(), books: new Set() } });
+  expect(v.nodes).toHaveLength(3);
+  expect(v.hiddenByFilters).toBe(0);
 });

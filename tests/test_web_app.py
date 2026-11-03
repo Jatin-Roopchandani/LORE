@@ -99,3 +99,11 @@ def test_stdio_command_quotes_the_lore_path(client, monkeypatch):
     monkeypatch.setattr(app_module, "_lore_executable", lambda: "/home/a b/lore")
     body = client.get("/api/mcp").json()
     assert body["stdio_command"] == "claude mcp add lore -- '/home/a b/lore' mcp"
+
+
+def test_overview_endpoint(client):
+    body = client.get("/api/overview", params={"limit": 40}).json()
+    assert [n["id"] for n in body["nodes"]] == ["e1", "e2"]
+    assert body["edges"][0]["subject_id"] == "e1"
+    assert body["truncated"] is False and body["depth"] == 0
+    assert client.get("/api/overview").status_code == 200

@@ -27,11 +27,24 @@ answers anyway. Whoever builds `generate` for synthesis must pass a
 from __future__ import annotations
 
 import re
-from typing import Awaitable, Callable, Iterable, Sequence
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel
 
-from lore.query.models import Answer, Claim, EdgeRow, Evidence, Passage
+from lore.query import interpret
+from lore.query import write as write_module
+from lore.query.models import (
+    Answer, BookInfo, Claim, EdgeRow, Evidence, Passage, ProseSentence, SectionSpec,
+)
+from lore.query.position import order_passages
+from lore.query.write import (
+    SHORT_ANSWER_HEADING, assemble, book_infos, clean_gaps, compose_answer, compose_text, coverage_gaps, paragraphs_by_book, part_texts, split_items,
+    valid_unanswered, verify_prose, write_answer,
+)
+
+if TYPE_CHECKING:  # write.py never imports this module, so no cycle at runtime
+    from lore.query.write import Sentence
 
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
 
@@ -114,6 +127,39 @@ NO_RESTATE = True
 _NO_RESTATE_RULE = """Every claim must add a fact the earlier claims do not already state. Do not
 say the same thing twice, even in other words or from a different passage;
 if two passages state one fact, make one claim and quote the clearer one.
+"""
+# ATTRIBUTE_SPEECH (2026-10-28): a claim drawn from a character's own speech
+# or first-person story was written as plain fact -- "the killing was the
+# result of Tonga's instincts" from Small's confession. The claim now names
+# whose account it is. Off gives the earlier prompt byte for byte.
+ATTRIBUTE_SPEECH = True
+_ATTRIBUTE_SPEECH_RULE = """When the quote is a character speaking, or telling their own story in the
+first person, the claim is that character's account: say whose it is
+("<name> says ...", "according to <name> ..."), never state it as plain fact.
+"""
+# STRICT_LINKS (2026-10-28): FULL_ANSWERS asks for reasons, and a claim joined
+# two facts from one passage with a cause it never gave -- "Hope targeted
+# Drebber because they were rivals in love" from a passage saying only that
+# they were rivals. The claims rule and the check now both name the
+# connecting words. Off gives the earlier prompts byte for byte.
+STRICT_LINKS = True
+_STRICT_LINKS_RULE = """Give a reason, motive or consequence only when the quote itself states it.
+Two facts from one passage stay two claims: never join them with "because",
+"so", "since", "in order to" or "which led to" unless the passage says so.
+"""
+_STRICT_LINKS_CHECK = """Connecting words count: a "because", "so", "since", "in order to" or
+"which led to" in a claim that the cited passage does not state makes the
+claim "{not_supported}", even when both facts it joins are true.
+"""
+# ROLE_COVERAGE (2026-10-28): asked about a kind of character (a role such as
+# opponents, allies or victims), the claims named only the most prominent one
+# although the passages showed others in that role. General by design: no
+# genre, book or role is named. Off gives the earlier prompt byte for byte.
+ROLE_COVERAGE = True
+_ROLE_COVERAGE_RULE = """If the question asks about a kind of character or a role rather than a named
+person, make claims for every character the passages show in that role,
+not only the most prominent one, including anyone whose earlier actions
+set the events in motion.
 """
 _PART_CONTEXT = "This is one part of the larger question: {part_of}\nAnswer only this part.\n"
 _FULL_PART_CONTEXT = ("This is one part of the larger question: {part_of}\n"
@@ -216,13 +262,14 @@ def verify_claims(
     return kept, dropped
 
 
-def _capped(synthesis: Synthesis) -> Synthesis:
-    """The first MAX_CLAIMS claims the model wrote; the rest are ignored.
+def _capped(synthesis: Synthesis, limit: int | None = None) -> Synthesis:
+    """The first MAX_CLAIMS claims the model wrote (`limit` of them for a deep
+    answer's section); the rest are ignored.
 
     Applied before verification, so the bound is on what the model proposed
     and the choice never depends on which quotes happen to verify.
     """
-    return synthesis.model_copy(update={"claims": synthesis.claims[:MAX_CLAIMS]})
+    return synthesis.model_copy(update={"claims": synthesis.claims[:limit or MAX_CLAIMS]})
 
 
 # Near-duplicate claims (Task 11b). Per-part synthesis lets two sub-questions
@@ -334,16 +381,139 @@ def _relation_line(edge: EdgeRow, n: int, book_titles: dict[str, str] | None) ->
             f"({_title(edge.book_id, book_titles)}, chapter {edge.chapter_seq})")
 
 
+# STORY_ORDER, claims step (2026-10-28): a question about change got claims
+# only from the latest passages -- the step read its passages in rank order
+# with no positions, so it had no early and late to draw from. With
+# write.STORY_ORDER it reads them in story order, labelled, under this rule.
+_CHANGE_RULE = """If the question asks how something changed, developed or progressed, give
+claims that show the state at different points in the story, from the
+earliest passages to the latest, including what characters show or do and
+not only what is said outright.
+"""
+
+
+# READINGS, claims step: a reading rests on facts about what characters do, so
+# the claims must include them, not only what is said outright.
+_ACTIONS_RULE = """Include claims about what characters do, choose and how they behave toward
+each other, not only what they say or what the narrator states.
+"""
+
+
+# TIMELINE (lore/query/timeline.py): beats are short notes on moments from
+# across the whole story for the question's entities. They are a map of where
+# the passages are, never evidence: a claim still quotes a numbered passage.
+_TIMELINE_BLOCK = """
+Story timeline: short notes on moments from across the whole story, for the
+people and things the question is about, in story order. Each line gives the
+number of the passage that holds the moment, where it falls in the story and
+who it is about. The timeline is a map, not evidence. Use it to see the whole
+span of the story, from the earliest moment to the latest and what lies
+between, then read those numbered passages. A claim still needs a quote copied
+word for word from a numbered passage; never quote a timeline line, and never
+make a claim from a timeline line alone.
+{lines}
+"""
+
+
+def _timeline_block(evidence: Evidence, book_titles: dict[str, str] | None,
+                    books: dict[str, BookInfo] | None) -> str:
+    """The "Story timeline" block, or "" when no beat's passage is shown. A
+    beat whose passage the evidence cap cut is left out: it could not be cited."""
+    if not evidence.timeline:
+        return ""
+    order = order_passages(evidence.passages, write_module.book_infos(book_titles, books))
+    place = {pos.n: (index, pos) for index, pos in enumerate(order.ordered)}
+    number = {p.chunk_id: p.n for p in evidence.passages}
+    shown = [(place[number[b.chunk_id]], b) for b in evidence.timeline if b.chunk_id in number]
+    shown.sort(key=lambda item: item[0][0])  # stable: a passage's beats stay in order
+    lines = [f"- [{pos.n}] ({pos.label(detail=True)}) {b.subject}: {b.text}"
+             for (_, pos), b in shown]
+    return _TIMELINE_BLOCK.format(lines="\n".join(lines)) if lines else ""
+
+
+# CODEX (lore/query/codexslice.py): the same kind of map as the timeline, from
+# the codex entries of the question's entities, grouped by aspect.
+_CODEX_BLOCK = """
+Codex: short notes on what the books establish about the people and things the
+question is about, each under the aspect it belongs to, in story order. Each
+line gives the number of the passage that holds the statement, where it falls
+in the story, who it is about and the aspect. The codex is a map, not
+evidence. Use it to see which aspects exist and where the passages are, then
+read those numbered passages. A claim still needs a quote copied word for word
+from a numbered passage; never quote a codex line, and never make a claim from
+a codex line alone.
+{lines}
+"""
+MAX_CODEX_LINES = 40
+
+
+def _codex_block(evidence: Evidence, book_titles: dict[str, str] | None,
+                 books: dict[str, BookInfo] | None) -> str:
+    """The "Codex" block, or "" when no line's passage is shown. A line whose
+    passage the evidence cap cut is left out: it could not be cited."""
+    if not evidence.codex:
+        return ""
+    order = order_passages(evidence.passages, write_module.book_infos(book_titles, books))
+    place = {pos.n: (index, pos) for index, pos in enumerate(order.ordered)}
+    number = {p.chunk_id: p.n for p in evidence.passages}
+    shown = [(place[number[l.chunk_id]], l) for l in evidence.codex if l.chunk_id in number]
+    shown.sort(key=lambda item: item[0][0])
+    lines = [f"- [{pos.n}] ({pos.label(detail=True)}) {l.subject}, {l.aspect}: {l.text}"
+             for (_, pos), l in shown[:MAX_CODEX_LINES]]
+    return _CODEX_BLOCK.format(lines="\n".join(lines)) if lines else ""
+
+
+# A deep answer's section (lore/query/deep.py): one part of a long answer, asked
+# for in full.
+_SECTION_CONTEXT = ("This is one section of a long, detailed answer to the larger question: "
+                    "{part_of}\n"
+                    "Cover this section fully, with every distinct fact the passages establish "
+                    "about it, in as many claims as they support; the other sections are "
+                    "written separately.\n")
+# The same, for a section that answers one aspect (`focus`) of the larger question:
+# only the facts that bear on that aspect and on the question are kept.
+_SECTION_FOCUS_CONTEXT = ("This is one section of a long, detailed answer to the larger question: "
+                          "{part_of}\n"
+                          "This section answers one aspect of it: {focus}\n"
+                          "Keep only facts that bear on this aspect and on the larger question; "
+                          "skip incidental plot detail and anything that only describes the "
+                          "setting, however vivid. Cover the aspect fully, with every distinct "
+                          "fact the passages establish about it, in as many claims as they "
+                          "support; the other sections are written separately.\n")
+# Added to a section's claims rule when the larger question is about named entities:
+# a fact about someone or something else is off the question, however well it fits the aspect.
+SUBJECT_RULE = ("Every fact kept must also bear on {subject}, whom or which the larger question is "
+                "about: skip facts that are only about other people or things, even when they fit "
+                "the aspect.\n")
+
+
+def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
+                   books: dict[str, BookInfo] | None) -> str:
+    if not write_module.STORY_ORDER:
+        return "\n\n".join(
+            f"[{p.n}] ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})\n{p.text}"
+            for p in evidence.passages)
+    order = order_passages(evidence.passages, write_module.book_infos(book_titles, books))
+    by_n = {p.n: p for p in evidence.passages}
+    block = "\n\n".join(f"[{pos.n}] ({pos.label(detail=True)})\n{by_n[pos.n].text}"
+                         for pos in order.ordered)
+    note = order.note()
+    return f"Passages are in story order.{' ' + note if note else ''}\n\n{block}"
+
+
 def _build_prompt(
     question: str, evidence: Evidence, book_titles: dict[str, str] | None = None,
     checklist: Sequence[str] = (), part_of: str | None = None,
+    books: dict[str, BookInfo] | None = None,
+    role: str = "part",
+    section: SectionSpec | None = None,
 ) -> str:
+    """`role`: what the part is for an interpretive answer (interpret.py): a
+    "lens" of an interpretive part, a "beyond" part, or an ordinary "part".
+    `section`: the part is a section of a deep answer (deep.py)."""
     lines = _relation_lines(evidence, book_titles)
     relations = _RELATIONS.format(lines="\n".join(lines)) if lines else ""
-    passages = "\n\n".join(
-        f"[{p.n}] ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})\n{p.text}"
-        for p in evidence.passages
-    )
+    passages = _passage_block(evidence, book_titles, books)
     truncation = (
         "\nSome evidence was truncated to fit; answer from what is shown.\n"
         if evidence.truncated else ""
@@ -356,12 +526,28 @@ def _build_prompt(
         (_FULL_PART_CONTEXT if FULL_ANSWERS else _PART_CONTEXT).format(part_of=part_of)
         if part_of else ""
     )
+    if part_of and role == "lens":
+        context = interpret.LENS_CONTEXT.format(part_of=part_of)
+    elif part_of and role == "beyond":
+        context = interpret.BEYOND_CONTEXT.format(part_of=part_of)
+    elif section is not None:
+        context = (_SECTION_FOCUS_CONTEXT.format(part_of=section.part_of, focus=section.focus)
+                   if section.focus else _SECTION_CONTEXT.format(part_of=section.part_of))
+        if section.subject:
+            context += SUBJECT_RULE.format(subject=" and ".join(section.subject))
     return _PROMPT.format(min_words=MIN_QUOTE_WORDS, min_segment=MIN_SEGMENT_WORDS,
                           facts_rule=(_FULL_FACTS_RULE if FULL_ANSWERS else _FACTS_RULE)
-                          + (_NO_RESTATE_RULE if NO_RESTATE else ""),
-                          max_claims=MAX_CLAIMS,
+                          + (_NO_RESTATE_RULE if NO_RESTATE else "")
+                          + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else "")
+                          + (_STRICT_LINKS_RULE if STRICT_LINKS else "")
+                          + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else "")
+                          + (_CHANGE_RULE if write_module.STORY_ORDER else "")
+                          + (_ACTIONS_RULE if write_module.readings_on() else ""),
+                          max_claims=section.max_claims if section is not None else MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
-                          relations=relations, passages=passages,
+                          relations=(relations + _timeline_block(evidence, book_titles, books)
+                                     + _codex_block(evidence, book_titles, books)),
+                          passages=passages,
                           truncation=truncation)
 
 
@@ -396,8 +582,16 @@ class Judgement(BaseModel):
     reason: str = ""
 
 
-class Faithfulness(BaseModel):
+class _PlainFaithfulness(BaseModel):
+    """The check's reply as it was before STORY_ORDER (and still is when it
+    is off): the schema asked of the model is part of the request."""
+
     judgements: list[Judgement]
+    sentence_judgements: list[Judgement] = []
+
+
+class Faithfulness(_PlainFaithfulness):
+    gap_judgements: list[Judgement] = []
 
 
 _CHECK_PROMPT = """Check each numbered claim against the one passage it cites.
@@ -417,7 +611,7 @@ name is "{not_supported}". A claim that adds a cause, a motive or a
 consequence the cited passage does not state is "{not_supported}". Judge
 each claim against its own cited passage alone: what another passage says,
 or what you already know about the story, cannot make a claim supported.
-
+{strict_links}
 Return one entry per claim, in the same order, each with its claim number:
 - verdict: "{supported}" or "{not_supported}"
 - reason: at most {max_words} words.
@@ -425,13 +619,97 @@ Return one entry per claim, in the same order, each with its claim number:
 Answer every claim: give exactly {count} entries, numbered 1 to {count}, in order.
 """
 
+_SENTENCES_BLOCK = """
+Sentences:
+{sentences}
+
+Then check each numbered sentence of the written answer against the claims
+it uses (their text and quotes above). "{supported}": those claims,
+together, state everything the sentence says. "{not_supported}": the
+sentence says more than they do. Connecting words count: a "because",
+"so", "later" or "which led to" that no cited claim states makes the
+sentence "{not_supported}". Return these in sentence_judgements, one per
+sentence, numbered 1 to {count} in the claim field, with a verdict and a
+reason of at most {max_words} words.
+"""
+
+# STORY_ORDER (write.STORY_ORDER): the sentence rule judges meaning, not
+# wording, and accepts an order word when the cited claims' positions show
+# that order. What it still refuses is what adds something: a fact, a
+# cause, an order the positions do not show, or a summary that overstates.
+_STORY_SENTENCES_BLOCK = """
+Sentences:
+{sentences}
+
+Then check each numbered sentence of the written answer against the claims
+it uses (their text, quotes and positions above). Judge meaning, not
+wording.
+"{supported}": those claims, together, support what the sentence means.
+- Paraphrase, summary and combining claims are supported when they add
+  nothing.
+- An order word ("at first", "earlier", "later", "by the end", "in the next
+  book") is supported when the positions of the cited claims show that
+  order.
+- Contrast and addition words ("also", "however", "although", "in
+  contrast") never make a sentence "{not_supported}".
+"{not_supported}": the sentence
+- adds a fact, name, number or detail the cited claims do not state;
+- states a cause or consequence ("because", "so", "which led to", "as a
+  result") that no cited claim states;
+- uses an order word that the positions contradict, or that links claims
+  from books whose relative order is unknown;
+- or summarises with more than the claims show, such as "always" or
+  "every" when they show one case or some.
+Return these in sentence_judgements, one per sentence, numbered 1 to
+{count} in the claim field, with a verdict and a reason of at most
+{max_words} words.
+"""
+
+# READINGS: a sentence marked "(reading)" interprets its claims instead of
+# restating them, so it gets this test in place of the one above.
+_READINGS_BLOCK = """
+A sentence marked "(reading)" interprets what its cited claims show
+together; it is not a direct statement of them. Judge a reading by this test
+instead of the one above, and give its verdict in the same
+sentence_judgements entry.
+"{supported}": a careful reader would agree that the cited claims, together,
+fairly support this reading; it is worded visibly as a reading ("suggests",
+"seems", "appears"); and it adds no event, name, number or detail beyond
+the claims.
+"{not_supported}": it overreaches beyond the claims, is stated as plain
+fact, or adds detail.
+"""
+
+# Gaps are statements that the facts leave something out; code shows them
+# only if the check agrees. "supported" means the statement is true.
+_GAPS_BLOCK = """
+Gaps:
+{gaps}
+
+Each gap says the claims above do not cover something the question asks
+about. Judge each against all of the claims above.
+"{supported}": the claims say nothing that answers the gap, so it is a true
+gap.
+"{not_supported}": some claim, or the claims together, do answer it.
+Return these in gap_judgements, one per gap, numbered 1 to {count} in the
+claim field, with a verdict and a reason of at most {max_words} words.
+"""
+
 
 def faithfulness_prompt(
     claims: Sequence[Claim],
     passages: Iterable[Passage],
     book_titles: dict[str, str] | None = None,
+    sentences: Sequence["Sentence"] | None = None,
+    books: dict[str, BookInfo] | None = None,
+    gaps: Sequence[str] | None = None,
+    shape: "interpret.Shape | None" = None,
 ) -> str:
     """The one batched prompt: the cited passages, then the numbered claims.
+
+    `shape`: the interpretive answer's shape (interpret.py). A reading or a
+    counter-case among the sentences is then labelled and given its own test,
+    quoting the viewpoint lines that apply.
 
     PASSAGE BUDGET: every passage some claim cites, once, in full -- and no
     other. Deduplicating matters (several claims usually cite one passage);
@@ -446,21 +724,60 @@ def faithfulness_prompt(
     by_number = {p.n: p for p in passages}
     cited = [by_number[n] for n in sorted({c.passage for c in claims})
              if n in by_number]
-    shown = "\n\n".join(
-        f"[{p.n}] ({_title(p.book_id, book_titles)}, chapter {p.chapter_seq})\n{p.text}"
-        for p in cited
-    )
+    story = write_module.STORY_ORDER
+    order = order_passages(cited, book_infos(book_titles, books)) if story else None
+
+    def head(p: Passage) -> str:
+        return (order.positions[p.n].label(detail=True) if order
+                else f"{_title(p.book_id, book_titles)}, chapter {p.chapter_seq}")
+
+    shown = "\n\n".join(f"[{p.n}] ({head(p)})\n{p.text}" for p in cited)
     items = []
     for number, claim in enumerate(claims, start=1):
         passage = by_number.get(claim.passage)
-        where = (f"[{claim.passage}] ({_title(passage.book_id, book_titles)}, chapter "
-                 f"{passage.chapter_seq})" if passage else f"[{claim.passage}]")
+        where = f"[{claim.passage}] ({head(passage)})" if passage else f"[{claim.passage}]"
         items.append(f"{number}. claim: {claim.text.strip()}\n"
                      f"   cites passage {where}\n"
                      f"   quote: {claim.quote.strip()}")
-    return _CHECK_PROMPT.format(
+    prompt = _CHECK_PROMPT.format(
         passages=shown, claims="\n\n".join(items), count=len(claims),
-        supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+        supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS,
+        strict_links=(_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
+                      if STRICT_LINKS else ""))
+    if order and order.note():
+        prompt += "\n" + order.note() + "\n"
+    if sentences:
+        # Kinds are shown, and a reading's or counter-case's own test given,
+        # only when one is among the sentences: an answer of facts alone is
+        # checked as before.
+        kinds = {getattr(s, "kind", "fact") for s in sentences}
+        if shape is not None:
+            readings = False
+            labelled = bool(kinds & {"reading", "counter"})
+        else:
+            readings = write_module.readings_on() and "reading" in kinds
+            labelled = readings
+
+        def label(s) -> str:
+            return f" ({getattr(s, 'kind', 'fact')})" if labelled else ""
+
+        lines = "\n".join(
+            f"{i}. sentence{label(s)}: {s.text.strip()}\n"
+            f"   uses claims {', '.join(str(k) for k in s.claims)}"
+            for i, s in enumerate(sentences, start=1))
+        prompt += (_STORY_SENTENCES_BLOCK if story else _SENTENCES_BLOCK).format(
+            sentences=lines, count=len(sentences), supported=SUPPORTED,
+            not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+        if readings:
+            prompt += _READINGS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
+        if shape is not None:
+            prompt += interpret.check_blocks(shape, kinds, SUPPORTED, NOT_SUPPORTED)
+        if story and gaps:
+            prompt += _GAPS_BLOCK.format(
+                gaps="\n".join(f"{i}. gap: {g}" for i, g in enumerate(gaps, start=1)),
+                count=len(gaps), supported=SUPPORTED, not_supported=NOT_SUPPORTED,
+                max_words=MAX_REASON_WORDS)
+    return prompt
 
 
 def validated_verdicts(
@@ -492,6 +809,83 @@ def validated_verdicts(
     return verdicts
 
 
+def validated_sentence_verdicts(result, expected: int,
+                                field: str = "sentence_judgements") -> list[bool] | None:
+    """One supported-flag per sentence, or None if the answer does not line
+    up -- the same verifiable-mapping rule as `validated_verdicts`."""
+    items = getattr(result, field, None)
+    if not isinstance(items, list) or not items:
+        return None
+    if [getattr(item, "claim", None) for item in items] != list(range(1, expected + 1)):
+        return None
+    flags: list[bool] = []
+    for item in items:
+        word = _SPACE.sub("_", str(item.verdict).strip().lower().strip(".")).strip("_")
+        if word not in (SUPPORTED, NOT_SUPPORTED):
+            return None
+        flags.append(word == SUPPORTED)
+    return flags
+
+
+def validated_gap_verdicts(result, expected: int) -> list[bool] | None:
+    """One flag per gap (True: the gap is real), under the same rule."""
+    return validated_sentence_verdicts(result, expected, "gap_judgements")
+
+
+@dataclass
+class CheckOutcome:
+    kept: list[Claim]
+    dropped: list[tuple[Claim, str]]
+    ran: bool
+    claim_ok: list[bool]
+    sentence_ok: list[bool] | None
+    # Per gap asked: True when the check agrees the facts leave it open.
+    # None when no gaps were asked or the verdicts did not line up.
+    gap_ok: list[bool] | None = None
+
+
+async def check_answer(
+    claims: Sequence[Claim],
+    passages: Iterable[Passage],
+    check: Generate,
+    *,
+    book_titles: dict[str, str] | None = None,
+    sentences: Sequence["Sentence"] | None = None,
+    books: dict[str, BookInfo] | None = None,
+    gaps: Sequence[str] | None = None,
+    shape: "interpret.Shape | None" = None,
+) -> CheckOutcome:
+    """`check_claims`, plus one verdict per prose sentence in the same call.
+
+    Claim and sentence verdicts are validated separately: garbled sentence
+    verdicts cost only the prose (`sentence_ok=None`), never the claim check.
+    Gap verdicts likewise: garbled ones cost only the gaps (`gap_ok=None`).
+    """
+    claims = list(claims)
+    if not claims:
+        return CheckOutcome([], [], True, [], None)
+    passages = list(passages)
+    gap_ok = None
+    try:
+        result = await check(
+            faithfulness_prompt(claims, passages, book_titles, sentences, books, gaps, shape),
+            Faithfulness if write_module.STORY_ORDER else _PlainFaithfulness)
+        verdicts = validated_verdicts(result, len(claims))
+        sentence_ok = (validated_sentence_verdicts(result, len(sentences))
+                       if sentences and verdicts is not None else None)
+        if gaps and sentences and verdicts is not None and write_module.STORY_ORDER:
+            gap_ok = validated_gap_verdicts(result, len(gaps))
+    except Exception:  # noqa: BLE001 -- see check_claims
+        verdicts, sentence_ok = None, None
+    if verdicts is None:
+        return CheckOutcome(claims, [], False, [True] * len(claims), None)
+    kept: list[Claim] = []
+    dropped: list[tuple[Claim, str]] = []
+    for claim, (supported, reason) in zip(claims, verdicts):
+        (kept.append(claim) if supported else dropped.append((claim, reason)))
+    return CheckOutcome(kept, dropped, True, [ok for ok, _ in verdicts], sentence_ok, gap_ok)
+
+
 async def check_claims(
     claims: Sequence[Claim],
     passages: Iterable[Passage],
@@ -510,21 +904,100 @@ async def check_claims(
     failure in an extra safety check must not destroy an answer that is
     correct without it, and must never be read as `not_supported`.
     """
-    if not claims:
-        return list(claims), [], True
-    try:
-        result = await check(
-            faithfulness_prompt(claims, passages, book_titles), Faithfulness)
-        verdicts = validated_verdicts(result, len(claims))
-    except Exception:  # noqa: BLE001 -- see the docstring
-        verdicts = None
-    if verdicts is None:
-        return list(claims), [], False
-    kept: list[Claim] = []
-    dropped: list[tuple[Claim, str]] = []
-    for claim, (supported, reason) in zip(claims, verdicts):
-        (kept.append(claim) if supported else dropped.append((claim, reason)))
-    return kept, dropped, True
+    outcome = await check_answer(claims, passages, check, book_titles=book_titles)
+    return outcome.kept, outcome.dropped, outcome.ran
+
+
+PROSE_FALLBACK_NOTE = "the written answer did not pass verification; showing the checked facts"
+
+
+async def _finish(question, sub_questions, kept, evidence, check, write, book_titles,
+                  part_claims=None, books=None, shape=None, length=None):
+    """Writer (when it applies) and the faithfulness check, in one place for
+    all synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note,
+    unanswered part texts, gaps -- both set only when the prose is shown).
+
+    `shape` (interpret.Shape): the answer has an interpretive or beyond part.
+    The writer and the check then follow it, and code closes the prose with
+    its lines (interpret.close_answer); the shown gaps join the limits line
+    and so are not returned separately.
+
+    `length` ("section", "short" or "lens"): the writer sizes the prose for a deep
+    answer's section or its short answer (write.py) instead of the default cap."""
+    try_prose = (write_module.PROSE_ANSWERS and write is not None and check is not None
+                 and len(kept) >= 2)
+    sentences, written, prose_note, missing, gaps = None, 0, None, [], []
+    if try_prose:
+        drafted = await write_answer(question, sub_questions, kept, evidence.passages, write,
+                                     book_titles=book_titles, books=books, shape=shape,
+                                     length=length)
+        if drafted is None:
+            prose_note = PROSE_FALLBACK_NOTE
+        else:
+            texts = [c.text for c in kept]
+            sentences, written = (verify_prose(drafted, len(kept), texts, shape),
+                                  len(split_items(drafted)))
+            parts = part_texts(question, sub_questions)
+            missing = [parts[k - 1] for k in valid_unanswered(drafted, len(parts))]
+            if shape is not None:  # a part the books cannot settle is a limit, said by code
+                missing = [m for m in missing if m not in shape.beyond]
+            if write_module.STORY_ORDER:
+                gaps = [g for g in clean_gaps(drafted.gaps)
+                        if g.casefold() not in {m.casefold() for m in missing}]
+    if check is None or not kept:
+        return kept, [], (), None, prose_note, (), ()
+    passage_of = [c.passage for c in kept]
+    outcome = await check_answer(kept, evidence.passages, check, book_titles=book_titles,
+                                 sentences=sentences or None, books=books,
+                                 gaps=gaps if sentences else None, shape=shape)
+    skipped = None if outcome.ran else CHECK_SKIPPED_NOTE
+    prose: tuple[ProseSentence, ...] = ()
+    if sentences is not None:
+        built = (assemble(sentences, written, outcome.claim_ok, outcome.sentence_ok, passage_of)
+                 if sentences and outcome.ran and outcome.sentence_ok is not None else None)
+        rejected = ([s.text for s, ok in zip(sentences, outcome.sentence_ok or [])
+                     if not ok and getattr(s, "kind", "fact") == "fact"]
+                    if sentences and len(outcome.sentence_ok or []) == len(sentences) else [])
+        if built is None and length == "section" and outcome.ran and rejected:
+            # A deep section gets one rewrite before it falls back to its claim
+            # list: the writer is told which sentences the check rejected.
+            again = await write_answer(question, sub_questions, kept, evidence.passages, write,
+                                       book_titles=book_titles, books=books, shape=shape,
+                                       length=length, avoid=rejected)
+            second = (verify_prose(again, len(kept), [c.text for c in kept], shape)
+                      if again is not None else [])
+            if second:
+                outcome2 = await check_answer(kept, evidence.passages, check,
+                                              book_titles=book_titles, sentences=second,
+                                              books=books, shape=shape)
+                if outcome2.ran and outcome2.sentence_ok is not None:
+                    built = assemble(second, len(split_items(again)), outcome2.claim_ok,
+                                     outcome2.sentence_ok, passage_of)
+                    if built:
+                        outcome, gaps = outcome2, []
+        if built and part_claims is not None:
+            numbered = [[outcome.kept.index(c) + 1 for c in cs if c in outcome.kept]
+                        for cs in part_claims]
+            if coverage_gaps(built, numbered):
+                built = None  # one-sided prose: the claim list covers every part
+        if built:
+            book_of = {p.n: p.book_id for p in evidence.passages}
+            if shape is None:
+                prose = paragraphs_by_book(built, book_of)
+            else:  # the interpretation keeps the paragraphs the guards gave it
+                prose = (paragraphs_by_book([s for s in built if s.kind == "fact"], book_of)
+                         + tuple(s for s in built if s.kind != "fact"))
+        else:
+            prose_note = PROSE_FALLBACK_NOTE
+    # A gap is shown only if the check ran over it and agreed: an unchecked
+    # "the passages don't say" is a claim like any other.
+    shown_gaps = (tuple(g for g, ok in zip(gaps, outcome.gap_ok) if ok)
+                  if prose and outcome.gap_ok is not None and len(outcome.gap_ok) == len(gaps) else ())
+    if shape is not None and prose:
+        survivors = [k for k, ok in enumerate(outcome.claim_ok, start=1) if ok]
+        prose, shown_gaps = interpret.close_answer(prose, shape, shown_gaps, survivors), ()
+    return (outcome.kept, [c for c, _ in outcome.dropped], prose, skipped, prose_note,
+            tuple(missing) if prose else (), shown_gaps)
 
 
 async def synthesize(
@@ -538,9 +1011,15 @@ async def synthesize(
     book_titles: dict[str, str] | None = None,
     checklist: Sequence[str] = (),
     check: Generate | None = None,
+    write: Generate | None = None,
+    books: dict[str, BookInfo] | None = None,
+    section: SectionSpec | None = None,
 ) -> Answer:
     """`checklist`: the question's sub-questions; shown only when there are
     several, so a partial answer is visible as partial.
+
+    `section`: the answer is one section of a deep answer (deep.py): its claims
+    step may keep more claims and its writer has no word cap.
 
     `check`: the faithfulness judge (`check_claims`). None means the pass is
     not part of this answer at all, which is what every caller that predates
@@ -556,27 +1035,32 @@ async def synthesize(
         return answer(REFUSAL)
 
     result = await generate(
-        _build_prompt(question, evidence, book_titles, checklist), Synthesis)
+        _build_prompt(question, evidence, book_titles, checklist, books=books,
+                      section=section), Synthesis)
 
     # The answer is written by code, from claims whose quotes were found in
     # the passage they cite. Nothing the model wrote outside a kept claim
     # reaches the user, so there is no free text to carry a stray claim.
-    result = _capped(result)
+    result = _capped(result, section.max_claims if section is not None else None)
     verified, _ = verify_claims(result, evidence.passages)
     kept = _collapse(verified)
-    skipped = None
-    if check is not None and kept:
-        kept, _dropped, ran = await check_claims(
-            kept, evidence.passages, check, book_titles=book_titles)
-        skipped = None if ran else CHECK_SKIPPED_NOTE
+    # The writer of a section that answers one aspect is told which larger question it serves.
+    written_for = (f"{question} (one aspect of the larger question: {section.part_of})"
+                   if section is not None and section.focus else question)
+    kept, _cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
+        written_for, list(checklist) or [question], kept, evidence, check, write, book_titles,
+        books=books, length=section.length if section is not None else None)
     if not kept:
         return answer(REFUSAL)
     # can_answer=false with verified claims is a partial answer, not a
     # refusal: Task 10a measured H6 and H4 discarding verified gold claims.
     # `claims` carries the SAME post-check list `_compose` just flattened --
     # survivors only, so a claim's presence in Answer is its verdict.
-    return answer(_compose(kept), None if result.can_answer else PARTIAL_NOTE, skipped,
-                 claims=tuple(kept))
+    partial = None if result.can_answer else PARTIAL_NOTE
+    if prose:
+        return replace(answer(compose_text(prose, unanswered, gaps), partial, skipped, claims=tuple(kept)),
+                       prose=prose, answer_style="prose", unanswered=unanswered, gaps=gaps)
+    return answer(_compose(kept), partial, skipped, prose_note, claims=tuple(kept))
 
 
 NOT_FOUND = "not found: "
@@ -593,6 +1077,11 @@ async def synthesize_parts(
     note: str | None = None,
     book_titles: dict[str, str] | None = None,
     check: Generate | None = None,
+    write: Generate | None = None,
+    books: dict[str, BookInfo] | None = None,
+    plan: Sequence | None = None,
+    retrieval: Sequence | None = None,
+    viewpoint: str | None = None,
 ) -> Answer:
     """One synthesis call per sub-question, over that part's share, merged.
 
@@ -620,11 +1109,25 @@ async def synthesize_parts(
 
     With one sub-question, or evidence that carries no shares, this is
     `synthesize` exactly: one call over everything.
+
+    `plan` (decompose.Part per part of the question), `retrieval`
+    (decompose.RetrievalPart per entry of `sub_questions`, which are then the
+    retrieval parts: parts and the lenses of interpretive parts) and
+    `viewpoint`: an answer with an interpretive or beyond part takes the
+    interpretive shape (`synthesize_shaped`). Without them, or without such a
+    part, nothing here differs.
     """
+    if (plan is not None and retrieval is not None and len(retrieval) == len(sub_questions)
+            and interpret.shaped([part.kind for part in plan])):
+        return await synthesize_shaped(
+            question, plan, retrieval, evidence, generate, mode=mode, template=template,
+            note=note, book_titles=book_titles, check=check, write=write, books=books,
+            viewpoint=viewpoint)
     if len(sub_questions) < 2 or len(evidence.shares) != len(sub_questions):
         return await synthesize(question, evidence, generate, mode=mode, template=template,
                                 note=note, book_titles=book_titles,
-                                checklist=sub_questions, check=check)
+                                checklist=sub_questions, check=check, write=write,
+                                books=books)
 
     def answer(text: str, *extra_notes: str | None,
               claims: tuple[Claim, ...] = ()) -> Answer:
@@ -637,28 +1140,28 @@ async def synthesize_parts(
 
     kept: list[Claim] = []
     per_part: list[list[Claim]] = []
-    for part, share in zip(sub_questions, evidence.shares):
+    for index, (part, share) in enumerate(zip(sub_questions, evidence.shares)):
         numbers = set(share)
         passages = tuple(p for p in evidence.passages if p.n in numbers)
         if not passages:
             per_part.append([])
             continue
         own = Evidence(edges=evidence.edges, passages=passages,
-                       truncated=evidence.truncated)
+                       truncated=evidence.truncated,
+                       timeline=(evidence.timelines[index]
+                                 if len(evidence.timelines) == len(sub_questions) else ()),
+                       codex=(evidence.codexes[index]
+                              if len(evidence.codexes) == len(sub_questions) else ()))
         result = await generate(
-            _build_prompt(part, own, book_titles, part_of=question), Synthesis)
+            _build_prompt(part, own, book_titles, part_of=question, books=books), Synthesis)
         verified, _ = verify_claims(_capped(result), passages)
         per_part.append(verified)
         kept.extend(c for c in verified if c not in kept)
 
     kept = _collapse(kept)
-    skipped = None
-    cut: list[Claim] = []
-    if check is not None and kept:
-        kept, dropped, ran = await check_claims(
-            kept, evidence.passages, check, book_titles=book_titles)
-        cut = [claim for claim, _reason in dropped]
-        skipped = None if ran else CHECK_SKIPPED_NOTE
+    kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
+        question, sub_questions, kept, evidence, check, write, book_titles,
+        part_claims=per_part, books=books)
     missing = [part for part, claims in zip(sub_questions, per_part)
                if not claims or all(c in cut for c in claims)]
 
@@ -668,4 +1171,157 @@ async def synthesize_parts(
                if missing else None)
     # `claims` carries the SAME post-check list `_compose` just flattened --
     # survivors only, so a claim's presence in Answer is its verdict.
-    return answer(_compose(kept), partial, skipped, claims=tuple(kept))
+    if prose:
+        return replace(answer(compose_text(prose, unanswered, gaps), partial, skipped, claims=tuple(kept)),
+                       prose=prose, answer_style="prose", unanswered=unanswered, gaps=gaps)
+    return answer(_compose(kept), partial, skipped, prose_note, claims=tuple(kept))
+
+
+def _representative(claim: Claim, kept: Sequence[Claim]) -> int | None:
+    """The index in `kept` of the claim that stands for `claim` after the
+    near-duplicate collapse: itself, or the earlier claim it duplicates."""
+    for i, other in enumerate(kept):
+        if other == claim or _sentence(other) == _sentence(claim) or _near_duplicate(other, claim):
+            return i
+    return None
+
+
+@dataclass
+class ShapedClaims:
+    """The claims of an interpretive answer, gathered per retrieval part: the
+    `kept` list (duplicates collapsed), the claims each retrieval part found
+    (`per_part`) and each plan part's own (`by_part`), and the answer's
+    `shape` (which retrieval parts found each kept claim)."""
+
+    kept: list[Claim]
+    per_part: list[list[Claim]]
+    by_part: list[list[Claim]]
+    shape: "interpret.Shape"
+
+
+async def shaped_claims(question: str, plan: Sequence, retrieval: Sequence, evidence: Evidence,
+                        generate: Generate, *, book_titles: dict[str, str] | None = None,
+                        books: dict[str, BookInfo] | None = None, viewpoint: str | None = None,
+                        max_claims: int | None = None) -> ShapedClaims:
+    """One claims call per retrieval part, over its own share of the evidence: a
+    lens gathers one aspect of its interpretive part, a beyond part gathers
+    what the books do say. `max_claims` lifts the claim cap of each call (a deep
+    answer's sections)."""
+    from lore.query.viewpoint import load_viewpoint
+
+    n = len(retrieval)
+    everything = tuple(p.n for p in evidence.passages)
+    shares = evidence.shares if len(evidence.shares) == n else (everything,) * n
+    timelines = (evidence.timelines if len(evidence.timelines) == n
+                 else (evidence.timeline,) * n if n == 1 else ((),) * n)
+    codexes = (evidence.codexes if len(evidence.codexes) == n
+               else (evidence.codex,) * n if n == 1 else ((),) * n)
+    kept: list[Claim] = []
+    per_part: list[list[Claim]] = []
+    for index, (part, share) in enumerate(zip(retrieval, shares)):
+        numbers = set(share)
+        passages = tuple(p for p in evidence.passages if p.n in numbers)
+        if not passages:
+            per_part.append([])
+            continue
+        own = Evidence(edges=evidence.edges, passages=passages, truncated=evidence.truncated,
+                       timeline=timelines[index], codex=codexes[index])
+        served = plan[part.part]
+        role = ("lens" if part.lens else "beyond" if served.kind == "beyond" else "part")
+        spec = (SectionSpec(part_of=question, max_claims=max_claims, length="section")
+                if max_claims else None)
+        result = await generate(
+            _build_prompt(part.question, own, book_titles,
+                          part_of=served.question if part.lens else question,
+                          books=books, role=role, section=spec), Synthesis)
+        verified, _ = verify_claims(_capped(result, max_claims), passages)
+        per_part.append(verified)
+        kept.extend(c for c in verified if c not in kept)
+
+    kept = _collapse(kept)
+    shape = interpret.Shape(
+        viewpoint=viewpoint if viewpoint is not None else load_viewpoint(),
+        parts=tuple(p.question for p in plan), kinds=tuple(p.kind for p in plan),
+        retrieval=tuple((r.question, r.part, r.lens) for r in retrieval),
+        stances=tuple(getattr(p, "stance", "analysis") for p in plan),
+        labels=tuple(getattr(p, "label", "") for p in plan))
+    found: list[set[int]] = [set() for _ in kept]
+    for ri, claims in enumerate(per_part):
+        for claim in claims:
+            at = _representative(claim, kept)
+            if at is not None:
+                found[at].add(ri)
+    shape = shape.with_claims([frozenset(f) for f in found])
+    # Per part of the plan, the claims its retrieval parts found.
+    by_part: list[list[Claim]] = [[] for _ in plan]
+    for ri, claims in enumerate(per_part):
+        by_part[retrieval[ri].part].extend(c for c in claims if c not in by_part[retrieval[ri].part])
+    return ShapedClaims(kept, per_part, by_part, shape)
+
+
+async def synthesize_shaped(
+    question: str,
+    plan: Sequence,
+    retrieval: Sequence,
+    evidence: Evidence,
+    generate: Generate,
+    *,
+    mode: str,
+    template: str | None = None,
+    note: str | None = None,
+    book_titles: dict[str, str] | None = None,
+    check: Generate | None = None,
+    write: Generate | None = None,
+    books: dict[str, BookInfo] | None = None,
+    viewpoint: str | None = None,
+) -> Answer:
+    """An answer with an interpretive or beyond part (interpret.py).
+
+    The claims come per retrieval part (`shaped_claims`). The writer then
+    answers the plan's parts (not the lenses): the evidence grouped by lens, a
+    reading for each interpretive part, a counter-case; code adds the limits.
+    The answer opens with its short answer (`Answer.short_answer`): one reading
+    per interpretive part, or code's line when a part's reading did not stand;
+    the rest is the argument. Without prose (no writer, or the prose failed) the
+    checked claims are the answer, and the closing lines are added to its text.
+    """
+    def answer(text: str, *extra_notes: str | None,
+               claims: tuple[Claim, ...] = ()) -> Answer:
+        notes = "; ".join(n for n in (note, *extra_notes) if n) or None
+        return Answer(text=text, passages=evidence.passages, mode=mode,
+                      template=template, note=notes, claims=claims)
+
+    if not evidence.passages:
+        return answer(REFUSAL)
+
+    gathered = await shaped_claims(question, plan, retrieval, evidence, generate,
+                                   book_titles=book_titles, books=books, viewpoint=viewpoint)
+    shape, by_part = gathered.shape, gathered.by_part
+    kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
+        question, list(shape.parts), gathered.kept, evidence, check, write, book_titles,
+        part_claims=by_part, books=books, shape=shape)
+    missing = [part.question for part, claims in zip(plan, by_part)
+               if part.kind != "beyond" and (not claims or all(c in cut for c in claims))]
+    if not kept:
+        return answer(REFUSAL)
+    partial = (PARTIAL_NOTE + "; " + "; ".join(NOT_FOUND + m for m in missing)
+               if missing else None)
+    if prose:
+        short = tuple(s for s in prose if s.short)
+        body = tuple(s for s in prose if not s.short)
+        return replace(answer(compose_answer(short, body, unanswered, gaps), partial, skipped,
+                              claims=tuple(kept)),
+                       prose=body, short_answer=short, answer_style="prose",
+                       unanswered=unanswered, gaps=gaps)
+    text = _compose(kept)
+    # The writer was never asked, or its prose did not pass: the facts are the
+    # answer, and it still says what the evidence and the books do not settle.
+    configured = write_module.PROSE_ANSWERS and write is not None and check is not None
+    short = interpret.short_answer(shape) if shape.interpretive and configured else ()
+    lines = interpret.limit_text(shape)
+    if short:
+        text = (SHORT_ANSWER_HEADING + "\n" + compose_text(short)) + "\n\n" + text
+    if lines:
+        text += "\n\n" + " ".join(lines)
+    return replace(answer(text, partial, skipped, prose_note, claims=tuple(kept)),
+                   short_answer=short)

@@ -137,7 +137,9 @@ async def test_passage_headers_and_edge_lines_show_book_titles() -> None:
         book_titles={"05ab": "A Study in Scarlet", "0ee2": "The Sign of the Four"},
     )
     assert "A Study in Scarlet" in prompt
-    assert prompt.count("The Sign of the Four") == 2  # the header and the edge
+    # the header, the edge, and (story order) the unknown-order note: these
+    # two books have no series, so their relative order is unknown
+    assert prompt.count("The Sign of the Four") == 3
     assert "05ab" not in prompt.replace("05ab:1:0", "")  # chunk ids aside
     assert "0ee2" not in prompt.replace("0ee2:3:0", "")
 
@@ -463,9 +465,9 @@ async def test_each_sub_question_gets_its_own_call_over_its_own_passages() -> No
     # The original question travels as context to both.
     assert all("Why did Hope kill Drebber and Stangerson?" in p for p in prompts)
     # Each call sees only its share, under its GLOBAL number.
-    assert "[1] (b1, chapter 1)" in first and "[2] (b1, chapter 2)" in first
+    assert "[1] (b1, chapter 1," in first and "[2] (b1, chapter 2," in first
     assert S3.text not in first
-    assert "[3] (b1, chapter 3)" in second and S1.text not in second and S2.text not in second
+    assert "[3] (b1, chapter 3," in second and S1.text not in second and S2.text not in second
     # A lead is shown only beside a passage the call can cite.
     assert "Drebber —distrusts→" in first and "Drebber —distrusts→" not in second
     # Composed in sub-question order, numbering global, every passage kept.
@@ -1030,6 +1032,30 @@ def test_claim_is_importable_from_both_modules():
     assert FromModels is FromSynthesize
 
 
+def _new_prompt_texts() -> str:
+    """The deep/interpretive prompt texts and the viewpoint policy: the
+    banned-word and leak tests cover each as it is added."""
+    from lore.query import decompose, deep, interpret
+    from lore.query import synthesize as synthesize_module
+    from lore.query import write as write_module
+    from lore.query.viewpoint import load_viewpoint
+    return "\n".join((deep.PLANNER_PROMPT, deep.CLOSE_HEADING, synthesize_module._CODEX_BLOCK,
+                      synthesize_module._SECTION_CONTEXT, write_module._LENGTH_RULE,
+                      write_module.SECTION_LENGTH_RULE, write_module.SHORT_LENGTH_RULE,
+                      synthesize_module._SECTION_FOCUS_CONTEXT, deep.NO_SUMMARY_LINE,
+                      write_module.CONTENTS_HEADING, write_module.LENS_LENGTH_RULE,
+                      write_module.SHORT_ANSWER_HEADING,
+                      decompose._ITEM_RULE, decompose._KIND_RULE,
+                      decompose._DEPTH_RULE, load_viewpoint(),
+                      interpret.LENS_CONTEXT, interpret.BEYOND_CONTEXT,
+                      interpret.WRITER_SHAPE_RULE, interpret.WRITER_BEYOND_RULE,
+                      interpret.VIEWPOINT_LEAD, interpret.READING_CHECK_BLOCK,
+                      interpret.COUNTER_CHECK_BLOCK, interpret.NO_VERDICT_LINE,
+                      interpret.NO_ANALYSIS_LINE, interpret.NO_COUNTER_LINE, interpret.LIMITS_LEAD,
+                      write_module.COVERED_RULE, write_module.AVOID_RULE,
+                      synthesize_module.SUBJECT_RULE))
+
+
 def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
     """No distinctive 3-word phrase of a dev or held-out question or verified
     answer may appear in the synthesis prompt. An early round-1 draft used
@@ -1047,6 +1073,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
     from pathlib import Path
 
     from lore.query import synthesize as synthesize_module
+    from lore.query import write as write_module
 
     common = set(
         "a an the and or but nor of to in on at by for from with as into is"
@@ -1063,11 +1090,22 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
                 if sum(w not in common for w in words[i:i + 3]) >= 2}
 
     evals = Path(__file__).parents[1] / "evals/answer_quality"
-    sets = [evals / "questions.json", evals / "heldout.json"]
+    sets = [evals / "questions.json", evals / "heldout.json", evals / "arc.json",
+            evals / "interpretive.json", evals / "deep.json"]
     prompt = grams("\n".join((
         synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
         synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
-        synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE)))
+        synthesize_module._FULL_PART_CONTEXT, synthesize_module._NO_RESTATE_RULE,
+        synthesize_module._ATTRIBUTE_SPEECH_RULE, synthesize_module._STRICT_LINKS_RULE, synthesize_module._ROLE_COVERAGE_RULE,
+        synthesize_module._CHANGE_RULE, synthesize_module._ACTIONS_RULE,
+        synthesize_module._TIMELINE_BLOCK,
+        synthesize_module._READINGS_BLOCK, write_module._READINGS_RULE,
+        synthesize_module._STRICT_LINKS_CHECK, __import__('lore.query.decompose', fromlist=['x'])._THEMATIC_RULE,
+        _new_prompt_texts(),
+        write_module.WRITER_PROMPT, write_module.STORY_WRITER_PROMPT,
+        synthesize_module._STORY_SENTENCES_BLOCK, synthesize_module._GAPS_BLOCK,
+        __import__('lore.beats.build', fromlist=['x']).BEATS_PROMPT,
+        __import__('lore.codex.build', fromlist=['x']).CODEX_PROMPT)))
     for q in (q for path in sets for q in json.loads(path.read_text())):
         leaked = (grams(q["question"]) | grams(q["verified"])) & prompt
         assert not leaked, f"{q['id']} leaks into the prompt: {sorted(leaked)}"
@@ -1106,3 +1144,296 @@ def test_full_answers_and_no_restate_are_the_default() -> None:
     from lore.query import synthesize as synthesize_module
     assert synthesize_module.FULL_ANSWERS is True
     assert synthesize_module.NO_RESTATE is True
+
+
+# --- prose answers: the combined check -----------------------------------------
+
+from lore.query.synthesize import (  # noqa: E402
+    CheckOutcome, Faithfulness, Judgement, check_answer, faithfulness_prompt,
+    validated_sentence_verdicts,
+)
+from lore.query.write import Sentence  # noqa: E402
+
+_PS = (Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Holmes played the violin."),
+       Passage(n=2, chunk_id="b1:2:0", book_id="b1", chapter_seq=2, text="Watson kept a bull pup."))
+_CS = [Claim(text="Holmes played the violin.", passage=1, quote="Holmes played the violin"),
+       Claim(text="Watson kept a bull pup.", passage=2, quote="Watson kept a bull pup")]
+
+
+def test_without_sentences_the_check_prompt_is_unchanged():
+    assert "Sentences:" not in faithfulness_prompt(_CS, _PS)
+
+
+def test_with_sentences_the_prompt_numbers_them_and_names_their_facts():
+    p = faithfulness_prompt(_CS, _PS, sentences=[Sentence(text="Holmes played, and Watson kept a pup.", claims=[1, 2])])
+    assert "Sentences:" in p and "1. sentence: Holmes played, and Watson kept a pup." in p
+    assert "uses claims 1, 2" in p
+    assert "sentence_judgements" in p
+
+
+def _j(n, v):
+    return Judgement(claim=n, verdict=v, reason="r")
+
+
+async def test_check_answer_applies_both_verdict_lists():
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[_j(1, "supported"), _j(2, "not_supported")],
+                            sentence_judgements=[_j(1, "supported"), _j(2, "not_supported")])
+    out = await check_answer(_CS, _PS, check, sentences=[Sentence(text="a", claims=[1]), Sentence(text="b", claims=[1])])
+    assert out.ran and out.claim_ok == [True, False] and out.sentence_ok == [True, False]
+    assert out.kept == [_CS[0]] and out.dropped[0][0] == _CS[1]
+
+
+async def test_garbled_sentence_verdicts_keep_the_claim_verdicts():
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[_j(1, "supported"), _j(2, "not_supported")],
+                            sentence_judgements=[_j(2, "supported")])   # misnumbered
+    out = await check_answer(_CS, _PS, check, sentences=[Sentence(text="a", claims=[1])])
+    assert out.ran and out.claim_ok == [True, False] and out.sentence_ok is None
+
+
+async def test_garbled_claim_verdicts_keep_every_claim_and_drop_the_prose():
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[_j(2, "supported")], sentence_judgements=[_j(1, "supported")])
+    out = await check_answer(_CS, _PS, check, sentences=[Sentence(text="a", claims=[1])])
+    assert not out.ran and out.kept == _CS and out.claim_ok == [True, True] and out.sentence_ok is None
+
+
+async def test_a_raising_check_keeps_everything():
+    async def check(prompt, schema):
+        raise RuntimeError("503")
+    out = await check_answer(_CS, _PS, check, sentences=[Sentence(text="a", claims=[1])])
+    assert not out.ran and out.kept == _CS and out.sentence_ok is None
+
+
+def test_validated_sentence_verdicts():
+    assert validated_sentence_verdicts(Faithfulness(judgements=[], sentence_judgements=[_j(1, "supported"), _j(2, "Not Supported")]), 2) == [True, False]
+    assert validated_sentence_verdicts(Faithfulness(judgements=[], sentence_judgements=[_j(1, "maybe")]), 1) is None
+    assert validated_sentence_verdicts(Faithfulness(judgements=[]), 1) is None
+
+
+# --- prose answers: synthesis ----------------------------------------------------
+
+from lore.query import write as write_module  # noqa: E402
+from lore.query.synthesize import PROSE_FALLBACK_NOTE  # noqa: E402
+from lore.query.write import Prose  # noqa: E402
+
+_EV = Evidence(edges=(), passages=_PS, truncated=False)
+_TWO = Synthesis(claims=_CS, can_answer=True)
+
+
+def _gen(reply):
+    calls = []
+    async def generate(prompt, schema):
+        calls.append(prompt)
+        return reply
+    return generate, calls
+
+
+def _check(claim_v, sent_v):
+    async def check(prompt, schema):
+        return Faithfulness(judgements=[_j(i + 1, v) for i, v in enumerate(claim_v)],
+                            sentence_judgements=[_j(i + 1, v) for i, v in enumerate(sent_v)])
+    return check
+
+
+async def test_prose_becomes_the_answer():
+    gen, _ = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])]))
+    a = await synthesize("Habits?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "prose" and a.prose[0].passages == (1, 2)
+    assert a.text == "Holmes played the violin while Watson kept a bull pup. [1][2]"
+    assert len(a.claims) == 2 and len(wcalls) == 1
+
+
+async def test_failing_prose_falls_back_to_claims_with_a_note():
+    gen, _ = _gen(_TWO)
+    write, _ = _gen(Prose(sentences=[Sentence(text="x", claims=[1]), Sentence(text="y", claims=[2])]))
+    a = await synthesize("q", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["not_supported"] * 2), write=write)
+    assert a.answer_style == "claims" and a.prose == () and PROSE_FALLBACK_NOTE in a.note
+
+
+async def test_no_writer_call_for_a_single_claim():
+    gen, _ = _gen(Synthesis(claims=[_CS[0]], can_answer=True))
+    write, wcalls = _gen(Prose(sentences=[]))
+    a = await synthesize("q", _EV, gen, mode="graph", check=_check(["supported"], []), write=write)
+    assert wcalls == [] and a.answer_style == "claims"
+
+
+async def test_no_writer_call_without_a_check():
+    gen, _ = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[]))
+    a = await synthesize("q", _EV, gen, mode="graph", check=None, write=write)
+    assert wcalls == [] and a.answer_style == "claims"
+
+
+async def test_prose_off_is_todays_behaviour(monkeypatch):
+    monkeypatch.setattr(write_module, "PROSE_ANSWERS", False)
+    gen, calls = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="x", claims=[1])]))
+    check_prompts = []
+    async def check(prompt, schema):
+        check_prompts.append(prompt)
+        return Faithfulness(judgements=[_j(1, "supported"), _j(2, "supported")])
+    a = await synthesize("q", _EV, gen, mode="graph", check=check, write=write)
+    assert wcalls == [] and a.answer_style == "claims"
+    assert "Sentences:" not in check_prompts[0]
+
+
+async def test_a_writer_failure_keeps_the_claim_check():
+    gen, _ = _gen(_TWO)
+    async def write(prompt, schema):
+        raise RuntimeError("quota")
+    a = await synthesize("q", _EV, gen, mode="graph", check=_check(["supported", "not_supported"], []), write=write)
+    assert a.answer_style == "claims" and len(a.claims) == 1 and PROSE_FALLBACK_NOTE in a.note
+
+
+# --- prose answers: parts, check failure, remapping, refusal ---------------------
+
+from lore.query.synthesize import CHECK_SKIPPED_NOTE  # noqa: E402
+
+
+async def test_synthesize_parts_writes_one_prose_answer():
+    prompts: list[str] = []
+    gen = _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                     Synthesis(claims=[WHY_S], can_answer=True)], prompts)
+    write, wcalls = _gen(Prose(sentences=[Sentence(
+        text="Drebber forced Lucy to marry, and Stangerson shot her father.", claims=[1, 2])]))
+    a = await synthesize_parts("Why?", SUBS, PARTS_EV, gen, mode="graph",
+                               check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "prose" and len(wcalls) == 1 and len(prompts) == 2
+
+
+async def test_check_that_does_not_run_after_prose_falls_back_with_both_notes():
+    gen, _ = _gen(_TWO)
+    write, _ = _gen(Prose(sentences=[Sentence(text="x", claims=[1, 2])]))
+    async def check(prompt, schema):
+        raise RuntimeError("quota")
+    a = await synthesize("q", _EV, gen, mode="graph", check=check, write=write)
+    assert a.answer_style == "claims" and len(a.claims) == 2
+    assert PROSE_FALLBACK_NOTE in a.note and CHECK_SKIPPED_NOTE in a.note
+
+
+async def test_prose_indices_are_remapped_after_a_claim_is_dropped():
+    ps = _PS + (Passage(n=3, chunk_id="b1:3:0", book_id="b1", chapter_seq=3,
+                        text="Lestrade visited Baker Street."),)
+    c3 = Claim(text="Lestrade visited.", passage=3, quote="Lestrade visited Baker Street")
+    gen, _ = _gen(Synthesis(claims=[_CS[0], _CS[1], c3], can_answer=True))
+    write, _ = _gen(Prose(sentences=[
+        Sentence(text="Holmes played while Lestrade visited.", claims=[1, 3]),
+        Sentence(text="Watson kept a pup.", claims=[2])]))
+    ev = Evidence(edges=(), passages=ps, truncated=False)
+    a = await synthesize("q", ev, gen, mode="graph",
+                         check=_check(["supported", "not_supported", "supported"],
+                                      ["supported", "supported"]), write=write)
+    assert a.answer_style == "prose" and len(a.prose) == 1
+    assert a.prose[0].claims == (1, 2) and a.prose[0].passages == (1, 3)
+    assert [c.passage for c in a.claims] == [1, 3]
+
+
+async def test_all_claims_dropped_with_the_writer_called_is_a_refusal():
+    gen, _ = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="x", claims=[1, 2])]))
+    a = await synthesize("q", _EV, gen, mode="graph",
+                         check=_check(["not_supported"] * 2, ["supported"]), write=write)
+    assert len(wcalls) == 1 and a.text == REFUSAL and a.claims == ()
+
+
+async def test_unanswered_part_is_reported_and_rendered_by_code():
+    gen, _ = _gen(_TWO)
+    write, _ = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])],
+                          unanswered=[2, 9]))
+    a = await synthesize("Habits and why?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]),
+                         write=write)
+    # single-part question: part 1 is the question itself; 2 and 9 are out of range
+    assert a.answer_style == "prose" and a.unanswered == ()
+    write2, _ = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])],
+                           unanswered=[1, 1]))
+    b = await synthesize("Habits and why?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]),
+                         write=write2)
+    assert b.unanswered == ("Habits and why?",)
+    assert b.text.endswith("The passages found don't answer: Habits and why?")
+
+
+async def test_claims_fallback_leaves_unanswered_empty():
+    gen, _ = _gen(_TWO)
+    write, _ = _gen(Prose(sentences=[Sentence(text="x", claims=[1]), Sentence(text="y", claims=[2])], unanswered=[1]))
+    a = await synthesize("Habits?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["unsupported", "unsupported"]),
+                         write=write)
+    assert a.answer_style == "claims" and a.unanswered == ()
+
+
+async def test_one_sided_prose_over_parts_falls_back_to_claims():
+    gen = _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                     Synthesis(claims=[WHY_S], can_answer=True)], [])
+    write, _ = _gen(Prose(sentences=[Sentence(text="Stangerson shot her father.", claims=[2])]))
+    a = await synthesize_parts("Why?", SUBS, PARTS_EV, gen, mode="graph",
+                               check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "claims" and len(a.claims) == 2
+    assert PROSE_FALLBACK_NOTE in a.note
+
+
+def test_attribute_speech_adds_its_rule_only_when_on(monkeypatch) -> None:
+    from lore.query import synthesize as synthesize_module
+    from lore.query.synthesize import _build_prompt
+    evidence = Evidence(edges=(), passages=(
+        Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text."),),
+        truncated=False)
+    monkeypatch.setattr(synthesize_module, "ATTRIBUTE_SPEECH", False)
+    assert "that character's account" not in _build_prompt("why?", evidence)
+    monkeypatch.setattr(synthesize_module, "ATTRIBUTE_SPEECH", True)
+    assert "that character's account" in _build_prompt("why?", evidence)
+
+
+def test_strict_links_adds_its_rules_only_when_on(monkeypatch) -> None:
+    from lore.query import synthesize as synthesize_module
+    from lore.query.synthesize import _build_prompt, faithfulness_prompt
+    passage = Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text.")
+    evidence = Evidence(edges=(), passages=(passage,), truncated=False)
+    claim = Claim(text="A did B.", passage=1, quote="Some text.")
+    monkeypatch.setattr(synthesize_module, "STRICT_LINKS", False)
+    assert "Two facts from one passage" not in _build_prompt("why?", evidence)
+    assert "Connecting words count" not in faithfulness_prompt([claim], [passage])
+    monkeypatch.setattr(synthesize_module, "STRICT_LINKS", True)
+    assert "Two facts from one passage stay two claims" in _build_prompt("why?", evidence)
+    assert "even when both facts it joins are true" in faithfulness_prompt([claim], [passage])
+
+
+def test_thematic_parts_adds_its_rule_only_when_on(monkeypatch) -> None:
+    from lore.query import decompose
+    monkeypatch.setattr(decompose, "THEMATIC_PARTS", False)
+    off = decompose.decomposition_prompt("q?")
+    assert "role or a theme" not in off and "{thematic}" not in off
+    monkeypatch.setattr(decompose, "THEMATIC_PARTS", True)
+    assert "every character it applies to" in decompose.decomposition_prompt("q?")
+
+
+def test_role_coverage_adds_its_rule_only_when_on(monkeypatch) -> None:
+    from lore.query import synthesize as synthesize_module
+    from lore.query.synthesize import _build_prompt
+    evidence = Evidence(edges=(), passages=(
+        Passage(n=1, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Some text."),),
+        truncated=False)
+    monkeypatch.setattr(synthesize_module, "ROLE_COVERAGE", False)
+    assert "every character the passages show" not in _build_prompt("who?", evidence)
+    monkeypatch.setattr(synthesize_module, "ROLE_COVERAGE", True)
+    assert "every character the passages show in that role" in _build_prompt("who?", evidence)
+
+
+def test_prompt_rules_name_no_character_book_or_genre() -> None:
+    # Rules must hold for any book a user uploads: no names or genre words
+    # from the books the rules were tuned on.
+    import re
+    from lore.query import decompose, synthesize as s, write as w
+    text = "\n".join((s._PROMPT, s._FACTS_RULE, s._FULL_FACTS_RULE, s._NO_RESTATE_RULE,
+                      s._ATTRIBUTE_SPEECH_RULE, s._STRICT_LINKS_RULE, s._STRICT_LINKS_CHECK,
+                      s._ROLE_COVERAGE_RULE, s._CHANGE_RULE, s._ACTIONS_RULE, s._TIMELINE_BLOCK, s._READINGS_BLOCK, w._READINGS_RULE,
+                      s._CHECK_PROMPT, s._SENTENCES_BLOCK,
+                      w.WRITER_PROMPT, w.STORY_WRITER_PROMPT, s._STORY_SENTENCES_BLOCK, s._GAPS_BLOCK,
+                      decompose._PROMPT, decompose._THEMATIC_RULE, _new_prompt_texts(),
+                      __import__('lore.beats.build', fromlist=['x']).BEATS_PROMPT,
+                      __import__('lore.codex.build', fromlist=['x']).CODEX_PROMPT))
+    banned = r"\b(holmes|watson|sherlock|small|hope|drebber|stangerson|sholto|ferrier|tonga|" \
+             r"morstan|lestrade|baker street|mormon|agra|crime|crimes|murder|villain|villains|" \
+             r"detective|treasure|darcy|bennet|wizard|dragon|magic|kingdom|elf|elves|quest|sword)\b"
+    assert not re.findall(banned, text.lower())

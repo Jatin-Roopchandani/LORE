@@ -15,7 +15,7 @@ a supervisor that restarts it. There is deliberately no per-query isolation.
 from __future__ import annotations
 
 import ipaddress
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -28,7 +28,8 @@ def build_server(config: LoreConfig) -> MCPServer:
     mcp = MCPServer("lore")
 
     @mcp.tool()
-    async def lore_search(query: str) -> dict[str, Any]:
+    async def lore_search(query: str, world: str | None = None,
+                          depth: Literal["auto", "deep", "focused"] = "auto") -> dict[str, Any]:
         """Answer a question from the knowledge graph, with quoted citations.
 
         This is the only tool that spends Gemini budget (the other six never
@@ -36,20 +37,29 @@ def build_server(config: LoreConfig) -> MCPServer:
         Use vector_search or entity when you want a free lookup. Needs the
         local Ollama server running to embed the question; if it is not,
         this returns upstream_unavailable.
+
+        `world` (a world's id or name) answers from that world's books only.
+        Without it, every world is searched, each on its own, so two
+        same-named characters from different worlds stay different people;
+        the answer names the book when facts come from more than one.
+
+        `depth` is "auto" (the default: LORE judges whether the question
+        needs a full, sectioned answer), "deep" or "focused".
         """
-        return await tools.lore_search(config, query)
+        return await tools.lore_search(config, query, world=world, depth=depth)
 
     @mcp.tool()
     async def vector_search(query: str, book_id: str | None = None,
-                            limit: int = 10) -> dict[str, Any]:
-        """Find passages nearest a query by meaning, optionally within one book.
+                            limit: int = 10, world: str | None = None) -> dict[str, Any]:
+        """Find passages nearest a query by meaning, optionally within one book
+        or one `world` (an id or name).
 
         Runs locally and spends no Gemini budget, so it keeps working after
         the daily Gemini cap is reached. `limit` is clamped to 1-50. Needs
         the local Ollama server running to embed the query; if it is not,
         this returns upstream_unavailable.
         """
-        return await tools.vector_search(config, query, book_id, limit)
+        return await tools.vector_search(config, query, book_id, limit, world=world)
 
     @mcp.tool()
     def cypher_query(query: str) -> dict[str, Any]:
@@ -65,7 +75,7 @@ def build_server(config: LoreConfig) -> MCPServer:
         return tools.cypher_query(config, query)
 
     @mcp.tool()
-    def entity(name: str) -> dict[str, Any]:
+    def entity(name: str, world: str | None = None) -> dict[str, Any]:
         """The canonical card for one entity: aliases, books and edges.
 
         Resolves an alias to its canonical entity. An unknown name returns a
@@ -73,25 +83,31 @@ def build_server(config: LoreConfig) -> MCPServer:
         candidates to choose from. At most 50 edges are returned each way;
         edges_out_total and edges_in_total give the real counts, and
         truncated says the card is partial -- use subgraph for more.
+
+        With `world` (an id or name) only that world's entity and edges are
+        used. A name that two worlds share is ambiguous without it, and the
+        error lists both with their worlds.
         """
-        return tools.entity(config, name)
+        return tools.entity(config, name, world=world)
 
     @mcp.tool()
-    def subgraph(entity: str, depth: int = 1) -> dict[str, Any]:
+    def subgraph(entity: str, depth: int = 1, world: str | None = None) -> dict[str, Any]:
         """A bounded subgraph around one entity, as nodes and links.
 
         Each link is one subject->object pair: how many passages back it,
         which predicates, and one quoted citation. Links are ordered
         strongest first and capped at 100, so a large hub keeps its main
         relationships; `depth` is clamped to 1-3. The result says when it
-        was truncated.
+        was truncated. The walk stays inside the entity's world; `world` (an
+        id or name) picks the entity's world when its name is shared.
         """
-        return tools.subgraph(config, entity, depth)
+        return tools.subgraph(config, entity, depth, world=world)
 
     @mcp.tool()
-    def library() -> dict[str, Any]:
-        """Every book in the library, with its status and entity counts."""
-        return tools.library(config)
+    def library(world: str | None = None) -> dict[str, Any]:
+        """Every book in the library, with its world, status and entity
+        counts; `world` (an id or name) lists one world's books."""
+        return tools.library(config, world=world)
 
     @mcp.tool()
     def ingest_status(book_id: str) -> dict[str, Any]:

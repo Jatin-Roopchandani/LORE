@@ -17,6 +17,17 @@ class Claim(BaseModel):
 
 
 @dataclass(frozen=True)
+class BookInfo:
+    """A library book as the answer steps see it. `series` and
+    `series_index` are the book's story position when someone (the file's
+    metadata, or `lore book series`) said so; None otherwise."""
+
+    title: str
+    series: str | None = None
+    series_index: float | None = None
+
+
+@dataclass(frozen=True)
 class SeedEntity:
     """A canonical entity the question's vector neighbourhood pointed at."""
 
@@ -68,6 +79,56 @@ class Passage:
 
 
 @dataclass(frozen=True)
+class ProseSentence:
+    """One sentence of a written answer. `claims` are 1-based indices into
+    Answer.claims (the checked survivors); `passages` are those claims'
+    passage numbers, sorted and unique, for the UI's citation chips."""
+
+    text: str
+    claims: tuple[int, ...]
+    passages: tuple[int, ...]
+    new_paragraph: bool = False
+    # "fact"; "reading": an interpretation of what the cited claims show
+    # together, not a direct statement; "counter": the strongest opposing
+    # reading; "limit": a line written by code (no claims) saying what the
+    # evidence or the books do not settle (lore/query/interpret.py).
+    kind: str = "fact"
+    # Part of an interpretive answer's short answer (Answer.short_answer): the
+    # reading for one interpretive part, or code's line when it has none.
+    short: bool = False
+    # A short answer part's short label, set on the first sentence of each
+    # part when the question has several interpretive parts; "" otherwise.
+    # Shown muted before the sentence, never part of it.
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class TimelineBeat:
+    """One story-beat line for the claims prompt: a moment of the subject
+    entity, and the passage (`chunk_id`) that holds its quote."""
+
+    chunk_id: str
+    book_id: str
+    chapter_seq: int
+    subject: str
+    text: str
+
+
+@dataclass(frozen=True)
+class CodexLine:
+    """One codex line for the claims prompt: a statement the books establish
+    about the subject entity, under an aspect, and the passage (`chunk_id`)
+    that holds its quote. Like a timeline beat it is a map, never evidence."""
+
+    chunk_id: str
+    book_id: str
+    chapter_seq: int
+    subject: str
+    aspect: str
+    text: str
+
+
+@dataclass(frozen=True)
 class Evidence:
     edges: tuple[EdgeRow, ...]
     passages: tuple[Passage, ...]
@@ -76,6 +137,58 @@ class Evidence:
     # sub-question order: the passages that part answers from (Task 10e).
     # Empty when the evidence was not assembled per part.
     shares: tuple[tuple[int, ...], ...] = ()
+    # Story beats (lore/query/timeline.py): every part's, deduplicated, and
+    # one tuple per part in sub-question order. Empty when no part has any,
+    # which is also what every evidence built before beats holds.
+    timeline: tuple[TimelineBeat, ...] = ()
+    timelines: tuple[tuple[TimelineBeat, ...], ...] = ()
+    # Codex lines (lore/query/codexslice.py), the same way: every part's, and
+    # one tuple per part. Empty when no part has an entity with an entry.
+    codex: tuple[CodexLine, ...] = ()
+    codexes: tuple[tuple[CodexLine, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class SectionSpec:
+    """How a deep answer's section is asked for (lore/query/deep.py): the
+    whole question it is a section of, how many claims it may keep, how its
+    writer is told to size it ("section"), and the aspect of that question the
+    section answers (`focus`, "" when it has none)."""
+
+    part_of: str
+    max_claims: int
+    length: str = "section"
+    focus: str = ""
+    # Names of the larger question's main entities (a topical question): a
+    # section's facts must bear on them as well as on its focus.
+    subject: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AnswerSection:
+    """One section of a deep answer. `prose` sentences cite the answer's own
+    claims (1-based, as in Answer.claims); `claims_start`..`claims_end` are the
+    section's claims in that numbering (inclusive; 0 and -1 when it has none).
+    `style` is "prose" or "claims" (the written section did not pass its check,
+    so `text` is the claim list). `kind` is "section", or "close" for the
+    interpretive close (reading, counter-case, limits)."""
+
+    heading: str
+    prose: tuple[ProseSentence, ...]
+    text: str
+    claims_start: int
+    claims_end: int
+    style: str = "prose"
+    kind: str = "section"
+    entities: tuple[str, ...] = ()
+    note: str | None = None
+    # The interpretive part this section's lens belongs to, named only when a
+    # question has several parts; "" otherwise.
+    group: str = ""
+    # The part's full question (`group` is its short label); "" when there is no group.
+    group_title: str = ""
+    # The full question a lens section answers (its heading is a short label); "" otherwise.
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -116,3 +229,25 @@ class Answer:
     claims: tuple[Claim, ...] = ()
     edges: tuple[EdgeRow, ...] = ()
     seeds: tuple[SeedEntity, ...] = ()
+    prose: tuple[ProseSentence, ...] = ()
+    answer_style: str = "claims"
+    # Sub-question texts the shown prose does not answer; empty otherwise.
+    unanswered: tuple[str, ...] = ()
+    # Aspects of the question, inside a part the prose does answer, that the
+    # facts do not cover (checked); shown with `unanswered` in one line.
+    gaps: tuple[str, ...] = ()
+    # A deep answer (lore/query/deep.py): the sections in order; `answer_style`
+    # is "sectioned". `requests` is the number of model requests the deep path
+    # made (planner, sections, short answer).
+    sections: tuple[AnswerSection, ...] = ()
+    requests: int = 0
+    # A deep answer opens with its short answer, written after its sections: an
+    # interpretive question's one reading per interpretive part (or code's
+    # "evidence did not support a clear position" line), any other deep
+    # question's few checked fact sentences (or code's "no direct summary could
+    # be verified" line), each marked `short`. `prose` and the sections are the
+    # argument that follows. Empty for every other answer.
+    short_answer: tuple[ProseSentence, ...] = ()
+    # Sections of a sectioned answer that could not be written (failed or found
+    # nothing); they are left out of `sections`, and this counts them.
+    unwritten: int = 0
