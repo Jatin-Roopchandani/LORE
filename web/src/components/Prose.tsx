@@ -10,6 +10,21 @@ const kindOf = (s: ProseSentence): Kind => {
   const k = s.kind as string | undefined;
   return k === "reading" || k === "judgement" ? "reading" : k === "counter" ? "counter" : k === "limit" ? "limit" : "fact";
 };
+// A sentence shows at most this many citation chips (a handful is what a reader can take in); the rest sit behind
+// a "+N" chip. Every cited claim stays on the sentence: only the display is capped.
+export const MAX_CHIPS = 4;
+const words = (t: string) => new Set((t.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []));
+// The passages of a sentence in the order they are shown: the `MAX_CHIPS` whose claims share the most words with
+// the sentence first picked (ties go to the earlier), then shown in their own order; `rest` are the others.
+export function chipPassages(s: ProseSentence, claims: SearchResult["claims"]) {
+  if (s.passages.length <= MAX_CHIPS) return { shown: s.passages, rest: [] as number[] };
+  const mine = words(s.text);
+  const score = (n: number) => Math.max(0, ...s.claims.map((k) => claims[k - 1]).filter((c) => c && c.passage === n)
+    .map((c) => { const w = words(`${c.text} ${c.quote}`); let hit = 0; mine.forEach((x) => { if (w.has(x)) hit++; }); return hit; }));
+  const best = new Set([...s.passages].map((n, at) => ({ n, at, v: score(n) }))
+    .sort((a, b) => b.v - a.v || a.at - b.at).slice(0, MAX_CHIPS).map((x) => x.n));
+  return { shown: s.passages.filter((n) => best.has(n)), rest: s.passages.filter((n) => !best.has(n)) };
+}
 const NOTE = { reading: UI.readingNote, counter: UI.counterNote, limit: UI.limitNote } as const;
 
 // `prose` shows other sentences than the result's own (a section's, or the overview's), cited from the result's
@@ -19,6 +34,7 @@ const NOTE = { reading: UI.readingNote, counter: UI.counterNote, limit: UI.limit
 export function Prose({ result, prose: given, showMissing = true, labels = true, onHoverChunks }:
   { result: SearchResult; prose?: ProseSentence[]; showMissing?: boolean; labels?: boolean; onHoverChunks: (chunks: string[]) => void }) {
   const [open, setOpen] = useState<string | null>(null);   // "<sentence>:<passage>"
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());   // sentences showing every chip
   const uid = useId();
   const noteId = (kind: Exclude<Kind, "fact">) => `${uid}-note-${kind}`;
   const byN = new Map(result.passages.map((p) => [p.n, p]));
@@ -54,10 +70,16 @@ export function Prose({ result, prose: given, showMissing = true, labels = true,
                   title={note} aria-describedby={kind === "fact" ? undefined : noteId(kind)}
                   onMouseEnter={() => onHoverChunks(chunks)} onMouseLeave={() => onHoverChunks([])}>
                   {s.text}{" "}
-                  {s.passages.map((n) => (
+                  {(expanded.has(i) ? s.passages : chipPassages(s, result.claims).shown).map((n) => (
                     <button key={n} className="cite" type="button" aria-expanded={open === `${i}:${n}`}
                       onClick={() => setOpen(open === `${i}:${n}` ? null : `${i}:${n}`)}>{`[${n}]`}</button>
                   ))}{" "}
+                  {!expanded.has(i) && chipPassages(s, result.claims).rest.length > 0 && (
+                    <>
+                      <button className="cite more" type="button" aria-expanded={false}
+                        onClick={() => setExpanded(new Set(expanded).add(i))}>{`+${chipPassages(s, result.claims).rest.length}`}</button>{" "}
+                    </>
+                  )}
                 </span>
               );
             })}

@@ -113,6 +113,10 @@ MAX_SUMMARY_CHARS = 160
 MAX_HEADING_CHARS = 80
 MAX_FOCUS_CHARS = 200
 
+# Two planned sections whose focus lines share this share of their content words (Jaccard,
+# function words dropped) cover one aspect: most of what one says the other says too.
+SAME_ASPECT_OVERLAP = 0.6
+
 # Candidate kinds, in the order the planner sees them.
 KINDS = ("Concept", "Faction", "Place", "Object", "Character", "Event")
 
@@ -147,8 +151,8 @@ Rules:
 - Give between {min_sections} and {max_sections} sections. Each section addresses
   one distinct aspect of the question as asked. For example, when the question asks
   about methods, techniques or stages, each section is one method, technique or
-  stage; when it asks about causes, each section is one cause. No section repeats
-  another.
+  stage; when it asks about causes, each section is one cause. No two sections may
+  cover the same aspect: when two aspects overlap, merge them into one section.
 - Each section has:
   - "focus": one line saying the aspect of the question that the section answers,
     worded as that aspect and not as a topic.
@@ -407,8 +411,14 @@ def validate_plan(raw, candidates: Sequence[Candidate],
         heading = lens_heading(focus, getattr(item, "heading", ""))
         mine = sections.setdefault(heading.casefold(), (heading, focus, []))[2]
         mine += [c for c in members if c not in mine]
-    return [PlannedSection(h, tuple(cs), f)
-            for h, f, cs in list(sections.values())[:max(cap, 0)]]
+    merged: list[tuple[str, str, list[Candidate]]] = []
+    for heading, focus, members in sections.values():
+        twin = next((m for m in merged if _overlap(m[1], focus) >= SAME_ASPECT_OVERLAP), None)
+        if twin is None:
+            merged.append((heading, focus, list(members)))
+        else:
+            twin[2].extend(c for c in members if c not in twin[2])
+    return [PlannedSection(h, tuple(cs), f) for h, f, cs in merged[:max(cap, 0)]]
 
 
 # --- one section -----------------------------------------------------------------
@@ -509,6 +519,22 @@ def section_question(heading: str, names: Sequence[str]) -> str:
     return f"{heading} ({', '.join(names)})" if names else heading
 
 
+def _unseen(registry: "Registry"):
+    """A filter for a section's claims: those that do not restate a fact an earlier
+    section already wrote (the same passage, and `_same_fact`'s word overlap). Each
+    fact then appears in one section, the earliest that wrote it."""
+    def keep(claims, passages):
+        chunk = {p.n: p.chunk_id for p in passages}
+        out = []
+        for c in claims:
+            at = registry._at.get(chunk.get(c.passage, ""), -1)
+            probe = c.model_copy(update={"passage": at})
+            if not any(_same_fact(prior, probe) for prior in registry.claims):
+                out.append(c)
+        return out
+    return keep
+
+
 def _restrictions(section: PlannedSection):
     """Per entity, the codex aspects and the beat ids a section is narrowed to.
     An entity named plainly in the section is not narrowed."""
@@ -529,7 +555,8 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
                       conn, kuzu, lance, models, scope: Scope, titles: dict[str, str],
                       books: Mapping[str, BookInfo], registry: Registry,
                       book_ids: frozenset[str] | None, on_event=None,
-                      subject: Sequence[SeedEntity] = ()) -> SectionResult:
+                      subject: Sequence[SeedEntity] = (),
+                      covered: Sequence[str] = ()) -> SectionResult:
     """Answer one section from its own evidence: its entities' relationships,
     timeline and codex slice, and the passages nearest it. The section's claims
     and prose come back in the answer's numbering (the registry's). The claims
@@ -579,7 +606,8 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
     if not evidence.passages:
         return SectionResult(None, [], [], [], seeds)
     spec = SectionSpec(part_of=question, max_claims=SECTION_CLAIMS, length="section",
-                       focus=section.focus, subject=tuple(s.name for s in subject))
+                       focus=section.focus, subject=tuple(s.name for s in subject),
+                       covered=tuple(covered), skip=_unseen(registry))
     answer = await synthesize(ask, evidence, models.synthesize, mode="graph", check=models.check,
                               write=models.write, book_titles=titles, books=dict(books), section=spec)
     if not answer.claims:
@@ -787,7 +815,8 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
             result = await run_section(index, section, vec, question=question, conn=conn,
                                        kuzu=kuzu, lance=lance, models=models, scope=scope,
                                        titles=titles, books=books, registry=registry,
-                                       book_ids=scope_books, on_event=on_event, subject=subject)
+                                       book_ids=scope_books, on_event=on_event, subject=subject,
+                                       covered=[d.heading for d in done])
         except Exception as err:  # noqa: BLE001 -- one section failing leaves the others
             log.exception("deep section %r failed", section.heading)
             failures.append(err)

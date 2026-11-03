@@ -162,6 +162,11 @@ class SectionSpec:
     # Names of the larger question's main entities (a topical question): a
     # section's facts must bear on them as well as on its focus.
     subject: tuple[str, ...] = ()
+    # Headings of the sections written before this one (the writer is told not to
+    # re-explain them), and a filter that drops the claims an earlier section already
+    # states (called with the section's claims and its passages).
+    covered: tuple[str, ...] = ()
+    skip: "Callable[[list, Sequence], list] | None" = None
 
 
 @dataclass(frozen=True)
