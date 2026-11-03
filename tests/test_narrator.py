@@ -9,6 +9,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from lore.inference.gemini import MAX_JSON_OUTPUT_TOKENS
+
 from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import EMBED_DIM, LanceStore
@@ -437,7 +439,8 @@ async def test_the_gemini_factory_sends_json_requests_and_caches(tmp_path) -> No
         ("sis:17:1", "I took the ring from her finger"): "Jefferson Hope"}
     assert len(seen) == 2
     assert all(body["generationConfig"] == {"temperature": 0,
-                                            "responseMimeType": "application/json"}
+                                            "responseMimeType": "application/json",
+                                            "maxOutputTokens": MAX_JSON_OUTPUT_TOKENS}
                for body in seen)
     assert (config.narrators_dir / "answers.json").is_file()
     assert (config.speakers_dir / "answers.json").is_file()
