@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, isError } from "../api";
 import { UI } from "../messages";
-import { applyTheme, loadTheme, type ThemeMode } from "../theme";
 import type { McpInfo } from "../types";
 
 function Snip({ text }: { text: string }) {
@@ -20,10 +19,8 @@ export function SettingsMenu({ showInternals }: { showInternals: boolean }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"stdio" | "http">("stdio");
   const [mcp, setMcp] = useState<McpInfo | null>(null);
-  const [mode, setMode] = useState<ThemeMode>(loadTheme());
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  useEffect(() => { if (open) setMode(loadTheme()); }, [open]);
   useEffect(() => { if (open && showInternals) api.mcp().then((r) => { if (!isError(r)) setMcp(r); }); }, [open, showInternals]);
   useEffect(() => {
     if (!open) return;
@@ -32,7 +29,6 @@ export function SettingsMenu({ showInternals }: { showInternals: boolean }) {
     document.addEventListener("mousedown", close); document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, [open]);
-  const choose = (m: ThemeMode) => { applyTheme(m); setMode(m); };
   return (
     <div className="pop" ref={root}>
       <button ref={trigger} className="tbtn icon" type="button" aria-label="Settings" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>⚙</button>
@@ -54,12 +50,6 @@ export function SettingsMenu({ showInternals }: { showInternals: boolean }) {
               <span className={`status${mcp.http_running ? " on" : ""}`}><i />{mcp.http_running ? UI.mcpRunning : UI.mcpNotRunning}</span>
             </>)}
           </>)}
-          <h4>Appearance</h4>
-          <div className="seg" role="group" aria-label="Theme">
-            {(["system", "light", "dark"] as ThemeMode[]).map((m) => (
-              <button key={m} type="button" aria-pressed={mode === m} onClick={() => choose(m)}>{m[0].toUpperCase() + m.slice(1)}</button>
-            ))}
-          </div>
         </div>
       )}
     </div>
