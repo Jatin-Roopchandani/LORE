@@ -180,6 +180,12 @@ LENS_LENGTH_RULE = """- Length: this is one section of a long, detailed answer, 
   supports. If no fact can open that way, leave the opening out and begin with
   the first fact.
 """
+# Added to a later section's writer prompt: the headings of the sections before it. A fact
+# belongs to one section only, so the writer keeps to the facts it is given and does not
+# re-explain what those sections cover.
+COVERED_LEAD = "Already covered in earlier sections:"
+COVERED_RULE = ("- " + COVERED_LEAD + "\n{headings}\n  Those sections state their own facts. Do not "
+                "re-explain what their headings cover; write only about the facts given below.\n")
 LENGTH_RULES = {None: _LENGTH_RULE, "section": SECTION_LENGTH_RULE,
                 "short": SHORT_LENGTH_RULE, "lens": LENS_LENGTH_RULE}
 
@@ -309,8 +315,10 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
                   passages: Iterable[Passage], book_titles: dict[str, str] | None,
                   books: dict[str, BookInfo] | None = None,
                   shape: "interpret.Shape | None" = None,
-                  length: str | None = None) -> str:
-    """`shape`: the interpretive answer's shape (interpret.py), only with
+                  length: str | None = None, covered: Sequence[str] = ()) -> str:
+    """`covered`: the headings of the sections written before this one (a lens
+    section's writer), listed so it does not re-explain them (COVERED_RULE).
+    `shape`: the interpretive answer's shape (interpret.py), only with
     STORY_ORDER. The facts are then listed under an "Evidence for:" heading per
     lens, and the shape's rule and the viewpoint replace the readings rule.
     `length` ("section", "short" or "lens", only with STORY_ORDER): the part of a
@@ -334,9 +342,11 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
             rules = interpret.writer_rule(shape)
         else:  # a deep answer's section or short answer states facts
             rules = _READINGS_RULE if readings_on() and length is None else ""
+        before = (COVERED_RULE.format(headings="\n".join(f"  - {h}" for h in covered))
+                  if covered else "")
         return STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
                                           order_note=note, readings=rules,
-                                          length=LENGTH_RULES[length])
+                                          length=LENGTH_RULES[length] + before)
     by_number = {p.n: p for p in passages}
     lines = []
     for number, claim in enumerate(claims, start=1):
@@ -363,7 +373,7 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
                        book_titles: dict[str, str] | None = None,
                        books: dict[str, BookInfo] | None = None,
                        shape: "interpret.Shape | None" = None,
-                       length: str | None = None) -> Prose | None:
+                       length: str | None = None, covered: Sequence[str] = ()) -> Prose | None:
     """The writer's prose, or None on any failure: a failed extra step must
     never cost the user the checked claims (they are the fallback).
 
@@ -381,7 +391,7 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     try:
         reply = await generate(
             writer_prompt(question, sub_questions, claims, passages, book_titles, books, shape,
-                          length),
+                          length, covered),
             (Prose if kinds else _StoryProse) if STORY_ORDER else _PlainProse)
     except Exception:  # noqa: BLE001 -- see the docstring
         return None

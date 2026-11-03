@@ -161,7 +161,7 @@ test("while the answer streams the line counts the sections that have failed so 
 test("a short answer part opens with its label as a small muted inline mark, not as text of the sentence", () => {
   const { container } = view([...lens.head, lens.plan, lens.shortEvent([lens.shortA, lens.noPosition])]);
   const labels = [...container.querySelectorAll(".short-answer .part-label")];
-  expect(labels.map((n) => n.textContent)).toEqual(["First book", "Second book"]);
+  expect(labels.map((n) => n.textContent)).toEqual(["First book:", "Second book:"]);   // the colon is part of the label element, a space follows it
   const paras = container.querySelectorAll(".short-answer p.prose");
   expect(paras[0].firstElementChild).toBe(labels[0]);
   expect(paras[0].querySelector(".sentence")!.textContent).not.toContain("First book");
@@ -171,4 +171,113 @@ test("a short answer part opens with its label as a small muted inline mark, not
 test("a short answer with no label shows no label element", () => {
   const { container } = view([proseResult({ short_answer: [{ ...lens.shortA, label: "" }] })]);
   expect(container.querySelector(".short-answer .part-label")).toBeNull();
+});
+
+// ---- headings: structure, the part's label with its question as title, capital letters (2026-11-03) ------------
+
+// @ts-expect-error -- node built-ins have no types in this project
+import { readFileSync } from "node:fs";
+const css: string = readFileSync("src/theme.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");   // vitest runs from web/
+const rule = (selector: string) => [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+  .filter((m) => m[1].split(",").map((x) => x.trim()).includes(selector)).map((m) => m[2]).join(";");
+const token = (name: string) => css.match(new RegExp(`${name}\\s*:\\s*([^;}]+)`))?.[1].trim() ?? "";
+const px = (value: string): number => {
+  const calc = value.match(/calc\(\s*var\((--[\w-]+)\)\s*\*\s*([\d.]+)\s*\)/);
+  return calc ? px(token(calc[1])) * Number(calc[2]) : parseFloat(value);
+};
+
+const PART_TITLE = "Describe in detail how the boldest figure of the first book behaved?";
+const withPartTitle = (events: AskEvent[], label = lens.PART_A) => events.map((e) => {
+  if (e.type === "plan") return { ...e, sections: e.sections.map((s) => s.group === label ? { ...s, group_title: PART_TITLE } : s) } as AskEvent;
+  if (e.type === "section" && e.group === label) return { ...e, group_title: PART_TITLE } as AskEvent;
+  return e;
+});
+
+test("a heading and its subtitle share one block: the subtitle is a child of the heading block, after the heading", () => {
+  const labelled = lens.full.map((e) => e.type === "section" || e.type === "plan"
+    ? JSON.parse(JSON.stringify(e).replaceAll('"What did Rin risk"', '"Risks he ran"')) as AskEvent : e);
+  const { container } = view(labelled);
+  const head = screen.getByRole("heading", { name: "Risks he ran", level: 3 });
+  expect(head).toHaveClass("section-heading");
+  const block = head.parentElement!;
+  expect(block).toHaveClass("section-head");
+  expect(block.tagName).not.toBe("HEADER");                       // the page's own header rule must not apply
+  const subtitle = block.querySelector(":scope > .section-question")!;
+  expect(subtitle.textContent).toBe(lens.TITLE_0);
+  expect(head.nextElementSibling).toBe(subtitle);
+  expect(head.textContent).toBe("Risks he ran");                   // the subtitle is not part of the heading text
+  expect(container.querySelector("#answer-section-0")!.firstElementChild).toBe(block);
+});
+
+test("a part heading shows the part's short label, with its full question as a tooltip and as the subtitle", () => {
+  const { container } = view(withPartTitle(lens.full));
+  const h2 = container.querySelector(".sectioned h2.part-heading")!;
+  expect(h2.textContent).toBe(lens.PART_A);                        // the label (the fixture's) and never the question
+  expect(h2).toHaveAttribute("title", PART_TITLE);
+  const block = h2.parentElement!;
+  expect(block).toHaveClass("part-head");
+  expect(block.querySelector(":scope > .section-question")?.textContent).toBe(PART_TITLE);
+  expect(h2.nextElementSibling).toBe(block.querySelector(".section-question"));
+  // The contents link of the part carries the question as its tooltip too.
+  const nav = screen.getByRole("navigation", { name: DEEP.contents });
+  expect(within(nav).getAllByRole("link", { name: lens.PART_A })[0]).toHaveAttribute("title", PART_TITLE);
+});
+
+test("a part without a distinct question has no subtitle", () => {
+  const { container } = view(lens.full);
+  expect(container.querySelector(".part-head .section-question")).toBeNull();
+});
+
+test("headings and part labels are shown with a capital first letter whatever the server sent", () => {
+  const lower = lens.full.map((e) => e.type === "section" || e.type === "plan"
+    ? JSON.parse(JSON.stringify(e).replaceAll('"What did Rin risk"', '"risks he ran"').replaceAll(lens.PART_A, "first book")) as AskEvent : e);
+  const { container } = view(lower);
+  expect(screen.getByRole("heading", { name: "Risks he ran", level: 3 })).toBeInTheDocument();
+  expect(container.querySelector(".sectioned h2.part-heading")?.textContent).toBe("First book");
+  const nav = screen.getByRole("navigation", { name: DEEP.contents });
+  expect(within(nav).getAllByRole("link").map((a) => a.textContent)).toContain("Risks he ran");
+});
+
+test("the stylesheet makes a section heading clearly larger than the prose, a part heading larger again", () => {
+  const body = px(token("--prose-size"));
+  const section = px(token("--section-h-size"));
+  const part = px(token("--part-h-size"));
+  expect(body).toBeGreaterThan(0);
+  expect(section).toBeGreaterThanOrEqual(body * 1.2);
+  expect(part).toBeGreaterThan(section);
+  // The prose uses the body size token, and the headings use theirs, in the UI sans font, semibold or bold.
+  expect(rule(".prose")).toMatch(/var\(--prose-size\)/);
+  const sectionRule = rule(".sectioned .section-head .section-heading");
+  expect(sectionRule).toMatch(/var\(--section-h-size\)/);
+  expect(sectionRule).toMatch(/var\(--f-ui\)/);
+  expect(Number(sectionRule.match(/font:\s*(\d{3})\b/)?.[1])).toBeGreaterThanOrEqual(600);
+  expect(Number(sectionRule.match(/font:\s*(\d{3})\b/)?.[1])).toBeLessThanOrEqual(700);
+  expect(rule(".sectioned .part-head .part-heading")).toMatch(/var\(--part-h-size\)/);
+});
+
+test("the stylesheet puts the accent bar on the heading block and the subtitle directly under the heading", () => {
+  const bar = rule(".sectioned .section-head");
+  expect(bar).toMatch(/border-left:\s*3px solid var\(--accent\)/);
+  expect(rule(".sectioned .section-head .section-heading")).not.toMatch(/border-left|padding-left/);
+  const sub = rule(".sectioned .section-question");
+  expect(sub).not.toMatch(/padding-left|margin-left|text-indent/);   // aligned with the heading text
+  expect(sub).toMatch(/var\(--muted\)/);
+  expect(px(sub.match(/font:[^;]*?(\d+)px/)?.[1] ?? "99")).toBeLessThan(px(token("--prose-size")));
+  expect(rule(".answer-section")).toMatch(/padding-top:\s*var\(--section-gap\)/);   // one spacing for every section
+});
+
+test("the part label is its own element, capitalised, followed by a colon and a space", () => {
+  const { container } = view([proseResult({ short_answer: [
+    { text: "Holmes tested every claim.", claims: [1], passages: [1], new_paragraph: true, kind: "fact", label: "scientific methods" }] })]);
+  const label = container.querySelector(".short-answer .part-label")!;
+  expect(label.textContent).toBe("Scientific methods:");
+  expect(label.parentElement!.textContent).toMatch(/^Scientific methods: Holmes tested every claim\./);
+  expect(label.parentElement!.textContent).not.toMatch(/methods:?Holmes/);
+});
+
+test("three interpretive parts show three labelled lines in the short answer", () => {
+  const line = (label: string, text: string) => ({ text, claims: [1], passages: [1], new_paragraph: true, kind: "fact" as const, label });
+  const { container } = view([proseResult({ short_answer: [line("Analytic methods", "A."), line("scientific methods", "B."), line("Investigative methods", "C.")] })]);
+  const paragraphs = [...container.querySelectorAll(".short-answer p.prose")].map((p) => p.textContent!.replace(/\s+/g, " ").trim());
+  expect(paragraphs).toEqual(["Analytic methods: A. [1]", "Scientific methods: B. [1]", "Investigative methods: C. [1]"]);
 });

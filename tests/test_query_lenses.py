@@ -16,7 +16,7 @@ from lore.query import decompose as decompose_module, deep, interpret
 from lore.query.decompose import Decomposition, PartSpec
 from lore.query.deep import DeepPlan, PlanSection
 from lore.query.synthesize import Synthesis
-from lore.query.write import LENS_LENGTH_RULE, Prose, Sentence
+from lore.query.write import COVERED_LEAD, LENS_LENGTH_RULE, Prose, Sentence
 from tests.deep_fixtures import Scripted, build_deep_library, run_scenario
 from tests.test_query_interpret_agent import (
     LENS_A, LENS_B, QUESTION, Models, plan_of,
@@ -31,10 +31,12 @@ class LensModels(Models):
     """Per-lens claims (each lens quotes its own stretch), a reading phase that
     answers with `reading`, and a section writer that states each fact once."""
 
-    def __init__(self, decomposition, reading, *, quotes=None, fail_section=None, empty=()):
+    def __init__(self, decomposition, reading, *, quotes=None, fail_section=None, empty=(),
+                 claim_sets=None):
         super().__init__(decomposition, write=None)
         self.reading = reading
         self.quotes = quotes or {}
+        self.claim_sets = claim_sets or {}  # lens question -> [(claim text, quote)]
         self.fail_section = fail_section
         self.empty = tuple(empty)
         self.calls: list[tuple[str, str]] = []
@@ -47,6 +49,10 @@ class LensModels(Models):
             if question in self.empty:
                 return Synthesis(can_answer=False, claims=[])
             n = int(re.search(r"^\[(\d+)\]", prompt, re.M).group(1))
+            if question in self.claim_sets:
+                return Synthesis(can_answer=True, claims=[
+                    {"text": text, "passage": n, "quote": quote}
+                    for text, quote in self.claim_sets[question]])
             quote = self.quotes.get(question, QUOTES[2])
             return Synthesis(can_answer=True, claims=[
                 {"text": f"Zed Quill: {quote}.", "passage": n, "quote": quote}])
@@ -173,14 +179,17 @@ async def test_the_heading_is_the_lens_question_cleaned_and_a_part_is_named_when
     assert [s.heading for s in sections] == [
         "What did Zed Quill do on the road", "How did it end", "Who guided the walker",
         "What did the guide ask in return"]
-    assert [s.group for s in sections] == ["In the first volume, who walked best?"] * 2 + [
+    assert [s.group for s in sections] == ["In the first volume, who walked best"] * 2 + [
+        "In the second volume, who walked best"] * 2
+    assert [s.group_title for s in sections] == ["In the first volume, who walked best?"] * 2 + [
         "In the second volume, who walked best?"] * 2
     # One verdict per part, in the short answer.
     assert [s.text for s in answer.short_answer] == [
         "In the first volume, the evidence suggests Zed walked best.",
         "In the second volume, on balance the guide walked best."]
     (plan_event,) = of(events, "plan")
-    assert [(x["index"], x["group"]) for x in plan_event["sections"]][-1] == (3, "In the second volume, who walked best?")
+    assert [(x["index"], x["group"], x["group_title"]) for x in plan_event["sections"]][-1] == (
+        3, "In the second volume, who walked best", "In the second volume, who walked best?")
 
 
 async def test_a_lens_label_heads_the_section_and_the_full_question_rides_along_as_its_title(config):
@@ -354,3 +363,107 @@ async def test_the_topical_path_sends_seeds_and_edges_per_section_and_names_the_
     assert parts[-1]["sub_questions"] == ["The traveller", "The road"]
     assert types.index("plan") < len(types) - 1 - types[::-1].index("parts") < types.index("seeds")
     assert types.count("evidence") == 1 and types.index("evidence") > types.index("edges")
+
+
+# ---- each claim is cited by one section only (2026-11-03) -------------------------------------
+
+def _claim(text, quote="a quote of four words", passage=1):
+    return deep.Claim(text=text, passage=passage, quote=quote)
+
+
+FOCUS = ["What did Zed Quill build in the market", "How did the road end for Zed Quill"]
+
+
+def test_a_claim_goes_to_the_lens_that_found_it_even_when_its_words_fit_another_better():
+    # the text is about the first lens's question, but only the second lens found it
+    misfit = _claim("Zed Quill built a stall in the market.", "quote one of words")
+    own = _claim("The end came at dusk.", "quote two of words")
+    assert deep.assign_sections([misfit, own], [frozenset({1}), frozenset({0})], FOCUS) == [1, 0]
+
+
+def test_a_claim_several_lenses_found_goes_to_the_one_whose_question_it_fits_best():
+    claim = _claim("The road ended at a quiet gate.")
+    assert deep.assign_sections([claim], [frozenset({0, 1})], FOCUS) == [1]
+    claim = _claim("Zed Quill built a stall in the market.")
+    assert deep.assign_sections([claim], [frozenset({0, 1})], FOCUS) == [0]
+
+
+def test_a_claim_no_lens_is_known_to_have_found_goes_to_the_best_lexical_fit_of_all():
+    assert deep.assign_sections([_claim("The road ended there.")], [frozenset()], FOCUS) == [1]
+
+
+def test_claims_that_restate_one_fact_go_to_one_section_together():
+    one = _claim("Zed Quill walked on with Yan Vale along the dusty road at night.", "walked on with Yan Vale")
+    other = _claim("Yan Vale joined Zed Quill, who walked on.", "walked on with Yan Vale")
+    elsewhere = _claim("A bell rang at the gate.", "a bell rang loudly out", passage=2)
+    owner = deep.assign_sections([one, other, elsewhere], [frozenset({0}), frozenset({1}), frozenset({1})], FOCUS)
+    assert owner[0] == owner[1]
+    assert owner[2] == 1                                      # a different fact stays with its own lens
+
+
+def test_ties_spread_over_the_lenses_that_found_a_claim():
+    a, b = _claim("Alpha beta.", "one two three four"), _claim("Gamma delta.", "five six seven eight")
+    assert deep.assign_sections([a, b], [frozenset({0, 1})] * 2, ["x", "y"]) == [0, 1]
+
+
+async def test_overlapping_claims_are_cited_by_one_section_and_each_writer_sees_only_its_own(config):
+    shared = QUOTES[0]
+    sets = {LENS_A: [("Zed Quill walked on with Yan Vale along the dusty road at night.", shared)],
+            LENS_B: [("Yan Vale joined Zed Quill, who walked on.", shared),
+                     ("Zed Quill: the traveller Zed Quill.", QUOTES[1])]}
+    scripted = LensModels(ONE_PART, READING, quotes=QUOTE_OF, claim_sets=sets)
+    answer, events = await ask(config, scripted)
+    assert len(answer.claims) == 3                            # every claim stays, once, in the claims list
+    cited = [{k for s in sec.prose for k in s.claims} for sec in answer.sections if sec.kind == "section"]
+    assert not set.intersection(*cited) if len(cited) > 1 else True
+    sections = [p for p in scripted.prompts("write") if "Evidence for:" not in p]
+    both = [p for p in sections if "along the dusty road" in p]
+    assert len(both) == 1 and "Yan Vale joined" in both[0]    # the restated fact is written up once
+    assert not any("Yan Vale joined" in p for p in sections if p is not both[0])
+    claimed = [(sec.claims_start, sec.claims_end) for sec in answer.sections if sec.kind == "section"]
+    assert all(a <= b for a, b in claimed)
+    assert sorted(n for a, b in claimed for n in range(a, b + 1)) == [1, 2, 3]
+
+
+async def test_a_lens_whose_claims_all_went_to_another_section_is_not_counted_unwritten(config):
+    sets = {LENS_A: [("Zed Quill walked on with Yan Vale along the dusty road at night.", QUOTES[0])],
+            LENS_B: [("Yan Vale joined Zed Quill, who walked on.", QUOTES[0])]}
+    answer, events = await ask(config, LensModels(ONE_PART, READING, quotes=QUOTE_OF, claim_sets=sets))
+    assert [s.kind for s in answer.sections] == ["section", "close"]
+    assert answer.unwritten == 0
+
+
+async def test_each_later_section_is_told_which_sections_came_before_it(config):
+    scripted = LensModels(ONE_PART, READING, quotes=QUOTE_OF)
+    await ask(config, scripted)
+    first, second = [p for p in scripted.prompts("write") if "Evidence for:" not in p]
+    assert COVERED_LEAD not in first
+    flat = " ".join(second.split())
+    assert COVERED_LEAD in flat
+    assert "What did Zed Quill do on the road" in second.split(COVERED_LEAD)[1].split("Question:")[0]
+    assert "How did the road end" not in second.split(COVERED_LEAD)[1].split("Question:")[0]
+
+
+# ---- headings (2026-11-03) ---------------------------------------------------------------------
+
+async def test_a_part_is_headed_by_its_short_label_and_the_question_rides_along_as_its_title(config):
+    plan = Decomposition(sub_questions=[
+        PartSpec(question="Describe the analytic methods of the traveller in detail?", kind="interpretive",
+                 label="analytic methods", lenses=[LENS_A, LENS_B]),
+        PartSpec(question="Describe the scientific methods of the traveller in detail?", kind="interpretive",
+                 label="scientific methods", lenses=["Who guided the walker?", "What did the guide ask?"])],
+        depth="deep")
+    reading = Prose(sentences=[S("F1.", [1]), S("F2.", [2]), S("F3.", [3]), S("F4.", [4]),
+                               S("The evidence suggests the traveller was careful.", [1, 2], "reading"),
+                               S("On balance the traveller tested things.", [3, 4], "reading")])
+    quotes = {LENS_A: QUOTES[0], LENS_B: QUOTES[1], "Who guided the walker?": QUOTES[2],
+              "What did the guide ask?": QUOTES[3]}
+    answer, events = await ask(config, LensModels(plan, reading, quotes=quotes))
+    sections = [s for s in answer.sections if s.kind == "section"]
+    assert [s.group for s in sections] == ["Analytic methods"] * 2 + ["Scientific methods"] * 2
+    assert {s.group_title for s in sections[:2]} == {"Describe the analytic methods of the traveller in detail?"}
+    (plan_event,) = of(events, "plan")
+    assert [x["group"] for x in plan_event["sections"]] == ["Analytic methods"] * 2 + ["Scientific methods"] * 2
+    assert [s.label for s in answer.short_answer] == ["Analytic methods", "Scientific methods"]
+    start = [e for e in of(events, "section") if e["state"] == "start"][0]
+    assert (start["group"], start["group_title"]) == ("Analytic methods", sections[0].group_title)

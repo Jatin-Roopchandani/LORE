@@ -182,6 +182,8 @@ class AnswerSection:
     # The interpretive part this section's lens belongs to, named only when a
     # question has several parts; "" otherwise.
     group: str = ""
+    # The part's full question (`group` is its short label); "" when there is no group.
+    group_title: str = ""
     # The full question a lens section answers (its heading is a short label); "" otherwise.
     title: str = ""
 

@@ -23,6 +23,8 @@ export interface SectionOut { heading: string; kind: "section" | "close"; style:
   prose: ProseSentence[]; claims_range: [number, number] | null; entities: string[]; note: string | null;
   // The interpretive part this lens section belongs to; "" (or absent) unless the question has several parts.
   group?: string;
+  // The part's full question (`group` is its short label); "" or absent without a group.
+  group_title?: string;
   // The full lens question the section answers (its heading is a short label); "" or absent otherwise.
   title?: string }
 export interface SearchResult { answer: string; mode: string; template: string | null; note: string | null;
@@ -38,13 +40,13 @@ export interface SearchResult { answer: string; mode: string; template: string |
   short_answer?: ProseSentence[];
   // Sections of a sectioned answer that failed or found nothing: they are left out of `sections`, counted here.
   unwritten_sections?: number }
-export interface PlanSection { index: number; heading: string; group?: string; title?: string;
+export interface PlanSection { index: number; heading: string; group?: string; group_title?: string; title?: string;
   entities: { id: string; name: string; kind: string }[] }
 export interface SectionEvent { type: "section"; t: number; index: number; kind: "section" | "close"; heading: string;
   state: "start" | "done" | "skipped";
   style?: "prose" | "claims" | "empty" | "failed"; text?: string; prose?: ProseSentence[]; claims?: Claim[];
   claims_range?: [number, number] | null; passages?: Passage[]; note?: string | null;
-  reason?: "budget" | "reserve"; group?: string; title?: string }
+  reason?: "budget" | "reserve"; group?: string; group_title?: string; title?: string }
 export interface ApiError { code: string; message: string }
 export type AskEvent =
   | { type: "step"; t: number; name: StepName | DeepStepName; state: "start" | "done"; part: number | null; detail: string | null }

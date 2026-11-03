@@ -153,7 +153,7 @@ def test_validation_merges_repeated_headings_and_names_blank_ones():
     got = deep.validate_plan(raw, candidates())
     # A blank heading is the focus, shortened; a section with no focus is dropped (see below).
     assert [(s.heading, [c.id for c in s.candidates]) for s in got] == [
-        ("Same", ["a", "c"]), ("other", ["b"]), ("what it is", ["b"])]
+        ("Same", ["a", "c"]), ("Other", ["b"]), ("What it is", ["b"])]   # every heading is capitalised
 
 
 def test_validation_survives_a_garbled_plan():
@@ -581,7 +581,7 @@ def test_headings_are_cleaned_capped_and_fall_back_to_a_name():
     assert heads[0] == "The road"
     assert "[" not in "".join(heads) and "*" not in "".join(heads) and "`" not in "".join(heads)
     assert heads[1] == "Rin link later"
-    assert len(heads[2]) <= deep.MAX_HEADING_CHARS + 3 and heads[2].startswith("xxx")
+    assert len(heads[2]) <= deep.MAX_HEADING_CHARS + 3 and heads[2].startswith("Xxx")
     # A focus that is blank once cleaned is no focus: that section is dropped.
     assert len(heads) == 3
 

@@ -50,6 +50,8 @@ MAX_SUMMARIES_PER_PART = 2
 
 # Said by code, never by the model.
 NO_VERDICT_LINE = "The evidence found isn't strong enough for a clear verdict on this."
+# Said by code for a part that asked for an analysis and has no reading or summary left.
+NO_ANALYSIS_LINE = "The evidence found isn't enough for a clear analysis of this."
 NO_COUNTER_LINE = "The evidence found doesn't support a strong opposing reading."
 LIMITS_LEAD = "The books don't settle:"
 
@@ -398,8 +400,8 @@ def summary_part(claims: Sequence[int], shape: Shape) -> int | None:
 def short_answer(shape: Shape, readings: dict[int, ProseSentence] | None = None,
                  summaries: dict[int, list[ProseSentence]] | None = None) -> tuple[ProseSentence, ...]:
     """The short answer, in the order of the interpretive parts. Per part: its
-    reading; else its checked fact summary (1-2 fact sentences); else, only
-    for a part that asked for a verdict, code's line; else nothing. Each part
+    reading; else its checked fact summary (1-2 fact sentences); else code's
+    line (for a verdict or for an analysis): no part is left without one. Each part
     is its own paragraph and marked `short`. With several interpretive parts
     its first sentence carries the part's short label (never the question)."""
     readings, summaries = readings or {}, summaries or {}
@@ -410,10 +412,9 @@ def short_answer(shape: Shape, readings: dict[int, ProseSentence] | None = None,
             mine = [replace(readings[part], short=True)]
         elif summaries.get(part):
             mine = [replace(s, kind="fact", short=True) for s in summaries[part][:MAX_SUMMARIES_PER_PART]]
-        elif shape.stance(part) == "verdict":
-            mine = [_limit(NO_VERDICT_LINE, True, True)]
-        else:
-            continue
+        else:  # every part has its line
+            mine = [_limit(NO_VERDICT_LINE if shape.stance(part) == "verdict" else NO_ANALYSIS_LINE,
+                           True, True)]
         label = part_label(shape, part) if several else ""
         out += [replace(s, new_paragraph=i == 0, label=label if i == 0 else "")
                 for i, s in enumerate(mine)]

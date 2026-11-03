@@ -785,8 +785,10 @@ def test_the_no_verdict_line_names_no_question_and_is_for_verdict_parts_only():
     assert short[1].text == "The evidence found isn't strong enough for a clear verdict on this."
     assert short[1].label == "In book B, who is bravest"
     short, _ = _split(interpret.close_answer(prose, _two(("verdict", "analysis"))))
-    assert [s.label for s in short] == ["In book A, who is bravest"]
-    assert not any(s.kind == "limit" for s in short)  # analysis part: no line, nothing to say
+    # every part has its line: an analysis part with nothing says so in its own words
+    assert [s.label for s in short] == ["In book A, who is bravest", "In book B, who is bravest"]
+    assert short[1].kind == "limit" and short[1].text == interpret.NO_ANALYSIS_LINE
+    assert short[1].text != interpret.NO_VERDICT_LINE
 
 
 def test_a_fact_summary_is_the_short_answer_when_the_reading_is_missing():
@@ -812,10 +814,11 @@ def test_a_reading_wins_over_a_summary_and_at_most_two_summaries_stand():
     assert [s.text for s in short] == ["One.", "Two."]
 
 
-def test_analysis_parts_with_nothing_surviving_get_no_line_at_all():
+def test_an_analysis_part_with_nothing_surviving_still_gets_its_line():
     shape = Shape(VP, SHAPE.parts, SHAPE.kinds, SHAPE.retrieval, SHAPE.claim_parts, ("analysis",), ("",))
     out = interpret.close_answer(_prose("fact", "fact"), shape)
-    assert not any(s.short for s in out)
+    short = [s for s in out if s.short]
+    assert [(s.kind, s.text) for s in short] == [("limit", interpret.NO_ANALYSIS_LINE)]
     assert not any(s.text == interpret.NO_VERDICT_LINE for s in out)
 
 
@@ -858,5 +861,61 @@ async def test_a_summary_the_check_rejects_falls_back_to_the_verdict_line():
     analysis = (Part("Was Rin right to leave?", "interpretive", ("What did Rin do?", "How did it end?"),
                      stance="analysis"),)
     a = await _answer(Script(LENS_CLAIMS, prose, ["supported"] * 3 + ["not_supported"]), analysis)
-    assert a.short_answer == ()
-    assert interpret.NO_VERDICT_LINE not in a.text and "no clear" not in a.text.lower()
+    assert [s.text for s in a.short_answer] == [interpret.NO_ANALYSIS_LINE]
+    assert interpret.NO_VERDICT_LINE not in a.text
+
+
+# ---- every part gets a short-answer line; labels are capitalised and set apart (2026-11-03) --------
+
+THREE = Shape(VP, ("How does A work?", "How does B work?", "How does C work?"),
+              ("interpretive",) * 3,
+              (("a1", 0, True), ("b1", 1, True), ("c1", 2, True)),
+              (frozenset({0}), frozenset({1}), frozenset({2})),
+              ("analysis",) * 3, ("analytic methods", "scientific methods", ""))
+
+
+def test_three_interpretive_parts_give_three_labelled_short_answer_lines():
+    prose = (ProseSentence("A fact.", (1,), (1,)),
+             _reading("On balance, A is methodical.", [1]),
+             _summary("B was measured and tested.", [2]))
+    short, _ = _split(interpret.close_answer(prose, THREE))
+    assert len(short) == 3                                   # the third part has nothing: still a line
+    assert [s.label for s in short] == ["Analytic methods", "Scientific methods", "How does C work"]
+    assert [s.kind for s in short] == ["reading", "fact", "limit"]
+    assert short[2].text == interpret.NO_ANALYSIS_LINE
+    assert all(s.new_paragraph for s in short)
+
+
+def test_the_code_written_short_answer_also_has_a_line_for_every_part():
+    short = interpret.short_answer(THREE)
+    assert [s.label for s in short] == ["Analytic methods", "Scientific methods", "How does C work"]
+    assert all(s.text == interpret.NO_ANALYSIS_LINE for s in short)
+
+
+def test_a_label_is_set_apart_from_its_text_by_a_colon_and_a_space():
+    prose = (_reading("On balance, A is methodical.", [1]), _reading("On balance, B tested things.", [2]))
+    short, _ = _split(interpret.close_answer(prose, THREE))
+    text = w.compose_text(short)
+    assert "Analytic methods: On balance, A is methodical." in text
+    assert "Scientific methods: On balance, B tested things." in text
+    assert "Scientific methodsOn" not in text
+    assert text.count("\n\n") == 2                         # one paragraph per part
+
+
+def test_capitalise_raises_the_first_letter_and_keeps_the_rest():
+    from lore.query.deep import capitalise
+    assert capitalise("scientific methods") == "Scientific methods"
+    assert capitalise("the iPhone and NASA") == "The iPhone and NASA"
+    assert capitalise("") == "" and capitalise("\u201cquoted\u201d part") == "\u201cQuoted\u201d part"
+
+
+def test_every_heading_and_label_is_capitalised_in_code():
+    from lore.query.deep import lens_heading
+    assert lens_heading("what did he do?", "") == "What did he do"
+    assert lens_heading("What did he do?", "surveillance and tracking") == "Surveillance and tracking"
+    assert interpret.part_label(THREE, 0) == "Analytic methods"
+
+
+def test_the_no_analysis_line_is_a_covered_prompt_text():
+    from tests.test_query_synthesize import _new_prompt_texts
+    assert interpret.NO_ANALYSIS_LINE in _new_prompt_texts()

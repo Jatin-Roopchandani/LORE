@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { citationSource, unwrittenCount, type AskState, type SectionView } from "../askReducer";
 import { DEEP } from "../messages";
+import { cap } from "../text";
 import { Prose } from "./Prose";
 
 const anchor = (index: number) => `answer-section-${index}`;
@@ -13,7 +14,7 @@ function viewsOf(state: AskState): SectionView[] {
   if (state.sections.length) return state.sections.filter(written);
   return (state.result?.sections ?? []).map((s, index) => ({
     index, kind: s.kind, heading: s.heading, state: "done" as const, style: s.style, text: s.text, prose: s.prose,
-    claimsRange: s.claims_range, reason: null, group: s.group ?? "", title: s.title ?? "" }));
+    claimsRange: s.claims_range, reason: null, group: s.group ?? "", groupTitle: s.group_title ?? "", title: s.title ?? "" }));
 }
 
 function jump(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
@@ -25,12 +26,12 @@ function jump(e: React.MouseEvent<HTMLAnchorElement>, id: string) {
   heading?.focus({ preventScroll: true });
 }
 
-export interface Entry { index: number; heading: string; title: string; group: string; kind: string }
+export interface Entry { index: number; heading: string; title: string; group: string; groupTitle?: string; kind: string }
 export interface Outline {
   // With several parts, each top-level item is a part (its sections inside, numbered 1.1, 1.2) or a section on its
   // own (a part answered whole, the closing section). With one part there is no part level: sections only, 1..N.
   multi: boolean;
-  tops: { num: string; group: string; entry: Entry | null; items: { num: string; entry: Entry }[] }[];
+  tops: { num: string; group: string; groupTitle?: string; entry: Entry | null; items: { num: string; entry: Entry }[] }[];
 }
 
 // The contents' structure and numbers, from the entries in render order (hidden sections are already gone), so
@@ -50,7 +51,7 @@ export function outline(entries: Entry[]): Outline {
       last.items.push({ num: `${last.num}.${last.items.length + 1}`, entry: e });
     } else if (e.group) {
       const num = String(tops.length + 1);
-      tops.push({ num, group: e.group, entry: null, items: [{ num: `${num}.1`, entry: e }] });
+      tops.push({ num, group: e.group, groupTitle: e.groupTitle, entry: null, items: [{ num: `${num}.1`, entry: e }] });
     } else {
       tops.push({ num: String(tops.length + 1), group: "", entry: e, items: [] });
     }
@@ -59,6 +60,9 @@ export function outline(entries: Entry[]): Outline {
 }
 
 const partAnchor = (num: string) => `answer-part-${num}`;
+// A subtitle (the full question) is shown only when the heading is not already the start of it.
+const subtitleOf = (title: string | undefined, heading: string) =>
+  title && !title.toLowerCase().startsWith(heading.replace(/\u2026$/, "").toLowerCase()) ? title : "";
 // A top-level number reads "1.", a nested one "1.1".
 const label = (num: string) => (num.includes(".") ? num : `${num}.`);
 
@@ -74,10 +78,10 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
     ...planned.map((p) => {
       const v = views.find((x) => x.index === p.index);
       return { index: p.index, heading: v?.heading || p.heading, title: v?.title || p.title || "",
-        group: v?.group || p.group || "", kind: v?.kind ?? "section" };
+        group: v?.group || p.group || "", groupTitle: v?.groupTitle || p.group_title || "", kind: v?.kind ?? "section" };
     }),
     ...views.filter((v) => !planned.some((p) => p.index === v.index))
-      .map((v) => ({ index: v.index, heading: v.heading, title: v.title, group: v.group, kind: v.kind })),
+      .map((v) => ({ index: v.index, heading: v.heading, title: v.title, group: v.group, groupTitle: v.groupTitle, kind: v.kind })),
   ].sort((a, b) => a.index - b.index);
   const { multi, tops } = outline(entries);
   const partNum = new Map(tops.filter((t) => t.group).map((t) => [t.group, t.num]));
@@ -90,8 +94,8 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
       <span className="entry">
         <span className="num">{label(num)}</span>{" "}
         {started.has(c.index)
-          ? <a href={`#${anchor(c.index)}`} title={c.title || undefined} onClick={(e) => jump(e, anchor(c.index))}>{c.heading}</a>
-          : <span className="pending" title={c.title || undefined}>{c.heading}</span>}
+          ? <a href={`#${anchor(c.index)}`} title={c.title || undefined} onClick={(e) => jump(e, anchor(c.index))}>{cap(c.heading)}</a>
+          : <span className="pending" title={c.title || undefined}>{cap(c.heading)}</span>}
       </span>
     </li>
   );
@@ -109,8 +113,8 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
                   <span className="entry">
                     <span className="num">{label(t.num)}</span>{" "}
                     {t.items.some((i) => started.has(i.entry.index))
-                      ? <a href={`#${partAnchor(t.num)}`} onClick={(e) => jump(e, partAnchor(t.num))}>{t.group}</a>
-                      : <span className="pending">{t.group}</span>}
+                      ? <a href={`#${partAnchor(t.num)}`} title={t.groupTitle || undefined} onClick={(e) => jump(e, partAnchor(t.num))}>{cap(t.group)}</a>
+                      : <span className="pending" title={t.groupTitle || undefined}>{cap(t.group)}</span>}
                   </span>
                   <ol>{t.items.map((i) => link(i.entry, i.num))}</ol>
                 </li>
@@ -122,19 +126,24 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
         // With several parts, a part's name heads its first section (h2) and its sections are h3 below it; a part
         // answered whole, or the closing section, is an h2 of its own. With one part there is no part heading.
         const num = partNum.get(v.group);
-        const part = multi && v.group && v.group !== lastGroup && num
-          ? <h2 id={partAnchor(num)} className="part-heading" tabIndex={-1}>{v.group}</h2> : null;
+        const part = multi && v.group && v.group !== lastGroup && num ? (
+          <div className="part-head">
+            <h2 id={partAnchor(num)} className="part-heading" tabIndex={-1} title={v.groupTitle || undefined}>{cap(v.group)}</h2>
+            {subtitleOf(v.groupTitle, v.group) && <p className="section-question">{v.groupTitle}</p>}
+          </div>) : null;
         lastGroup = v.group;
         const Heading = multi && !v.group ? "h2" : "h3";
-        const subtitle = v.title && !v.title.startsWith(v.heading.replace(/\u2026$/, "")) ? v.title : "";
+        const subtitle = subtitleOf(v.title, v.heading);
         return (
           <Fragment key={v.index}>
             {part}
             <section id={anchor(v.index)} className={`answer-section ${v.state}${Heading === "h2" ? " standalone" : ""}`}
               aria-labelledby={`${anchor(v.index)}-h`} data-num={numOf.get(v.index)}>
-              <Heading id={`${anchor(v.index)}-h`} className={Heading === "h2" ? "part-heading section-heading" : "section-heading"}
-                tabIndex={-1} title={v.title || undefined}>{v.heading}</Heading>
-              {subtitle && <p className="section-question">{subtitle}</p>}
+              <div className="section-head">
+                <Heading id={`${anchor(v.index)}-h`} className={Heading === "h2" ? "part-heading section-heading" : "section-heading"}
+                  tabIndex={-1} title={v.title || undefined}>{cap(v.heading)}</Heading>
+                {subtitle && <p className="section-question">{subtitle}</p>}
+              </div>
               {v.state === "writing" && <p className="writing" role="status">{DEEP.writing}</p>}
               {v.state === "skipped" && <p className="note">{DEEP.skipped[v.reason ?? "budget"]}</p>}
               {v.state === "done" && v.style === "claims" && (

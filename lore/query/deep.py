@@ -62,8 +62,8 @@ from lore.query.scope import Scope
 from lore.query.seed import _entities, named_seeds
 from lore.query.subgraph import assemble_ranked, relevance, run_template
 from lore.query.synthesize import (
-    CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _finish, check_answer, shaped_claims,
-    synthesize,
+    CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _content_words, _finish, _numbers,
+    _overlap, _same_evidence, check_answer, shaped_claims, synthesize,
 )
 from lore.query.viewpoint import load_viewpoint
 from lore.query.write import assemble, compose_sections, compose_text, split_items, verify_prose, write_answer
@@ -577,6 +577,7 @@ async def cited_prose(question: str, parts: Sequence[str], claims: Sequence[Clai
                       shape: "interpret.Shape | None" = None,
                       book_titles: dict[str, str] | None = None,
                       books: dict[str, BookInfo] | None = None,
+                      covered: Sequence[str] = (),
                       ) -> tuple[ProseSentence, ...] | None:
     """Prose over `claims` that passed the writer, the code guards and the
     check, or None. The sentences' claim numbers are 1-based into `claims`
@@ -585,7 +586,8 @@ async def cited_prose(question: str, parts: Sequence[str], claims: Sequence[Clai
     if models.write is None or models.check is None or not claims:
         return None
     drafted = await write_answer(question, list(parts), claims, passages, models.write,
-                                 book_titles=book_titles, books=books, shape=shape, length=length)
+                                 book_titles=book_titles, books=books, shape=shape, length=length,
+                                 covered=covered)
     if drafted is None:
         return None
     sentences = verify_prose(drafted, len(claims), [c.text for c in claims], shape)
@@ -814,15 +816,25 @@ LABEL_CHARS = 48
 QUESTION_HEADING_CHARS = 60
 
 
+def capitalise(text: str) -> str:
+    """`text` with its first letter in upper case and the rest as it was (unlike
+    str.capitalize, which lowers the rest: names and acronyms keep their case)."""
+    for i, ch in enumerate(text):
+        if ch.isalpha():
+            return text[:i] + ch.upper() + text[i + 1:]
+    return text
+
+
 def lens_heading(question: str, label: str = "") -> str:
-    """A section's heading: the lens's short label when it has one, else the
+    """A section's (or a part's) heading: the short label when it has one, else the
     question shortened at a word boundary (with an ellipsis), without its closing
-    question mark. Always clean_heading, so no markup, citation or half word."""
+    question mark. Always clean_heading, so no markup, citation or half word, and
+    always with a capital first letter."""
     named = clean_heading(label, LABEL_CHARS).rstrip("? ").strip()
     if named:
-        return named
+        return capitalise(named)
     asked = clean_heading(str(question or "").strip().rstrip("? "), QUESTION_HEADING_CHARS)
-    return asked or str(question).strip()
+    return capitalise(asked or str(question).strip())
 
 
 def _renumber(prose: Sequence[ProseSentence], numbering: Mapping[int, int],
@@ -838,6 +850,60 @@ def _renumber(prose: Sequence[ProseSentence], numbering: Mapping[int, int],
         out.append(replace(s, claims=mine, passages=tuple(sorted(
             {claims[k - 1].passage for k in mine})) if s.claims else s.passages))
     return tuple(out)
+
+
+# Two claims that cite the same evidence and whose words overlap this much state one fact
+# (looser than the near-duplicate collapse, which drops one of them): they are written up
+# in one section.
+SAME_FACT_OVERLAP = 0.3
+
+
+def _same_fact(a: Claim, b: Claim) -> bool:
+    return (_same_evidence(a, b) and _numbers(a.text) == _numbers(b.text)
+            and _overlap(a.text, b.text) >= SAME_FACT_OVERLAP)
+
+
+def assign_sections(claims: Sequence[Claim], found: Sequence[frozenset[int]],
+                    focus: Sequence[str]) -> list[int]:
+    """The section (index into `focus`, one text per section: its lens question and
+    label) that writes up each claim, so that a claim is cited by exactly one section.
+
+    A claim may go only to a lens that found it (`found`), the claim's own lens;
+    with several, the one whose focus its words fit best, then the one holding the
+    fewest claims, then the earlier. A claim no lens is known to have found may go
+    to any section, by the same rules. Claims that state one fact (`_same_fact`) are
+    placed together, among the lenses any of them came from, so a fact the lenses
+    each found in their own words is not written up in several sections."""
+    count = len(claims)
+    leader = list(range(count))
+
+    def root(i: int) -> int:
+        while leader[i] != i:
+            leader[i] = leader[leader[i]]
+            i = leader[i]
+        return i
+
+    for i in range(count):
+        for j in range(i):
+            if _same_fact(claims[j], claims[i]):
+                leader[root(i)] = root(j)
+    clusters: dict[int, list[int]] = {}
+    for i in range(count):
+        clusters.setdefault(root(i), []).append(i)
+    words = [_content_words(text) for text in focus]
+    load = [0] * len(focus)
+    owner = [0] * count
+    for members in sorted(clusters.values(), key=lambda m: m[0]):
+        own = sorted({ri for k in members for ri in found[k] if 0 <= ri < len(focus)})
+        options = own or list(range(len(focus)))
+
+        def fit(ri: int) -> int:
+            return sum(len(_content_words(claims[k].text) & words[ri]) for k in members)
+        best = min(options, key=lambda ri: (-fit(ri), load[ri], ri))
+        for k in members:
+            owner[k] = best
+        load[best] += len(members)
+    return owner
 
 
 async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, models, *, mode: str,
@@ -887,7 +953,8 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
         return answer(REFUSAL)
     at = [gathered.kept.index(c) for c in kept]  # position in `gathered.kept` of each survivor
     found = [shape.claim_parts[i] for i in at]
-    owner = [min(f) if f else 0 for f in found]  # the first retrieval part that found it
+    # Each claim is written up by one section only: the lens that found it, or the best fit.
+    owner = assign_sections(kept, found, [f"{r.question} {r.label}" for r in retrieval])
     order = sorted(range(len(kept)), key=lambda k: (owner[k], k))
     numbering = {k + 1: n for n, k in enumerate(order, start=1)}  # survivor number -> final number
     final = [kept[k] for k in order]
@@ -901,14 +968,18 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
     sections_of = [[n for n, k in enumerate(order, start=1) if owner[k] == ri]
                    for ri in range(len(retrieval))]
     planned = [ri for ri, mine in enumerate(sections_of) if mine]
-    unwritten = len(retrieval) - len(planned)
-    group_of = {ri: (plan[r.part].question if r.lens and len(plan) > 1 else "")
-                for ri, r in enumerate(retrieval)}
+    # A lens that found nothing (or nothing that held up) is unwritten; one whose claims all
+    # went to another section is not: its facts are written up there.
+    unwritten = sum(1 for ri in range(len(retrieval)) if not any(ri in f for f in found))
+    several = len(plan) > 1
+    group_of = {ri: (lens_heading(plan[r.part].question, getattr(plan[r.part], "label", ""))
+                     if r.lens and several else "") for ri, r in enumerate(retrieval)}
+    group_titles = {ri: (plan[r.part].question if group_of[ri] else "") for ri, r in enumerate(retrieval)}
     headings = {ri: lens_heading(retrieval[ri].question, retrieval[ri].label) for ri in planned}
     titles = {ri: retrieval[ri].question for ri in planned}  # the full lens question, for a tooltip
     emit(on_event, "plan", scope="", candidates=0,
          sections=[{"index": ri, "heading": headings[ri], "group": group_of[ri],
-                    "title": titles[ri], "entities": []}
+                    "group_title": group_titles[ri], "title": titles[ri], "entities": []}
                    for ri in planned])
     by_n = {p.n: p for p in evidence.passages}
     sent: set[int] = set()
@@ -944,14 +1015,15 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
             continue
         emit(on_event, "step", name="section", state="start", part=ri, detail=None)
         emit(on_event, "section", index=ri, state="start", kind="section", heading=heading,
-             group=group_of[ri], title=titles[ri])
+             group=group_of[ri], group_title=group_titles[ri], title=titles[ri])
         owned = [final[n - 1] for n in mine]
         served = plan[retrieval[ri].part].question
         lens = retrieval[ri].question
         ask = lens if served == lens else f"{lens} (one aspect of the larger question: {served})"
         try:
             got = await cited_prose(ask, [lens], owned, evidence.passages, models, length="lens",
-                                    book_titles=book_titles, books=books)
+                                    book_titles=book_titles, books=books,
+                                    covered=[s.heading for s in sections if s.kind == "section"])
         except Exception as err:  # noqa: BLE001 -- one section failing leaves the others
             log.exception("deep section %r failed", heading)
             failures.append(err)
@@ -968,12 +1040,13 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
         else:
             prose_of, text, style = (), _compose(owned), "claims"
         result = AnswerSection(heading=heading, prose=prose_of, text=text, claims_start=start,
-                               claims_end=mine[-1], style=style, group=group_of[ri], title=titles[ri],
+                               claims_end=mine[-1], style=style, group=group_of[ri],
+                               group_title=group_titles[ri], title=titles[ri],
                                note=None if got else PROSE_FALLBACK_NOTE)
         sections.append(result)
         emit(on_event, "section", **_section_event(ri, "section", result, heading, owned,
                                                    fresh(mine), style),
-             group=group_of[ri], title=titles[ri])
+             group=group_of[ri], group_title=group_titles[ri], title=titles[ri])
         emit(on_event, "step", name="section", state="done", part=ri, detail=f"{len(owned)} claims")
     if not sections and not not_written:
         if failures:
