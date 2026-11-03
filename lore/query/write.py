@@ -353,7 +353,9 @@ def _kind(sentence, shape: "interpret.Shape | None" = None) -> str:
     kind = str(getattr(sentence, "kind", "")).strip().lower()
     if kind in ("reading", "judgement"):
         return "reading"
-    return "counter" if kind == "counter" and shape is not None and shape.interpretive else "fact"
+    if kind in ("counter", "summary") and shape is not None and shape.interpretive:
+        return kind
+    return "fact"
 
 
 async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequence[Claim],
@@ -621,7 +623,8 @@ def compose_text(prose: Sequence[ProseSentence], unanswered: Sequence[str] = (),
             paragraphs.append([])
         # A sentence code wrote (kind "limit") cites nothing.
         cites = "".join(f"[{n}]" for n in s.passages)
-        paragraphs[-1].append(s.text + (" " + cites if cites or s.kind != "limit" else ""))
+        lead = f"{s.label}: " if s.label else ""
+        paragraphs[-1].append(lead + s.text + (" " + cites if cites or s.kind != "limit" else ""))
     text = "\n\n".join(" ".join(p) for p in paragraphs)
     closing = [*unanswered, *(g for g in gaps if g not in unanswered)]
     if closing:

@@ -1215,7 +1215,9 @@ async def shaped_claims(question: str, plan: Sequence, retrieval: Sequence, evid
     shape = interpret.Shape(
         viewpoint=viewpoint if viewpoint is not None else load_viewpoint(),
         parts=tuple(p.question for p in plan), kinds=tuple(p.kind for p in plan),
-        retrieval=tuple((r.question, r.part, r.lens) for r in retrieval))
+        retrieval=tuple((r.question, r.part, r.lens) for r in retrieval),
+        stances=tuple(getattr(p, "stance", "analysis") for p in plan),
+        labels=tuple(getattr(p, "label", "") for p in plan))
     found: list[set[int]] = [set() for _ in kept]
     for ri, claims in enumerate(per_part):
         for claim in claims:

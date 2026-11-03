@@ -15,7 +15,9 @@ export interface ProseSentence { text: string; claims: number[]; passages: numbe
   // "reading": LORE's interpretation of the cited facts, not a direct statement;
   // "counter": the strongest case for the other side; "limit": what the books don't settle (no citations).
   // Absent means "fact".
-  kind?: "fact" | "reading" | "counter" | "limit" }
+  kind?: "fact" | "reading" | "counter" | "limit";
+  // A short answer part's short label (several interpretive parts only), shown muted before the sentence.
+  label?: string }
 // One section of a sectioned (deep) answer. Claim and passage numbers are the answer's own, as everywhere.
 export interface SectionOut { heading: string; kind: "section" | "close"; style: "prose" | "claims"; text: string;
   prose: ProseSentence[]; claims_range: [number, number] | null; entities: string[]; note: string | null;

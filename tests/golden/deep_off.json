@@ -32,6 +32,7 @@
       1
      ],
      "kind": "fact",
+     "label": "",
      "new_paragraph": false,
      "passages": [
       1
@@ -44,6 +45,7 @@
       2
      ],
      "kind": "fact",
+     "label": "",
      "new_paragraph": false,
      "passages": [
       2
@@ -56,6 +58,7 @@
       3
      ],
      "kind": "fact",
+     "label": "",
      "new_paragraph": true,
      "passages": [
       3
@@ -359,6 +362,7 @@
       1
      ],
      "kind": "fact",
+     "label": "",
      "new_paragraph": false,
      "passages": [
       1
@@ -371,6 +375,7 @@
       2
      ],
      "kind": "fact",
+     "label": "",
      "new_paragraph": false,
      "passages": [
       2
@@ -383,6 +388,7 @@
       3
      ],
      "kind": "fact",
+     "label": "",
      "new_paragraph": true,
      "passages": [
       3

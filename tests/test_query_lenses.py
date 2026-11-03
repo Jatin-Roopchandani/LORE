@@ -77,7 +77,7 @@ READING = Prose(sentences=[
     S("Against that, the road was long.", [2], "counter")])
 QUOTE_OF = {LENS_A: QUOTES[0], LENS_B: QUOTES[1]}
 ONE_PART = Decomposition(sub_questions=[PartSpec(
-    question=QUESTION, kind="interpretive", lenses=[LENS_A, LENS_B])], depth="deep")
+    question=QUESTION, kind="interpretive", stance="verdict", lenses=[LENS_A, LENS_B])], depth="deep")
 
 
 @pytest.fixture
@@ -224,9 +224,9 @@ async def test_the_short_answer_is_sent_before_any_section_and_opens_the_text(co
 async def test_no_reading_means_code_says_there_is_no_clear_position_and_the_sections_still_come(config):
     reading = Prose(sentences=[S("Fact one.", [1]), S("Fact two.", [2])])
     answer, events = await ask(config, LensModels(ONE_PART, reading, quotes=QUOTE_OF))
-    assert [(s.kind, s.text) for s in answer.short_answer] == [("limit", interpret.NO_POSITION_LINE)]
+    assert [(s.kind, s.text) for s in answer.short_answer] == [("limit", interpret.NO_VERDICT_LINE)]
     assert len(answer.sections) == 2 and answer.sections[0].prose
-    assert of(events, "short_answer")[0]["prose"][0]["text"] == interpret.NO_POSITION_LINE
+    assert of(events, "short_answer")[0]["prose"][0]["text"] == interpret.NO_VERDICT_LINE
 
 
 async def test_the_close_holds_the_counter_case_and_the_limits_and_no_reading(config):

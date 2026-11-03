@@ -96,6 +96,10 @@ class ProseSentence:
     # Part of an interpretive answer's short answer (Answer.short_answer): the
     # reading for one interpretive part, or code's line when it has none.
     short: bool = False
+    # A short answer part's short label, set on the first sentence of each
+    # part when the question has several interpretive parts; "" otherwise.
+    # Shown muted before the sentence, never part of it.
+    label: str = ""
 
 
 @dataclass(frozen=True)

@@ -25,7 +25,8 @@ from tests.test_query_story import BOOKS, CS, PS, TITLES
 
 VP = load_viewpoint()
 TEXTS = [c.text for c in CS]
-PLAN = (Part("Was Rin right to leave?", "interpretive", ("What did Rin do?", "How did it end?")),)
+PLAN = (Part("Was Rin right to leave?", "interpretive", ("What did Rin do?", "How did it end?"),
+             stance="verdict"),)
 SHAPE = Shape(
     viewpoint=VP, parts=("Was Rin right to leave?",), kinds=("interpretive",),
     retrieval=(("What did Rin do?", 0, True), ("How did it end?", 0, True)),
@@ -234,7 +235,7 @@ def test_a_dropped_reading_is_a_short_answer_line_from_code_and_the_counter_goes
     out = interpret.close_answer(_prose("fact", "fact", "counter"), SHAPE)
     short, body = _split(out)
     assert [s.kind for s in short] == ["limit"]
-    assert short[0].text == interpret.NO_POSITION_LINE == "The evidence found doesn't support a clear position."
+    assert short[0].text == interpret.NO_VERDICT_LINE == "The evidence found isn't strong enough for a clear verdict on this."
     assert short[0].claims == () and short[0].passages == () and short[0].new_paragraph
     assert [s.kind for s in body] == ["fact", "fact"]  # a counter-case with nothing to oppose is dropped
     assert out[0].short  # the short answer comes first
@@ -299,7 +300,7 @@ def test_a_part_whose_reading_failed_gets_the_line_naming_it_when_there_are_seve
     short, _ = _split(interpret.close_answer(prose, TWO))
     assert short[0].kind == "reading"
     assert short[1].kind == "limit"
-    assert short[1].text == f"In book B, who is bravest? {interpret.NO_POSITION_LINE}"
+    assert short[1].text == interpret.NO_VERDICT_LINE and short[1].label == "In book B, who is bravest"
 
 
 def test_readings_are_placed_by_the_survivors_numbering():
@@ -491,8 +492,8 @@ async def test_the_reading_dropped_by_the_check_leaves_the_facts_and_a_short_ans
     script = Script(LENS_CLAIMS, FULL, ["supported"] * 3 + ["not_supported", "supported"])
     a = await _answer(script)
     assert [s.kind for s in a.prose] == ["fact", "fact", "fact"]
-    assert [(s.kind, s.text) for s in a.short_answer] == [("limit", interpret.NO_POSITION_LINE)]
-    assert a.text.startswith(f"{w.SHORT_ANSWER_HEADING}\n{interpret.NO_POSITION_LINE}")
+    assert [(s.kind, s.text) for s in a.short_answer] == [("limit", interpret.NO_VERDICT_LINE)]
+    assert a.text.startswith(f"{w.SHORT_ANSWER_HEADING}\n{interpret.NO_VERDICT_LINE}")
     assert "Against that" not in a.text  # a counter-case with nothing to oppose is dropped
 
 
@@ -510,7 +511,7 @@ async def test_a_reading_from_one_lens_only_is_dropped_by_code():
     script = Script(LENS_CLAIMS, prose, ["supported"] * 2)
     a = await _answer(script)
     assert [s.kind for s in a.prose] == ["fact", "fact"]
-    assert [s.text for s in a.short_answer] == [interpret.NO_POSITION_LINE]
+    assert [s.text for s in a.short_answer] == [interpret.NO_VERDICT_LINE]
 
 
 async def test_one_failed_fact_does_not_cost_the_prose_but_more_than_a_fifth_does():
@@ -526,21 +527,21 @@ async def test_failed_prose_falls_back_to_the_facts_and_a_short_answer_says_ther
     a = await _answer(Script(LENS_CLAIMS, FULL, ["not_supported"] * 5))
     assert a.answer_style == "claims" and len(a.claims) == 3
     assert a.note and "did not pass verification" in a.note
-    assert [s.text for s in a.short_answer] == [interpret.NO_POSITION_LINE]
-    assert a.text.startswith(f"{w.SHORT_ANSWER_HEADING}\n{interpret.NO_POSITION_LINE}")
+    assert [s.text for s in a.short_answer] == [interpret.NO_VERDICT_LINE]
+    assert a.text.startswith(f"{w.SHORT_ANSWER_HEADING}\n{interpret.NO_VERDICT_LINE}")
     assert "Rin met the old teacher." in a.text  # the facts are still shown
 
 
 async def test_a_writer_that_raises_falls_back_to_the_facts_and_the_short_line():
     a = await _answer(Script(LENS_CLAIMS, RuntimeError("boom")))
     assert a.answer_style == "claims"
-    assert [s.text for s in a.short_answer] == [interpret.NO_POSITION_LINE]
+    assert [s.text for s in a.short_answer] == [interpret.NO_VERDICT_LINE]
     assert a.text.startswith(w.SHORT_ANSWER_HEADING)
 
 
 async def test_with_no_writer_configured_the_facts_stand_with_no_claim_about_position():
     a = await _answer(Script(LENS_CLAIMS, FULL), write=False, check=False)
-    assert a.answer_style == "claims" and interpret.NO_POSITION_LINE not in a.text
+    assert a.answer_style == "claims" and interpret.NO_VERDICT_LINE not in a.text
     assert a.short_answer == ()
 
 
@@ -548,7 +549,7 @@ async def test_a_prose_of_only_a_reading_falls_back():
     prose = Prose(sentences=[S("The evidence suggests Rin was committed.", [1, 3], "reading")])
     a = await _answer(Script(LENS_CLAIMS, prose, ["supported"]))
     assert a.answer_style == "claims"
-    assert [s.text for s in a.short_answer] == [interpret.NO_POSITION_LINE]
+    assert [s.text for s in a.short_answer] == [interpret.NO_VERDICT_LINE]
 
 
 async def test_every_interpretive_part_gets_a_verdict_when_the_parts_are_per_book():
@@ -571,8 +572,8 @@ async def test_every_interpretive_part_gets_a_verdict_when_the_parts_are_per_boo
 
 
 async def test_a_part_without_a_reading_gets_the_line_that_names_it_beside_a_part_that_has_one():
-    plan = (Part("In book A, who is boldest?", "interpretive", ("What did Rin do?", "How did it end?")),
-            Part("In book B, who is boldest?", "interpretive", ("What did Tam do?", "How did Tam end?")))
+    plan = (Part("In book A, who is boldest?", "interpretive", ("What did Rin do?", "How did it end?"), stance="verdict"),
+            Part("In book B, who is boldest?", "interpretive", ("What did Tam do?", "How did Tam end?"), stance="verdict"))
     lens = {**LENS_CLAIMS,
             "What did Tam do?": [_claim(1, "Tam sailed.", "Rin trained with the sword")],
             "How did Tam end?": [_claim(2, "Tam returned.", "Rin met the old teacher")]}
@@ -581,7 +582,8 @@ async def test_a_part_without_a_reading_gets_the_line_that_names_it_beside_a_par
         S("In book A, the evidence suggests Rin is boldest.", [1, 3], "reading")])
     a = await _answer(Script(lens, prose, ["supported"] * 4), plan)
     assert [s.kind for s in a.short_answer] == ["reading", "limit"]
-    assert a.short_answer[1].text == f"In book B, who is boldest? {interpret.NO_POSITION_LINE}"
+    assert a.short_answer[1].text == interpret.NO_VERDICT_LINE
+    assert [s.label for s in a.short_answer] == ["In book A, who is boldest", "In book B, who is boldest"]
 
 
 async def test_the_beyond_part_is_retrieved_once_and_its_limit_is_said_by_code():
@@ -702,7 +704,7 @@ def test_the_interpretive_code_and_prompts_name_no_character_book_or_genre():
     texts = "\n".join((interpret.LENS_CONTEXT, interpret.BEYOND_CONTEXT, interpret.WRITER_SHAPE_RULE,
                        interpret.WRITER_BEYOND_RULE, interpret.VIEWPOINT_LEAD,
                        interpret.READING_CHECK_BLOCK, interpret.COUNTER_CHECK_BLOCK,
-                       interpret.NO_POSITION_LINE, interpret.NO_COUNTER_LINE, interpret.LIMITS_LEAD))
+                       interpret.NO_VERDICT_LINE, interpret.NO_COUNTER_LINE, interpret.LIMITS_LEAD))
     assert not re.findall(banned, texts.lower())
 
 
@@ -723,9 +725,138 @@ def test_the_writer_names_the_chosen_candidate_for_a_judgement_and_rests_it_on_t
 
 def test_compose_answer_puts_the_short_answer_first_under_its_heading():
     short = (ProseSentence("On balance, A.", (1,), (1,), True, "reading", True),
-             ProseSentence("B? " + interpret.NO_POSITION_LINE, (), (), True, "limit", True))
+             ProseSentence("B? " + interpret.NO_VERDICT_LINE, (), (), True, "limit", True))
     body = (ProseSentence("A fact.", (2,), (2,), False),)
     text = w.compose_answer(short, body)
-    assert text == (f"{w.SHORT_ANSWER_HEADING}\nOn balance, A. [1]\n\nB? {interpret.NO_POSITION_LINE}"
+    assert text == (f"{w.SHORT_ANSWER_HEADING}\nOn balance, A. [1]\n\nB? {interpret.NO_VERDICT_LINE}"
                     "\n\nA fact. [2]")
     assert w.compose_answer((), body) == w.compose_text(body)
+
+
+# ---- the short answer: labels, fact summaries, stance (2026-11-02) ---------------------
+
+def _two(stances=("verdict", "verdict"), labels=("", "")):
+    return Shape(TWO.viewpoint, TWO.parts, TWO.kinds, TWO.retrieval, TWO.claim_parts, stances, labels)
+
+
+def _summary(text, claims):
+    return ProseSentence(text, tuple(claims), (1,), False, "summary")
+
+
+def test_stance_parsing_is_tolerant_and_defaults_to_analysis():
+    for raw, want in (("verdict", "verdict"), (" Verdict ", "verdict"), ("analysis", "analysis"),
+                      ("junk", "analysis"), (None, "analysis"), (3, "analysis")):
+        part = decompose._part(PartSpec(question="q", kind="interpretive", stance=raw,
+                                        lenses=[{"question": "l"}]))
+        assert part.stance == want
+    bare = decompose._part(PartSpec.model_validate({"question": "q", "kind": "interpretive",
+                                                    "lenses": ["l"]}))
+    assert bare.stance == "analysis"
+    assert decompose._part(PartSpec(question="q", kind="interpretive", label="Short name",
+                                    lenses=[{"question": "l"}])).label == "Short name"
+
+
+def test_the_decomposer_prompt_gives_a_general_stance_rule():
+    flat = " ".join(decompose.decomposition_prompt("q?").split())
+    assert '"stance"' in flat and '"verdict"' in flat and '"analysis"' in flat
+
+
+def test_a_multi_part_short_answer_carries_each_parts_label_and_never_its_question():
+    shape = _two(labels=("Book A", ""))
+    prose = (ProseSentence("A fact.", (1,), (1,)),
+             _reading("On balance, A's Rin is bravest.", [1, 2]),
+             _reading("On balance, B's Tam is bravest.", [3, 4]))
+    short, _ = _split(interpret.close_answer(prose, shape))
+    assert [s.label for s in short] == ["Book A", "In book B, who is bravest"]  # derived with lens_heading
+    for s in short:
+        assert "who is bravest?" not in s.text
+    assert w.compose_text(short).startswith("Book A: On balance, A's Rin")
+
+
+def test_a_single_part_short_answer_has_no_label():
+    short, _ = _split(interpret.close_answer(_prose("fact", "reading"), SHAPE))
+    assert [s.label for s in short] == [""]
+
+
+def test_the_no_verdict_line_names_no_question_and_is_for_verdict_parts_only():
+    prose = (ProseSentence("A fact.", (1,), (1,)), _reading("On balance, A's Rin is bravest.", [1, 2]))
+    short, _ = _split(interpret.close_answer(prose, _two(("verdict", "verdict"))))
+    assert short[1].kind == "limit" and short[1].text == interpret.NO_VERDICT_LINE
+    assert short[1].text == "The evidence found isn't strong enough for a clear verdict on this."
+    assert short[1].label == "In book B, who is bravest"
+    short, _ = _split(interpret.close_answer(prose, _two(("verdict", "analysis"))))
+    assert [s.label for s in short] == ["In book A, who is bravest"]
+    assert not any(s.kind == "limit" for s in short)  # analysis part: no line, nothing to say
+
+
+def test_a_fact_summary_is_the_short_answer_when_the_reading_is_missing():
+    prose = (ProseSentence("A fact.", (1,), (1,)),
+             _summary("Rin trained and learned maps.", [1, 2]),
+             _summary("Tam sailed home.", [3, 4]))
+    out = interpret.close_answer(prose, _two(("verdict", "analysis")))
+    short, body = _split(out)
+    assert [(s.kind, s.text, s.label) for s in short] == [
+        ("fact", "Rin trained and learned maps.", "In book A, who is bravest"),
+        ("fact", "Tam sailed home.", "In book B, who is bravest")]
+    assert all(s.short and s.claims for s in short) and all(s.new_paragraph for s in short)
+    assert [s.kind for s in body] == ["fact"]  # summaries are not repeated in the argument
+    assert not any(s.text == interpret.NO_VERDICT_LINE for s in out)
+
+
+def test_a_reading_wins_over_a_summary_and_at_most_two_summaries_stand():
+    prose = (_summary("One.", [1]), _summary("Two.", [1, 2]), _summary("Three.", [2]),
+             _reading("The evidence suggests it.", [1, 3]))
+    short, _ = _split(interpret.close_answer((ProseSentence("F.", (1,), (1,)), *prose), SHAPE))
+    assert [s.kind for s in short] == ["reading"]
+    short, _ = _split(interpret.close_answer(prose[:3], SHAPE))
+    assert [s.text for s in short] == ["One.", "Two."]
+
+
+def test_analysis_parts_with_nothing_surviving_get_no_line_at_all():
+    shape = Shape(VP, SHAPE.parts, SHAPE.kinds, SHAPE.retrieval, SHAPE.claim_parts, ("analysis",), ("",))
+    out = interpret.close_answer(_prose("fact", "fact"), shape)
+    assert not any(s.short for s in out)
+    assert not any(s.text == interpret.NO_VERDICT_LINE for s in out)
+
+
+def test_summaries_are_limited_by_the_guards():
+    nothing = _verify([S("Rin met a teacher.", [1]), S("Nothing cited.", [], "summary")])
+    assert _kinds(nothing) == ["fact"]
+    many = _verify([S("Rin met a teacher.", [1]), S("A.", [1], "summary"), S("B.", [2], "summary"),
+                    S("C.", [3], "summary")])
+    assert _kinds(many) == ["fact", "summary", "summary"]
+
+
+def test_the_writer_is_asked_for_a_summary_per_part_and_a_stray_summary_is_a_fact_without_a_shape():
+    assert '"summary"' in interpret.writer_rule(SHAPE)
+    assert w._kind(S("x", [1], "summary"), SHAPE) == "summary"
+    assert w._kind(S("x", [1], "summary"), None) == "fact"
+
+
+async def test_the_dropped_reading_leaves_a_checked_summary_as_the_short_answer():
+    prose = Prose(sentences=[
+        S("Rin met a teacher.", [1]), S("Rin trained with the sword.", [2]), S("Rin learned maps.", [3]),
+        S("Rin trained, met a teacher and learned maps.", [1, 2, 3], "summary"),
+        S("The evidence suggests Rin was committed.", [1, 3], "reading")])
+    a = await _answer(Script(LENS_CLAIMS, prose, ["supported"] * 4 + ["not_supported"]))
+    assert [(s.kind, s.short) for s in a.short_answer] == [("fact", True)]
+    assert a.short_answer[0].text == "Rin trained, met a teacher and learned maps."
+    assert a.short_answer[0].claims and a.short_answer[0].passages
+    assert a.text.startswith(f"{w.SHORT_ANSWER_HEADING}\nRin trained, met a teacher")
+    assert interpret.NO_VERDICT_LINE not in a.text
+    assert "summary" not in [s.kind for s in a.prose]
+
+
+async def test_a_summary_the_check_rejects_falls_back_to_the_verdict_line():
+    prose = Prose(sentences=[
+        S("Rin met a teacher.", [1]), S("Rin trained with the sword.", [2]), S("Rin learned maps.", [3]),
+        S("Rin always won.", [1, 2, 3], "summary")])
+    shape_plan = (Part("Was Rin right to leave?", "interpretive", ("What did Rin do?", "How did it end?"),
+                       stance="verdict"),)
+    a = await _answer(Script(LENS_CLAIMS, prose, ["supported"] * 3 + ["not_supported"]), shape_plan)
+    assert [(s.kind, s.text) for s in a.short_answer] == [("limit", interpret.NO_VERDICT_LINE)]
+    analysis = (Part("Was Rin right to leave?", "interpretive", ("What did Rin do?", "How did it end?"),
+                     stance="analysis"),)
+    a = await _answer(Script(LENS_CLAIMS, prose, ["supported"] * 3 + ["not_supported"]), analysis)
+    assert a.short_answer == ()
+    assert interpret.NO_VERDICT_LINE not in a.text and "no clear" not in a.text.lower()

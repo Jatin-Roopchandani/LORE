@@ -1050,7 +1050,7 @@ def _new_prompt_texts() -> str:
                       interpret.LENS_CONTEXT, interpret.BEYOND_CONTEXT,
                       interpret.WRITER_SHAPE_RULE, interpret.WRITER_BEYOND_RULE,
                       interpret.VIEWPOINT_LEAD, interpret.READING_CHECK_BLOCK,
-                      interpret.COUNTER_CHECK_BLOCK, interpret.NO_POSITION_LINE,
+                      interpret.COUNTER_CHECK_BLOCK, interpret.NO_VERDICT_LINE,
                       interpret.NO_COUNTER_LINE, interpret.LIMITS_LEAD))
 
 

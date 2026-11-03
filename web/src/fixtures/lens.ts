@@ -21,11 +21,11 @@ export const claims: Claim[] = [
 ];
 const passages = [pass(1, "Rin crossed the pass in winter."), pass(2, "Tam refused the offer."),
   pass(3, "Mara stood by Rin."), pass(4, "Joss stood by Tam.")];
-const sent = (text: string, cl: number[], pa: number[], kind?: ProseSentence["kind"], para = false): ProseSentence =>
-  ({ text, claims: cl, passages: pa, new_paragraph: para, ...(kind ? { kind } : {}) });
-export const shortA = sent("In the first book, the evidence suggests Rin is boldest.", [1, 3], [1, 3], "reading", true);
-export const shortB = sent("In the second book, on balance Tam is boldest.", [2, 4], [2, 4], "reading", true);
-export const noPosition = sent(`${PART_B} The evidence found doesn't support a clear position.`, [], [], "limit", true);
+const sent = (text: string, cl: number[], pa: number[], kind?: ProseSentence["kind"], para = false, label = ""): ProseSentence =>
+  ({ text, claims: cl, passages: pa, new_paragraph: para, ...(kind ? { kind } : {}), ...(label ? { label } : {}) });
+export const shortA = sent("In the first book, the evidence suggests Rin is boldest.", [1, 3], [1, 3], "reading", true, "First book");
+export const shortB = sent("In the second book, on balance Tam is boldest.", [2, 4], [2, 4], "reading", true, "Second book");
+export const noPosition = sent("The evidence found isn't strong enough for a clear verdict on this.", [], [], "limit", true, "Second book");
 export const counter = sent("Against that, Mara's loyalty may count for more.", [3], [3], "counter", true);
 export const limit = sent("The books don't settle: who was bravest overall.", [], [], "limit", true);
 

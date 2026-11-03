@@ -19,7 +19,10 @@ test("the short answer is a highlighted block at the top, above the contents and
   expect(within(block as HTMLElement).getByRole("heading", { name: DEEP.shortAnswer })).toBeInTheDocument();
   // One sentence per interpretive part: a reading, and code's line for the part with no position.
   expect(block.textContent).toContain("the evidence suggests Rin is boldest.");
-  expect(block.textContent).toContain("The evidence found doesn't support a clear position.");
+  expect(block.textContent).toContain("The evidence found isn't strong enough for a clear verdict on this.");
+  // Each part is marked by its short label, never by its question.
+  expect(block.textContent).not.toContain(lens.PART_A);
+  expect(block.textContent).not.toContain(lens.PART_B);
   const answer = container.querySelector(".a")!;
   const order = [...answer.children].map((n) => n.className.split(" ")[0]);
   expect(order.indexOf("short-answer")).toBeGreaterThanOrEqual(0);
@@ -63,7 +66,7 @@ test("a prose answer that is not sectioned opens with its short answer too", () 
 
 test("the facts-only fallback also opens with the short answer when there is one", () => {
   const { container } = view([proseResult({ answer_style: "claims", prose: [], short_answer: [lens.noPosition] })]);
-  expect(container.querySelector(".short-answer")?.textContent).toContain("doesn't support a clear position");
+  expect(container.querySelector(".short-answer")?.textContent).toContain("isn't strong enough for a clear verdict");
 });
 
 // ---- B. sections follow the question's own structure ------------------------------------------
@@ -153,4 +156,19 @@ test("while the answer streams the line counts the sections that have failed so 
   expect(container.querySelector(".unwritten")).toBeNull();
   rerender(<ChatPane ask={askWith([...lens.head, lens.plan, lens.shortEvent([lens.shortA]), ...lens.sec[0], ...lens.sec[1]])} showInternals onHoverChunks={() => {}} />);
   expect(container.querySelector(".unwritten")?.textContent).toBe(DEEP.unwritten(1));
+});
+
+test("a short answer part opens with its label as a small muted inline mark, not as text of the sentence", () => {
+  const { container } = view([...lens.head, lens.plan, lens.shortEvent([lens.shortA, lens.noPosition])]);
+  const labels = [...container.querySelectorAll(".short-answer .part-label")];
+  expect(labels.map((n) => n.textContent)).toEqual(["First book", "Second book"]);
+  const paras = container.querySelectorAll(".short-answer p.prose");
+  expect(paras[0].firstElementChild).toBe(labels[0]);
+  expect(paras[0].querySelector(".sentence")!.textContent).not.toContain("First book");
+  expect(container.querySelector(".short-answer .kind-label")).toBeNull();
+});
+
+test("a short answer with no label shows no label element", () => {
+  const { container } = view([proseResult({ short_answer: [{ ...lens.shortA, label: "" }] })]);
+  expect(container.querySelector(".short-answer .part-label")).toBeNull();
 });

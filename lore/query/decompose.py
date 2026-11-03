@@ -37,6 +37,7 @@ INTERPRETIVE = True
 DEEP = True
 
 KINDS = ("factual", "interpretive", "beyond")
+STANCES = ("verdict", "analysis")
 DEPTHS = ("focused", "deep")
 
 # THEMATIC_PARTS (2026-10-28): asked about a role or theme rather than a
@@ -88,6 +89,17 @@ _KIND_RULE = """- "kind": how the part can be answered.
   about (for example each method, motive or theme). What, who, when or where
   stays factual.
   When unsure, use "factual".
+- "stance": for an "interpretive" part only. What the part asks for.
+  - "verdict": it asks for a judgement or a choice: which, who is the most,
+    was something right, is something of a given kind, should someone have.
+    A short answer to it takes a position.
+  - "analysis": it asks to describe, explain, explore or analyse something
+    (its methods, motives, themes, development). Facts that summarise it are
+    a good answer; a position is optional.
+  When unsure, use "analysis".
+- "label": a short noun phrase of at most 6 words that names the part, to
+  mark its answer (not a question, no trailing punctuation, and no claim about
+  the answer). Needed only when the question has more than one part.
 - "lenses": for an "interpretive" part only (otherwise an empty list), up to
   4 aspects of the story that would decide the part. Each lens is an object
   with a "question" and a "label".
@@ -140,9 +152,11 @@ class PartSpec(BaseModel):
 
     question: str
     kind: str = Field(default="factual", description="factual, interpretive or beyond")
+    stance: str = Field(default="analysis", description="verdict or analysis")
+    label: str = ""
     lenses: list[LensSpec] = Field(default_factory=list)
 
-    @field_validator("question", "kind", mode="before")
+    @field_validator("question", "kind", "stance", "label", mode="before")
     @classmethod
     def _as_text(cls, value: Any) -> str:
         return _text(value)
@@ -186,6 +200,11 @@ class Part:
     lenses: tuple[str, ...] = ()
     # A short heading per lens, parallel to `lenses` ("" when the model gave none).
     labels: tuple[str, ...] = ()
+    # What an interpretive part asks for: "verdict" (a judgement or choice) or
+    # "analysis" (describe or explore). Anything else, or nothing, is "analysis".
+    stance: str = "analysis"
+    # The part's own short heading ("" when the model gave none).
+    label: str = ""
 
 
 @dataclass(frozen=True)
@@ -235,7 +254,9 @@ def _part(spec: PartSpec) -> Part | None:
         lenses, labels = lenses[:MAX_LENSES], labels[:MAX_LENSES]
         if not lenses:  # nothing to gather evidence by: answer it as today
             kind = "factual"
-    return Part(text, kind, tuple(lenses), tuple(labels) if any(labels) else ())
+    stance = _clean(spec.stance).lower()
+    return Part(text, kind, tuple(lenses), tuple(labels) if any(labels) else (),
+                stance if stance in STANCES else "analysis", _clean(spec.label))
 
 
 async def plan(

@@ -99,6 +99,7 @@ class ProseOut(BaseModel):
     passages: list[int]
     new_paragraph: bool = False
     kind: str = "fact"
+    label: str = ""
 
 
 class SectionOut(BaseModel):
@@ -304,4 +305,5 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
 
 def _prose_out(s) -> "ProseOut":
     return ProseOut(text=s.text, claims=list(s.claims), passages=list(s.passages),
-                    new_paragraph=s.new_paragraph, kind=s.kind)
+                    new_paragraph=s.new_paragraph, kind=s.kind,
+                    label=getattr(s, "label", ""))

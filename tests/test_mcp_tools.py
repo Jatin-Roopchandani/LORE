@@ -1159,7 +1159,7 @@ def test_search_result_carries_prose():
     out = to_search_result(answer, {}).model_dump()
     assert out["answer_style"] == "prose"
     assert out["prose"] == [{"text": "A.", "claims": [1], "passages": [1], "new_paragraph": False,
-                                "kind": "fact"}]
+                                "kind": "fact", "label": ""}]
 
 
 def test_search_result_carries_the_interpretive_kinds():

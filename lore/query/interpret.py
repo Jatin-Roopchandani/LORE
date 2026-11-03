@@ -16,8 +16,12 @@ answered in this shape (spec 2026-10-30):
 
 The writer prompt carries the viewpoint (viewpoint.md) verbatim; the check
 quotes the lines of it that apply to a reading and to a counter-case.
-A reading that fails a guard or the check is dropped, and code then says the
-evidence did not support a clear position; the facts stay. This replaces the
+A reading that fails a guard or the check is dropped. The short answer of
+that part is then the writer's checked fact summary (1-2 sentences of kind
+"summary", used as facts); only a part that asked for a verdict and has neither
+gets code's line that the evidence is not strong enough for one. With several
+interpretive parts each short answer carries the part's short label, never its
+question. The facts stay. This replaces the
 READINGS-for-judgement-questions and JUDGEMENTS paths (a judgement is a reading).
 
 Nothing here looks at the wording of a question, and nothing is specific to
@@ -40,9 +44,12 @@ MAX_COUNTERS = 2
 # (fewer when the part had fewer lenses).
 MIN_READING_LENSES = 2
 MIN_COUNTER_CLAIMS = 1
+# A part's fact summary: the sentences of kind "summary" that stand in for a
+# missing reading.
+MAX_SUMMARIES_PER_PART = 2
 
 # Said by code, never by the model.
-NO_POSITION_LINE = "The evidence found doesn't support a clear position."
+NO_VERDICT_LINE = "The evidence found isn't strong enough for a clear verdict on this."
 NO_COUNTER_LINE = "The evidence found doesn't support a strong opposing reading."
 LIMITS_LEAD = "The books don't settle:"
 
@@ -77,6 +84,14 @@ class Shape:
     kinds: tuple[str, ...]
     retrieval: tuple[tuple[str, int, bool], ...]
     claim_parts: tuple[frozenset[int], ...] = ()
+    # Per plan part: what it asks for ("verdict" or "analysis"; a shape that
+    # names none treats every part as a verdict) and its short heading ("" for
+    # none: `part_label` then derives one).
+    stances: tuple[str, ...] = ()
+    labels: tuple[str, ...] = ()
+
+    def stance(self, part: int) -> str:
+        return self.stances[part] if part < len(self.stances) else "verdict"
 
     @property
     def interpretive(self) -> bool:
@@ -139,7 +154,7 @@ BEYOND_CONTEXT = ("This part may ask for something the books cannot settle: {par
 WRITER_SHAPE_RULE = """- Part of this question is marked (interpretive): the books give evidence but
   no sentence settles it. Its facts are grouped under "Evidence for:" headings,
   each an aspect of that part. Every sentence has a `kind`: "fact" (the
-  default), "reading" or "counter". Write the answer in this order.
+  default), "reading", "summary" or "counter". Write the answer in this order.
   First, sentences of kind "fact": the evidence, in story order, each saying
   only what its cited facts say, as above.
   Then the readings: for EACH part marked (interpretive), in the order of the
@@ -159,6 +174,12 @@ WRITER_SHAPE_RULE = """- Part of this question is marked (interpretive): the boo
   - never add an event, name, number or detail that the facts do not state, and
     never present an inference as something a book says;
   - be a single sentence.
+  Then, for EACH part marked (interpretive), one or two sentences of kind
+  "summary": a plain statement of what the facts show about that part as a
+  whole, in your own words. Each lists in `claims` every fact it summarises,
+  states only what those facts state (no interpretation, no "evidence
+  suggests"), and makes sense without the question. Code uses them as that
+  part's short answer when its reading is missing.
   Then one or two sentences of kind "counter" for each such part: the strongest
   case for the other side, resting on at least one fact it lists in `claims`,
   and a fair reading of those facts. If the facts give no real case for the
@@ -315,11 +336,13 @@ def limit_interpretive(sentences: Sequence, shape: Shape) -> list:
     """The sentences in the answer's order (facts, readings, counter-cases) with
     the ones that break a rule removed: a reading that fails `reading_sound` or
     that no interpretive part has room for (MAX_READINGS_PER_PART each), a
-    counter-case citing fewer than MIN_COUNTER_CLAIMS claims, anything past
+    counter-case citing fewer than MIN_COUNTER_CLAIMS claims, a summary that
+    cites no claim of an interpretive part or past MAX_SUMMARIES_PER_PART for it, anything past
     MAX_COUNTERS counter-cases per interpretive part, and any kind the writer
     may not write (code writes "limit"). Facts are never touched."""
-    facts, readings, counters = [], [], []
+    facts, readings, counters, summaries = [], [], [], []
     taken: dict[int, int] = {}
+    held: dict[int, int] = {}
     counter_cap = MAX_COUNTERS * max(1, len(interpretive_parts(shape)))
     for s in sentences:
         kind = getattr(s, "kind", "fact")
@@ -332,9 +355,14 @@ def limit_interpretive(sentences: Sequence, shape: Shape) -> list:
         elif kind == "counter":
             if len(set(s.claims)) >= MIN_COUNTER_CLAIMS and len(counters) < counter_cap:
                 counters.append(s)
+        elif kind == "summary":
+            part = summary_part(s.claims, shape)
+            if part is not None and held.get(part, 0) < MAX_SUMMARIES_PER_PART:
+                held[part] = held.get(part, 0) + 1
+                summaries.append(s)
         elif kind == "fact":
             facts.append(s)
-    return [*facts, *readings, *counters]
+    return [*facts, *summaries, *readings, *counters]
 
 
 # --- closing lines (code) ----------------------------------------------------
@@ -344,23 +372,52 @@ def _limit(text: str, first: bool, short: bool = False) -> ProseSentence:
                          kind="limit", short=short)
 
 
-def no_position(shape: Shape, part: int) -> str:
-    """Code's line for an interpretive part whose reading did not stand. With
-    several interpretive parts (one per book, say) it names the part."""
-    if len(interpretive_parts(shape)) < 2:
-        return NO_POSITION_LINE
-    question = shape.parts[part].strip()
-    return f"{question}{' ' if question.endswith(('?', '.', '!')) else ': '}{NO_POSITION_LINE}"
+def part_label(shape: Shape, part: int) -> str:
+    """The short label of a part: the decomposer's, else the question shortened
+    as a lens heading is (deep.lens_heading). Never the whole question."""
+    from lore.query.deep import lens_heading  # deep imports this module
+    given = shape.labels[part] if part < len(shape.labels) else ""
+    return lens_heading(shape.parts[part], given)
 
 
-def short_answer(shape: Shape, readings: dict[int, ProseSentence] | None = None) -> tuple[ProseSentence, ...]:
-    """The short answer: per interpretive part, its reading, or code's line when
-    it has none. Each is its own paragraph and marked `short`."""
-    readings = readings or {}
-    return tuple(
-        replace(readings[part], new_paragraph=True, short=True) if part in readings
-        else _limit(no_position(shape, part), True, True)
-        for part in interpretive_parts(shape))
+def summary_part(claims: Sequence[int], shape: Shape) -> int | None:
+    """The interpretive part a sentence citing `claims` (1-based, in the
+    numbering of `shape.claim_parts`) is about: the one whose retrieval parts
+    found most of them, the earlier on a tie. None when no part fits."""
+    tally: dict[int, int] = {}
+    for k in claims:
+        if 1 <= k <= len(shape.claim_parts):
+            for ri in shape.claim_parts[k - 1]:
+                if ri < len(shape.retrieval):
+                    part = shape.retrieval[ri][1]
+                    if part < len(shape.kinds) and shape.kinds[part] == "interpretive":
+                        tally[part] = tally.get(part, 0) + 1
+    return min(tally, key=lambda p: (-tally[p], p)) if tally else None
+
+
+def short_answer(shape: Shape, readings: dict[int, ProseSentence] | None = None,
+                 summaries: dict[int, list[ProseSentence]] | None = None) -> tuple[ProseSentence, ...]:
+    """The short answer, in the order of the interpretive parts. Per part: its
+    reading; else its checked fact summary (1-2 fact sentences); else, only
+    for a part that asked for a verdict, code's line; else nothing. Each part
+    is its own paragraph and marked `short`. With several interpretive parts
+    its first sentence carries the part's short label (never the question)."""
+    readings, summaries = readings or {}, summaries or {}
+    several = len(interpretive_parts(shape)) > 1
+    out: list[ProseSentence] = []
+    for part in interpretive_parts(shape):
+        if part in readings:
+            mine = [replace(readings[part], short=True)]
+        elif summaries.get(part):
+            mine = [replace(s, kind="fact", short=True) for s in summaries[part][:MAX_SUMMARIES_PER_PART]]
+        elif shape.stance(part) == "verdict":
+            mine = [_limit(NO_VERDICT_LINE, True, True)]
+        else:
+            continue
+        label = part_label(shape, part) if several else ""
+        out += [replace(s, new_paragraph=i == 0, label=label if i == 0 else "")
+                for i, s in enumerate(mine)]
+    return tuple(out)
 
 
 def close_answer(prose: Sequence[ProseSentence], shape: Shape, gaps: Sequence[str] = (),
@@ -388,6 +445,12 @@ def close_answer(prose: Sequence[ProseSentence], shape: Shape, gaps: Sequence[st
             part = part_for(numbers(s), shape, {p: 1 for p in placed}, 1)
             if part is not None:
                 placed[part] = s
+    summaries: dict[int, list[ProseSentence]] = {}
+    for s in prose:
+        if s.kind == "summary":
+            part = summary_part(numbers(s), shape)
+            if part is not None:
+                summaries.setdefault(part, []).append(s)
     out = [s for s in prose if s.kind == "fact"]
     counters = [s for s in prose if s.kind == "counter"] if placed else []
     out += [replace(s, new_paragraph=i == 0) for i, s in enumerate(counters)]
@@ -396,7 +459,7 @@ def close_answer(prose: Sequence[ProseSentence], shape: Shape, gaps: Sequence[st
         lines.append(NO_COUNTER_LINE)
     lines += limit_text(shape, gaps)
     out += [_limit(line, i == 0) for i, line in enumerate(lines)]
-    return (*short_answer(shape, placed), *out)
+    return (*short_answer(shape, placed, summaries), *out)
 
 
 def limit_text(shape: Shape, gaps: Sequence[str] = ()) -> list[str]:

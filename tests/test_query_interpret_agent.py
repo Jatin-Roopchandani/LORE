@@ -33,7 +33,7 @@ def plan_of(*specs, depth="focused"):
     return Decomposition(sub_questions=list(specs), depth=depth)
 
 
-INTERPRETIVE = PartSpec(question=QUESTION, kind="interpretive", lenses=[LENS_A, LENS_B])
+INTERPRETIVE = PartSpec(question=QUESTION, kind="interpretive", stance="verdict", lenses=[LENS_A, LENS_B])
 
 
 class Models:
@@ -203,7 +203,7 @@ async def test_the_answer_has_evidence_a_reading_a_counter_case_and_the_beyond_l
     assert answer.prose[-1].text == f"The books don't settle: {BEYOND}"
     assert answer.prose[-1].claims == () and answer.prose[-1].passages == ()
     assert answer.text.endswith(f"The books don't settle: {BEYOND}")
-    assert interpret.NO_POSITION_LINE not in answer.text
+    assert interpret.NO_VERDICT_LINE not in answer.text
     # Both lens headings and the plan's own parts reached the writer.
     prompt = scripted.writer_prompts[0]
     assert f"Evidence for: {LENS_A}" in prompt and f"Evidence for: {LENS_B}" in prompt
@@ -216,7 +216,7 @@ async def test_a_reading_that_cites_one_lens_is_dropped_and_the_answer_says_so(c
         S("The evidence suggests Zed was right to go on.", [1], "reading")])
     answer, _ = await ask(config, Models(plan_of(INTERPRETIVE), write=reply))
     assert [s.kind for s in answer.prose] == ["fact", "fact"]
-    assert [s.text for s in answer.short_answer] == [interpret.NO_POSITION_LINE]
+    assert [s.text for s in answer.short_answer] == [interpret.NO_VERDICT_LINE]
 
 
 # ---- INTERPRETIVE off ---------------------------------------------------------------

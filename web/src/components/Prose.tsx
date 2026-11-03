@@ -13,6 +13,7 @@ const NOTE = { reading: UI.readingNote, counter: UI.counterNote, limit: UI.limit
 
 // `prose` shows other sentences than the result's own (a section's, or the overview's), cited from the result's
 // claims and passages. `showMissing` is off for those: the unanswered line belongs to the whole answer.
+// A paragraph whose first sentence has a `label` (a short answer part) opens with it as a muted inline mark.
 // `labels` is off inside the short answer block, whose own heading already says what its sentences are.
 export function Prose({ result, prose: given, showMissing = true, labels = true, onHoverChunks }:
   { result: SearchResult; prose?: ProseSentence[]; showMissing?: boolean; labels?: boolean; onHoverChunks: (chunks: string[]) => void }) {
@@ -42,6 +43,7 @@ export function Prose({ result, prose: given, showMissing = true, labels = true,
             {labels && para[0] && kindOf(para[0].s) !== "fact" && (
               <span className="kind-label">{UI.kindLabel[kindOf(para[0].s) as Exclude<Kind, "fact">]}</span>
             )}
+            {para[0]?.s.label && <span className="part-label">{para[0].s.label}</span>}
             {para.map(({ s, i }) => {
               const chunks = s.passages.map((n) => byN.get(n)?.chunk_id).filter(Boolean) as string[];
               const kind = kindOf(s);
