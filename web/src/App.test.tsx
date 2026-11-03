@@ -90,6 +90,7 @@ test("replaying a question asked in another world switches the selector to it", 
   localStorage.setItem("lore-history-v1", JSON.stringify([item]));
   render(<App />);
   expect(await screen.findByRole("combobox", { name: "World" })).toHaveValue("1");
+  await userEvent.click(screen.getByRole("button", { name: "History" })); // the mocked narrow screen keeps history in a drawer
   await userEvent.click(screen.getByRole("button", { name: "Who is Yan?" }));
   await waitFor(() => expect(screen.getByRole("combobox", { name: "World" })).toHaveValue("2"));
   expect(localStorage.getItem("lore-world-v1")).toBe("2");

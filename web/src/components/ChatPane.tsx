@@ -2,7 +2,6 @@ import type { useAsk } from "../useAsk";
 import { errorMessage, UI } from "../messages";
 import { Claims } from "./Claims";
 import { Prose } from "./Prose";
-import { HistoryBar } from "./HistoryBar";
 import { HowPanel } from "./HowPanel";
 import { AskBox } from "./AskBox";
 import { Sections } from "./Sections";
@@ -18,7 +17,7 @@ const missingParts = (note: string | null | undefined) =>
   (note ?? "").split("; ").filter((n) => n.startsWith(NOT_FOUND)).map((n) => n.slice(NOT_FOUND.length));
 
 export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview }:
-  { ask: ReturnType<typeof useAsk>; showInternals: boolean; resetsAt?: string; onHoverChunks: (chunks: string[]) => void;
+  { ask: Pick<ReturnType<typeof useAsk>, "state" | "run" | "ask" | "retry" | "busy" | "depth" | "setDepth">; showInternals: boolean; resetsAt?: string; onHoverChunks: (chunks: string[]) => void;
     overview?: SubgraphData | null }) {
   const { state } = ask;
   const r = state.result;
@@ -33,7 +32,6 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
   const examples = state.question ? [] : exampleQuestions(overview);
   return (
     <section className="pane chat" aria-label="Conversation">
-      <HistoryBar items={ask.history} current={ask.current} onPick={ask.replay} />
       <div className="thread" aria-live="polite">
         {!state.question && (
           <div className="empty">

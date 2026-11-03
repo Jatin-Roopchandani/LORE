@@ -217,6 +217,25 @@ export const EXPLORE = {
   filteredOut: (nodes: number) => `${nth(nodes, "entity", "entities")} hidden by filters`,
 };
 
+// The history sidebar: earlier questions, grouped by when they were asked.
+export const HISTORY = {
+  title: "History", open: "History", close: "Close history",
+  toggleLabel: (open: boolean) => (open ? "Hide history" : "Show history"),
+  newQuestion: "New question", newQuestionHint: "Clear the answer, show the library and start a fresh question.",
+  search: "Search history", searchPlaceholder: "Search questions\u2026",
+  groups: { today: "Today", yesterday: "Yesterday", week: "This week", earlier: "Earlier" },
+  empty: "Questions you ask will be listed here.",
+  noMatch: (q: string) => `No question matches \u201c${q}\u201d.`,
+  yesterday: "Yesterday",
+  deep: "Deep", deepHint: "A deep, sectioned answer",
+  allWorlds: "All worlds",
+  delete: (q: string) => `Delete: ${q}`, deleteShort: "\u00d7",
+  clear: "Clear history",
+  clearConfirm: (n: number) => `Clear all ${n} saved ${n === 1 ? "question" : "questions"}? This can't be undone.`,
+  clearConfirmLabel: "Confirm clearing history", clearYes: "Clear", clearNo: "Keep",
+  entries: "Earlier questions",
+};
+
 function until(resetsAt: string | undefined, now: Date): string {
   if (!resetsAt) return "";
   const mins = Math.max(0, Math.round((new Date(resetsAt).getTime() - now.getTime()) / 60000));

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, isError } from "../api";
-import { LIBRARY } from "../messages";
+import { HISTORY, LIBRARY } from "../messages";
 import { applyTheme, isDark } from "../theme";
 import type { Book, Quota, World } from "../types";
 import { AddBookDialog } from "./AddBookDialog";
@@ -10,15 +10,19 @@ import { QuotaChip } from "./QuotaChip";
 import { WorldSelector } from "./WorldSelector";
 import { SettingsMenu } from "./SettingsMenu";
 
-export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange }:
+export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange, historyOpen = false, onToggleHistory }:
   { books: Book[]; hiddenBooks: Set<string>; onBooksChange: (s: Set<string>) => void; showInternals: boolean; refreshKey: number;
-    worlds?: World[]; world?: string; onWorldChange?: (w: string) => void; onLibraryChange?: () => void }) {
+    worlds?: World[]; world?: string; onWorldChange?: (w: string) => void; onLibraryChange?: () => void;
+    historyOpen?: boolean; onToggleHistory?: () => void }) {
   const [adding, setAdding] = useState(false);
   const [library, setLibrary] = useState(false);
   const [quota, setQuota] = useState<Quota | null>(null);
   useEffect(() => { api.quota().then((q) => { if (!isError(q)) setQuota(q); }); }, [refreshKey]);
   return (
     <header>
+      {onToggleHistory && (
+        <button className="tbtn" type="button" aria-expanded={historyOpen} aria-controls="history-panel" title={HISTORY.toggleLabel(historyOpen)} onClick={onToggleHistory}>{HISTORY.open}</button>
+      )}
       <span className="mark"><LoreMark />LORE<small>Reader</small></span>
       <span className="spacer" />
       <div className="tools">

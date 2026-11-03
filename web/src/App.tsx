@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { api, isError } from "./api";
 import { ChatPane } from "./components/ChatPane";
 import { GraphPane } from "./components/GraphPane";
+import { HistorySidebar } from "./components/HistorySidebar";
 import { TopBar } from "./components/TopBar";
+import { loadHistoryOpen, saveHistoryOpen, useNarrow } from "./historyPanel";
 import { applyTheme, loadTheme } from "./theme";
 import type { Book, SubgraphData, World } from "./types";
 import { useAsk } from "./useAsk";
@@ -25,6 +27,17 @@ export default function App() {
   const [overview, setOverview] = useState<SubgraphData | null | undefined>();
   // Bumped when the Library panel changed the worlds or moved a book.
   const [libraryVersion, setLibraryVersion] = useState(0);
+  // The history sidebar: a column that stays open or shut (remembered) on wide screens, a drawer opened on demand on narrow ones.
+  const narrow = useNarrow();
+  const [historyOpen, setHistoryOpen] = useState(() => loadHistoryOpen());
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const sidebarOpen = narrow ? drawerOpen : historyOpen;
+  const toggleHistory = useCallback(() => {
+    if (narrow) { setDrawerOpen((o) => !o); return; }
+    setHistoryOpen((o) => { saveHistoryOpen(!o); return !o; });
+  }, [narrow]);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  useEffect(() => { if (!narrow) setDrawerOpen(false); }, [narrow]);
   useEffect(() => { applyTheme(loadTheme()); }, []);
   useEffect(() => {
     api.settings().then((s) => { if (!isError(s)) setShowInternals(s.show_internals); });
@@ -54,13 +67,25 @@ export default function App() {
     setRefreshKey((k) => k + 1);
     api.quota().then((q) => { if (!isError(q)) setResetsAt(q.resets_at); });
   }, [ask.state.status]);
+  const replay = useCallback((id: string) => { ask.replay(id); setDrawerOpen(false); }, [ask.replay]);
+  // A fresh start: no answer (so the graph returns to the library), and the ask box ready to type in.
+  const newQuestion = useCallback(() => {
+    ask.clear();
+    setDrawerOpen(false);
+    setTimeout(() => document.getElementById("ask-input")?.focus(), 0);
+  }, [ask.clear]);
   const graphed = books.filter((b) => b.status === "graphed");
   const noBooks = graphed.length > 0 && graphed.every((b) => hiddenBooks.has(b.id));
   return (
     <div className="app">
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey}
-        worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)} />
-      <div className="panes">
+        worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)}
+        historyOpen={sidebarOpen} onToggleHistory={toggleHistory} />
+      <div className={sidebarOpen && !narrow ? "panes with-history" : "panes"}>
+        {sidebarOpen && (
+          <HistorySidebar items={ask.history} current={ask.current} worlds={worlds ?? []} drawer={narrow} onReplay={replay} onDelete={ask.remove}
+            onClear={ask.clearHistory} onNew={newQuestion} onClose={closeDrawer} />
+        )}
         <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview} />
         <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} onAsk={ask.ask} />
       </div>

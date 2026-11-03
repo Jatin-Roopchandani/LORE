@@ -175,3 +175,24 @@ test("a depth given to ask overrides the Deep dive choice for that question only
   await waitFor(() => expect(streamAsk).toHaveBeenCalledTimes(4));
   expect(streamAsk.mock.calls[3][3]).toBe("deep");
 });
+
+test("remove drops one history item (and the current mark if it was current); clearHistory empties it and the store", async () => {
+  const { useAsk } = await import("./useAsk");
+  const { result } = renderHook(() => useAsk());
+  act(() => result.current.ask("first"));
+  await waitFor(() => expect(result.current.history).toHaveLength(1));
+  act(() => result.current.ask("second"));
+  await waitFor(() => expect(result.current.history).toHaveLength(2));
+  const [newest, older] = result.current.history.map((h) => h.id);
+  expect(result.current.current).toBe(newest);
+  act(() => result.current.remove(older));
+  expect(result.current.history.map((h) => h.id)).toEqual([newest]);
+  expect(result.current.current).toBe(newest);
+  act(() => result.current.remove(newest));
+  expect(result.current.history).toEqual([]);
+  expect(result.current.current).toBeNull();
+  act(() => result.current.ask("third"));
+  await waitFor(() => expect(result.current.history).toHaveLength(1));
+  act(() => result.current.clearHistory());
+  await waitFor(() => expect(JSON.parse(localStorage.getItem(HISTORY_KEY)!)).toEqual([]));
+});

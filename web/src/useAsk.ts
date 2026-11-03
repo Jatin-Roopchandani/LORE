@@ -82,6 +82,13 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
     dispatch({ kind: "reset", question: "" });
   }, []);
 
+  // Deleting the entry on show keeps the answer on screen but no longer marks it as an entry.
+  const remove = useCallback((id: string) => {
+    setHistory((h) => h.filter((x) => x.id !== id));
+    setCurrent((c) => (c === id ? null : c));
+  }, []);
+  const clearHistory = useCallback(() => { setHistory([]); setCurrent(null); }, []);
+
   const retry = useCallback(() => { if (last.current.question) ask(last.current.question, last.current.depth); }, [ask]);
-  return { state, history, current, run, ask, replay, retry, clear, depth, setDepth, busy: state.status === "running" };
+  return { state, history, current, run, ask, replay, retry, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running" };
 }
