@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import sessionmaker
 
 from lore.auth.current import AuthContext
+from lore.auth.mailer import ResendMailer, UnconfiguredMailer
+from lore.auth.providers import default_providers
+from lore.auth.redact import install_log_redaction
 from lore.auth.settings import AuthSettings
 from lore.central.db import database_url, make_engine, make_session_factory
 from lore.config import LoreConfig
@@ -19,7 +22,12 @@ def build_context(base: LoreConfig, *, auth: AuthSettings | None = None,
     settings = auth or AuthSettings.from_env()  # raises AuthConfigError: no start
     sessions = central_sessions or make_session_factory(
         make_engine(database_url(base)))
+    if mailer is None:
+        mailer = (ResendMailer(settings.resend_api_key, settings.mail_from)
+                  if settings.resend_api_key else UnconfiguredMailer())
+    if providers is None:
+        providers = default_providers(settings.google, settings.github)
+    install_log_redaction()
     return AuthContext(
-        settings=settings, sessions=sessions, mailer=mailer,
-        providers=providers or {},
+        settings=settings, sessions=sessions, mailer=mailer, providers=providers,
         now=clock or (lambda: datetime.now(timezone.utc)))

@@ -53,6 +53,8 @@ from lore.worlds import (
 from lore.web.security import OriginGuard, allowed_hosts, allowed_origins
 
 if TYPE_CHECKING:
+    from lore.auth.mailer import Mailer
+    from lore.auth.providers import Provider
     from lore.auth.settings import AuthSettings
 
 STATIC = Path(__file__).parent / "static"

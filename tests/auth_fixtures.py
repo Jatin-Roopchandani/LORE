@@ -103,3 +103,50 @@ class ActAsClient(TestClient):
         if target is None:
             return super().stream(method, url, **kwargs)
         return target.stream(method, url, **kwargs)
+
+
+# --- doubles for the outside world ------------------------------------------
+
+class FakeMailer:
+    """Collects mail instead of sending it."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+        self.fail = False
+
+    def send(self, *, to, subject, text, html=None) -> None:
+        if self.fail:
+            from lore.auth.mailer import MailError
+            raise MailError("boom")
+        self.sent.append({"to": to, "subject": subject, "text": text, "html": html})
+
+    def links(self) -> list[str]:
+        import re
+        return [m for mail in self.sent
+                for m in re.findall(r"https?://\S+", mail["text"])]
+
+
+class FakeProvider:
+    """A provider that returns whatever profile the test sets, and records the
+    authorize and token requests it was asked to make."""
+
+    def __init__(self, name: str = "google") -> None:
+        from lore.auth.providers import Profile
+        self.name = name
+        self.profile = Profile("sub-1", "reader@example.org", True, "Reader")
+        self.error = False
+        self.authorized: list[dict] = []
+        self.exchanged: list[dict] = []
+
+    def authorize_url(self, *, redirect_uri, state, code_verifier):
+        self.authorized.append({"redirect_uri": redirect_uri, "state": state,
+                                "code_verifier": code_verifier})
+        return f"https://provider.example/authorize?state={state}"
+
+    def fetch_profile(self, *, code, code_verifier, redirect_uri):
+        from lore.auth.providers import ProviderError
+        self.exchanged.append({"code": code, "code_verifier": code_verifier,
+                               "redirect_uri": redirect_uri})
+        if self.error:
+            raise ProviderError("provider refused")
+        return self.profile

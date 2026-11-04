@@ -9,11 +9,13 @@ from lore.auth.cookies import CSRF_COOKIE, SESSION_COOKIE, cleared_headers, sess
 from lore.auth.current import AuthContext, session_user
 from lore.auth.sessions import LIFETIME, delete_session
 from lore.auth.tokens import csrf_token, same
+from lore.auth.signin import build_signin_router
 from lore.central.models import User
 
 
 def build_router(ctx: AuthContext) -> APIRouter:
     router = APIRouter()
+    router.include_router(build_signin_router(ctx))
     settings = ctx.settings
 
     @router.post("/auth/logout")
