@@ -23,16 +23,20 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
+from sqlalchemy.orm import sessionmaker
 
+from lore.central import queue
+from lore.central.db import database_url, make_engine, make_session_factory
+from lore.central.models import KIND_MOVE, KIND_PROCESS
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.registry import list_books
 from lore.mcp import tools
-from lore.orchestrator import jobs
+from lore.orchestrator import jobs, runner
 from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE, day_report, today
 from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.move import prepare_move
-from lore.orchestrator.pipeline import processing_budget_left, run_book
+from lore.orchestrator.pipeline import processing_budget_left
 from lore.query import explore
 from lore.tenancy import (
     CurrentUser, InvalidUserId, config_for, multi_user_enabled,
@@ -113,36 +117,6 @@ def _quota(config: LoreConfig) -> dict:
     return {"provider": "gemini", "models": models, "resets_at": midnight.isoformat()}
 
 
-def _default_stages(config: LoreConfig) -> list:
-    # Imported here: lore.cli imports this module's create_app.
-    from lore.cli import default_stages
-    return default_stages(config, resume=True)
-
-
-class _MarksGraphed:
-    """Wraps the last stage: once it succeeds the run is complete, and the
-    book is `graphed`, as `lore process` leaves it. Done before the job row
-    reads `done`, so a page that sees `done` never reads a stale status."""
-
-    def __init__(self, stage) -> None:
-        self._stage = stage
-        self.name = stage.name
-
-    def total(self, ctx) -> int:
-        return self._stage.total(ctx)
-
-    def run(self, ctx, job_ctl) -> None:
-        self._stage.run(ctx, job_ctl)
-        with ctx.conn:
-            ctx.conn.execute("UPDATE books SET status = 'graphed' WHERE id = ?",
-                             (ctx.book_id,))
-
-
-def _move_stages(config: LoreConfig, world_id: int) -> list:
-    from lore.cli import move_stages
-    return move_stages(config, world_id)
-
-
 def _job_out(job: jobs.BookJob | None, now: datetime) -> dict | None:
     if job is None:
         return None
@@ -177,7 +151,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                move_stages_factory: Callable[[LoreConfig, int], list] | None = None,
                clock: Callable[[], datetime] | None = None,
                multi_user: bool | None = None,
-               resolve_user: Callable[[Request], CurrentUser] | None = None):
+               resolve_user: Callable[[Request], CurrentUser] | None = None,
+               central_sessions: sessionmaker | None = None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing.
 
@@ -189,6 +164,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     itself, as before. `multi_user` (default: LORE_MULTI_USER) and
     `resolve_user` (default: lore.tenancy.resolve_user) are seams for tests
     and, in step 2, for auth.
+
+    Book processing: in local mode Continue and Move run in a thread of this
+    process, one book at a time, as ever. In multi mode they ENQUEUE a job in
+    the central database (`central_sessions`, default LORE_DATABASE_URL) for
+    `lore worker` to run, and answer 202 at once.
     """
     api = FastAPI(title="LORE", docs_url=None, redoc_url=None)
     multi = multi_user_enabled() if multi_user is None else multi_user
@@ -212,8 +192,22 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     def user_config(request: Request) -> LoreConfig:
         return library_of(current_user(request))
 
-    make_stages = stages_factory or _default_stages
-    make_move_stages = move_stages_factory or _move_stages
+    sessions: list[sessionmaker | None] = [central_sessions]
+
+    def enqueue(user: CurrentUser, book_id: str, kind: str,
+                payload: dict | None = None):
+        """Queue the job centrally: (job, created). created is False when the
+        book already has a live job, which is returned instead."""
+        if sessions[0] is None:  # built on first use: local mode never needs it
+            sessions[0] = make_session_factory(make_engine(database_url(base)))
+        with sessions[0]() as session:
+            try:
+                return queue.enqueue(session, user.id, book_id, kind, payload)
+            except queue.UnknownUser:
+                raise HTTPException(401, "unknown user") from None
+
+    make_stages = stages_factory or runner.default_stages
+    make_move_stages = move_stages_factory or runner.move_stages
     now_utc = clock or (lambda: datetime.now(timezone.utc))
     runner_slot = threading.Lock()  # held while a processing job runs
 
@@ -251,28 +245,17 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     def _process(config: LoreConfig, book_id: str,
                  move_world: int | None = None) -> None:
-        conn = open_db(config.sqlite_path)  # its own connection: another thread
-        try:
-            stages = (make_move_stages(config, move_world) if move_world is not None
-                      else make_stages(config))
-            if stages:
-                stages = [*stages[:-1], _MarksGraphed(stages[-1])]
-            run_book(conn, config, book_id, stages, clock=now_utc, claimed=True)
-        except JobRefused:
-            pass  # raced a CLI run; its row stands
-        except Exception as exc:  # noqa: BLE001 - a setup failure must not kill the thread
-            try:  # the claimed row must not look running until it goes stale
-                jobs.fail(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000],
-                          now=now_utc())
-            except sqlite3.Error:
-                pass
+        try:  # its own connection, in another thread
+            runner.run_claimed(config, book_id, move_world, now_utc,
+                               make_stages=make_stages,
+                               make_move_stages=make_move_stages)
         finally:
-            conn.close()
             runner_slot.release()
 
     @api.post("/api/books/{book_id}/continue", status_code=202)
-    def continue_book(book_id: str, config: LoreConfig = Depends(user_config)):
-        if not runner_slot.acquire(blocking=False):
+    def continue_book(book_id: str, config: LoreConfig = Depends(user_config),
+                      user: CurrentUser = Depends(current_user)):
+        if not multi and not runner_slot.acquire(blocking=False):
             return _api_error(409, "busy", "another book is being processed")
         handed_off = False
         try:
@@ -284,6 +267,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 ok, why = jobs.can_continue(job, now_utc())
                 if not ok:
                     return _api_error(409, "not_resumable", why)
+                if multi:  # the worker picks the stage and any move up from the row
+                    queued, _ = enqueue(user, book_id, KIND_PROCESS)
+                    if queued.kind != KIND_PROCESS:
+                        return _api_error(409, "busy",
+                                          "a move is already queued for this book")
+                    return {"started": True, "queued": True, "job": queued.id}
                 # An unfinished move continues as a move: the ordinary stages
                 # would skip `remove` and `reassign`.
                 move_world = jobs.move_target(conn, book_id)
@@ -299,14 +288,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                              daemon=True).start()
             handed_off = True
         finally:
-            if not handed_off:
+            if not handed_off and not multi:
                 runner_slot.release()
         return {"started": True}
 
     @api.post("/api/books/{book_id}/move")
     def move_book(book_id: str, body: MoveBody,
-                  config: LoreConfig = Depends(user_config)):
-        if not runner_slot.acquire(blocking=False):
+                  config: LoreConfig = Depends(user_config),
+                  user: CurrentUser = Depends(current_user)):
+        if not multi and not runner_slot.acquire(blocking=False):
             return _api_error(409, "busy", "another book is being processed")
         handed_off = False
         created: int | None = None
@@ -327,6 +317,18 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 except WorldError as exc:
                     return _api_error(400, "invalid_world", str(exc))
                 target = get_world(conn, created)
+            if multi:  # the worker claims the row and runs prepare_move itself
+                queued, fresh = enqueue(user, book_id, KIND_MOVE,
+                                        {"world": target.id})
+                if not fresh and (queued.kind != KIND_MOVE or
+                                  (queued.payload or {}).get("world") != target.id):
+                    return _api_error(409, "busy",
+                                      "another job is already queued for this book")
+                created = None  # the world is in use now
+                return JSONResponse(
+                    {"started": True, "queued": True, "job": queued.id,
+                     "world": {"id": target.id, "name": target.name}},
+                    status_code=202)
             try:
                 # Claims the row too (the 202 implies running) and saves the
                 # target only once the claim has succeeded.
@@ -348,7 +350,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 except (WorldError, sqlite3.Error):
                     pass
             conn.close()
-            if not handed_off:
+            if not handed_off and not multi:
                 runner_slot.release()
 
     @api.get("/api/worlds")

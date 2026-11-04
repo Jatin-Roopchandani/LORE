@@ -1433,3 +1433,44 @@ def ui_command(
     typer.echo(f"lore ui: http://{host}:{port}", err=True)
     uvicorn.run(create_app(config, host=host, port=port, dev=dev),
                 host=host, port=port, log_level="warning")
+
+
+@app.command(name="migrate")
+def migrate_command() -> None:
+    """Apply the central database's migrations (LORE_DATABASE_URL; by default a
+    SQLite file beside the data root). Run it before `lore ui` or `lore worker`
+    in a multi-user deployment; safe to run again."""
+    from lore.central.db import database_url, upgrade
+
+    url = database_url(LoreConfig.load())
+    upgrade(url)
+    typer.echo("central database is up to date")
+
+
+@app.command(name="worker")
+def worker_command(
+    poll: float = typer.Option(2.0, help="seconds between looks at an empty queue"),
+    once: bool = typer.Option(False, "--once",
+                              help="run at most one job, then exit"),
+) -> None:
+    """Run book-processing jobs from the central queue, one at a time.
+
+    The multi-user web app (LORE_MULTI_USER=1) queues a job for each Continue
+    or Move; this claims them, runs each against its owner's own library, and
+    reports progress on that library's job row. Any number of workers can run;
+    a user's jobs never run at the same time, and a worker that dies has its
+    job requeued once its heartbeat goes stale. Needs `lore migrate` first.
+    """
+    from lore.central.db import database_url, make_engine, make_session_factory
+    from lore.worker import Worker
+
+    config = LoreConfig.load()
+    worker = Worker(config, make_session_factory(make_engine(database_url(config))))
+    typer.echo(f"lore worker {worker.worker_id}: waiting for jobs", err=True)
+    if once:
+        worker.run_once()
+        return
+    try:
+        worker.run_forever(poll_every=poll)
+    except KeyboardInterrupt:
+        typer.echo("lore worker: stopped", err=True)
