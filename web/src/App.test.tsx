@@ -8,7 +8,9 @@ vi.mock("./components/GraphCanvas", () => ({ GraphCanvas: () => <div data-testid
 const library = vi.fn((_world?: string) => Promise.resolve({ books: [], note: null }));
 const worlds = [{ id: 1, name: "Alpha Saga", books: [] }, { id: 2, name: "Beta Realm", books: [] }];
 const asked: (string | undefined)[] = [];
+const me = vi.fn(() => Promise.resolve({ user: { id: "u", email: "me@example.org", name: null, role: "user" } }));
 vi.mock("./api", () => ({
+  authApi: { me: () => me() },
   api: {
     settings: () => Promise.resolve({ show_internals: true }),
     library: (w?: string) => library(w),
@@ -27,7 +29,19 @@ vi.mock("./api", () => ({
 }));
 Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
 
-beforeEach(() => { localStorage.clear(); asked.length = 0; });
+beforeEach(() => { localStorage.clear(); asked.length = 0; me.mockClear(); });
+afterEach(() => { document.head.innerHTML = ""; });
+
+test("multi-user mode asks who is signed in once, which re-issues a lost CSRF cookie; local mode does not", async () => {
+  const { unmount } = render(<App />);
+  await screen.findByPlaceholderText("Ask about your books…");
+  expect(me).not.toHaveBeenCalled();
+  unmount();
+  document.head.innerHTML = '<meta name="lore-multi" content="1">';
+  render(<App />);
+  await screen.findByPlaceholderText("Ask about your books…");
+  expect(me).toHaveBeenCalledTimes(1);
+});
 
 test("renders the top bar, the ask box and the graph pane", async () => {
   render(<App />);

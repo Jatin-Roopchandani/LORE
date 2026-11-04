@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, isError } from "./api";
+import { api, authApi, isError } from "./api";
 import { ChatPane } from "./components/ChatPane";
 import { GraphPane } from "./components/GraphPane";
 import { HistorySidebar } from "./components/HistorySidebar";
 import { QuickSwitcher } from "./components/QuickSwitcher";
 import { TopBar } from "./components/TopBar";
+import { isMulti } from "./routing";
 import { applyTheme, loadTheme } from "./theme";
 import type { Book, SubgraphData, World } from "./types";
 import { useAsk } from "./useAsk";
@@ -41,6 +42,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => { applyTheme(loadTheme()); }, []);
+  // Multi-user: ask who we are once, so a lost or stale CSRF cookie is re-issued before the first POST.
+  useEffect(() => { if (isMulti()) authApi.me(); }, []);
   useEffect(() => {
     api.settings().then((s) => { if (!isError(s)) setShowInternals(s.show_internals); });
   }, []);
