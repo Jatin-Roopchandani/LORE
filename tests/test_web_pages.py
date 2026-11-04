@@ -13,7 +13,7 @@ from lore.config import LoreConfig
 from lore.tenancy import config_for
 from lore.web import app as web_app
 from tests.auth_fixtures import (
-    BASE_URL, NOW, FakeMailer, FakeProvider, make_app, sign_in,
+    BASE_URL, NOW, FakeMailer, FakeProvider, give_key, make_app, sign_in,
 )
 from tests.central_fixtures import central_sessions
 from tests.test_worker import library
@@ -116,6 +116,9 @@ def test_a_new_user_exists_centrally_and_can_queue_work(env):
         assert db.get(User, uid) is not None
     library(root, uid, "b1")  # their own library, as the worker tests build it
     token = anon.cookies["lore_csrf"]
+    r = anon.post("/api/books/b1/continue", headers={"X-CSRF-Token": token})
+    assert r.json()["error"]["code"] == "key_required"  # onboarding first
+    give_key(sessions, uid)
     r = anon.post("/api/books/b1/continue", headers={"X-CSRF-Token": token})
     assert r.status_code == 202, r.text
     with sessions() as db:

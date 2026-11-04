@@ -16,7 +16,7 @@ from lore.web.app import create_app
 from lore.worker import Worker
 from lore.worlds import get_world, list_worlds
 from tests.central_fixtures import central_sessions
-from tests.auth_fixtures import ACT_AS as HEADER, ActAsClient, make_app
+from tests.auth_fixtures import ACT_AS as HEADER, ActAsClient, give_key, make_app
 from tests.test_worker import FakeStage, book_job, library
 
 NOW = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
@@ -26,6 +26,8 @@ NOW = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
 def env(tmp_path):
     base = LoreConfig(data_dir=tmp_path / "root")
     sessions, _ = central_sessions(tmp_path, users=("alice", "bob"))
+    for user in ("alice", "bob"):  # processing needs the user's own key
+        give_key(sessions, user)
     library(base, "alice", "b1")
     library(base, "bob", "b1", "b2")
     calls = []

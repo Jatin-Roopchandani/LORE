@@ -150,11 +150,20 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
 
     @router.get("/api/admin/users")
     def list_users(_admin: str = Depends(require_admin)):
+        from lore.central.models import ApiKey, Usage
+        from lore.orchestrator.gemini_budget import today
+        day = today(ctx.now())
         with ctx.sessions() as db:
             rows = db.scalars(sa.select(User).order_by(User.created_at)).all()
+            with_key = set(db.scalars(sa.select(ApiKey.user_id)))
+            used = dict(db.execute(
+                sa.select(Usage.user_id, sa.func.sum(Usage.requests))
+                .where(Usage.day == day).group_by(Usage.user_id)).all())
         return {"users": [
             {"id": u.id, "email": u.email, "name": u.name, "role": u.role,
-             "status": u.status, "created_at": u.created_at.isoformat()}
+             "status": u.status, "created_at": u.created_at.isoformat(),
+             # Whether they have saved a Gemini key, and today's requests.
+             "has_key": u.id in with_key, "requests_today": int(used.get(u.id) or 0)}
             for u in rows]}
 
     return router

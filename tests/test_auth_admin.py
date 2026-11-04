@@ -273,7 +273,8 @@ def test_the_admin_lists_users(env):
     users = sign_in(app, sessions, "root").get("/api/admin/users").json()["users"]
     assert {(u["email"], u["role"], u["status"]) for u in users} == {
         ("root@example.org", "admin", "active"), ("alice@example.org", "user", "active")}
-    assert set(users[0]) == {"id", "email", "name", "role", "status", "created_at"}
+    assert set(users[0]) == {"id", "email", "name", "role", "status", "created_at",
+                             "has_key", "requests_today"}
 
 
 # --- lore admin grant ---

@@ -35,11 +35,43 @@ class Clock:
         return self.now
 
 
+# Release step 3: every multi-mode app needs a master key for the users'
+# Gemini keys, and checks a pasted key through a KeyChecker (faked: no network).
+TEST_MASTER = bytes(range(32))
+FAKE_KEY = "AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake123"  # shaped like a key, not one
+
+
+def master_keys():
+    from lore.central.keys import MasterKeys
+    return MasterKeys(TEST_MASTER)
+
+
+class FakeKeyChecker:
+    """Answers a key check without the network; `result` is what Gemini says."""
+
+    def __init__(self, result: str = "ok") -> None:
+        self.result, self.seen = result, []
+
+    def check(self, key: str) -> str:
+        self.seen.append(key)
+        if isinstance(self.result, BaseException):
+            raise self.result
+        return self.result
+
+
+def give_key(sessions, user_id: str, key: str = FAKE_KEY) -> None:
+    """Store `key` for `user_id` as a saved, checked key (no request)."""
+    from lore.central.keys import KeyService
+    KeyService(sessions, master_keys(), FakeKeyChecker(), clock=Clock()).save(user_id, key)
+
+
 def make_app(root: LoreConfig, sessions, *, auth_clock: Clock | None = None,
              **kwargs):
     """A multi-mode app on a migrated central DB; `clock` (processing) and
     `auth_clock` (sessions) are separate, as in create_app."""
     kwargs.setdefault("auth", make_settings())
+    kwargs.setdefault("master_keys", master_keys())
+    kwargs.setdefault("key_checker", FakeKeyChecker())
     return create_app(root, multi_user=True, central_sessions=sessions,
                       auth_clock=auth_clock or Clock(), **kwargs)
 

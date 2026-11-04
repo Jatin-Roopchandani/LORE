@@ -9,7 +9,9 @@ from fastapi.testclient import TestClient
 from lore.config import LoreConfig
 from lore.tenancy import CurrentUser, config_for
 from lore.web.app import create_app
-from tests.auth_fixtures import ACT_AS as HEADER, ActAsClient, make_app, make_settings
+from tests.auth_fixtures import (
+    ACT_AS as HEADER, ActAsClient, give_key, make_app, make_settings,
+)
 from tests.central_fixtures import central_sessions
 from tests.mcp_fixtures import build_store_triple
 
@@ -58,6 +60,8 @@ async def library_search(config, query, models=None, on_event=None, world=None,
 @pytest.fixture
 def central(tmp_path):
     sessions, _ = central_sessions(tmp_path, users=("alice", "bob", "carol"))
+    for user in ("alice", "bob", "carol"):  # asking needs the user's own key
+        give_key(sessions, user)
     return sessions
 
 
@@ -259,6 +263,7 @@ def test_the_default_multi_mode_resolver_fails_closed(root, libraries, monkeypat
     monkeypatch.setenv("LORE_CSRF_SECRET", "c" * 40)
     monkeypatch.setenv("LORE_BASE_URL", "http://127.0.0.1:8766")
     monkeypatch.setenv("LORE_COOKIE_SECURE", "0")
+    monkeypatch.setenv("LORE_KEY_ENCRYPTION_KEY", "a" * 43 + "=")  # 32 bytes, base64
     client = TestClient(create_app(root), base_url="http://127.0.0.1:8766")
     assert client.get("/api/library", headers={HEADER: "alice"}).status_code == 401
 

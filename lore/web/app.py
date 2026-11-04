@@ -56,6 +56,7 @@ from lore.worlds import (
 from lore.web.security import OriginGuard, allowed_hosts, allowed_origins
 
 if TYPE_CHECKING:
+    from lore.central.keys import KeyChecker, MasterKeys
     from lore.auth.mailer import Mailer
     from lore.auth.providers import Provider
     from lore.auth.settings import AuthSettings
@@ -167,7 +168,9 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                auth: "AuthSettings | None" = None,
                mailer: "Mailer | None" = None,
                providers: "dict[str, Provider] | None" = None,
-               auth_clock: Callable[[], datetime] | None = None):
+               auth_clock: Callable[[], datetime] | None = None,
+               master_keys: "MasterKeys | None" = None,
+               key_checker: "KeyChecker | None" = None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing.
 
@@ -185,6 +188,13 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     configured) and `auth_clock`: see lore.auth. Every state-changing request
     must carry the per-session CSRF token (see `csrf_guard`).
 
+    Each user brings their own Gemini key (release step 3, lore.web.keys):
+    multi mode needs `master_keys` (default: LORE_KEY_ENCRYPTION_KEY; the app
+    refuses to start without it) and checks a pasted key through
+    `key_checker` (default: one request to Gemini). Every question runs with
+    the asker's key bound, and asking or processing without one is
+    `key_required`. Local mode keeps the server's key file, as before.
+
     Book processing: in local mode Continue and Move run in a thread of this
     process, one book at a time, as ever. In multi mode they ENQUEUE a job in
     the central database (`central_sessions`, default LORE_DATABASE_URL) for
@@ -198,6 +208,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             config, auth=auth, mailer=mailer, providers=providers,
             central_sessions=central_sessions, clock=auth_clock)
         central_sessions = auth_ctx.sessions
+        from lore.central.keys import KeyService, MasterKeys
+        key_service = KeyService(
+            central_sessions, master_keys or MasterKeys.from_env(),  # or no start
+            key_checker, clock=auth_ctx.now)
     api = FastAPI(title="LORE", docs_url=None, redoc_url=None,
                   dependencies=[Depends(csrf_guard)] if multi else None)
     # `create_app(multi_user=True)` must mean sessions even when the env flag
@@ -226,6 +240,16 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     if auth_ctx is not None:
         api.state.auth = auth_ctx
         api.include_router(build_auth_router(auth_ctx))
+        from lore.web.keys import build_key_router
+        api.include_router(build_key_router(auth_ctx, key_service))
+
+    def needs_key(user: CurrentUser) -> JSONResponse | None:
+        """Multi mode: 409 key_required for a user with no Gemini key yet."""
+        if not multi:
+            return None
+        from lore.web.keys import key_error
+        missing = key_error(user.id, key_service)
+        return None if missing is None else JSONResponse(missing, status_code=409)
 
     def enqueue(user: CurrentUser, book_id: str, kind: str,
                 payload: dict | None = None):
@@ -301,6 +325,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 if not ok:
                     return _api_error(409, "not_resumable", why)
                 if multi:  # the worker picks the stage and any move up from the row
+                    if (refused := needs_key(user)) is not None:
+                        return refused
                     queued, _ = enqueue(user, book_id, KIND_PROCESS)
                     if queued.kind != KIND_PROCESS:
                         return _api_error(409, "busy",
@@ -337,6 +363,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         try:
             if book_id not in {b["id"] for b in list_books(conn)}:
                 return _api_error(404, "not_found", f"no book with id {book_id!r}")
+            if (refused := needs_key(user)) is not None:  # before a world is made
+                return refused
             target = get_world(conn, body.world)
             if target is None:
                 if not body.create:
@@ -559,8 +587,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         user = current_user(request)
         cfg = library_of(user)
         lock = locks.setdefault(user.id, asyncio.Lock())
+        search = tools.lore_search
+        if multi:  # the asker's own Gemini key, bound for this question only
+            from lore.web.keys import with_user_key
+            search = with_user_key(user.id, key_service, search)
         return StreamingResponse(
-            ask_events(cfg, body.question, lock, search=tools.lore_search,
+            ask_events(cfg, body.question, lock, search=search,
                        world=body.world, depth=body.depth),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
