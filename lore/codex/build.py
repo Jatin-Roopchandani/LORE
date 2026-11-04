@@ -8,9 +8,14 @@ own matcher and normaliser, in one passage of the pack, which is also the
 chunk the statement is pinned to.
 
 The evidence pack is the entity's story beats (a guide to the moments that
-matter) and numbered passages: the chunks of those beats and the world's
-chunks that name the entity most, in story order. Only passages within the
-entity's world are used.
+matter) and numbered passages: the earliest chunks that mention the entity in
+each book, the chunks of those beats and the world's chunks that name the
+entity most, in story order. Only passages within the entity's world are used.
+
+Every entry is asked for 1 or 2 identity lines (who or what the entity is),
+quoted from the earliest passage that establishes it, so the line is visible
+from early reading positions. The number of other statements asked for, and
+the passages shown, scale with how central the entity is (`statement_cap`).
 
 Nothing here names a book, a person or a genre. The entity, its books and the
 text arrive as data.
@@ -19,13 +24,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from lore.beats.store import Beat, beats_for_entities
 from lore.codex.store import ASPECTS, CodexEntry, Statement
@@ -41,8 +47,22 @@ CODEX_MAX_PER_BOOK = 150
 MIN_MENTION_CHUNKS = 4
 ENTITY_KINDS = ("Concept", "Faction", "Place", "Object", "Character")
 MAX_BEATS = 24
+# Passages shown for a minor entity; a central one gets up to
+# MAX_PASSAGES_CENTRAL (`passage_cap`), so its larger cap has evidence to fill it.
 MAX_PASSAGES = 30
-MAX_STATEMENTS = 40
+MAX_PASSAGES_CENTRAL = 45
+# The earliest passages mentioning the entity in each book always join the
+# pack: they are where who or what it is gets established.
+EARLY_PER_BOOK = 2
+# Statements (besides identity) asked for and kept: from MIN_STATEMENTS for an
+# entity with no beats and few mentions, STATEMENTS_PER_DOUBLING more each
+# time its centrality doubles, at most MAX_STATEMENTS (`statement_cap`).
+MIN_STATEMENTS = 8
+STATEMENTS_PER_DOUBLING = 4
+MAX_STATEMENTS = 48
+# Mentioning chunks count this much less than beats towards centrality.
+MENTIONS_PER_BEAT = 10
+MAX_IDENTITY = 2
 MAX_QUOTE_WORDS = 40
 MAX_SUMMARY_CHARS = 240
 
@@ -58,8 +78,10 @@ Passages, in story order:
 
 Rules:
 - "summary" is one plain sentence of at most 40 words saying what the subject is and what part it plays in the story.
-- "statements" has up to 40 items. Each is one fact that a passage establishes about the subject, under one "aspect": nature (what it is: its look, kind, qualities, status), history (where it came from and what happened to it), abilities (what it can do, or how it works and what its rules are), relationships (how it stands to people, groups, places or things), role (what it does in the events), change (how it differs later from earlier: say what it was and what it became).
-- Cover every aspect the passages give evidence for, and cover the whole span of the passages, not only their opening. A statement that adds something is better than one that repeats another.
+- "identity" has 1 or 2 items, never none when any passage shows who or what the subject is. Each says plainly who or what the subject is: for a person, their occupation, rank, status or position and how they stand to the main figures of the story; for anything else, what kind of thing, place or group it is and what it is in the story. Quote the EARLIEST passage that establishes it, so that a reader who has only begun the story can see it.
+- "statements" has up to {cap} items; when the passages establish that much, give close to {cap}. Each is one fact that a passage establishes about the subject, under one "aspect": nature (what it is: its look, kind, qualities, status), history (where it came from and what happened to it), abilities (what it can do, or how it works and what its rules are), relationships (how it stands to people, groups, places or things), role (what it does in the events), change (how it differs later from earlier: say what it was and what it became).
+- Cover every aspect the passages give evidence for, and cover the whole span of the passages, not only their opening. A statement that adds something is better than one that repeats another, or an identity item.
+- When several passages establish the same fact, quote the earliest of them.
 - A statement says only what its quote supports, in neutral words: no opinion, no guess at a motive, no theme, no verdict.
 - "quote" is copied word for word from one passage: one unbroken stretch of 4 to 40 words, with no ellipsis and no change of spelling or punctuation. It need not contain the subject's name, but the passage must make clear that it is about the subject.
 - Use nothing outside the passages. If they establish little, return few statements; if nothing, an empty list.
@@ -72,8 +94,24 @@ class StatementItem(BaseModel):
     quote: str
 
 
+class IdentityItem(BaseModel):
+    text: str
+    quote: str
+
+
+def _identity_required(schema: dict) -> None:
+    # Required in the schema the model is shown; a default keeps answers cached
+    # before identity existed (and test fixtures) readable.
+    schema.setdefault("required", [])
+    if "identity" not in schema["required"]:
+        schema["required"].insert(1, "identity")
+
+
 class CodexAnswer(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_identity_required)
+
     summary: str
+    identity: list[IdentityItem] = Field(default_factory=list)
     statements: list[StatementItem]
 
 
@@ -89,10 +127,31 @@ class CodexEntity:
 @dataclass(frozen=True)
 class Evidence:
     """One entity's pack: `beats` in story order (at most MAX_BEATS) and
-    `passages` in story order, numbered from 1, with a `labels` line each."""
+    `passages` in story order, numbered from 1, with a `labels` line each.
+    `cap` is the number of statements (besides identity) asked for and kept."""
     beats: tuple[Beat, ...]
     passages: tuple[Passage, ...]
     labels: tuple[str, ...]
+    cap: int = MAX_STATEMENTS
+
+
+def statement_cap(beats: int, mentions: int) -> int:
+    """How many statements (besides identity) an entity is asked for: grows by
+    STATEMENTS_PER_DOUBLING each time its centrality (its beats in the world,
+    plus its mentioning chunks / MENTIONS_PER_BEAT) doubles, from
+    MIN_STATEMENTS to MAX_STATEMENTS. Logarithmic, so a protagonist gets
+    several times a minor figure's lines while the total stays modest."""
+    centrality = max(beats, 0) + max(mentions, 0) // MENTIONS_PER_BEAT
+    grown = MIN_STATEMENTS + round(STATEMENTS_PER_DOUBLING * math.log2(1 + centrality))
+    return min(MAX_STATEMENTS, grown)
+
+
+def passage_cap(cap: int) -> int:
+    """Passages shown for an entity of statement cap `cap`: MAX_PASSAGES for a
+    minor one, more as the cap grows past twice MIN_STATEMENTS, at most
+    MAX_PASSAGES_CENTRAL."""
+    extra = max(0, cap - 2 * MIN_STATEMENTS) // 2
+    return max(MAX_PASSAGES, min(MAX_PASSAGES_CENTRAL, MAX_PASSAGES + extra))
 
 
 class _Kuzu(Protocol):
@@ -137,14 +196,18 @@ def evidence_pack(conn: sqlite3.Connection, kuzu: _Kuzu, entity: CodexEntity,
     """The entity's beats and passages within `book_ids`, in story order.
 
     Beats: all of its beats in the world, or MAX_BEATS spread evenly over the
-    story. Passages: the chunks of those beats first, then the chunks that
-    name the entity most (by how often its name or aliases occur), up to
-    MAX_PASSAGES. Passage order follows `position.order_passages`, so two
-    books are ordered only when their series says how.
+    story. Passages: the first EARLY_PER_BOOK chunks mentioning it in each
+    book, then the chunks of those beats, then the chunks that name the
+    entity most (by how often its name or aliases occur), up to
+    `passage_cap(cap)`. `cap` is `statement_cap` of all its beats in the world
+    and the chunks that mention it. Passage order follows
+    `position.order_passages`, so two books are ordered only when their series
+    says how.
     """
     world = set(book_ids)
     beats = order_beats([b for b in beats_for_entities(conn, [entity.id])
                          if b.book_id in world], books)
+    all_beats = len(beats)
     if len(beats) > MAX_BEATS:
         keep = sorted(coverage_order(len(beats))[:MAX_BEATS])
         beats = [beats[i] for i in keep]
@@ -157,10 +220,14 @@ def evidence_pack(conn: sqlite3.Connection, kuzu: _Kuzu, entity: CodexEntity,
     rows = _chunk_rows(conn, sorted(set(mention_ids) | set(beat_chunks)))
     texts = {cid: r[2] for cid, r in rows.items()}
     forms = [entity.name, *entity.aliases]
-    chosen = [c for c in beat_chunks if c in texts][:MAX_PASSAGES]
+    cap = statement_cap(all_beats, len(set(mention_ids)))
+    limit = passage_cap(cap)
+    chosen = _earliest(rows, [c for c in set(mention_ids) if c in texts], books)
+    chosen += [c for c in beat_chunks if c in texts and c not in chosen]
+    chosen = chosen[:limit]
     rest = sorted((c for c in set(mention_ids) if c in texts and c not in chosen),
                   key=lambda c: (-_occurrences(texts[c], forms), c))
-    chosen += rest[:MAX_PASSAGES - len(chosen)]
+    chosen += rest[:limit - len(chosen)]
 
     unordered = [Passage(n=i, chunk_id=cid, book_id=rows[cid][0],
                         chapter_seq=rows[cid][1], text=texts[cid]) for i, cid in enumerate(chosen)]
@@ -173,7 +240,23 @@ def evidence_pack(conn: sqlite3.Connection, kuzu: _Kuzu, entity: CodexEntity,
                                 chapter_seq=p.chapter_seq, text=p.text))
         labels.append(pos.label())
     return Evidence(beats=tuple(beats), passages=tuple(passages),
-                    labels=tuple(labels))
+                    labels=tuple(labels), cap=cap)
+
+
+def _earliest(rows: Mapping[str, tuple[str, int, str]], chunk_ids: Sequence[str],
+              books: Mapping[str, BookInfo] | None) -> list[str]:
+    """The first EARLY_PER_BOOK of `chunk_ids` in each book, in story order."""
+    found = [Passage(n=i, chunk_id=c, book_id=rows[c][0], chapter_seq=rows[c][1],
+                     text="") for i, c in enumerate(sorted(chunk_ids))]
+    by_n = {p.n: p for p in found}
+    taken: dict[str, int] = {}
+    out: list[str] = []
+    for pos in order_passages(found, books).ordered:
+        p = by_n[pos.n]
+        if taken.get(p.book_id, 0) < EARLY_PER_BOOK:
+            taken[p.book_id] = taken.get(p.book_id, 0) + 1
+            out.append(p.chunk_id)
+    return out
 
 
 def _chunk_rows(conn: sqlite3.Connection,
@@ -192,7 +275,7 @@ def _chunk_rows(conn: sqlite3.Connection,
 def evidence_hash(entity: CodexEntity, evidence: Evidence) -> str:
     """Identifies what the prompt shows about the entity (not the template)."""
     payload = json.dumps([
-        entity.name, entity.kind, list(entity.aliases),
+        entity.name, entity.kind, list(entity.aliases), evidence.cap,
         [b.text for b in evidence.beats],
         [[p.chunk_id, label, p.text]
          for p, label in zip(evidence.passages, evidence.labels)]])
@@ -207,23 +290,29 @@ def render_prompt(entity: CodexEntity, evidence: Evidence) -> str:
         for p, label in zip(evidence.passages, evidence.labels))
     return CODEX_PROMPT.format(kind=entity.kind, name=entity.name,
                                aliases=aliases, moments=moments,
-                               passages=passages)
+                               passages=passages, cap=evidence.cap)
 
 
 def verify_entry(raw: CodexAnswer, entity: CodexEntity, world_id: int,
                  evidence: Evidence, evidence_hash_: str) -> CodexEntry | None:
     """The entry for `raw`, or None when no statement survives.
 
-    A statement is kept only if its aspect is known, its text is not empty,
-    its quote has at most MAX_QUOTE_WORDS words and is found, by the claims
-    matcher (which also enforces the minimum length), in one passage of the
-    pack, the first that holds it, which is the chunk it is pinned to; a
-    repeat of an earlier statement's aspect and quote is dropped. Statements
-    are ordered by aspect, then story order, then the model's order, at most
-    MAX_STATEMENTS. The summary is one line of at most MAX_SUMMARY_CHARS
-    characters, or the first kept statement when the model gave none.
+    The identity items are statements of aspect "identity" (as is any
+    statement the model filed under that aspect). A statement is kept only if
+    its aspect is known, its text is not empty, its quote has at most
+    MAX_QUOTE_WORDS words and is found, by the claims matcher (which also
+    enforces the minimum length), in one passage of the pack, the first that
+    holds it (the earliest in story order), which is the chunk it is pinned
+    to; a repeat of an earlier statement's aspect and quote is dropped. At
+    most MAX_IDENTITY identity statements are kept, the earliest-pinned, and
+    at most `evidence.cap` others. Statements are ordered by aspect (identity
+    first), then story order, then the model's order. The summary is one line
+    of at most MAX_SUMMARY_CHARS characters, or the first kept statement when
+    the model gave none.
     """
-    pending = [s for s in raw.statements
+    offered = [StatementItem(aspect="identity", text=i.text, quote=i.quote)
+               for i in raw.identity] + list(raw.statements)
+    pending = [s for s in offered
                if s.aspect in ASPECTS and s.text.strip() and s.quote.strip()
                and _words(_normalise(s.quote)) <= MAX_QUOTE_WORDS]
     # One claim per (statement, passage): the matcher decides which passage
@@ -240,7 +329,7 @@ def verify_entry(raw: CodexAnswer, entity: CodexEntity, world_id: int,
     pinned: dict[int, int] = {}
     for claim in kept:
         si, pi = owner[id(claim)]
-        pinned.setdefault(si, pi)
+        pinned[si] = min(pi, pinned.get(si, pi))
 
     chosen: list[tuple[int, int, int, StatementItem]] = []
     seen: set[tuple[str, str]] = set()
@@ -253,11 +342,13 @@ def verify_entry(raw: CodexAnswer, entity: CodexEntity, world_id: int,
         seen.add(key)
         chosen.append((ASPECTS.index(item.aspect), pinned[si], si, item))
     chosen.sort(key=lambda t: t[:3])
+    identity = [c for c in chosen if c[3].aspect == "identity"][:MAX_IDENTITY]
+    others = [c for c in chosen if c[3].aspect != "identity"][:max(evidence.cap, 0)]
     statements = tuple(
         Statement(aspect=item.aspect, text=" ".join(item.text.split()),
                   quote=item.quote.strip(),
                   chunk_id=evidence.passages[pi].chunk_id)
-        for _a, pi, _s, item in chosen[:MAX_STATEMENTS])
+        for _a, pi, _s, item in identity + others)
     if not statements:
         return None
     summary = " ".join(raw.summary.split())[:MAX_SUMMARY_CHARS].rstrip()
