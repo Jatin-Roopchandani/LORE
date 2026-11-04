@@ -1056,8 +1056,16 @@ def _upstream(exc: GeminiError) -> dict:
 async def lore_search(config: LoreConfig, query: str,
                       models: QueryModels | None = None, on_event=None,
                       world: int | str | None = None,
-                      depth: str | None = None, spoilers: bool = False) -> dict:
+                      depth: str | None = None, spoilers: bool = False,
+                      history=None) -> dict:
     """The full query agent: spends Gemini requests, so it is guarded.
+
+    `history` (the conversation's last turns, each {question, answer}: the
+    earlier question and its short answer or the start of its answer) makes
+    the question a follow-up: it is rewritten to stand alone, and the result
+    carries `standalone` when that rewrite differs from `query` (see
+    answer_question). At most decompose.MAX_HISTORY_TURNS turns and
+    MAX_HISTORY_CHARS characters are used. None: the result is what it was.
 
     `world` (an id or a name) answers from that world's books only; with
     none, a library of one world uses it and a library of several is
@@ -1112,6 +1120,8 @@ async def lore_search(config: LoreConfig, query: str,
                 scope["depth"] = depth
             if spoilers:
                 scope["spoilers"] = True
+            if history:
+                scope["history"] = history
             answer = await answer_question(stores.conn, stores.kuzu,
                                            stores.lance, query, models,
                                            on_event=on_event, **scope)
@@ -1120,6 +1130,8 @@ async def lore_search(config: LoreConfig, query: str,
                 del out["position_note"]  # present only when a position limited it
             if out.get("coverage") is None:
                 del out["coverage"]  # present only on an answer with prose (write.answer_coverage)
+            if answer.standalone:  # present only when a follow-up was rewritten
+                out["standalone"] = answer.standalone
             return out
         except GeminiError as exc:
             return _upstream(exc)

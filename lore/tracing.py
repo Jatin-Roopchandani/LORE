@@ -121,7 +121,7 @@ class Trace:
         if kind in _NOT_STEPS:
             return
         event = scrub(event)
-        if kind in ("parts", "plan"):
+        if kind in ("parts", "plan", "understood"):
             self.decomposition[kind] = {k: v for k, v in event.items()
                                         if k not in ("type", "t")}
         self.steps.append(event)

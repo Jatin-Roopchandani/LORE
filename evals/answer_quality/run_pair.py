@@ -89,6 +89,13 @@ ARM_SETTINGS = {
     # (lore/query/recap.py). `recap=false` is the code before it existed.
     "recap": ("lore.query.decompose", "RECAP",
               lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Follow-ups: a question with `history` (earlier turns, each {question,
+    # answer}) is rewritten to stand alone in the decompose call, and the
+    # rewrite drives the answer (lore/query/decompose.py). `followups=false`
+    # ignores the history, as the code before it did. Questions without
+    # history are unaffected by either arm.
+    "followups": ("lore.query.decompose", "FOLLOWUPS",
+                  lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
 
 
@@ -134,7 +141,7 @@ def _pinned(config, model: str):
 WORLD: str | None = None
 
 
-async def ask(config, question: str, overrides, trace: list | None):
+async def ask(config, question: str, overrides, trace: list | None, history=None):
     # The `deep` arm asks at depth "deep"; any other arm lets the decomposer decide.
     depth = "deep" if overrides.get(("lore.query.decompose", "DEEP")) is True else None
     kw = {"depth": depth} if depth else {}
@@ -143,6 +150,8 @@ async def ask(config, question: str, overrides, trace: list | None):
     kw["spoilers"] = True
     if WORLD is not None:
         kw["world"] = WORLD
+    if history:  # a follow-up question in the set: its earlier turns
+        kw["history"] = history
     with _Applied(overrides):
         models = _real_models(config)
         if trace is not None:
@@ -180,7 +189,7 @@ async def run(label: str, arms: list[str], qset: str, only, trace: bool) -> None
                 continue
             calls: list[dict] | None = [] if trace else None
             started = time.monotonic()
-            result = await ask(config, q["question"], overrides[a], calls)
+            result = await ask(config, q["question"], overrides[a], calls, q.get("history"))
             record = {"id": q["id"], "question": q["question"], "arm": arms[a],
                       "pinned_model": model,
                       "seconds": round(time.monotonic() - started, 1), **result}
