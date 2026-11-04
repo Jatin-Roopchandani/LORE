@@ -27,6 +27,7 @@ from lore.inference.gemini import (
     default_key_file,
     resolve_api_key,
 )
+from lore.inference.key_scope import gemini_api_key
 from lore.inference.ollama import OllamaProvider
 from lore.orchestrator.gemini_budget import recorder_for
 from lore.resolve.disambiguation import _atomic_write
@@ -185,7 +186,9 @@ ADJUDICATION_EXHAUSTED_HINT = (
 
 def _adjudication_client(config: LoreConfig, api_key: str | None) -> GeminiClient:
     """A client on `[lore.adjudication]`'s cascade, or the clear no-key refusal."""
-    key = api_key or resolve_api_key(key_file=default_key_file())
+    # A bound user's key in multi mode, never the file (key_scope).
+    key = gemini_api_key(api_key,
+                         local=lambda: resolve_api_key(key_file=default_key_file()))
     if not key:
         raise ValueError(
             '[lore.adjudication] provider = "gemini" but no API key: set'

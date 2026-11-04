@@ -28,6 +28,7 @@ from lore.inference.gemini import (
     default_key_file,
     resolve_api_key,
 )
+from lore.inference.key_scope import gemini_api_key
 from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import recorder_for
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
@@ -237,8 +238,14 @@ class DisambiguateStage:
         jobs.set_needs_reload(ctx.conn, ctx.book_id, False)
 
 
+def _user_or_local_key() -> str | None:
+    """A bound user's key in multi mode (never the server's file); the
+    environment or the key file in local mode (see key_scope)."""
+    return gemini_api_key(local=lambda: resolve_api_key(key_file=default_key_file()))
+
+
 def _gemini_client(config) -> GeminiClient:
-    api_key = resolve_api_key(key_file=default_key_file())
+    api_key = _user_or_local_key()
     if api_key is None:
         raise RuntimeError(
             "disambiguation needs a Gemini API key (GEMINI_API_KEY or"
@@ -261,7 +268,7 @@ class _BeatPart:
 
 
 def _beats_client(config) -> GeminiClient:
-    api_key = resolve_api_key(key_file=default_key_file())
+    api_key = _user_or_local_key()
     if api_key is None:
         raise RuntimeError(
             "story beats need a Gemini API key (GEMINI_API_KEY or"
@@ -271,7 +278,7 @@ def _beats_client(config) -> GeminiClient:
 
 
 def _codex_client(config) -> GeminiClient:
-    api_key = resolve_api_key(key_file=default_key_file())
+    api_key = _user_or_local_key()
     if api_key is None:
         raise RuntimeError(
             "the codex needs a Gemini API key (GEMINI_API_KEY or"

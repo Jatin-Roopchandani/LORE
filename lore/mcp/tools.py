@@ -21,6 +21,7 @@ from lore.inference.gemini import (
     GeminiAuthError, GeminiError, GeminiKeyFileError, GeminiQuotaError,
     default_key_file, resolve_api_key,
 )
+from lore.inference.key_scope import gemini_api_key
 from lore.mcp.guards import TIMEOUT_MS, CypherRejected, run_guarded
 from lore.mcp.shapes import (
     BookOut, ChunkHit, Citation, CypherResult, EdgeOut, EntityCard,
@@ -948,7 +949,10 @@ def _build_models(config: LoreConfig) -> QueryModels:
     """
     api_key = None
     if "gemini" in (config.selection.provider, config.synthesis.provider):
-        api_key = resolve_api_key(key_file=default_key_file())
+        # Multi mode: the bound user's key, never the server's. Local mode:
+        # the environment or the key file, as ever.
+        api_key = gemini_api_key(
+            local=lambda: resolve_api_key(key_file=default_key_file()))
         if not api_key:
             raise _KeyMissing()
     return make_query_models(config, api_key=api_key,

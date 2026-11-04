@@ -184,6 +184,8 @@ def default_key_file() -> Path:
 
 
 def _key_from_file(path: Path) -> str | None:
+    if key_scope.server_key_forbidden():  # belt and braces: see resolve_api_key
+        raise key_scope.KeyRequired()
     try:
         info = path.stat()
     except FileNotFoundError:
@@ -214,6 +216,10 @@ def resolve_api_key(
     `default_key_file()`), so a caller that passes none reads the
     environment only. Raises GeminiKeyFileError for a file others can read.
     """
+    if key_scope.server_key_forbidden():
+        # Multi mode, or a user's key is bound: the server's own key (the
+        # environment or the key file) is never a fallback for anyone.
+        raise key_scope.KeyRequired()
     source = os.environ if env is None else env
     for name in _KEY_VARIABLES:
         value = (source.get(name) or "").strip()
@@ -309,6 +315,8 @@ class GeminiClient:
             # gone; what could still raise here (permissions, a full disk)
             # is an environment broken enough that the caller should know.
             self._recorder(model)
+        # The bound user's daily count (multi mode); nothing in local mode.
+        key_scope.note_request(model)
         url = self._endpoint.format(model=model)
         try:
             response = await self._client.post(
@@ -325,6 +333,13 @@ class GeminiClient:
                 f"could not reach the Gemini API: {exc}"
             ) from exc
 
+        if response.status_code in (401, 403) or (
+                response.status_code == 400 and "API_KEY_INVALID" in response.text):
+            # Tell a bound user's scope its key was refused (multi mode: the
+            # key is marked and the user asked for a new one). The 400 is how
+            # Gemini answers a malformed or expired key; its error is raised
+            # below exactly as before.
+            key_scope.note_rejection()
         if response.status_code in (401, 403):
             # Fatal, and never cascaded: a rejected key will be rejected by
             # every model, so trying four more only wastes time.
@@ -455,3 +470,6 @@ class GeminiClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+from lore.inference import key_scope  # noqa: E402 - it imports this module first

@@ -39,6 +39,7 @@ from lore.inference.gemini import (
     default_key_file,
     resolve_api_key,
 )
+from lore.inference.key_scope import gemini_api_key
 from lore.inference.ollama import OllamaProvider
 from lore.orchestrator.gemini_budget import recorder_for
 from lore.orchestrator.pipeline import QuotaStop
@@ -312,7 +313,9 @@ def missing_gemini_key_message(settings: list[str], alternative: str) -> str:
 
 def make_gemini_tier(config: LoreConfig, api_key: str | None = None) -> GeminiTier:
     """Build the run's tier. Raises ValueError, opening nothing, without a key."""
-    key = api_key or resolve_api_key(key_file=default_key_file())
+    # A bound user's key in multi mode, never the file (key_scope).
+    key = gemini_api_key(api_key,
+                         local=lambda: resolve_api_key(key_file=default_key_file()))
     if not key:
         raise ValueError(missing_gemini_key_message(
             ['extraction_provider = "gemini"'],
