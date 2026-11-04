@@ -72,11 +72,25 @@ export function eventsOf(m: ChatMessage): AskEvent[] {
   return [...head, ...(a.steps ?? []), { type: "answer", t: last, result: a.result, message_id: m.id }];
 }
 
-/** A chat from the server's list as a history item; the cached item's events are kept when it has them. */
+/** A chat from the server's list as a history item, named by its title (its first question); the cached item's
+ *  events (its latest answer's) are kept when it has them. */
 export function itemFromChat(c: ChatSummary, cached?: HistoryItem): HistoryItem {
   const m = c.latest;
-  return { id: c.id, question: m?.question ?? c.title, askedAt: m?.created_at ?? c.updated_at,
+  return { id: c.id, question: c.title || m?.question || "", askedAt: m?.created_at ?? c.updated_at,
     world: m?.world ?? c.world ?? undefined, events: cached?.events ?? [], synced: true, deep: m?.summary?.deep ?? cached?.deep };
+}
+
+/** One question and answer of a chat, as a thread draws it: `key` is stable (the message id when the server has it). */
+export interface ThreadEntry { key: string; question: string; standalone: string | null; events: AskEvent[] }
+
+/** A chat's messages as thread entries, oldest first. */
+export function entriesOf(messages: ChatMessage[]): ThreadEntry[] {
+  return messages.map((m) => {
+    const events = eventsOf(m);
+    const understood = events.find((e) => e.type === "understood");
+    return { key: `m${m.id}`, question: m.question, events,
+      standalone: m.standalone ?? (understood && understood.type === "understood" ? understood.standalone : null) };
+  });
 }
 
 /** What importing a browser-only item sends: idempotent by its own id. */

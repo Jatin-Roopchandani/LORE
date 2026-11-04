@@ -2,8 +2,8 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { streamAsk } from "./api";
 import { askReducer, initialState, type AskState } from "./askReducer";
 import { chatsApi, failed } from "./chatsApi";
-import { addToHistory, eventsOf, importBody, importDone, itemFromChat, keepLegacy, loadHistory, loadLegacy, markImportDone,
-  saveHistory, type HistoryItem } from "./history";
+import { addToHistory, entriesOf, importBody, importDone, itemFromChat, keepLegacy, loadHistory, loadLegacy, markImportDone,
+  saveHistory, type HistoryItem, type ThreadEntry } from "./history";
 import { loadDepth, saveDepth } from "./depth";
 import { createScheduler, type Scheduler } from "./scheduler";
 import type { AskEvent, Depth } from "./types";
@@ -14,10 +14,29 @@ function reducer(state: AskState, action: Action): AskState {
 }
 const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
+const standaloneOf = (events: AskEvent[]): string | null => {
+  const e = events.find((x) => x.type === "understood");
+  return e && e.type === "understood" ? e.standalone : null;
+};
+
 // `world` is the selected world (an id as a string, or "all"). Replaying an item asked in another world calls
 // `onReplayWorld` with it, so the rest of the page follows.
+//
+// A chat is a thread: `state` is its latest question (streaming, or replayed) and `thread` the earlier questions and
+// answers above it, oldest first. Asking while a chat is open follows it up: the question goes with the chat's id and
+// the server loads the earlier turns itself. `clear` (New chat) starts a fresh one.
 export function useAsk(world: string = "all", onReplayWorld?: (world: string) => void) {
   const [state, dispatch] = useReducer(reducer, initialState());
+  const [thread, setThread] = useState<ThreadEntry[]>([]);
+  // The server chat a follow-up goes to (null: the next question starts a new chat).
+  const chat = useRef<string | null>(null);
+  // The open chat's saved entries, oldest first: the one on screen is last once it is answered.
+  const entries = useRef<ThreadEntry[]>([]);
+  // Chats opened or asked in this session: reopening one draws its thread with no request.
+  const threads = useRef(new Map<string, ThreadEntry[]>());
+  // The question on screen and its events; `done` once they are all known (answered, failed, or replayed).
+  const live = useRef<{ entry: ThreadEntry; done: boolean } | null>(null);
+  const asks = useRef(0);
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
   const [current, setCurrent] = useState<string | null>(null);
   // Bumped by every ask, retry and replay: views key on it so each run starts fresh.
@@ -69,81 +88,129 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   const stop = () => { abort.current?.abort(); scheduler.current?.stop(); };
   useEffect(() => stop, []);
 
-  // `depth` overrides the Deep dive choice for this one question (the graph panel's Deep dive button).
-  const ask = useCallback((question: string, depth?: Depth) => {
+  // Starts the next question of the open chat. The finished question on screen moves up into the thread (one still
+  // streaming is dropped: it was cut off). `again` (Retry) replaces the question on screen instead.
+  const send = useCallback((question: string, depth: Depth | undefined, again: boolean) => {
     stop();
+    const shown = live.current;
+    if (!again && shown?.done) setThread((t) => [...t, shown.entry]);
     const asked = worldRef.current;
     last.current = { question, depth };
+    const entry: ThreadEntry = { key: `q${++asks.current}`, question, standalone: null, events: [] };
+    live.current = { entry, done: false };
+    const following = chat.current;
     dispatch({ kind: "reset", question });
     const controller = new AbortController();
     abort.current = controller;
     const sched = createScheduler((event) => dispatch({ kind: "event", event }), { reduceMotion: reduceMotion() });
     scheduler.current = sched;
     const id = `${Date.now()}`;
-    setCurrent(id);
+    if (!following) setCurrent(id);
     setRun((n) => n + 1);
     (async () => {
-      const events: AskEvent[] = [];
-      for await (const event of streamAsk(question, controller.signal, asked, depth ?? depthRef.current)) { events.push(event); sched.push(event); }
+      const events = entry.events;
+      const d = depth ?? depthRef.current;
+      // The chat's id only on a follow-up: a first question is sent exactly as before chats had threads.
+      const stream = following ? streamAsk(question, controller.signal, asked, d, following) : streamAsk(question, controller.signal, asked, d);
+      for await (const event of stream) { events.push(event); sched.push(event); }
       if (controller.signal.aborted) return;
+      entry.standalone = standaloneOf(events);
+      if (live.current?.entry === entry) live.current = { entry, done: true };
       const answer = events.find((e) => e.type === "answer");
       if (answer && answer.type === "answer") {
-        // Saved on the server: the item is that chat (its id), so delete and reopen reach it.
+        // Saved on the server: the item is that chat (its id), so delete, reopen and follow-ups reach it.
         const saved = answer.chat_id;
-        if (saved) setCurrent(saved);
-        setHistory((h) => addToHistory(h, { id: saved ?? id, question, events, askedAt: new Date().toISOString(), world: asked,
+        if (saved) {
+          entries.current = saved === following ? [...entries.current, entry] : [entry];
+          threads.current.set(saved, entries.current);
+          chat.current = saved;
+          setCurrent(saved);
+        }
+        // A chat is listed under its first question, with its latest answer's events.
+        const title = saved ? entries.current[0].question : question;
+        setHistory((h) => addToHistory(h, { id: saved ?? id, question: title, events, askedAt: new Date().toISOString(), world: asked,
           ...(saved ? { synced: true } : {}) }));
       }
     })();
   }, []);
 
-  const play = useCallback((item: HistoryItem) => {
+  // `depth` overrides the Deep dive choice for this one question (the graph panel's Deep dive button).
+  const ask = useCallback((question: string, depth?: Depth) => send(question, depth, false), [send]);
+
+  // Draws a chat: `earlier` above, and `latest` replayed below (animated unless motion is reduced; no model call).
+  const open = useCallback((id: string, itemWorld: string | undefined, earlier: ThreadEntry[], latest: ThreadEntry) => {
     stop();
-    if (item.world && item.world !== worldRef.current) onReplayWorld_.current?.(item.world);
-    setCurrent(item.id);
+    if (itemWorld && itemWorld !== worldRef.current) onReplayWorld_.current?.(itemWorld);
+    setCurrent(id);
     setRun((n) => n + 1);
-    dispatch({ kind: "reset", question: item.question });
+    setThread(earlier);
+    live.current = { entry: latest, done: true };
+    dispatch({ kind: "reset", question: latest.question });
     const sched = createScheduler((event) => dispatch({ kind: "event", event }), { reduceMotion: reduceMotion(), replay: !reduceMotion() });
     scheduler.current = sched;
-    item.events.forEach((e) => sched.push(e));
+    // A rewrite the server stored with the message, in case its events lack it (it is shown under the question).
+    if (latest.standalone && !standaloneOf(latest.events)) sched.push({ type: "understood", t: 0, standalone: latest.standalone });
+    latest.events.forEach((e) => sched.push(e));
   }, []);
 
-  // An item the server's list brought has no events yet: they come with the chat, once, with no model call.
+  // A chat from the server opens whole: its messages come once (none if this session already has them), with no model
+  // call. An item saved only in this browser is one question, and asking after it starts a new chat.
   const replay = useCallback((id: string) => {
     const item = history.find((h) => h.id === id);
     if (!item) return;
-    if (item.events.length || !item.synced) { play(item); return; }
+    const single = () => {
+      chat.current = null;
+      entries.current = [];
+      open(item.id, item.world, [], { key: `i${item.id}`, question: item.question, standalone: standaloneOf(item.events), events: item.events });
+    };
+    const show = (all: ThreadEntry[]) => {
+      chat.current = id;
+      entries.current = all;
+      open(id, item.world, all.slice(0, -1), all[all.length - 1]);
+    };
+    if (!item.synced) { single(); return; }
+    const known = threads.current.get(id);
+    if (known?.length) { show(known); return; }
     void (async () => {
       const r = await chatsApi.get(id);
-      if (failed(r) || r.messages.length === 0) return;
-      const events = eventsOf(r.messages[r.messages.length - 1]);
-      const full = { ...item, events };
-      setHistory((h) => h.map((x) => (x.id === id ? full : x)));
-      play(full);
+      if (failed(r) || r.messages.length === 0) { if (item.events.length) single(); return; }
+      const all = entriesOf(r.messages);
+      threads.current.set(id, all);
+      setHistory((h) => h.map((x) => (x.id === id ? { ...x, events: all[all.length - 1].events } : x)));
+      show(all);
     })();
-  }, [history, play]);
+  }, [history, open]);
 
-  // Back to the empty state (the library overview), as when the world changes.
+  // New chat: back to the empty state (the library overview), and the next question starts a fresh conversation.
   const clear = useCallback(() => {
     stop();
+    chat.current = null;
+    entries.current = [];
+    live.current = null;
+    setThread([]);
     setCurrent(null);
     setRun((n) => n + 1);
     dispatch({ kind: "reset", question: "" });
   }, []);
 
-  // Deleting the entry on show keeps the answer on screen but no longer marks it as an entry.
+  // Deleting the entry on show keeps the answer on screen but no longer marks it as an entry; a question asked after
+  // it starts a new chat.
   const remove = useCallback((id: string) => {
     if (historyRef.current.find((x) => x.id === id)?.synced) void chatsApi.remove(id);
+    threads.current.delete(id);
+    if (chat.current === id) chat.current = null;
     setHistory((h) => h.filter((x) => x.id !== id));
     setCurrent((c) => (c === id ? null : c));
   }, []);
   const clearHistory = useCallback(() => {
     historyRef.current.filter((x) => x.synced).forEach((x) => void chatsApi.remove(x.id));
+    threads.current.clear();
+    chat.current = null;
     setHistory([]);
     setCurrent(null);
   }, []);
 
-  const retry = useCallback(() => { if (last.current.question) ask(last.current.question, last.current.depth); }, [ask]);
-  return { state, history, current, run, ask, replay, retry, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running",
+  const retry = useCallback(() => { if (last.current.question) send(last.current.question, last.current.depth, true); }, [send]);
+  return { state, thread, history, current, run, ask, replay, retry, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running",
     importable, importLocal, declineImport };
 }

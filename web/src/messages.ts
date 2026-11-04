@@ -270,6 +270,19 @@ export const HISTORY = {
   importNo: "Not now",
 };
 
+// A chat: its earlier questions and answers stacked above the latest, and follow-ups asked in it.
+export const CHAT = {
+  followupPlaceholder: "Ask a follow-up\u2026",
+  newChat: "New chat",
+  newChatHint: "Start a fresh conversation: the next question won't follow up this one.",
+  understoodAs: "Understood as:",
+  showEarlier: (n: number) => `Show ${n} earlier ${n === 1 ? "question" : "questions"}`,
+  expand: (q: string) => `Show the answer to: ${q}`,
+  collapse: (q: string) => `Hide the answer to: ${q}`,
+  earlierLabel: "Earlier in this chat",
+  noAnswer: "No answer was kept for this question.",
+};
+
 // The Ctrl+K quick switcher: jump back to a past question, or ask a new one.
 export const QUICK = {
   title: "Quick switcher", search: "Search past questions or type a new one", placeholder: "Search or ask\u2026",
@@ -312,6 +325,8 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
       return { text: "Gemini refused your API key. Replace it to carry on." };
     case "too_large":
       return { text: "This answer was too large to keep in your history." };
+    case "chat_not_found":
+      return { text: "This chat is no longer in your history. Start a new chat to ask again." };
     default:
       return { text: error.message || "Something went wrong.", retry: true };
   }

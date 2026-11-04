@@ -38,13 +38,14 @@ export function reportKeyProblem(code: string | undefined): void {
 
 // `world`: a world id as a string, or "all" (the same value the graph calls take).
 // `depth`: auto, deep or focused; left out of the body when not given.
-export async function* streamAsk(question: string, signal: AbortSignal, world?: string, depth?: Depth): AsyncGenerator<AskEvent> {
+// `chatId`: the chat this question follows up; the server loads that chat's earlier turns itself (never sent from here).
+export async function* streamAsk(question: string, signal: AbortSignal, world?: string, depth?: Depth, chatId?: string): AsyncGenerator<AskEvent> {
   let response: Response;
   try {
     response = await fetch("/api/ask", {
       method: "POST", signal,
       headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...csrfHeaders() },
-      body: JSON.stringify({ question, ...(world ? { world } : {}), ...(depth ? { depth } : {}) }),
+      body: JSON.stringify({ question, ...(world ? { world } : {}), ...(depth ? { depth } : {}), ...(chatId ? { chat_id: chatId } : {}) }),
     });
   } catch {
     if (signal.aborted) return;
@@ -54,8 +55,13 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
   if (!response.ok || !response.body) {
     if (signedOut(response)) { yield errorEvent("unauthorized", ""); return; }
     let message = "";
-    try { message = (await response.json()).detail ?? ""; } catch { /* not JSON */ }
-    yield errorEvent(response.status === 403 ? "forbidden" : "bad_request", String(message));
+    let code = response.status === 403 ? "forbidden" : "bad_request";
+    try {
+      const body = await response.json();
+      message = body.detail ?? "";
+      if (response.status === 404 && body.error?.code === "not_found") code = "chat_not_found";  // the chat followed up is gone
+    } catch { /* not JSON */ }
+    yield errorEvent(code, String(message));
     return;
   }
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();

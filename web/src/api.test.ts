@@ -1,3 +1,4 @@
+import type { AskEvent } from "./types";
 import { adminApi, api, authApi, csrfHeaders, keyApi, nav, onKeyProblem, parseSse, streamAsk } from "./api";
 
 const frame = (event: string, data: object) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -254,4 +255,16 @@ describe("the user's Gemini key", () => {
     stop();
     expect(seen).toEqual(["key_required", "key_required"]);
   });
+});
+
+test("streamAsk sends chat_id only on a follow-up, and a gone chat is its own error", async () => {
+  const body = () => JSON.parse(((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1] as RequestInit).body as string);
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "not_found", message: "no such chat" } }), { status: 404 })));
+  const out: AskEvent[] = [];
+  for await (const e of streamAsk("q", new AbortController().signal, "all", "auto", "c1")) out.push(e);
+  expect(body()).toEqual({ question: "q", world: "all", depth: "auto", chat_id: "c1" });
+  expect(out).toEqual([{ type: "error", t: 0, error: { code: "chat_not_found", message: "" } }]);
+  for await (const _ of streamAsk("q", new AbortController().signal, "all", "auto")) { /* drain */ }
+  expect(body()).toEqual({ question: "q", world: "all", depth: "auto" });
+  vi.unstubAllGlobals();
 });

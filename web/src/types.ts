@@ -67,7 +67,9 @@ export type AskEvent =
   | { type: "answer"; t: number; result: SearchResult; chat_id?: string; message_id?: number }
   | { type: "error"; t: number; error: ApiError }
   // The first event of every question: its id, which a report of the answer quotes (release step 4).
-  | { type: "request"; t: number; request_id: string };
+  | { type: "request"; t: number; request_id: string }
+  // A follow-up rewritten to stand alone from the chat's earlier turns, sent only when it differs from what was typed.
+  | { type: "understood"; t: number; standalone: string };
 export interface Book { id: string; title: string; author: string | null; status: string;
   chunk_count: number; entity_count: number | null; world?: string | null }
 // Set on nodes and entities only when several worlds are shown together (the "all worlds" view).
@@ -147,10 +149,11 @@ export interface ReadingPositionData { world: WorldRef; enabled: boolean; book_i
   read_books: string[]; books: PositionBook[] }
 export interface ReadingPositionBody { enabled: boolean; book_id: string | null; chapter: number; read_books: string[] }
 
-// Server-side history (release step 4): a chat per question today, each with its messages.
+// Server-side history (release step 4): each chat with its messages, a question and its answer each (follow-ups append).
 // `answer` is what the stream showed: the result and its other events, or a marker when it was too large to keep.
 export interface StoredAnswer { result?: SearchResult; steps?: AskEvent[]; truncated?: boolean; bytes?: number }
-export interface ChatMessage { id: number; role: string; question: string; depth: string | null; world: string | null;
+// `standalone`: a follow-up's question as the server understood it (null when it was answered as typed).
+export interface ChatMessage { id: number; role: string; question: string; standalone?: string | null; depth: string | null; world: string | null;
   request_id: string | null; created_at: string; answer?: StoredAnswer;
   summary?: { answer_style: string | null; mode: string | null; deep: boolean; truncated: boolean } }
 export interface ChatSummary { id: string; title: string; world: string | null; client_id: string | null; created_at: string;
