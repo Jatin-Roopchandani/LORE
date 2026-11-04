@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { api, isError } from "../api";
-import { UI } from "../messages";
-import type { McpInfo } from "../types";
+import { api, authApi, isError, nav } from "../api";
+import { AUTH, UI } from "../messages";
+import { isMulti } from "../routing";
+import type { McpInfo, Me } from "../types";
 
 function Snip({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -19,6 +20,11 @@ export function SettingsMenu({ showInternals }: { showInternals: boolean }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"stdio" | "http">("stdio");
   const [mcp, setMcp] = useState<McpInfo | null>(null);
+  // Signed-in account (multi-user mode only): who you are, the admin page for admins, and Sign out.
+  const multi = isMulti();
+  const [me, setMe] = useState<Me["user"] | null>(null);
+  useEffect(() => { if (open && multi) authApi.me().then((r) => { if (!isError(r)) setMe(r.user); }); }, [open, multi]);
+  const signOut = async () => { await authApi.logout(); nav.to("/"); };
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (open && showInternals) api.mcp().then((r) => { if (!isError(r)) setMcp(r); }); }, [open, showInternals]);
@@ -34,6 +40,12 @@ export function SettingsMenu({ showInternals }: { showInternals: boolean }) {
       <button ref={trigger} className="tbtn icon" type="button" aria-label="Settings" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>⚙</button>
       {open && (
         <div className="menu">
+          {multi && me && (<>
+            <h4>{AUTH.account}</h4>
+            <p className="hint">{me.email}</p>
+            {me.role === "admin" && <a className="tbtn" href="/admin">{AUTH.admin}</a>}
+            <button className="tbtn" type="button" onClick={signOut}>{AUTH.signOut}</button>
+          </>)}
           {showInternals && (<>
             <h4>Connect an MCP client</h4>
             <div className="tabs" role="tablist">

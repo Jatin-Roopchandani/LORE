@@ -1,4 +1,4 @@
-import { api, csrfHeaders, parseSse, streamAsk } from "./api";
+import { adminApi, api, authApi, csrfHeaders, nav, parseSse, streamAsk } from "./api";
 
 const frame = (event: string, data: object) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
@@ -158,5 +158,62 @@ describe("the CSRF token", () => {
     jsonFetch();
     await api.worlds();
     expect(lastCall()[1]!.headers).not.toHaveProperty("X-CSRF-Token");
+  });
+});
+
+describe("signed-out and strict errors", () => {
+  afterEach(() => { document.head.innerHTML = ""; });
+
+  test("a 401 in multi-user mode sends the browser to sign in", async () => {
+    document.head.innerHTML = '<meta name="lore-multi" content="1">';
+    const go = vi.spyOn(nav, "to").mockImplementation(() => {});
+    jsonFetch({ detail: "sign in required" }, 401);
+    const r = await api.worlds();
+    expect(go).toHaveBeenCalledWith("/signin");
+    expect(r).toEqual({ error: { code: "unauthorized", message: "" } });
+  });
+
+  test("local mode never redirects", async () => {
+    const go = vi.spyOn(nav, "to").mockImplementation(() => {});
+    jsonFetch({ detail: "x" }, 401);
+    await api.worlds();
+    expect(go).not.toHaveBeenCalled();
+  });
+
+  test("a 401 on a mutation and on the ask stream also signs out", async () => {
+    document.head.innerHTML = '<meta name="lore-multi" content="1">';
+    const go = vi.spyOn(nav, "to").mockImplementation(() => {});
+    jsonFetch({ detail: "x" }, 401);
+    await api.createWorld("w");
+    await api.continueBook("b");
+    const out = [];
+    for await (const e of streamAsk("q", new AbortController().signal)) out.push(e.type);
+    expect(go).toHaveBeenCalledTimes(3);
+    expect(out).toEqual(["error"]);
+  });
+
+  test("a bare 403 from the admin API is an error, not data", async () => {
+    jsonFetch({ detail: "admins only" }, 403);
+    expect(await adminApi.users()).toEqual({ error: { code: "http_403", message: "admins only" } });
+    expect(await adminApi.approve(1)).toEqual({ error: { code: "http_403", message: "admins only" } });
+  });
+
+  test("an {error} body keeps its own code", async () => {
+    jsonFetch({ error: { code: "rate_limited", message: "slow" } }, 429);
+    expect(await authApi.requestLink("a@b.co")).toEqual({ error: { code: "rate_limited", message: "slow" } });
+  });
+
+  test("the auth calls use the right paths and bodies", async () => {
+    jsonFetch({});
+    await authApi.requestLink("a@b.co", "INV");
+    expect([lastCall()[0], lastCall()[1]!.method, JSON.parse(lastCall()[1]!.body as string)]).toEqual(["/auth/email", "POST", { email: "a@b.co", invite: "INV" }]);
+    await authApi.requestLink("a@b.co");
+    expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ email: "a@b.co" });
+    await authApi.joinWaitlist("a@b.co", "Dracula", true);
+    expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ email: "a@b.co", reading: "Dracula", consent: true, website: "" });
+    await authApi.logout();
+    expect([lastCall()[0], lastCall()[1]!.method]).toEqual(["/auth/logout", "POST"]);
+    await adminApi.createInvite(7);
+    expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ days: 7 });
   });
 });

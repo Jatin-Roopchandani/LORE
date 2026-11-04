@@ -8,6 +8,6 @@ import "@fontsource/jetbrains-mono/400.css";
 import "./theme.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import Router from "./Router";
 
-createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
+createRoot(document.getElementById("root")!).render(<StrictMode><Router /></StrictMode>);

@@ -1,4 +1,4 @@
-import type { ApiError, AskEvent, Depth, Book, EdgeDetail, EntityCardData, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult,
+import type { AdminUser, ApiError, AskEvent, AuthProviders, Me, NewInvite, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult,
   PassageText, PathResult, Quota, Relations, SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
@@ -50,6 +50,7 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
     return;
   }
   if (!response.ok || !response.body) {
+    if (signedOut(response)) { yield errorEvent("unauthorized", ""); return; }
     let message = "";
     try { message = (await response.json()).detail ?? ""; } catch { /* not JSON */ }
     yield errorEvent(response.status === 403 ? "forbidden" : "bad_request", String(message));
@@ -75,10 +76,32 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
   if (!finished && !signal.aborted) yield errorEvent("interrupted", "");
 }
 
-export async function getJson<T>(path: string): Promise<T | { error: ApiError }> {
+// Where the browser goes when the server says the session is over (multi-user mode only). A seam for tests.
+export const nav = { to: (path: string) => window.location.assign(path) };
+const multiUser = () => document.querySelector('meta[name="lore-multi"]')?.getAttribute("content") === "1";
+// A 401 means the session ended: go and sign in again. Local mode never sees one.
+function signedOut(r: Response): boolean {
+  if (r.status !== 401 || !multiUser()) return false;
+  nav.to("/signin");
+  return true;
+}
+
+// `strict` (the sign-in and admin calls): any non-2xx answer without an {error} body becomes {error: {code: "http_<status>"}},
+// so a bare 403 {"detail": ...} from the server is an error here, never mistaken for data.
+async function readJson<T>(r: Response, strict: boolean): Promise<T | { error: ApiError }> {
+  if (signedOut(r)) return { error: { code: "unauthorized", message: "" } };
+  let body: unknown;
+  try { body = await r.json(); } catch { if (strict && !r.ok) return { error: { code: `http_${r.status}`, message: "" } }; throw new Error("not JSON"); }
+  if (strict && !r.ok && !isError(body)) {
+    const detail = (body as { detail?: unknown } | null)?.detail;
+    return { error: { code: `http_${r.status}`, message: typeof detail === "string" ? detail : "" } };
+  }
+  return body as T | { error: ApiError };
+}
+
+export async function getJson<T>(path: string, strict = false): Promise<T | { error: ApiError }> {
   try {
-    const r = await fetch(path, { headers: { Accept: "application/json" } });
-    return (await r.json()) as T | { error: ApiError };
+    return await readJson<T>(await fetch(path, { headers: { Accept: "application/json" } }), strict);
   } catch {
     return { error: { code: "unreachable", message: "" } };
   }
@@ -92,6 +115,7 @@ export async function postContinue(id: string): Promise<{ started: true } | { er
   try {
     const r = await fetch(`/api/books/${encodeURIComponent(id)}/continue`, { method: "POST", headers: { Accept: "application/json", ...csrfHeaders() } });
     if (r.status === 404) return { error: { code: "not_found", message: "" } };
+    if (signedOut(r)) return { error: { code: "unauthorized", message: "" } };
     return (await r.json()) as { started: true } | { error: ApiError };
   } catch {
     return { error: { code: "unreachable", message: "" } };
@@ -101,11 +125,11 @@ export async function postContinue(id: string): Promise<{ started: true } | { er
 const withWorld = (path: string, world?: string) =>
   world ? `${path}${path.includes("?") ? "&" : "?"}world=${encodeURIComponent(world)}` : path;
 
-async function sendJson<T>(method: string, path: string, body?: object): Promise<T | { error: ApiError }> {
+async function sendJson<T>(method: string, path: string, body?: object, strict = false): Promise<T | { error: ApiError }> {
   try {
     const r = await fetch(path, { method, headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}), ...(method === "GET" ? {} : csrfHeaders()) },
       body: body ? JSON.stringify(body) : undefined });
-    return (await r.json()) as T | { error: ApiError };
+    return await readJson<T>(r, strict);
   } catch {
     return { error: { code: "unreachable", message: "" } };
   }
@@ -140,4 +164,26 @@ export const api = {
   quota: () => getJson<Quota>("/api/quota"),
   mcp: () => getJson<McpInfo>("/api/mcp"),
   settings: () => getJson<{ show_internals: boolean }>("/api/settings"),
+};
+
+// Sign-in, the waitlist and the admin page (multi-user mode). The server answers a failed call with
+// {error: {code, message}}; `isError` tells them apart.
+export const authApi = {
+  providers: () => getJson<AuthProviders>("/auth/providers", true),
+  // Always 202 {sent: true} for a well-formed address, whether or not it has an account.
+  requestLink: (email: string, invite?: string) =>
+    sendJson<{ sent: true }>("POST", "/auth/email", { email, ...(invite ? { invite } : {}) }, true),
+  logout: () => sendJson<{ ok: true }>("POST", "/auth/logout", {}, true),
+  me: () => getJson<Me>("/api/me", true),
+  // Always 202. `website` is the honeypot: the form leaves it empty.
+  joinWaitlist: (email: string, reading: string, consent: boolean, website = "") =>
+    sendJson<{ ok: true }>("POST", "/api/waitlist", { email, reading, consent, website }, true),
+};
+
+export const adminApi = {
+  waitlist: () => getJson<{ entries: WaitlistEntry[] }>("/api/admin/waitlist", true),
+  approve: (id: number) => sendJson<{ invited: true; entry: WaitlistEntry }>("POST", `/api/admin/waitlist/${id}/approve`, {}, true),
+  decline: (id: number) => sendJson<{ declined: true; entry: WaitlistEntry }>("POST", `/api/admin/waitlist/${id}/decline`, {}, true),
+  createInvite: (days: number) => sendJson<NewInvite>("POST", "/api/admin/invites", { days }, true),
+  users: () => getJson<{ users: AdminUser[] }>("/api/admin/users", true),
 };

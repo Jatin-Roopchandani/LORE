@@ -110,3 +110,11 @@ export interface SearchHit { id: string; name: string; kind: string; books: stri
 export interface PathHop { from: string; to: string; predicates: PredicateCount[]; evidence: Quote[] }
 export interface PathResult { nodes: EntityRef[]; hops: PathHop[]; found: boolean; timed_out: boolean }
 export interface PassageText { chunk_id: string; book_id: string; book_title: string | null; chapter: number; text: string; position_label: string }
+
+// Sign-in and accounts (multi-user mode).
+export interface AuthProviders { providers: string[]; email: boolean; invite_only: boolean }
+export interface Me { user: { id: string; email: string; name: string | null; role: "user" | "admin" } }
+export interface WaitlistEntry { id: number; email: string; reading: string | null; status: "pending" | "invited" | "declined";
+  created_at: string; invited_at: string | null }
+export interface AdminUser { id: string; email: string; name: string | null; role: string; status: string; created_at: string }
+export interface NewInvite { code: string; link: string; expires_at: string }
