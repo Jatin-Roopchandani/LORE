@@ -27,6 +27,9 @@ export default function App() {
   const [overview, setOverview] = useState<SubgraphData | null | undefined>();
   // Bumped when the Library panel changed the worlds or moved a book.
   const [libraryVersion, setLibraryVersion] = useState(0);
+  // Bumped when the reading position changed: the book list, the overview and the open panels refetch under it.
+  const [positionVersion, setPositionVersion] = useState(0);
+  const positionChanged = useCallback(() => setPositionVersion((v) => v + 1), []);
   // History is a drawer over the page at every width (never a column); Ctrl/Cmd+K opens the quick switcher.
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -54,7 +57,7 @@ export default function App() {
     api.library(world).then((l) => { if (live && !isError(l)) setBooks(l.books); });
     api.overview(world).then((o) => { if (live) setOverview(!isError(o) && Array.isArray(o.nodes) && o.nodes.length ? o : null); });
     return () => { live = false; };
-  }, [world, libraryVersion]);
+  }, [world, libraryVersion, positionVersion]);
   // A person changing the world starts afresh: the old answer's graph belongs to the other world.
   const switchWorld = useCallback((w: string) => {
     if (w === world) return;
@@ -81,7 +84,7 @@ export default function App() {
   return (
     <div className="app">
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey}
-        worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)}
+        worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)} onPositionChange={positionChanged}
         historyOpen={drawerOpen} onToggleHistory={toggleHistory} />
       <div className="panes">
         {drawerOpen && (
@@ -89,7 +92,7 @@ export default function App() {
             onClear={ask.clearHistory} onNew={newQuestion} onClose={closeDrawer} />
         )}
         <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview} />
-        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} onAsk={ask.ask} />
+        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} positionVersion={positionVersion} onAsk={ask.ask} />
       </div>
       {quickOpen && <QuickSwitcher items={ask.history} onReplay={ask.replay} onAsk={(q) => ask.ask(q)} onClose={closeQuick} />}
     </div>

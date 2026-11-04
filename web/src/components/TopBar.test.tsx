@@ -4,7 +4,8 @@ import { TopBar } from "./TopBar";
 import { applyTheme } from "../theme";
 
 vi.mock("../api", () => ({
-  api: { quota: () => Promise.resolve({ error: { code: "x", message: "x" } }), mcp: () => Promise.resolve({ error: { code: "x", message: "x" } }) },
+  api: { quota: () => Promise.resolve({ error: { code: "x", message: "x" } }), mcp: () => Promise.resolve({ error: { code: "x", message: "x" } }),
+    readingPosition: () => Promise.resolve({ error: { code: "x", message: "x" } }) },
   isError: () => true,
 }));
 

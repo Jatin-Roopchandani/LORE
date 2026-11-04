@@ -347,3 +347,15 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .quick li[aria-selected="true"]{background:var(--accent-soft);outline:1px solid var(--accent)}
 .quick li.ask{color:var(--accent);font-weight:600}
 .quick .hint{padding:10px 14px;margin:0}
+
+/* Reading position: the header control, its badge and the note under an answer's short answer. */
+.pos-badge{font:12px var(--f-mono);color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:999px;padding:3px 10px;white-space:nowrap}
+.pos-menu{display:flex;flex-direction:column;gap:8px;min-width:260px;max-width:340px}
+.pos-menu select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px}
+.pos-menu input[type="range"]{width:100%;accent-color:var(--accent)}
+.pos-switch{display:flex;gap:8px;align-items:center;font-weight:600;cursor:pointer}
+.pos-field{font:600 11px var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.pos-read{border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:4px}
+.pos-read legend{font:600 11px var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0 4px}
+.pos-read label{display:flex;gap:8px;align-items:center;font-size:13px}
+.position-note{font-size:12px;color:var(--muted);margin:0;border-left:3px solid var(--accent);padding:2px 10px}

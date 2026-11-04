@@ -39,7 +39,9 @@ export interface SearchResult { answer: string; mode: string; template: string |
   // are the argument below it.
   short_answer?: ProseSentence[];
   // Sections of a sectioned answer that failed or found nothing: they are left out of `sections`, counted here.
-  unwritten_sections?: number }
+  unwritten_sections?: number;
+  // Present only when a reading position limited the answer: "Answered from what you've read: up to chapter 9 of <book>".
+  position_note?: string }
 export interface PlanSection { index: number; heading: string; group?: string; group_title?: string; title?: string;
   entities: { id: string; name: string; kind: string }[] }
 export interface SectionEvent { type: "section"; t: number; index: number; kind: "section" | "close"; heading: string;
@@ -94,7 +96,9 @@ export interface Quote { quote: string; chunk_id: string; book_id: string; chapt
 export interface ProfileStatement extends Quote { text: string }
 export interface EntityProfile { id: string; name: string; kind: string; books: string[]; summary: string | null;
   aspects: { aspect: string; statements: ProfileStatement[] }[];
-  counts: { beats: number; relations: number; chapters: number }; world?: WorldRef }
+  counts: { beats: number; relations: number; chapters: number }; world?: WorldRef;
+  // Set while a reading position is on: the whole-story summary is hidden and the statements shown are those read so far.
+  summary_hidden?: boolean }
 export interface Beat { kind: string; text: string; quote: string; chunk_id: string; book_id: string; book_title: string | null;
   chapter: number; position_label: string; others: { id: string | null; name: string }[] }
 export interface Timeline { beats: Beat[]; order_note: string | null }
@@ -110,3 +114,11 @@ export interface SearchHit { id: string; name: string; kind: string; books: stri
 export interface PathHop { from: string; to: string; predicates: PredicateCount[]; evidence: Quote[] }
 export interface PathResult { nodes: EntityRef[]; hops: PathHop[]; found: boolean; timed_out: boolean }
 export interface PassageText { chunk_id: string; book_id: string; book_title: string | null; chapter: number; text: string; position_label: string }
+
+// A world's reading position: where the reader is, so the graph, panels and answers stay within what they have read.
+// `order` is each book against the one being read: "before"/"after" in its series, "unknown" (it has its own read toggle).
+export interface PositionBook { id: string; title: string; series: string | null; series_index: number | null; chapters: number;
+  order: "current" | "before" | "after" | "unknown" }
+export interface ReadingPositionData { world: WorldRef; enabled: boolean; book_id: string | null; chapter: number;
+  read_books: string[]; books: PositionBook[] }
+export interface ReadingPositionBody { enabled: boolean; book_id: string | null; chapter: number; read_books: string[] }

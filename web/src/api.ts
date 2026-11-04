@@ -1,5 +1,5 @@
 import type { ApiError, AskEvent, Depth, Book, EdgeDetail, EntityCardData, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult,
-  PassageText, PathResult, Quota, Relations, SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
+  PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations, SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   const events: AskEvent[] = [];
@@ -123,6 +123,10 @@ export const api = {
   createWorld: (name: string) => sendJson<WorldRef>("POST", "/api/worlds", { name }),
   renameWorld: (id: number, name: string) => sendJson<WorldRef>("PATCH", `/api/worlds/${id}`, { name }),
   deleteWorld: (id: number) => sendJson<{ deleted: true }>("DELETE", `/api/worlds/${id}`),
+  // The world's reading position (stored on the server); every read above and every question applies it by default.
+  readingPosition: (world: string) => getJson<ReadingPositionData>(withWorld("/api/reading-position", world)),
+  setReadingPosition: (world: string, body: ReadingPositionBody) =>
+    sendJson<ReadingPositionData>("PUT", withWorld("/api/reading-position", world), body),
   quota: () => getJson<Quota>("/api/quota"),
   mcp: () => getJson<McpInfo>("/api/mcp"),
   settings: () => getJson<{ show_internals: boolean }>("/api/settings"),

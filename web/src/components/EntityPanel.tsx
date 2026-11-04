@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api, isError } from "../api";
-import { EXPLORE } from "../messages";
+import { EXPLORE, POSITION } from "../messages";
 import type { Beat, Depth, EntityProfile, Relation, SearchHit, SubgraphData, Timeline } from "../types";
 import { EntitySearch } from "./EntitySearch";
 import { QuoteChip } from "./QuoteChip";
@@ -11,6 +11,8 @@ const TABS: Tab[] = ["profile", "timeline", "relations", "ask"];
 
 export interface EntityPanelProps {
   id: string; world?: string; bookTitles?: Map<string, string>; seed?: boolean; busy?: boolean;
+  /** Bumped when the reading position changed: every read refetches, so the panel shows only what has been read. */
+  positionVersion?: number;
   onClose: () => void;
   /** Open another entity (and centre it in the graph). */
   onSelect: (id: string) => void;
@@ -21,12 +23,12 @@ export interface EntityPanelProps {
   onConnect: (from: { id: string; name: string }, to: SearchHit) => void;
 }
 
-export function EntityPanel({ id, world, bookTitles, seed = false, busy = false, onClose, onSelect, onExpand, onOpenEdge, onAsk, onConnect }: EntityPanelProps) {
+export function EntityPanel({ id, world, bookTitles, seed = false, busy = false, positionVersion = 0, onClose, onSelect, onExpand, onOpenEdge, onAsk, onConnect }: EntityPanelProps) {
   const [tab, setTab] = useState<Tab>("profile");
   const [expanding, setExpanding] = useState(false);
   const [problem, setProblem] = useState("");
   const uid = useId();
-  const profile = useLoad<EntityProfile>(() => api.profile(id, world), [id, world]);
+  const profile = useLoad<EntityProfile>(() => api.profile(id, world), [id, world, positionVersion]);
   const current = useRef<string | null>(id);
   useEffect(() => { current.current = id; return () => { current.current = null; }; }, [id]);
   const name = profile.status === "ok" ? profile.data.name : "";
@@ -67,8 +69,8 @@ export function EntityPanel({ id, world, bookTitles, seed = false, busy = false,
         </div>
         <div id={`${uid}-panel`} role="tabpanel" aria-labelledby={`${uid}-tab-${tab}`} className="tabpanel">
           {tab === "profile" && <ProfileTab id={id} world={world} profile={profile.data} bookTitles={bookTitles} />}
-          {tab === "timeline" && <TimelineTab id={id} world={world} bookTitles={bookTitles} onSelect={onSelect} />}
-          {tab === "relations" && <RelationsTab id={id} name={name} world={world} bookTitles={bookTitles} onOpenEdge={onOpenEdge} onConnect={onConnect} />}
+          {tab === "timeline" && <TimelineTab id={id} world={world} version={positionVersion} bookTitles={bookTitles} onSelect={onSelect} />}
+          {tab === "relations" && <RelationsTab id={id} name={name} world={world} version={positionVersion} bookTitles={bookTitles} onOpenEdge={onOpenEdge} onConnect={onConnect} />}
           {tab === "ask" && <AskTab name={name} busy={busy} onAsk={onAsk} />}
         </div>
       </>)}
@@ -86,6 +88,7 @@ function ProfileTab({ id, world, profile, bookTitles }: { id: string; world?: st
     <div className="stack">
       <span className="mono">{EXPLORE.counts(profile.counts)}</span>
       {profile.summary && <p className="summary">{profile.summary}</p>}
+      {profile.summary_hidden && <p className="hint">{POSITION.summaryHidden}</p>}
       {profile.aspects.map((a) => (
         <section key={a.aspect}>
           <h4>{EXPLORE.aspect(a.aspect)}</h4>
@@ -137,8 +140,8 @@ function groupBeats(beats: Beat[]) {
   return books;
 }
 
-function TimelineTab({ id, world, bookTitles, onSelect }: { id: string; world?: string; bookTitles?: Map<string, string>; onSelect: (id: string) => void }) {
-  const t = useLoad<Timeline>(() => api.timeline(id, world), [id, world]);
+function TimelineTab({ id, world, version = 0, bookTitles, onSelect }: { id: string; world?: string; version?: number; bookTitles?: Map<string, string>; onSelect: (id: string) => void }) {
+  const t = useLoad<Timeline>(() => api.timeline(id, world), [id, world, version]);
   if (t.status === "loading") return <p className="hint">{EXPLORE.loading}</p>;
   if (t.status === "error") return <p className="note">{t.message}</p>;
   if (!t.data.beats.length) return <p className="hint">{EXPLORE.noBeats}</p>;
@@ -176,10 +179,10 @@ function TimelineTab({ id, world, bookTitles, onSelect }: { id: string; world?: 
   );
 }
 
-function RelationsTab({ id, name, world, bookTitles, onOpenEdge, onConnect }:
-  { id: string; name: string; world?: string; bookTitles?: Map<string, string>; onOpenEdge: (a: string, b: string) => void;
+function RelationsTab({ id, name, world, version = 0, bookTitles, onOpenEdge, onConnect }:
+  { id: string; name: string; world?: string; version?: number; bookTitles?: Map<string, string>; onOpenEdge: (a: string, b: string) => void;
     onConnect: (from: { id: string; name: string }, to: SearchHit) => void }) {
-  const r = useLoad(() => api.relations(id, world), [id, world]);
+  const r = useLoad(() => api.relations(id, world), [id, world, version]);
   const [picking, setPicking] = useState(false);
   return (
     <div className="stack">

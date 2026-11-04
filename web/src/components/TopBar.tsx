@@ -6,13 +6,14 @@ import { AddBookDialog } from "./AddBookDialog";
 import { LibraryPanel } from "./LibraryPanel";
 import { BooksDropdown } from "./BooksDropdown";
 import { QuotaChip } from "./QuotaChip";
+import { ReadingPosition } from "./ReadingPosition";
 import { WorldSelector } from "./WorldSelector";
 import { SettingsMenu } from "./SettingsMenu";
 import { ThemeMenu } from "./ThemeMenu";
 
-export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange, historyOpen = false, onToggleHistory }:
+export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange, onPositionChange, historyOpen = false, onToggleHistory }:
   { books: Book[]; hiddenBooks: Set<string>; onBooksChange: (s: Set<string>) => void; showInternals: boolean; refreshKey: number;
-    worlds?: World[]; world?: string; onWorldChange?: (w: string) => void; onLibraryChange?: () => void;
+    worlds?: World[]; world?: string; onWorldChange?: (w: string) => void; onLibraryChange?: () => void; onPositionChange?: () => void;
     historyOpen?: boolean; onToggleHistory?: () => void }) {
   const [adding, setAdding] = useState(false);
   const [library, setLibrary] = useState(false);
@@ -27,6 +28,7 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
       <span className="spacer" />
       <div className="tools">
         <WorldSelector worlds={worlds} world={world} onChange={onWorldChange} />
+        <ReadingPosition world={world} onChange={onPositionChange} />
         <BooksDropdown books={books} hiddenBooks={hiddenBooks} onChange={onBooksChange} onOpenLibrary={() => setLibrary(true)} />
         <button className="tbtn" type="button" onClick={() => setLibrary(true)}>{LIBRARY.open}</button>
         <button className="tbtn primary" type="button" onClick={() => setAdding(true)}>+ Add book</button>

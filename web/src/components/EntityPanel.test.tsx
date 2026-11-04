@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../api";
-import { EXPLORE } from "../messages";
+import { EXPLORE, POSITION } from "../messages";
 import { EntityPanel } from "./EntityPanel";
 
 vi.mock("../api", () => ({
@@ -175,4 +175,24 @@ test("Escape closes the panel and the tabs are a labelled tablist", async () => 
   await userEvent.keyboard("{Escape}");
   expect(p.onClose).toHaveBeenCalled();
   await waitFor(() => expect(api.timeline).toHaveBeenCalled());
+});
+
+test("moving the reading position refetches the profile and the open tab", async () => {
+  const p = props();
+  const { rerender } = render(<EntityPanel {...p} positionVersion={0} />);
+  await screen.findByText("Zed Quill");
+  await userEvent.click(screen.getByRole("tab", { name: EXPLORE.tabs.timeline }));
+  await waitFor(() => expect(m(api.timeline)).toHaveBeenCalledTimes(1));
+  expect(m(api.profile)).toHaveBeenCalledTimes(1);
+  rerender(<EntityPanel {...p} positionVersion={1} />);
+  await waitFor(() => expect(m(api.profile)).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(m(api.timeline).mock.calls.length).toBeGreaterThanOrEqual(2));
+});
+
+test("under a reading position the whole-story summary is replaced by a hint and the statements read so far", async () => {
+  m(api.profile).mockResolvedValue({ ...profile, summary: null, summary_hidden: true });
+  render(<EntityPanel {...props()} />);
+  expect(await screen.findByText(POSITION.summaryHidden)).toBeInTheDocument();
+  expect(screen.queryByText(profile.summary)).toBeNull();
+  expect(screen.getByText(/Zed is patient\./)).toBeInTheDocument();
 });

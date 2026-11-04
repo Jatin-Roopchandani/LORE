@@ -57,6 +57,29 @@ export const STEPS_DEEP = {
   partsLabel: "Parts of the question",
 };
 
+// The reading position: the header control, its badge and the note an answer carries.
+export const POSITION = {
+  label: "Reading position",
+  switchLabel: "Limit everything to what I have read",
+  bookLabel: "The book you are reading",
+  chapterLabel: "Last chapter you finished",
+  chapterValue: (n: number, max: number) => `Chapter ${n} of ${max}`,
+  bookOption: (title: string, index: number | null) => (index == null ? title : `${title} (book ${index})`),
+  readHeading: "Books of unknown order",
+  readHint: "LORE never guesses the order of books that are not in one series. Mark the ones you have read.",
+  readLabel: (title: string) => `I have read ${title}`,
+  badge: (title: string, chapter: number) => `Up to ${title} ch. ${chapter}`,
+  noteLabel: "Reading position note",
+  summaryHidden: "The summary covers the whole story, so it is hidden while a reading position is on. These are the statements from what you have read.",
+  badgeLabel: (title: string, chapter: number) => `Reading position on: up to ${title}, chapter ${chapter}`,
+  chooseWorld: "Choose a world to set a reading position. Positions already set still apply.",
+  off: "Everything is shown, spoilers included.",
+  on: "The graph, entity panels and answers stay within what you have read.",
+  loading: "Loading\u2026",
+  failed: "The reading position could not be saved.",
+  noBooks: "This world has no books yet.",
+};
+
 export const WORLDS = {
   selectLabel: "World", all: "All worlds",
   legendLabel: "Worlds",
