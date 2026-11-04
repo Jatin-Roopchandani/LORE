@@ -18,6 +18,7 @@ from lore.query import decompose as decompose_module
 from lore.query import recap as recap_module
 from lore.query.agent import answer_question
 from lore.query.decompose import PartSpec, Recap, RecapDecomposition
+from lore.query.scope import Scope
 from lore.query.models import BookInfo, Claim, Passage, SectionSpec
 from lore.query.recap import (
     Chapter, Chunk, balanced_split, chapter_label, dedupe_beats, plan_stretches,
@@ -491,3 +492,26 @@ def test_a_book_is_found_by_title_then_by_series_number_never_by_a_stray_digit()
     assert recap_module.resolve_books("2", titles, infos) == ["b"]
     assert recap_module.resolve_books("3", titles, infos) == []
     assert recap_module.resolve_books("keep", titles, infos) == ["b"]
+
+
+async def test_each_recap_section_stages_its_entities_and_relationships_for_the_graph(config) -> None:
+    scripted = RecapModels(Recap("story"))
+    position(config, "hb2", 2)
+    answer, events = await ask(config, scripted)
+    seeds = [e for e in events if e["type"] == "seeds"]
+    edges = [e for e in events if e["type"] == "edges"]
+    assert seeds, "a recap section stages the entities its beats name"
+    assert all(e["entities"] for e in seeds) and {e["part"] for e in edges} <= {e["part"] for e in seeds}
+    # Nothing past the reading position reaches the graph.
+    for e in edges:
+        for row in e["edges"]:
+            r = row if isinstance(row, dict) else row.__dict__
+            assert (r["book_id"], r["chapter_seq"]) != ("hb2", 3) and r["book_id"] != "hb3"
+    evidence = next(e for e in events if e["type"] == "evidence")
+    assert evidence["edge_keys"] == list(dict.fromkeys(evidence["edge_keys"]))
+
+
+def test_stretch_graph_is_empty_without_a_graph_or_linked_beats() -> None:
+    chapters = (_chapter("b", 1, 1),)
+    stretch = recap_module.Stretch("b", chapters, "Chapter 1", "chapter 1 of B")
+    assert recap_module.stretch_graph(None, stretch, [_beat("b", 1, 0)], Scope(), {}) == ([], [])

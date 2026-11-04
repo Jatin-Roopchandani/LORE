@@ -793,7 +793,8 @@ async def test_the_deep_arm_asks_every_question_at_depth_deep(tmp_path, monkeypa
     await run_pair.ask(None, "q", run_pair.parse_arm("deep=true"), None)
     await run_pair.ask(None, "q", run_pair.parse_arm("deep=false"), None)
     await run_pair.ask(None, "q", run_pair.parse_arm("control"), None)
-    assert seen == [{"depth": "deep"}, {}, {}]
+    # Every arm ignores a saved reading position (evals measure the whole story).
+    assert seen == [{"depth": "deep", "spoilers": True}, {"spoilers": True}, {"spoilers": True}]
 
 
 def test_the_deep_code_and_prompts_name_no_character_book_or_genre():

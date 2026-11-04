@@ -47,13 +47,16 @@ from lore.ingest.registry import story_chapters
 from lore.query import deep as deep_module
 from lore.query import visible as visible_module
 from lore.query.decompose import Recap
-from lore.query.events import emit
+from lore.query.events import EDGES_PER_PART_CAP, edge_key, emit
 from lore.query.models import (
     Answer, AnswerSection, BookInfo, Claim, Evidence, Passage, ProseSentence, SectionSpec,
+    TemplateCall,
 )
 from lore.query.position import order_passages
 from lore.query.retrieval import books_named, search_chunks
 from lore.query.scope import Scope
+from lore.query.seed import _entities
+from lore.query.subgraph import run_template
 from lore.query.synthesize import CHECK_SKIPPED_NOTE, _compose, _content_words, synthesize
 from lore.query.timeline import coverage_order, order_beats, timeline_beats
 from lore.query.write import SHORT_ANSWER_HEADING, compose_text
@@ -574,6 +577,46 @@ async def run_stretch(index: int, stretch: Stretch, span: Span, *, question: str
     return section, claims, added
 
 
+# The graph view: each section stages the entities its stretch's beats name most
+# and the relationships evidenced in its chapters, as a deep section does.
+GRAPH_ENTITIES = 6
+GRAPH_EDGES_PER_ENTITY = 10
+
+
+def stretch_graph(kuzu, stretch: "Stretch", beats: Sequence[Beat], scope: Scope,
+                  books: Mapping[str, BookInfo]) -> tuple[list, list]:
+    """(seeds, relationship rows) for one section: up to GRAPH_ENTITIES entities
+    most named by the beats in the stretch's chapters, and their relationships
+    whose evidence lies in those chapters and within the reading position.
+    Empty when the stretch has no linked beats or the graph can't be read."""
+    keys = {c.key for c in stretch.chapters}
+    counts: dict[str, int] = {}
+    for b in beats:
+        if (b.book_id, b.chapter_seq) in keys:
+            for e in dict.fromkeys(x for x in b.entity_ids if x):
+                counts[e] = counts.get(e, 0) + 1
+    ids = sorted(counts, key=lambda e: (-counts[e], e))[:GRAPH_ENTITIES]
+    if not ids or kuzu is None:
+        return [], []
+    try:
+        seeds = visible_module.shown_seeds(
+            kuzu, scope.books,
+            _entities(kuzu, ids, {i: float(counts[i]) for i in ids}, frozenset(), scope.books), books)
+        rows, seen = [], set()
+        for seed in seeds:
+            found = run_template(kuzu, TemplateCall("across_books", {
+                "entity_id": seed.id, "limit": GRAPH_EDGES_PER_ENTITY}))
+            for r in found:
+                if (r.book_id, r.chapter_seq) in keys and scope.sees(r.book_id, r.chapter_seq) \
+                        and edge_key(r) not in seen:
+                    seen.add(edge_key(r))
+                    rows.append(r)
+        return seeds, visible_module.shown_rows(kuzu, scope.books, rows, books)
+    except Exception:  # noqa: BLE001 -- the graph view is a picture; the answer goes on without it
+        log.exception("recap graph for %r failed", stretch.heading)
+        return [], []
+
+
 async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *, scope: Scope,
                        titles: Mapping[str, str], books: Mapping[str, BookInfo],
                        book_ids: Sequence[str] | None = None, on_event=None) -> Answer | None:
@@ -615,6 +658,7 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
     skipped: list[str] = []
     failures: list[BaseException] = []
     empties = 0
+    edges: list = []
     for index, stretch in enumerate(stretches):
         reason = None
         if spend.n + deep_module.SECTION_REQUESTS + deep_module.TAIL_REQUESTS > RECAP_MAX_REQUESTS:
@@ -631,6 +675,12 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
         emit(on_event, "step", name="section", state="start", part=index, detail=None)
         emit(on_event, "section", index=index, state="start", kind="section",
              heading=stretch.heading, **meta)
+        seeds, rows = stretch_graph(kuzu, stretch, span.beats, scope, books)
+        if seeds:
+            emit(on_event, "seeds", part=index, entities=list(seeds))
+            emit(on_event, "edges", part=index, template="across_books", total=len(rows),
+                 edges=rows[:EDGES_PER_PART_CAP])
+            edges += rows
         try:
             section, claims, added = await run_stretch(
                 index, stretch, span, question=question, models=models, titles=titles,
@@ -662,7 +712,8 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
             raise failures[-1]
         return None
     claims, passages = registry.claims, registry.passages
-    emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in passages], edge_keys=[])
+    emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in passages],
+         edge_keys=[edge_key(e) for e in dict.fromkeys(edges)])
     short = await short_gist(question, done, claims, passages, models, book_titles=titles,
                              books=books)
     emit(on_event, "short_answer", prose=list(short), text=compose_text(short),
