@@ -253,6 +253,26 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
         ],
     ),
+    # Entity intros (2026-11-04): the short, spoiler-safe introduction a
+    # profile shows under a reading position (lore/codex/intro.py), cached per
+    # (entity, world, hash of what the model was shown, prompt hash).
+    (
+        15,
+        [
+            """
+            CREATE TABLE entity_intros (
+                entity_id   TEXT NOT NULL,
+                world_id    INTEGER NOT NULL,
+                scope_hash  TEXT NOT NULL,
+                prompt_hash TEXT NOT NULL,
+                intro       TEXT NOT NULL,
+                model       TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (entity_id, world_id, scope_hash, prompt_hash)
+            )
+            """,
+        ],
+    ),
 ]
 
 

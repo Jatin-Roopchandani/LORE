@@ -2,7 +2,9 @@
 edge, search, path and passage.
 
 Everything here reads stored data (the graph, the codex, the beats, the
-chunks); nothing calls a model. Every function takes a `world` (id or name)
+chunks); nothing calls a model, except `intro`, which may make one cheap call
+for the spoiler-safe introduction a profile shows under a reading position
+(lore/codex/intro.py). Every function takes a `world` (id or name)
 and reads only that world's books: an entity of another world is `not_found`,
 exactly as in `lore.mcp.tools`. With no world and several worlds in the
 library, an entity is read inside the world it lives in and a search covers
@@ -20,7 +22,8 @@ import time
 from collections import Counter
 
 from lore.beats.store import beats_for_entities
-from lore.codex.store import entries_for
+from lore.codex import intro as intro_module
+from lore.codex.store import DISPLAY_ORDER, entries_for
 from lore.config import LoreConfig
 from lore.ingest.registry import book_rows
 from lore.mcp.shapes import error
@@ -167,9 +170,80 @@ def _canonical(stores, entity_id: str) -> str:
 
 # --- profile ----------------------------------------------------------------------
 
+def _aspect_rank(aspect: str) -> int:
+    return DISPLAY_ORDER.index(aspect) if aspect in DISPLAY_ORDER else len(DISPLAY_ORDER)
+
+
+def _shown_statements(stores, scope, entry, canonical_name: str, name: str) -> list[dict]:
+    """The entry's statements the scope lets the reader see, in stored order
+    (aspect, then story order), each with its book and chapter. Under a reading
+    position an unplaced statement is never shown, and names are respelled as
+    the reader has met them."""
+    books = scope.books
+    where = _chunk_places(stores.conn, [s.chunk_id for s in entry.statements])
+    out: list[dict] = []
+    for s in entry.statements:
+        book_id, chapter = where.get(s.chunk_id, ("", 0))
+        if visible.capped(books):  # an unplaced statement cannot be shown safely
+            if not book_id or not scope.sees(book_id, chapter):
+                continue
+        elif book_id and not scope.allows(book_id):
+            continue
+        text = (visible.respell(s.text, [(canonical_name, name)])
+                if visible.capped(books) else s.text)
+        out.append({"aspect": s.aspect, "text": text, "quote": s.quote,
+                    "chunk_id": s.chunk_id, "book_id": book_id, "chapter": chapter})
+    return out
+
+
+def _intro_input(stores, scope, name: str, kind: str, statements: list[dict],
+                 beats: list) -> intro_module.IntroInput:
+    """What the intro may be written from: the visible statements and the
+    visible beats (names as the reader has met them), both in story order.
+    `beats` are already cut to the position."""
+    infos = book_rows(stores.conn)
+    shown = visible.shown_beats(stores.kuzu, scope.books, beats, infos)
+    rows = [{"text": b.text, "chunk_id": b.chunk_id, "book_id": b.book_id,
+             "chapter": b.chapter_seq} for b in shown]
+    ordered, _note = _in_story_order(rows, infos)
+    return intro_module.make_input(name, kind, [(s["aspect"], s["text"]) for s in statements],
+                                   [r["text"] for r in ordered])
+
+
+def _cached_or_fallback(config: LoreConfig, entity_id: str, world_id: int,
+                        inp: intro_module.IntroInput) -> tuple[str | None, str]:
+    """(intro, source): a cached model intro ("model"), else the deterministic
+    one ("fallback"). Reads the cache through a read-only connection, so a
+    profile never writes or migrates the library."""
+    if inp.empty:
+        return None, "none"
+    if intro_module.INTRO:
+        try:
+            conn = sqlite3.connect(f"file:{config.sqlite_path}?mode=ro", uri=True)
+        except sqlite3.Error:
+            conn = None
+        if conn is not None:
+            try:
+                hit = intro_module.cached(conn, entity_id, world_id,
+                                          intro_module.scope_hash(inp))
+            finally:
+                conn.close()
+            if hit:
+                return hit, "model"
+    return intro_module.fallback_intro(inp), "fallback"
+
+
 @_guarded
 def profile(config: LoreConfig, entity_id: str, world: int | str | None = None,
             spoilers: bool = False) -> dict:
+    """The entity panel's profile. Aspects come in DISPLAY_ORDER (identity,
+    role, nature, abilities, relationships, history, change).
+
+    With no reading position, `summary` is the codex's whole-story summary.
+    Under one it is None (`summary_hidden`), and `intro` takes its place: a
+    short introduction written only from what the reader has read, the cached
+    model intro when there is one, else the deterministic fallback.
+    `intro_pending` then says a model intro may be had from `intro()`."""
     with open_stores(config, lance=False) as stores:
         canonical = _canonical(stores, entity_id)
         scope = _locate(stores, canonical, world, spoilers)
@@ -190,29 +264,136 @@ def profile(config: LoreConfig, entity_id: str, world: int | str | None = None,
                           "relations": len({e["other"]["id"] for e in edges}),
                           "chapters": len(chapters)}}
         entries = entries_for(stores.conn, [canonical])
+        statements: list[dict] = []
         if entries:
             entry = entries[0]
-            where = _chunk_places(stores.conn, [s.chunk_id for s in entry.statements])
+            statements = _shown_statements(stores, scope, entry, row[1] or "", name)
             aspects: dict[str, list[dict]] = {}
-            for s in entry.statements:
-                book_id, chapter = where.get(s.chunk_id, ("", 0))
-                if visible.capped(books):  # an unplaced statement cannot be shown safely
-                    if not book_id or not scope.sees(book_id, chapter):
-                        continue
-                elif book_id and not scope.allows(book_id):
-                    continue
-                text = (visible.respell(s.text, [(row[1] or "", name)])
-                        if visible.capped(books) else s.text)
-                aspects.setdefault(s.aspect, []).append({
-                    "text": text, "quote": s.quote, "chunk_id": s.chunk_id,
-                    "book_id": book_id, "chapter": chapter})
+            for st in statements:
+                aspects.setdefault(st["aspect"], []).append(
+                    {k: v for k, v in st.items() if k != "aspect"})
             # Written over the whole story, so hidden while a position is on.
             out["summary"] = None if visible.capped(books) else (entry.summary or None)
-            out["aspects"] = [{"aspect": a, "statements": st}
-                              for a, st in aspects.items()]
+            out["aspects"] = [{"aspect": a, "statements": aspects[a]}
+                              for a in sorted(aspects, key=_aspect_rank)]
         if visible.capped(books):
             out["summary_hidden"] = True
+            inp = _intro_input(stores, scope, name, row[2] or "", statements, beats)
+            text, source = _cached_or_fallback(config, canonical, scope.world_id or 0, inp)
+            out["intro"] = text
+            out["intro_source"] = source
+            out["intro_pending"] = source == "fallback" and intro_module.INTRO
         return out
+
+
+def _intro_model(config: LoreConfig):
+    """(generate_json, aclose, model name) on the cheap selection models, or
+    None when no Gemini call may be made: the selection step is not on
+    Gemini, there is no key, or the ledger says every model is spent. A seam
+    for tests."""
+    from lore.db.sqlite import open_db
+    from lore.inference.gemini import GeminiClient, default_key_file, resolve_api_key
+    from lore.orchestrator.gemini_budget import (
+        BudgetExceeded, check_budget, recorder_for, today,
+    )
+
+    if config.selection.provider != "gemini" or not config.selection.models:
+        return None
+    conn = open_db(config.sqlite_path)
+    try:
+        open_models = []
+        for model in config.selection.models:
+            try:
+                check_budget(conn, model, today())
+            except BudgetExceeded:
+                continue
+            open_models.append(model)
+    finally:
+        conn.close()
+    if not open_models:
+        return None
+    try:
+        api_key = resolve_api_key(key_file=default_key_file())
+    except Exception:  # noqa: BLE001 -- an unreadable key file means no model intro
+        return None
+    if not api_key:
+        return None
+    client = GeminiClient(api_key, models=open_models,
+                          recorder=recorder_for(config.sqlite_path))
+
+    async def generate_json(prompt, schema):
+        return await client.generate_json(prompt, schema)
+    return generate_json, client.aclose, lambda: client.last_model
+
+
+@_guarded
+def intro(config: LoreConfig, entity_id: str, world: int | str | None = None,
+          spoilers: bool = False, model_factory=None) -> dict:
+    """The spoiler-safe intro a profile shows under a reading position:
+    `{"intro": text | None, "source": "model" | "fallback" | "none"}`.
+
+    Written from the statements and beats the position lets through, and
+    nothing else. A cached intro costs nothing; otherwise one cheap model call
+    (`model_factory(config)`, default `_intro_model`) writes it and it is
+    cached. Off (INTRO), without a model, over budget or on any failure, the
+    fallback intro. With no position there is no intro ("none"): the profile
+    shows the whole-story summary."""
+    import asyncio
+
+    from lore.db.sqlite import open_db
+
+    with open_stores(config, lance=False) as stores:
+        canonical = _canonical(stores, entity_id)
+        scope = _locate(stores, canonical, world, spoilers)
+        if isinstance(scope, dict):
+            return scope
+        if not visible.capped(scope.books):
+            return {"intro": None, "source": "none"}
+        row = _entity_row(stores.kuzu, canonical)
+        name = visible.display_name(_met(stores, scope.books, [canonical]), canonical,
+                                    row[1] or "")
+        beats = [b for b in beats_for_entities(stores.conn, [canonical])
+                 if scope.sees(b.book_id, b.chapter_seq)]
+        entries = entries_for(stores.conn, [canonical])
+        statements = (_shown_statements(stores, scope, entries[0], row[1] or "", name)
+                      if entries else [])
+        inp = _intro_input(stores, scope, name, row[2] or "", statements, beats)
+        world_id = scope.world_id or 0
+    text, source = _cached_or_fallback(config, canonical, world_id, inp)
+    if source != "fallback" or not intro_module.INTRO:
+        return {"intro": text, "source": source}
+    try:
+        made = (model_factory or _intro_model)(config)
+    except Exception:  # noqa: BLE001 -- never an error: the fallback stands
+        made = None
+    if made is None:
+        return {"intro": text, "source": "fallback"}
+    generate_json, aclose, model_name = made
+
+    async def run() -> str | None:
+        try:
+            return await intro_module.generate(inp, generate_json)
+        finally:
+            try:
+                await aclose()
+            except Exception:  # noqa: BLE001
+                pass
+    try:
+        written = asyncio.run(run())
+    except Exception:  # noqa: BLE001
+        written = None
+    if not written:
+        return {"intro": text, "source": "fallback"}
+    try:
+        conn = open_db(config.sqlite_path)
+        try:
+            intro_module.save(conn, canonical, world_id, intro_module.scope_hash(inp),
+                              written, model_name())
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 -- an unsaved intro is still shown
+        pass
+    return {"intro": written, "source": "model"}
 
 
 def _chunk_places(conn: sqlite3.Connection, chunk_ids: list[str]) -> dict[str, tuple[str, int]]:

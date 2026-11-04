@@ -493,6 +493,13 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         return explore.timeline(config, entity_id, world=world, **_bypass(spoilers))
 
     @api.get("/api/entity/{entity_id}/relations")
+    # The one explorer read that may call a model: under a reading position, a
+    # short intro written only from what has been read (one cheap request,
+    # then cached; the deterministic intro whenever no request can be made).
+    @api.get("/api/entity/{entity_id}/intro")
+    def entity_intro(entity_id: str, world: str | None = None, spoilers: bool = False):
+        return explore.intro(config, entity_id, world=world, **_bypass(spoilers))
+
     def entity_relations(entity_id: str, world: str | None = None, spoilers: bool = False):
         return explore.relations(config, entity_id, world=world, **_bypass(spoilers))
 
