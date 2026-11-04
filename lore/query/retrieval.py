@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from typing import Collection, Iterable, Mapping
 
+from lore.query import visible
 from lore.resolve.entityhood import is_boilerplate_chunk
 from lore.resolve.normalize import normalize_name
 
@@ -33,6 +34,10 @@ def search_chunks(lance, vector: list[float], limit: int, *,
     """The `limit` nearest story chunks (of one book when `book_id` is given,
     of these books when `book_ids` is; a world's books are the usual case).
 
+    `book_ids` may be a reading position's `VisibleBooks`: a book read only up
+    to a chapter then yields no chunk past it (also with `book_id`, which then
+    names one of those books).
+
     Reads past `limit` and filters, widening until `limit` survive or the
     store has no more, so a licence chunk never costs a real passage its slot.
     """
@@ -40,25 +45,32 @@ def search_chunks(lance, vector: list[float], limit: int, *,
         return []
     if book_ids is not None and not book_ids:
         return []
+    caps = book_ids.caps if visible.capped(book_ids) else None
+    extra = {"max_chapters": caps} if caps else {}
     fetch = limit + _OVERFETCH
     kept: list[dict] = []
     for _ in range(_MAX_ROUNDS):
         if book_id is not None:
             if hasattr(lance, "search_chunks_in_book"):
-                rows = lance.search_chunks_in_book(vector, book_id, limit=fetch)
+                rows = lance.search_chunks_in_book(vector, book_id, limit=fetch, **extra)
             else:  # a store without a prefilter: filter the global ranking
                 rows = [r for r in lance.search_chunks(vector, limit=fetch)
                         if r.get("book_id") == book_id]
         elif book_ids is not None:
             if hasattr(lance, "search_chunks_in_books"):
-                rows = lance.search_chunks_in_books(vector, sorted(book_ids), limit=fetch)
+                rows = lance.search_chunks_in_books(vector, sorted(book_ids), limit=fetch,
+                                                    **extra)
             else:
                 rows = [r for r in lance.search_chunks(vector, limit=fetch)
                         if r.get("book_id") in book_ids]
         else:
             rows = lance.search_chunks(vector, limit=fetch)
+        fetched = len(rows)
+        if caps:  # whatever the store did, nothing past the position gets through
+            rows = [r for r in rows if visible.sees(book_ids, str(r.get("book_id", "")),
+                                                    int(r.get("chapter_seq", 0)))]
         kept = drop_boilerplate(rows)
-        if len(kept) >= limit or len(rows) < fetch:
+        if len(kept) >= limit or fetched < fetch:
             break
         fetch *= 2
     return kept[:limit]

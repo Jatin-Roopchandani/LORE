@@ -25,10 +25,11 @@ changes any output.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from typing import Iterable, Mapping, Sequence
 
-from lore.query.models import BookInfo, Passage
+from lore.query.models import BookInfo, CodexLine, EdgeRow, Passage, SeedEntity
 from lore.query.position import _series_key, order_passages
 from lore.reading_position import ReadingPosition
 
@@ -90,28 +91,39 @@ def merge(parts: Iterable[frozenset[str]]) -> frozenset[str]:
 
 # --- Cypher: the same test over a REL edge or a Chunk node -----------------------------
 
+def cap_clause(books: frozenset[str] | None, alias: str = "r") -> str:
+    """Only the chapter caps of `book_clause`: ` AND NOT (alias.book_id = $capb0
+    AND alias.chapter_seq > $capc0)` per capped book; "" when nothing is capped."""
+    if not capped(books):
+        return ""
+    return "".join(f" AND NOT ({alias}.book_id = $capb{i} AND {alias}.chapter_seq > $capc{i})"
+                   for i, _ in enumerate(sorted(books.caps)))
+
+
+def cap_params(books: frozenset[str] | None) -> dict:
+    """The parameters `cap_clause` binds."""
+    if not capped(books):
+        return {}
+    out: dict = {}
+    for i, book in enumerate(sorted(books.caps)):
+        out[f"capb{i}"] = book
+        out[f"capc{i}"] = books.caps[book]
+    return out
+
+
 def book_clause(books: frozenset[str] | None, alias: str = "r") -> str:
     """` AND alias.book_id IN $books AND NOT (...)` keeping what is visible;
     "" for the whole library. The alias has `book_id` and `chapter_seq`."""
     if books is None:
         return ""
-    clause = f" AND {alias}.book_id IN $books"
-    if isinstance(books, VisibleBooks):
-        for i, _ in enumerate(sorted(books.caps)):
-            clause += f" AND NOT ({alias}.book_id = $capb{i} AND {alias}.chapter_seq > $capc{i})"
-    return clause
+    return f" AND {alias}.book_id IN $books" + cap_clause(books, alias)
 
 
 def book_params(books: frozenset[str] | None) -> dict:
     """The parameters `book_clause` binds; {} for the whole library."""
     if books is None:
         return {}
-    params: dict = {"books": sorted(books)}
-    if isinstance(books, VisibleBooks):
-        for i, book in enumerate(sorted(books.caps)):
-            params[f"capb{i}"] = book
-            params[f"capc{i}"] = books.caps[book]
-    return params
+    return {"books": sorted(books), **cap_params(books)}
 
 
 # --- what a position makes visible ---------------------------------------------------------
@@ -150,6 +162,20 @@ def order_against(infos: Mapping[str, BookInfo], world_books: Iterable[str],
     return out
 
 
+def series_order(infos: Mapping[str, BookInfo], book_ids: Iterable[str]) -> list[str]:
+    """The books for a picker: those whose place in a series is known first, by
+    series then index, then the others by title. Titles only break ties; they
+    never place a book."""
+    book_ids = list(book_ids)
+    placed = _placeable(infos, book_ids)
+
+    def title(b: str) -> str:
+        return (infos.get(b) or BookInfo(title=b)).title.casefold()
+
+    return sorted(book_ids, key=lambda b: ((0, placed[b][0], placed[b][1], title(b), b)
+                                           if b in placed else (1, "", 0.0, title(b), b)))
+
+
 @dataclass(frozen=True)
 class PositionView:
     """A position that applies, for the note an answer carries and the badge."""
@@ -160,6 +186,18 @@ class PositionView:
 
     def note(self) -> str:
         return f"Answered from what you've read: up to chapter {self.chapter} of {self.title}"
+
+
+def position_note(views: Sequence[PositionView]) -> str | None:
+    """The line an answer carries when a reading position limited it; None when
+    none did. With several worlds each position is named."""
+    views = list(views)
+    if not views:
+        return None
+    if len(views) == 1:
+        return views[0].note()
+    parts = "; ".join(f"up to chapter {v.chapter} of {v.title}" for v in views)
+    return f"Answered from what you've read: {parts}"
 
 
 def visible_books(world_books: frozenset[str], position: ReadingPosition,
@@ -237,6 +275,11 @@ def visible_names(kuzu, books: frozenset[str] | None, ids: Iterable[str],
     return {i: out[i] for i in ids if i in out}
 
 
+def tokens(name: str) -> list[str]:
+    """The words of a name, lower-cased, for matching a typed name to a shown one."""
+    return re.findall(r"\w+", (name or "").casefold())
+
+
 def met(kuzu, books: frozenset[str] | None, ids: Iterable[str],
         infos: Mapping[str, BookInfo] | None = None) -> set[str]:
     """The ids (canonical) the reader has met; every id without a position."""
@@ -247,3 +290,74 @@ def display_name(names: Mapping[str, list[str]], entity_id: str, canonical: str)
     """The name to show: the earliest visible alias, else the canonical name."""
     found = names.get(entity_id)
     return found[0] if found else canonical
+
+
+def shown_seeds(kuzu, books: frozenset[str] | None, seeds: Sequence[SeedEntity],
+                infos: Mapping[str, BookInfo] | None) -> list[SeedEntity]:
+    """Under a reading position, the seeds named by the earliest alias the reader
+    has met and listing only the books they may read; unchanged without one."""
+    if not capped(books) or not seeds:
+        return list(seeds)
+    names = visible_names(kuzu, books, [s.id for s in seeds], infos)
+    return [replace(s, name=display_name(names, s.id, s.name),
+                    books=tuple(b for b in s.books if b in books)) for s in seeds]
+
+
+def shown_rows(kuzu, books: frozenset[str] | None, rows: list[EdgeRow],
+               infos: Mapping[str, BookInfo] | None) -> list[EdgeRow]:
+    """Under a reading position, the relationship rows with their end names given
+    as the earliest alias the reader has met; unchanged without one."""
+    if not capped(books) or not rows:
+        return rows
+    ids = {i for r in rows for i in (r.subject_id, r.object_id) if i}
+    names = visible_names(kuzu, books, ids, infos)
+    return [replace(r, subject=display_name(names, r.subject_id, r.subject),
+                    object=display_name(names, r.object_id, r.object)) for r in rows]
+
+
+def respell(text: str, pairs: Iterable[tuple[str, str]]) -> str:
+    """`text` with each unmet name written as the name the reader has met
+    (whole words, any case); the longest names first."""
+    for old, new in sorted(pairs, key=lambda p: -len(p[0])):
+        if old and new and old.casefold() != new.casefold():
+            text = re.sub(rf"(?<!\w){re.escape(old)}(?!\w)", lambda _m, n=new: n, text,
+                          flags=re.IGNORECASE)
+    return text
+
+
+def shown_beats(kuzu, books: frozenset[str] | None, beats: Sequence,
+                infos: Mapping[str, BookInfo] | None) -> list:
+    """Under a reading position, each beat's entity names (and its text) given
+    as the names the reader has met: a beat was written over the whole story and
+    may use a merged name the reader does not know yet. Unchanged without one."""
+    if not capped(books) or not beats:
+        return list(beats)
+    names = visible_names(kuzu, books, {i for b in beats for i in b.entity_ids if i}, infos)
+    out = []
+    for b in beats:
+        pairs, entities = [], []
+        for name, entity_id in zip(b.entities, b.entity_ids or ("",) * len(b.entities)):
+            met_as = names.get(entity_id)
+            if met_as and name.casefold() not in {m.casefold() for m in met_as}:
+                pairs.append((name, met_as[0]))
+                name = met_as[0]
+            entities.append(name)
+        out.append(replace(b, entities=tuple(entities), text=respell(b.text, pairs)) if pairs else b)
+    return out
+
+
+def shown_lines(kuzu, books: frozenset[str] | None, lines: Sequence[CodexLine],
+                infos: Mapping[str, BookInfo] | None) -> list[CodexLine]:
+    """Under a reading position, codex lines with their subject (and text) given
+    as the name the reader has met. Unchanged without one."""
+    if not capped(books) or not lines:
+        return list(lines)
+    names = visible_names(kuzu, books, {l.entity_id for l in lines if l.entity_id}, infos)
+    out = []
+    for l in lines:
+        met_as = names.get(l.entity_id)
+        if met_as and l.subject.casefold() not in {m.casefold() for m in met_as}:
+            out.append(replace(l, subject=met_as[0], text=respell(l.text, [(l.subject, met_as[0])])))
+        else:
+            out.append(l)
+    return out

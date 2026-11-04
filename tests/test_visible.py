@@ -201,3 +201,31 @@ def test_without_a_position_names_are_left_alone(graph):
     assert visible.visible_names(kuzu, None, ["h_ren"]) == {"h_ren": []}
     assert visible.display_name({"h_ren": []}, "h_ren", "Ren Ashby") == "Ren Ashby"
     assert visible.met(kuzu, frozenset({"hb1"}), ["h_ren", "nobody"]) == {"h_ren", "nobody"}
+
+
+# --- names written into beats and codex lines ------------------------------------------------
+
+def test_respell_replaces_whole_words_in_any_case_and_longest_first():
+    pairs = [("Ren", "Tam"), ("Ren Ashby", "Old Tam")]
+    assert visible.respell("Ren Ashby met ren, not Renown.", pairs) == "Old Tam met Tam, not Renown."
+    assert visible.respell("same", [("Same", "same")]) == "same"
+
+
+def test_beats_and_codex_lines_use_the_name_the_reader_has_met(graph):
+    from lore.beats.store import Beat
+    from lore.query.models import CodexLine
+    kuzu, conn, world = graph
+    infos = book_rows(conn)
+    got = visible.visible_books(frozenset({"hb1", "hb2", "hb3"}),
+                                ReadingPosition(world, "hb1", 2, (), True), infos)[0]
+    beat = Beat(id="b", book_id="hb1", chapter_seq=1, chunk_id="hb1:1:0",
+                entities=("Ren Ashby", "Mira Cole"), kind="action",
+                text="Ren Ashby greets Mira Cole.", quote="q", entity_ids=("h_ren", "h_mira"))
+    (shown,) = visible.shown_beats(kuzu, got, [beat], infos)
+    assert shown.entities == ("Old Tam", "Mira Cole") and shown.text == "Old Tam greets Mira Cole."
+    assert visible.shown_beats(kuzu, None, [beat], infos) == [beat]
+    line = CodexLine(chunk_id="hb1:1:0", book_id="hb1", chapter_seq=1, subject="Ren Ashby",
+                     aspect="nature", text="Ren Ashby is wary.", entity_id="h_ren")
+    (shown_line,) = visible.shown_lines(kuzu, got, [line], infos)
+    assert (shown_line.subject, shown_line.text) == ("Old Tam", "Old Tam is wary.")
+    assert visible.shown_lines(kuzu, None, [line], infos) == [line]

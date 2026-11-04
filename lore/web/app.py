@@ -22,18 +22,19 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
-from lore.ingest.registry import list_books
+from lore.ingest.registry import book_rows, list_books
 from lore.mcp import tools
 from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE, day_report, today
 from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.move import prepare_move
 from lore.orchestrator.pipeline import processing_budget_left, run_book
-from lore.query import explore
+from lore.query import explore, visible
+from lore.reading_position import ReadingPosition, get_position, set_position
 from lore.web.ask import ask_events
 from lore.worlds import (
     WorldError, books_in, create_world, delete_world, get_world, list_worlds,
@@ -54,6 +55,31 @@ class MoveBody(BaseModel):
 
 class WorldBody(BaseModel):
     name: str
+
+
+class PositionBody(BaseModel):
+    enabled: bool
+    book_id: str | None = None
+    chapter: int = Field(0, ge=0)
+    # Books of unknown order the reader has read (the position ignores any other).
+    read_books: list[str] = []
+
+
+def _invalid_position(body: PositionBody, rows: dict, chapters: dict) -> str | None:
+    """Why `body` cannot be stored for a world whose books are `rows`, or None."""
+    if body.book_id is not None and body.book_id not in rows:
+        return f"no book {body.book_id!r} in this world"
+    if body.enabled and body.book_id is None:
+        return "choose the book you are reading"
+    if body.book_id is not None and body.chapter > int(chapters.get(body.book_id) or 0):
+        return f"{rows[body.book_id]['title']} has no chapter {body.chapter}"
+    unknown = [b for b in body.read_books if b not in rows]
+    return f"no book {unknown[0]!r} in this world" if unknown else None
+
+
+def _bypass(spoilers: bool) -> dict:
+    """`spoilers=True` only when asked: a call that takes none is unchanged."""
+    return {"spoilers": True} if spoilers else {}
 
 
 class AskBody(BaseModel):
@@ -192,6 +218,48 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             pass
 
     recover()
+
+    def _position_out(world: str | None, body: PositionBody | None = None):
+        """The world's reading position (stored first when `body` is given),
+        with the books to pick from in series order."""
+        ref = (world or "").strip()
+        if not ref or ref.casefold() == "all":
+            return _api_error(400, "world_required",
+                              "a reading position belongs to one world: choose a world")
+        conn = open_db(config.sqlite_path)
+        try:
+            found = get_world(conn, int(ref)) if ref.isdigit() else None
+            found = found or get_world(conn, ref)
+            if found is None:
+                return _api_error(404, "not_found", f"no world {ref!r}")
+            rows = {b["id"]: b for b in list_books(conn) if b["world_id"] == found.id}
+            chapters = dict(conn.execute(
+                "SELECT book_id, MAX(chapter_seq) FROM chunks GROUP BY book_id").fetchall())
+            if body is not None:
+                bad = _invalid_position(body, rows, chapters)
+                if bad:
+                    return _api_error(400, "invalid_position", bad)
+                set_position(conn, ReadingPosition(
+                    found.id, body.book_id, body.chapter,
+                    tuple(b for b in body.read_books if b != body.book_id), body.enabled))
+            stored = get_position(conn, found.id)
+            infos = book_rows(conn)
+        finally:
+            conn.close()
+        current = stored.book_id if stored and stored.book_id in rows else None
+        relation = visible.order_against(infos, rows, current) if current else {}
+        return {
+            "world": {"id": found.id, "name": found.name},
+            "enabled": bool(stored and stored.enabled and current),
+            "book_id": current,
+            "chapter": stored.chapter if stored and current else 0,
+            "read_books": [b for b in (stored.read_books if stored else ()) if b in rows],
+            "books": [{"id": b, "title": rows[b]["title"], "series": rows[b]["series"],
+                       "series_index": rows[b]["series_index"],
+                       "chapters": int(chapters.get(b) or 0),
+                       "order": "current" if b == current else relation.get(b, "unknown")}
+                      for b in visible.series_order(infos, rows)],
+        }
 
     @api.get("/api/books")
     def books():
@@ -379,67 +447,81 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         finally:
             conn.close()
 
+    # Every read below applies the world's stored reading position (what the
+    # reader has read so far). `?spoilers=1` bypasses it for that one request;
+    # the UI sends it only when the reader explicitly asks to reveal.
     @api.get("/api/library")
-    def library(world: str | None = None):
-        return tools.library(config, world=world)
+    def library(world: str | None = None, spoilers: bool = False):
+        return tools.library(config, world=world, **_bypass(spoilers))
 
     @api.get("/api/entity")
     def entity(id: str | None = None, name: str | None = None,
-               world: str | None = None):
+               world: str | None = None, spoilers: bool = False):
         if id:
-            return tools.entity_by_id(config, id, world=world)
+            return tools.entity_by_id(config, id, world=world, **_bypass(spoilers))
         if name:
-            return tools.entity(config, name, world=world)
+            return tools.entity(config, name, world=world, **_bypass(spoilers))
         raise HTTPException(400, "give id or name")
 
     @api.get("/api/entities")
-    def entities(ids: str = "", world: str | None = None):
+    def entities(ids: str = "", world: str | None = None, spoilers: bool = False):
         return tools.entities_by_ids(config, [i for i in ids.split(",") if i],
-                                     world=world)
+                                     world=world, **_bypass(spoilers))
 
     @api.get("/api/subgraph")
     def subgraph(id: str | None = None, name: str | None = None,
-                 depth: int = Query(1, ge=1, le=3), world: str | None = None):
+                 depth: int = Query(1, ge=1, le=3), world: str | None = None,
+                 spoilers: bool = False):
         if id:
-            return tools.subgraph_by_id(config, id, depth, world=world)
+            return tools.subgraph_by_id(config, id, depth, world=world,
+                                        **_bypass(spoilers))
         if name:
-            return tools.subgraph(config, name, depth, world=world)
+            return tools.subgraph(config, name, depth, world=world, **_bypass(spoilers))
         raise HTTPException(400, "give id or name")
 
     @api.get("/api/overview")
-    def overview(limit: int = 40, world: str | None = None):
-        return tools.overview(config, limit, world=world)
+    def overview(limit: int = 40, world: str | None = None, spoilers: bool = False):
+        return tools.overview(config, limit, world=world, **_bypass(spoilers))
 
     # The graph explorer's reads: stored data only, never a model call.
     @api.get("/api/entity/{entity_id}/profile")
-    def entity_profile(entity_id: str, world: str | None = None):
-        return explore.profile(config, entity_id, world=world)
+    def entity_profile(entity_id: str, world: str | None = None, spoilers: bool = False):
+        return explore.profile(config, entity_id, world=world, **_bypass(spoilers))
 
     @api.get("/api/entity/{entity_id}/timeline")
-    def entity_timeline(entity_id: str, world: str | None = None):
-        return explore.timeline(config, entity_id, world=world)
+    def entity_timeline(entity_id: str, world: str | None = None, spoilers: bool = False):
+        return explore.timeline(config, entity_id, world=world, **_bypass(spoilers))
 
     @api.get("/api/entity/{entity_id}/relations")
-    def entity_relations(entity_id: str, world: str | None = None):
-        return explore.relations(config, entity_id, world=world)
+    def entity_relations(entity_id: str, world: str | None = None, spoilers: bool = False):
+        return explore.relations(config, entity_id, world=world, **_bypass(spoilers))
 
     @api.get("/api/edge")
-    def edge(a: str, b: str, world: str | None = None):
-        return explore.edge(config, a, b, world=world)
+    def edge(a: str, b: str, world: str | None = None, spoilers: bool = False):
+        return explore.edge(config, a, b, world=world, **_bypass(spoilers))
 
     @api.get("/api/search")
     def search(q: str = "", world: str | None = None,
-               limit: int = Query(explore.SEARCH_LIMIT_DEFAULT, ge=1)):
-        return explore.search(config, q, world=world, limit=limit)
+               limit: int = Query(explore.SEARCH_LIMIT_DEFAULT, ge=1),
+               spoilers: bool = False):
+        return explore.search(config, q, world=world, limit=limit, **_bypass(spoilers))
 
     @api.get("/api/path")
     def path(a: str, b: str, world: str | None = None,
-             max: int = Query(explore.PATH_MAX_HOPS, ge=1)):
-        return explore.path(config, a, b, world=world, max_hops=max)
+             max: int = Query(explore.PATH_MAX_HOPS, ge=1), spoilers: bool = False):
+        return explore.path(config, a, b, world=world, max_hops=max, **_bypass(spoilers))
 
     @api.get("/api/passage/{chunk_id}")
-    def passage(chunk_id: str, world: str | None = None):
-        return explore.passage(config, chunk_id, world=world)
+    def passage(chunk_id: str, world: str | None = None, spoilers: bool = False):
+        return explore.passage(config, chunk_id, world=world, **_bypass(spoilers))
+
+    @api.get("/api/reading-position")
+    def get_reading_position(world: str | None = None):
+        return _position_out(world)
+
+    @api.put("/api/reading-position")
+    def put_reading_position(body: PositionBody, world: str | None = None):
+        return _position_out(world, body)
 
     @api.get("/api/quota")
     def quota():
@@ -461,7 +543,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     lock = asyncio.Lock()
 
     @api.post("/api/ask")
-    async def ask(request: Request):
+    async def ask(request: Request, spoilers: bool = False):
         if request.headers.get("content-type", "").split(";")[0] != "application/json":
             raise HTTPException(415, "send JSON")
         try:
@@ -470,7 +552,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             raise HTTPException(400, str(exc)) from None
         return StreamingResponse(
             ask_events(config, body.question, lock, search=tools.lore_search,
-                       world=body.world, depth=body.depth),
+                       world=body.world, depth=body.depth, **_bypass(spoilers)),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 

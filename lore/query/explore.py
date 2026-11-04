@@ -29,6 +29,7 @@ from lore.mcp.tools import (
     _EDGE_COLUMNS, _EDGE_ORDER, _entity_scope, _guarded, _in_world, _scoped,
     _world_error,
 )
+from lore.query import visible
 from lore.query.models import Passage
 from lore.query.position import order_passages
 from lore.query.scope import UnknownWorld, world_books
@@ -76,8 +77,21 @@ def _entity_row(kuzu, entity_id: str):
 
 
 def _flt(books) -> tuple[str, dict]:
-    return ("", {}) if books is None else (" AND r.book_id IN $books",
-                                           {"books": sorted(books)})
+    """The clause keeping the visible edges of `books` (a reading position may
+    cap a book at a chapter) and its parameters; ("", {}) for the whole library."""
+    return visible.book_clause(books), visible.book_params(books)
+
+
+def _met(stores, books, ids) -> dict[str, list[str]]:
+    """The names each entity is known by to the reader (earliest first) under a
+    reading position; {id: []} (nothing renamed) without one."""
+    return visible.visible_names(stores.kuzu, books, ids,
+                                 book_rows(stores.conn) if visible.capped(books) else None)
+
+
+def _shown(names: dict[str, list[str]], node: dict) -> dict:
+    """`node` ({id, name, kind}) named by the earliest alias the reader met."""
+    return {**node, "name": visible.display_name(names, node["id"], node["name"])}
 
 
 def _edge_rows(kuzu, entity_id: str, books, other_id: str | None = None) -> list[dict]:
@@ -140,10 +154,11 @@ def _chapter_ref(row: dict | None) -> dict | None:
             "chapter": row["chapter"]}
 
 
-def _locate(stores, entity_id: str, world):
+def _locate(stores, entity_id: str, world, spoilers: bool = False):
     """The scope a canonical entity lives in (within `world`), or the
-    not_found envelope when it is in none."""
-    return _entity_scope(stores, entity_id, world)[1]
+    not_found envelope when it is in none (or, under a reading position, when
+    the reader has not met it)."""
+    return _entity_scope(stores, entity_id, world, spoilers)[1]
 
 
 def _canonical(stores, entity_id: str) -> str:
@@ -153,10 +168,11 @@ def _canonical(stores, entity_id: str) -> str:
 # --- profile ----------------------------------------------------------------------
 
 @_guarded
-def profile(config: LoreConfig, entity_id: str, world: int | str | None = None) -> dict:
+def profile(config: LoreConfig, entity_id: str, world: int | str | None = None,
+            spoilers: bool = False) -> dict:
     with open_stores(config, lance=False) as stores:
         canonical = _canonical(stores, entity_id)
-        scope = _locate(stores, canonical, world)
+        scope = _locate(stores, canonical, world, spoilers)
         if isinstance(scope, dict):
             return scope
         books = scope.books
@@ -164,10 +180,11 @@ def profile(config: LoreConfig, entity_id: str, world: int | str | None = None) 
         shown = [b for b in row[3] or [] if books is None or b in books]
         edges = _edge_rows(stores.kuzu, canonical, books)
         beats = [b for b in beats_for_entities(stores.conn, [canonical])
-                 if scope.allows(b.book_id)]
+                 if scope.sees(b.book_id, b.chapter_seq)]
         chapters = {(e["book_id"], e["chapter"]) for e in edges}
         chapters |= {(b.book_id, b.chapter_seq) for b in beats}
-        out = {"id": row[0], "name": row[1] or "", "kind": row[2] or "",
+        name = visible.display_name(_met(stores, books, [canonical]), canonical, row[1] or "")
+        out = {"id": row[0], "name": name, "kind": row[2] or "",
                "books": shown, "summary": None, "aspects": [],
                "counts": {"beats": len(beats),
                           "relations": len({e["other"]["id"] for e in edges}),
@@ -179,14 +196,22 @@ def profile(config: LoreConfig, entity_id: str, world: int | str | None = None) 
             aspects: dict[str, list[dict]] = {}
             for s in entry.statements:
                 book_id, chapter = where.get(s.chunk_id, ("", 0))
-                if book_id and not scope.allows(book_id):
+                if visible.capped(books):  # an unplaced statement cannot be shown safely
+                    if not book_id or not scope.sees(book_id, chapter):
+                        continue
+                elif book_id and not scope.allows(book_id):
                     continue
+                text = (visible.respell(s.text, [(row[1] or "", name)])
+                        if visible.capped(books) else s.text)
                 aspects.setdefault(s.aspect, []).append({
-                    "text": s.text, "quote": s.quote, "chunk_id": s.chunk_id,
+                    "text": text, "quote": s.quote, "chunk_id": s.chunk_id,
                     "book_id": book_id, "chapter": chapter})
-            out["summary"] = entry.summary or None
+            # Written over the whole story, so hidden while a position is on.
+            out["summary"] = None if visible.capped(books) else (entry.summary or None)
             out["aspects"] = [{"aspect": a, "statements": st}
                               for a, st in aspects.items()]
+        if visible.capped(books):
+            out["summary_hidden"] = True
         return out
 
 
@@ -205,16 +230,17 @@ def _chunk_places(conn: sqlite3.Connection, chunk_ids: list[str]) -> dict[str, t
 # --- timeline ---------------------------------------------------------------------
 
 @_guarded
-def timeline(config: LoreConfig, entity_id: str, world: int | str | None = None) -> dict:
+def timeline(config: LoreConfig, entity_id: str, world: int | str | None = None,
+             spoilers: bool = False) -> dict:
     with open_stores(config, lance=False) as stores:
         canonical = _canonical(stores, entity_id)
-        scope = _locate(stores, canonical, world)
+        scope = _locate(stores, canonical, world, spoilers)
         if isinstance(scope, dict):
             return scope
         rows = []
-        for b in beats_for_entities(stores.conn, [canonical]):
-            if not scope.allows(b.book_id):
-                continue
+        seen = [b for b in beats_for_entities(stores.conn, [canonical])
+                if scope.sees(b.book_id, b.chapter_seq)]
+        for b in visible.shown_beats(stores.kuzu, scope.books, seen, book_rows(stores.conn)):
             others = [{"id": i or None, "name": n}
                       for n, i in zip(b.entities, b.entity_ids or [""] * len(b.entities))
                       if i != canonical]
@@ -233,14 +259,18 @@ def timeline(config: LoreConfig, entity_id: str, world: int | str | None = None)
 # --- relations --------------------------------------------------------------------
 
 @_guarded
-def relations(config: LoreConfig, entity_id: str, world: int | str | None = None) -> dict:
+def relations(config: LoreConfig, entity_id: str, world: int | str | None = None,
+              spoilers: bool = False) -> dict:
     with open_stores(config, lance=False) as stores:
         canonical = _canonical(stores, entity_id)
-        scope = _locate(stores, canonical, world)
+        scope = _locate(stores, canonical, world, spoilers)
         if isinstance(scope, dict):
             return scope
         edges, note = _in_story_order(_edge_rows(stores.kuzu, canonical, scope.books),
                                       book_rows(stores.conn))
+        names = _met(stores, scope.books, {e["other"]["id"] for e in edges})
+        for e in edges:
+            e["other"] = _shown(names, e["other"])
         grouped: dict[str, list[dict]] = {}
         for e in edges:  # already in story order, so each group is too
             grouped.setdefault(e["other"]["id"], []).append(e)
@@ -258,13 +288,14 @@ def relations(config: LoreConfig, entity_id: str, world: int | str | None = None
 # --- edge -------------------------------------------------------------------------
 
 @_guarded
-def edge(config: LoreConfig, a: str, b: str, world: int | str | None = None) -> dict:
+def edge(config: LoreConfig, a: str, b: str, world: int | str | None = None,
+         spoilers: bool = False) -> dict:
     with open_stores(config, lance=False) as stores:
         ids = []
         scopes = []
         for raw in (a, b):
             canonical = _canonical(stores, raw)
-            scope = _locate(stores, canonical, world)
+            scope = _locate(stores, canonical, world, spoilers)
             if isinstance(scope, dict):
                 return scope
             ids.append(canonical)
@@ -273,7 +304,8 @@ def edge(config: LoreConfig, a: str, b: str, world: int | str | None = None) -> 
         # entity's world decides and the second must live in it too.
         if scopes[0].world_id != scopes[1].world_id:
             return error("not_found", f"{b!r} is not in the same world as {a!r}")
-        ends = {i: _node(_entity_row(stores.kuzu, i)) for i in ids}
+        names = _met(stores, scopes[0].books, ids)
+        ends = {i: _shown(names, _node(_entity_row(stores.kuzu, i))) for i in ids}
         raw = _edge_rows(stores.kuzu, ids[0], scopes[0].books,
                          other_id=ids[1]) if ids[0] != ids[1] else []
         ordered, note = _in_story_order(raw, book_rows(stores.conn))
@@ -342,14 +374,14 @@ def _match_tier(q: str, name: str, aliases: list[str]) -> tuple[float, str | Non
 
 @_guarded
 def search(config: LoreConfig, q: str, world: int | str | None = None,
-           limit: int = SEARCH_LIMIT_DEFAULT) -> dict:
+           limit: int = SEARCH_LIMIT_DEFAULT, spoilers: bool = False) -> dict:
     needle = " ".join((q or "").split()).casefold()
     limit = max(1, min(int(limit), SEARCH_LIMIT_MAX))
     if not needle:
         return {"results": []}
     with open_stores(config, lance=False) as stores:
         try:
-            scopes = _scoped(stores, world)
+            scopes = _scoped(stores, world, spoilers)
         except UnknownWorld as exc:
             return _world_error(exc)
         stubs = {r[0] for r in stores.kuzu.execute(
@@ -360,15 +392,25 @@ def search(config: LoreConfig, q: str, world: int | str | None = None,
         ranked = []
         for scope in scopes:
             degree = _degrees(stores.kuzu, scope.books)
-            for r in everyone:
+            # Under a reading position only the names the reader has met are
+            # searched (never the merged canonical name or an unmet alias), and
+            # only entities met so far are found.
+            mine = [r for r in everyone if scope.allows_any(list(r[3] or []))]
+            names = (_met(stores, scope.books, [r[0] for r in mine])
+                     if visible.capped(scope.books) else None)
+            for r in mine:
                 books = list(r[3] or [])
-                if not scope.allows_any(books):
+                if names is None:
+                    name, aliases = r[1] or "", list(r[4] or [])
+                elif r[0] in names:
+                    name, aliases = names[r[0]][0], names[r[0]][1:]
+                else:
                     continue
-                hit = _match_tier(needle, r[1] or "", list(r[4] or []))
+                hit = _match_tier(needle, name, aliases)
                 if hit is None:
                     continue
                 tier, alias = hit
-                item = {"id": r[0], "name": r[1] or "", "kind": r[2] or "",
+                item = {"id": r[0], "name": name, "kind": r[2] or "",
                         "books": [b for b in books if scope.allows(b)],
                         "matched_alias": alias}
                 if len(scopes) > 1:
@@ -425,13 +467,13 @@ def _shortest_path(kuzu, start: str, goal: str, books, max_hops: int,
 
 @_guarded
 def path(config: LoreConfig, a: str, b: str, world: int | str | None = None,
-         max_hops: int = PATH_MAX_HOPS) -> dict:
+         max_hops: int = PATH_MAX_HOPS, spoilers: bool = False) -> dict:
     max_hops = max(1, min(int(max_hops), PATH_MAX_HOPS))
     with open_stores(config, lance=False) as stores:
         ids, scopes = [], []
         for raw in (a, b):
             canonical = _canonical(stores, raw)
-            scope = _locate(stores, canonical, world)
+            scope = _locate(stores, canonical, world, spoilers)
             if isinstance(scope, dict):
                 return scope
             ids.append(canonical)
@@ -444,7 +486,8 @@ def path(config: LoreConfig, a: str, b: str, world: int | str | None = None,
             time.monotonic() + PATH_TIME_CAP_S)
         if not found:
             return {**none, "timed_out": timed_out}
-        info = {r[0]: _node(r) for r in stores.kuzu.execute(
+        names = _met(stores, scopes[0].books, found)
+        info = {r[0]: _shown(names, _node(r)) for r in stores.kuzu.execute(
             "MATCH (e:Entity) WHERE e.id IN $ids RETURN e.id, e.name, e.kind",
             {"ids": found})}
         books = book_rows(stores.conn)
@@ -462,16 +505,17 @@ def path(config: LoreConfig, a: str, b: str, world: int | str | None = None,
 # --- passage ----------------------------------------------------------------------
 
 @_guarded
-def passage(config: LoreConfig, chunk_id: str, world: int | str | None = None) -> dict:
+def passage(config: LoreConfig, chunk_id: str, world: int | str | None = None,
+            spoilers: bool = False) -> dict:
     with open_stores(config, kuzu=False, lance=False) as stores:
         try:
-            books = world_books(stores.conn, world)
+            books = world_books(stores.conn, world, spoilers=spoilers)
         except UnknownWorld as exc:
             return _world_error(exc)
         row = stores.conn.execute(
             "SELECT id, book_id, chapter_seq, text FROM chunks WHERE id = ?",
             (chunk_id,)).fetchone()
-        if row is None or (books is not None and row[1] not in books):
+        if row is None or not visible.sees(books, row[1], int(row[2])):
             return error("not_found", f"no passage {chunk_id!r}" + _in_world(world))
         info = book_rows(stores.conn).get(row[1])
         positioned, _note = _in_story_order(

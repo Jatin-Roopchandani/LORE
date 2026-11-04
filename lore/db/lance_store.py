@@ -41,6 +41,14 @@ def _quoted(values) -> str:
     return ", ".join("'" + v.replace("'", "''") + "'" for v in sorted(set(values)))
 
 
+def _capped(caps: dict[str, int] | None) -> str:
+    """` AND NOT (book_id = 'b' AND chapter_seq > n)` for each book read only
+    up to a chapter (a reading position); "" for none."""
+    return "".join(
+        f" AND NOT (book_id = '{b.replace(chr(39), chr(39) * 2)}' AND chapter_seq > {int(n)})"
+        for b, n in sorted((caps or {}).items()))
+
+
 class LanceStore:
     def __init__(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
@@ -66,7 +74,8 @@ class LanceStore:
         return table.search(vector).limit(limit).to_list()
 
     def search_chunks_in_book(
-        self, vector: list[float], book_id: str, limit: int = 5
+        self, vector: list[float], book_id: str, limit: int = 5,
+        max_chapters: dict[str, int] | None = None,
     ) -> list[dict]:
         """Nearest chunks of ONE book. The filter runs inside the search.
 
@@ -78,13 +87,14 @@ class LanceStore:
         return (
             self._db.open_table("chunks")
             .search(vector)
-            .where(f"book_id = '{escaped}'", prefilter=True)
+            .where(f"book_id = '{escaped}'{_capped(max_chapters)}", prefilter=True)
             .limit(limit)
             .to_list()
         )
 
     def search_chunks_in_books(
-        self, vector: list[float], book_ids: list[str], limit: int = 5
+        self, vector: list[float], book_ids: list[str], limit: int = 5,
+        max_chapters: dict[str, int] | None = None,
     ) -> list[dict]:
         """Nearest chunks of these books (a world's), prefiltered like
         `search_chunks_in_book`. No books, no rows."""
@@ -93,7 +103,7 @@ class LanceStore:
         return (
             self._db.open_table("chunks")
             .search(vector)
-            .where(f"book_id IN ({_quoted(book_ids)})", prefilter=True)
+            .where(f"book_id IN ({_quoted(book_ids)}){_capped(max_chapters)}", prefilter=True)
             .limit(limit)
             .to_list()
         )

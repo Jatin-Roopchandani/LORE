@@ -94,14 +94,14 @@ def build_position_library(tmp_path: Path, *, one_world: bool = False) -> LoreCo
     for book_id, chapter, text in BEATS:
         beat = Beat(id=f"beat-{book_id}-{chapter}", book_id=book_id, chapter_seq=chapter,
                     chunk_id=f"{book_id}:{chapter}:0", entities=("Ren Ashby",),
-                    kind="action", text=text, quote="Ren Ashby")
+                    kind="action", text=text, quote=f"MARK-{book_id}-{chapter}")
         save_beats(conn, book_id, chapter, 0, [beat])
         conn.execute("UPDATE beat_entities SET entity_id = 'h_ren' WHERE beat_id = ?",
                      (beat.id,))
     save_entry(conn, CodexEntry(
         entity_id="h_ren", world_id=ids[HOLLOW], name="Ren Ashby", kind="Character",
         summary="WHOLESTORYSUMMARY",
-        statements=tuple(Statement(aspect=a, text=t, quote="Ren Ashby",
+        statements=tuple(Statement(aspect=a, text=t, quote=f"MARK-{b}-{c}",
                                    chunk_id=f"{b}:{c}:0") for a, t, b, c in STATEMENTS)))
     conn.commit()
     conn.close()
