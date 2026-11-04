@@ -85,7 +85,28 @@ def beats_for_entities(conn: sqlite3.Connection,
         f" b.quote FROM beats b WHERE b.id IN (SELECT beat_id FROM"
         f" beat_entities WHERE entity_id IN ({marks}))"
         f" ORDER BY b.book_id, b.chapter_seq, b.part, b.id", ids).fetchall()
-    # One query for every beat's entities, not one per beat.
+    return _loaded(conn, rows)
+
+
+def beats_for_books(conn: sqlite3.Connection, book_ids: Sequence[str]) -> list[Beat]:
+    """Every beat of these books, in chapter order within a book (books ordered
+    by id; callers re-order with `position.order_passages`)."""
+    ids = sorted(set(book_ids))
+    if not ids:
+        return []
+    rows = []
+    for start in range(0, len(ids), 500):
+        chunk = ids[start:start + 500]
+        rows += conn.execute(
+            "SELECT id, book_id, chapter_seq, chunk_id, kind, text, quote FROM beats"
+            f" WHERE book_id IN ({','.join('?' * len(chunk))})"
+            " ORDER BY book_id, chapter_seq, part, id", chunk).fetchall()
+    return _loaded(conn, rows)
+
+
+def _loaded(conn: sqlite3.Connection, rows: Sequence) -> list[Beat]:
+    """Beats from (id, book_id, chapter_seq, chunk_id, kind, text, quote) rows,
+    with their entities: one query for every beat's entities, not one per beat."""
     ents_of: dict[str, list[tuple[str, str | None]]] = {}
     beat_ids = [r[0] for r in rows]
     for start in range(0, len(beat_ids), 500):

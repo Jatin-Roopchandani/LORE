@@ -1,0 +1,161 @@
+[
+ {
+  "id": "R1",
+  "question": "Summarise the whole story of A Study in Scarlet.",
+  "verified": "A complete recap covers, in story order, both parts of the book:\n- Watson, invalided home from Afghanistan, meets Holmes through Stamford at the hospital laboratory and they take rooms in Baker Street\n- Holmes's odd knowledge and his article on deduction; Gregson's letter calls him to Lauriston Gardens\n- The body of Enoch Drebber in the empty house, RACHE written in blood, the wedding ring\n- Constable Rance's account of the drunk man; Holmes advertises the ring and an old woman claims it, then gives Holmes the slip\n- Gregson arrests Arthur Charpentier; Lestrade reports Stangerson murdered at his hotel; the pills and the terrier; Holmes arrests the cabman Jefferson Hope\n- Part II: John Ferrier and the child Lucy rescued in the desert by the Mormons\n- Lucy grows up, Jefferson Hope saves her and they fall in love before he leaves for Nevada\n- Brigham Young orders Lucy to marry Stangerson or Drebber; the countdown; Hope returns and they flee\n- Ferrier is killed, Lucy is forced to marry Drebber and dies; Hope takes her ring and swears revenge\n- Hope's confession of his pursuit and of the two deaths in London; his own death before trial; Holmes explains his reasoning",
+  "rubric": {
+   "span": "book",
+   "book": "A Study in Scarlet",
+   "chapters": ["Part I ch. I-VII (chapter_seq 5-11)", "Part II ch. I-VII (chapter_seq 12-18)"],
+   "covers": [
+    "Part I ch. I: Watson meets Holmes",
+    "Part I ch. II: Baker Street, the science of deduction, Gregson's letter",
+    "Part I ch. III: Lauriston Gardens, Drebber's body, RACHE, the ring",
+    "Part I ch. IV: Constable Rance; the advertisement",
+    "Part I ch. V: the old woman claims the ring and escapes",
+    "Part I ch. VI: Gregson arrests Charpentier; Stangerson's death reported",
+    "Part I ch. VII: the pills; Jefferson Hope arrested",
+    "Part II ch. I: Ferrier and Lucy rescued by the Mormons",
+    "Part II ch. II: Lucy and Jefferson Hope",
+    "Part II ch. III: Ferrier talks with the Prophet",
+    "Part II ch. IV: the flight",
+    "Part II ch. V: Ferrier killed, Lucy's marriage and death, Hope's vow",
+    "Part II ch. VI: Hope's confession",
+    "Part II ch. VII: Hope's death; Holmes's explanation"
+   ],
+   "order": "Part I before Part II; within each part, chapter order"
+  }
+ },
+ {
+  "id": "R2",
+  "question": "Give me a recap of The Sign of the Four from beginning to end.",
+  "verified": "A complete recap covers, in story order:\n- Holmes's cocaine and boredom; Mary Morstan brings her case: her father vanished, a pearl every year, a letter asking for a meeting\n- Holmes learns of Major Sholto's death; the meeting at the Lyceum and the drive to Thaddeus Sholto\n- Thaddeus tells of his father's treasure from India and Captain Morstan's death; Bartholomew has found the treasure\n- At Pondicherry Lodge Bartholomew is dead from a poisoned thorn, the treasure gone, 'the sign of the four' left behind\n- Holmes reads the traces of a wooden-legged man and a small companion; Athelney Jones arrests Thaddeus\n- The dog Toby follows the creosote trail to the river; the launch Aurora; the Baker Street Irregulars search\n- The chase on the Thames: Tonga is shot, Jonathan Small captured; the iron box is empty\n- Watson and Mary Morstan become engaged\n- Small's story: the Mutiny, the Agra treasure, the four, Sholto's betrayal, the escape from the Andamans",
+  "rubric": {
+   "span": "book",
+   "book": "The Sign of the Four",
+   "chapters": ["ch. I-XII (chapter_seq 4-15)"],
+   "covers": [
+    "ch. I-II: Holmes and Watson; Mary Morstan's case",
+    "ch. III: Major Sholto; to the Lyceum",
+    "ch. IV: Thaddeus Sholto's story",
+    "ch. V: Bartholomew dead at Pondicherry Lodge",
+    "ch. VI: Holmes's demonstration; Jones arrests Thaddeus",
+    "ch. VII: Toby and the barrel",
+    "ch. VIII: the Aurora; the Irregulars",
+    "ch. IX: a break in the chain; Holmes in disguise",
+    "ch. X: the Thames chase; Tonga killed; Small taken",
+    "ch. XI: the empty treasure box; Watson and Mary",
+    "ch. XII: Small's story"
+   ],
+   "order": "chapter order"
+  }
+ },
+ {
+  "id": "R3",
+  "question": "Summarise everything that happens in the Sherlock Holmes books so far, in order.",
+  "verified": "A recap of the whole series as loaded: A Study in Scarlet first (series book 1), then The Sign of the Four (book 2), each recapped in its own order (see R1 and R2 for the events). Both books must be represented, and the first book's events must come before the second's.",
+  "rubric": {
+   "span": "story",
+   "book": null,
+   "chapters": ["A Study in Scarlet chapter_seq 5-18", "The Sign of the Four chapter_seq 4-15"],
+   "covers": [
+    "A Study in Scarlet: the meeting, the Lauriston Gardens murder, the cabman's arrest",
+    "A Study in Scarlet: the Utah story of Ferrier, Lucy and Hope",
+    "A Study in Scarlet: Hope's confession and death",
+    "The Sign of the Four: Mary Morstan's case and Thaddeus Sholto",
+    "The Sign of the Four: Bartholomew's death and the chase",
+    "The Sign of the Four: Small's capture, the empty box, Watson and Mary, Small's story"
+   ],
+   "order": "book 1 before book 2, grouped by book"
+  }
+ },
+ {
+  "id": "R4",
+  "question": "Recap chapters 4 to 6 of The Sign of the Four.",
+  "verified": "A recap of chapters IV to VI only:\n- Thaddeus Sholto receives them and tells his father's secret: the Agra treasure, Captain Morstan's sudden death, the face at the window on the night his father died, and the pearls he sent Miss Morstan\n- Bartholomew has found the treasure; they drive to Pondicherry Lodge\n- Bartholomew is found dead in the locked room with a thorn in his neck and 'the sign of the four' on a paper; the treasure is gone\n- Holmes reads the traces of a wooden-legged man and a small, barefoot companion; Athelney Jones arrives and arrests Thaddeus\nNothing from chapters I-III or from VII on.",
+  "rubric": {
+   "span": "chapters",
+   "book": "The Sign of the Four",
+   "chapters": ["ch. IV-VI (chapter_seq 7-9)"],
+   "covers": [
+    "ch. IV: Thaddeus Sholto's story",
+    "ch. V: the tragedy of Pondicherry Lodge",
+    "ch. VI: Holmes's demonstration; Jones arrests Thaddeus"
+   ],
+   "order": "chapter order",
+   "note": "Until real chapter numbering lands, 'chapter 4' is chapter_seq 4 (= chapter I), so this recap covers chapters I-III; grade against the real chapters IV-VI and record the mismatch."
+  }
+ },
+ {
+  "id": "R5",
+  "question": "What has happened since Jefferson Hope left Lucy to go prospecting in Nevada?",
+  "verified": "From Hope's departure on, in order:\n- Brigham Young visits John Ferrier and orders that Lucy marry the son of Stangerson or of Drebber, giving them a month\n- Each day a number is posted counting down the days; Ferrier is watched\n- Hope returns, and Ferrier, Lucy and Hope flee through the mountains\n- While Hope hunts for food, Ferrier is killed and Lucy carried off; she is forced to marry Drebber and dies within a month\n- Hope takes the wedding ring from her body and swears revenge\n- (In text order the book then returns to London) Hope's confession: the long pursuit of Drebber and Stangerson, the pills, the two deaths; his death before trial; Holmes's explanation\nNothing from before Hope left.",
+  "rubric": {
+   "span": "since",
+   "book": "A Study in Scarlet",
+   "chapters": ["Part II ch. III-VII (chapter_seq 14-18)"],
+   "covers": [
+    "Part II ch. III: Ferrier talks with the Prophet",
+    "Part II ch. IV: the countdown and the flight",
+    "Part II ch. V: Ferrier killed, Lucy's marriage and death, Hope's vow",
+    "Part II ch. VI: Hope's confession",
+    "Part II ch. VII: Hope's death; Holmes's explanation"
+   ],
+   "order": "text order from the event on"
+  }
+ },
+ {
+  "id": "R6",
+  "question": "What has happened in The Sign of the Four since the launch was caught on the Thames?",
+  "verified": "From the capture on:\n- Small sits captive with the iron box; Watson takes the box to Miss Morstan\n- The box is empty; Watson and Mary Morstan declare their love\n- Small tells his story: soldiering in India, the Mutiny, the murder of the merchant Achmet and the Agra treasure, the four, Major Sholto's and Captain Morstan's part, Sholto's betrayal, the escape with Tonga, and why he threw the treasure into the Thames\n- The end: Watson is to marry; Jones gets the credit; Holmes reaches for the cocaine\nNothing from before the chase.",
+  "rubric": {
+   "span": "since",
+   "book": "The Sign of the Four",
+   "chapters": ["ch. X end-XII (chapter_seq 13-15)"],
+   "covers": [
+    "ch. X (end): Small captured",
+    "ch. XI: the empty box; Watson and Mary",
+    "ch. XII: Small's story; the ending"
+   ],
+   "order": "text order from the event on"
+  }
+ },
+ {
+  "id": "R7",
+  "question": "Retell the events of chapter 10 of The Sign of the Four.",
+  "verified": "Chapter X only: dinner at Baker Street with Athelney Jones; the police launch sets out; the chase of the Aurora down the Thames; Tonga raises his blowpipe and is shot and falls into the river; Small, his wooden leg stuck in the mud, is taken; a poisoned dart is found stuck in the boat beside them.",
+  "rubric": {
+   "span": "chapters",
+   "book": "The Sign of the Four",
+   "chapters": ["ch. X (chapter_seq 13)"],
+   "covers": [
+    "the dinner with Jones",
+    "the launch chase",
+    "Tonga shot",
+    "Small captured in the mud",
+    "the dart in the boat"
+   ],
+   "order": "chapter order",
+   "note": "Until real chapter numbering lands, 'chapter 10' is chapter_seq 10 (= chapter VII, the barrel); grade against the real chapter X and record the mismatch."
+  }
+ },
+ {
+  "id": "R8",
+  "question": "What happens in the second Sherlock Holmes book?",
+  "verified": "The second book of the series is The Sign of the Four: a recap of it (see R2), not of A Study in Scarlet.",
+  "rubric": {
+   "span": "book",
+   "book": "2 (series index)",
+   "chapters": ["The Sign of the Four ch. I-XII (chapter_seq 4-15)"],
+   "covers": [
+    "Mary Morstan's case",
+    "Thaddeus Sholto and the treasure",
+    "Bartholomew's death",
+    "the chase and Small's capture",
+    "the empty box; Watson and Mary",
+    "Small's story"
+   ],
+   "order": "chapter order"
+  }
+ }
+]

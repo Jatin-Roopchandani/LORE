@@ -73,6 +73,11 @@ ARM_SETTINGS = {
     # The story timeline of the question's entities (lore/query/timeline.py).
     "timeline": ("lore.query.timeline", "TIMELINE",
                  lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Recap answers: a question asking what happens over a stretch of the story is
+    # answered from the stretch's beats, one section per stretch of chapters
+    # (lore/query/recap.py). `recap=false` is the code before it existed.
+    "recap": ("lore.query.decompose", "RECAP",
+              lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
 
 

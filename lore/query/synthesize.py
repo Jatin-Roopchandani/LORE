@@ -415,8 +415,22 @@ make a claim from a timeline line alone.
 """
 
 
+# A recap's section (lore/query/recap.py) is shown every beat of its stretch: the
+# same map, introduced as what it is there.
+_RECAP_TIMELINE_BLOCK = """
+Story beats: short notes on the main moments of this stretch of the story, in
+story order. Each line gives the number of the passage that holds the moment,
+where it falls in the story and who it is about. The beats are a map, not
+evidence. Use them to see every event of the stretch, from the first to the
+last, then read those numbered passages. A claim still needs a quote copied
+word for word from a numbered passage; never quote a beat line, and never make
+a claim from a beat line alone.
+{lines}
+"""
+
+
 def _timeline_block(evidence: Evidence, book_titles: dict[str, str] | None,
-                    books: dict[str, BookInfo] | None) -> str:
+                    books: dict[str, BookInfo] | None, template: str = _TIMELINE_BLOCK) -> str:
     """The "Story timeline" block, or "" when no beat's passage is shown. A
     beat whose passage the evidence cap cut is left out: it could not be cited."""
     if not evidence.timeline:
@@ -428,7 +442,7 @@ def _timeline_block(evidence: Evidence, book_titles: dict[str, str] | None,
     shown.sort(key=lambda item: item[0][0])  # stable: a passage's beats stay in order
     lines = [f"- [{pos.n}] ({pos.label(detail=True)}) {b.subject}: {b.text}"
              for (_, pos), b in shown]
-    return _TIMELINE_BLOCK.format(lines="\n".join(lines)) if lines else ""
+    return template.format(lines="\n".join(lines)) if lines else ""
 
 
 # CODEX (lore/query/codexslice.py): the same kind of map as the timeline, from
@@ -480,6 +494,16 @@ _SECTION_FOCUS_CONTEXT = ("This is one section of a long, detailed answer to the
                           "setting, however vivid. Cover the aspect fully, with every distinct "
                           "fact the passages establish about it, in as many claims as they "
                           "support; the other sections are written separately.\n")
+# A section of a recap (lore/query/recap.py): the events of one stretch, in the
+# order they happen; a recap narrates, so nothing is skipped as plot detail.
+RECAP_CONTEXT = ("This is one section of a recap, told in story order, that answers: {part_of}\n"
+                 "This section covers {focus}. Give the events of this stretch in the order they "
+                 "happen: what the characters do, decide, discover and say that moves the story "
+                 "on, and how one scene leads to the next. Cover the whole stretch, from its first "
+                 "passage to its last, not only its opening, and prefer events to descriptions of "
+                 "places or people. State each event once, even when several passages tell it. "
+                 "Give as many claims as the passages support; the other stretches are written "
+                 "separately.\n")
 # Added to a section's claims rule when the larger question is about named entities:
 # a fact about someone or something else is off the question, however well it fits the aspect.
 SUBJECT_RULE = ("Every fact kept must also bear on {subject}, whom or which the larger question is "
@@ -530,6 +554,8 @@ def _build_prompt(
         context = interpret.LENS_CONTEXT.format(part_of=part_of)
     elif part_of and role == "beyond":
         context = interpret.BEYOND_CONTEXT.format(part_of=part_of)
+    elif section is not None and section.length == "recap":
+        context = RECAP_CONTEXT.format(part_of=section.part_of, focus=section.focus)
     elif section is not None:
         context = (_SECTION_FOCUS_CONTEXT.format(part_of=section.part_of, focus=section.focus)
                    if section.focus else _SECTION_CONTEXT.format(part_of=section.part_of))
@@ -545,7 +571,10 @@ def _build_prompt(
                           + (_ACTIONS_RULE if write_module.readings_on() else ""),
                           max_claims=section.max_claims if section is not None else MAX_CLAIMS,
                           question=question, context=context, checklist=covers,
-                          relations=(relations + _timeline_block(evidence, book_titles, books)
+                          relations=(relations + _timeline_block(
+                              evidence, book_titles, books,
+                              _RECAP_TIMELINE_BLOCK if section is not None
+                              and section.length == "recap" else _TIMELINE_BLOCK)
                                      + _codex_block(evidence, book_titles, books)),
                           passages=passages,
                           truncation=truncation)
@@ -922,7 +951,7 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     its lines (interpret.close_answer); the shown gaps join the limits line
     and so are not returned separately.
 
-    `length` ("section", "short" or "lens"): the writer sizes the prose for a deep
+    `length` ("section", "short", "lens" or "recap"): the writer sizes the prose for a deep
     answer's section or its short answer (write.py) instead of the default cap."""
     try_prose = (write_module.PROSE_ANSWERS and write is not None and check is not None
                  and len(kept) >= 2)
@@ -958,8 +987,8 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
         rejected = ([s.text for s, ok in zip(sentences, outcome.sentence_ok or [])
                      if not ok and getattr(s, "kind", "fact") == "fact"]
                     if sentences and len(outcome.sentence_ok or []) == len(sentences) else [])
-        if built is None and length == "section" and outcome.ran and rejected:
-            # A deep section gets one rewrite before it falls back to its claim
+        if built is None and length in ("section", "recap") and outcome.ran and rejected:
+            # A deep (or recap) section gets one rewrite before it falls back to its claim
             # list: the writer is told which sentences the check rejected.
             again = await write_answer(question, sub_questions, kept, evidence.passages, write,
                                        book_titles=book_titles, books=books, shape=shape,

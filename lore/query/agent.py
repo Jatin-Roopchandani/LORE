@@ -17,6 +17,7 @@ from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
 from lore.query import deep as deep_module
+from lore.query import recap as recap_module
 from lore.query import visible as visible_module
 from lore.query import interpret as interpret_module
 from lore.query import judge as judge_module
@@ -600,6 +601,32 @@ async def _deep(conn, kuzu, lance, question, models, vector, plan, scopes, neare
         on_event=on_event)
 
 
+async def _recap(conn, kuzu, lance, question, models, vector, recap, scopes, nearest, titles,
+                 books, on_event) -> Answer | None:
+    """The recap answer (recap.py), or None when it does not apply: no one world
+    to recap (several, none named and none near the question), or nothing in the
+    span. The caller then answers in the ordinary way. A world whose books the
+    question names, else the one with a reading position, else the one nearest
+    the question, is the one recapped."""
+    named_in = [si for si in range(len(scopes))
+                if scopes[si].allows_any(books_named(question, titles))
+                and books_named(question, titles)]
+    placed = [si for si in range(len(scopes)) if scopes[si].position is not None]
+    live = [si for si in range(len(scopes))
+            if max((_cosine(row) for row in nearest[(si, tuple(vector))]),
+                   default=float("-inf")) >= RELEVANCE_FLOOR]
+    pick = next((group for group in ([0] if len(scopes) == 1 else [], named_in, placed, live)
+                 if len(group) == 1), None)
+    if pick is None:
+        return None
+    scope = scopes[pick[0]]
+    ctx_titles = {b: t for b, t in titles.items() if scope.allows(b)}
+    named = books_named(question, ctx_titles)
+    return await recap_module.answer_recap(
+        conn, kuzu, lance, question, models, recap, scope=scope, titles=titles, books=books,
+        book_ids=named or None, on_event=on_event)
+
+
 async def answer_question(
     conn: sqlite3.Connection,
     kuzu,
@@ -705,6 +732,13 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
     # A question with an interpretive (or beyond) part is organised by its own parts and
     # lenses (deep.answer_lenses), never by the topical outline.
     shaped_plan = bool(rparts) and interpret_module.shaped([p.kind for p in plan.parts])
+    if decompose_module.RECAP and plan is not None and plan.recap is not None:
+        # A recap reads the stretch of the story it asks about, not the question's
+        # neighbourhood; plain models: it announces its own steps.
+        recapped = await _recap(conn, kuzu, lance, question, plain_models, vector, plan.recap,
+                                scopes, nearest, titles, books, on_event)
+        if recapped is not None:
+            return recapped
     if decompose_module.DEEP and depth == "deep" and not shaped_plan:
         deeper = await _deep(conn, kuzu, lance, question, plain_models, vector, plan,
                              scopes, nearest, titles, books, on_event)

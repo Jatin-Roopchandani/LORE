@@ -190,8 +190,29 @@ COVERED_RULE = ("- " + COVERED_LEAD + "\n{headings}\n  Those sections state thei
 # rejected, so the second draft leaves them out.
 AVOID_LEAD = "Do not state these; they were not supported by the cited facts:"
 AVOID_RULE = "- " + AVOID_LEAD + "\n{sentences}\n  Write only what the facts below support.\n"
+# A recap (lore/query/recap.py): each section is a stretch of the story told as a
+# chronological narrative, and the short answer is the gist of the whole span.
+RECAP_LENGTH_RULE = """- Length: this is one section of a recap of the story, and its question names
+  the stretch it covers. Tell what happens there as a chronological narrative:
+  follow the facts in the order they are listed, which is story order, and
+  carry the reader from one event to the next with transitions the labels
+  support ("first", "then", "next", "later", "by the end of the chapter").
+  Use every fact given, unless it only repeats another; there is no word limit.
+  Start a new paragraph for each chapter or scene: mark its first sentence with
+  new_paragraph.
+- Narrate the events. Do not interpret them, judge the characters or say what
+  the events mean. Begin with the first event, not with a summary of the
+  section, and end with the last one, not with a conclusion.
+"""
+RECAP_SHORT_RULE = """- Length: this is the short answer that opens a recap, and the facts come from
+  all of its sections, in story order. Write one or two sentences that give the
+  gist of the whole stretch: how it begins, its main turn of events and where
+  things stand at its end. Do not list the events one by one. List every fact a
+  sentence rests on in `claims`. Make no claim the facts do not support.
+"""
 LENGTH_RULES = {None: _LENGTH_RULE, "section": SECTION_LENGTH_RULE,
-                "short": SHORT_LENGTH_RULE, "lens": LENS_LENGTH_RULE}
+                "short": SHORT_LENGTH_RULE, "lens": LENS_LENGTH_RULE,
+                "recap": RECAP_LENGTH_RULE, "recap_short": RECAP_SHORT_RULE}
 
 
 STORY_WRITER_PROMPT = """Write the answer to the question from the numbered facts below.
@@ -327,7 +348,7 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
     `shape`: the interpretive answer's shape (interpret.py), only with
     STORY_ORDER. The facts are then listed under an "Evidence for:" heading per
     lens, and the shape's rule and the viewpoint replace the readings rule.
-    `length` ("section", "short" or "lens", only with STORY_ORDER): the part of a
+    `length` ("section", "short", "lens", "recap" or "recap_short", only with STORY_ORDER): the part of a
     deep answer this writes, which sizes its prose (LENGTH_RULES)."""
     passages = list(passages)
     parts = "\n".join(f"{i}. {s}" for i, s in enumerate(part_texts(question, sub_questions), start=1))

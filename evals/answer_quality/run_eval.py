@@ -35,7 +35,8 @@ HERE = Path(__file__).resolve().parent
 SETS = {"dev": HERE / "questions.json", "heldout": HERE / "heldout.json",
         "arc": HERE / "arc.json",
         "interpretive": HERE / "interpretive.json",
-        "deep": HERE / "deep.json"}
+        "deep": HERE / "deep.json",
+        "recap": HERE / "recap.json"}
 RUNS = HERE / "runs"
 
 
