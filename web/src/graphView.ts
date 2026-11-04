@@ -13,7 +13,8 @@ export interface ViewLink { id: string; source: string; target: string; label: s
   part: number | null; state: LinkState; hot: boolean; books: string[]; both: boolean;
   // The link the edge view shows, and a link on the highlighted path.
   picked?: boolean; onPath?: boolean }
-// `overview`: the library overview is drawn (before any question); its own links are faint and unlabelled.
+// `overview`: the library overview is drawn (before any question); its own links are faint, and their
+// labels show only when zoomed in or on the node in focus (GraphCanvas, edgeLabel.ts).
 // `hiddenByFilters`: how many nodes the kind and book filters removed.
 export interface GraphView { nodes: ViewNode[]; links: ViewLink[]; shownEdges: number; totalEdges: number; overview?: boolean; hiddenByFilters?: number }
 export type KindMap = Record<string, { kind: string; books: string[]; world?: WorldRef }>;
@@ -131,7 +132,7 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
     const fwd = x.nf ? { top: topOf(x.fwd), n: x.nf } : null;
     const back = x.nb ? { top: topOf(x.back), n: x.nb } : null;
     const quiet = x.quiet && !!options.overview;
-    links.push({ id, source: x.source, target: x.target, label: quiet ? "" : pairLabel((fwd ?? back)!, fwd && back),
+    links.push({ id, source: x.source, target: x.target, label: pairLabel((fwd ?? back)!, fwd && back),
       count: x.nf + x.nb, chunkIds: [], part: null, state: quiet ? "faint" : "shown", hot: false, books: [], both: !!(fwd && back), picked: false, onPath: false });
   }
 

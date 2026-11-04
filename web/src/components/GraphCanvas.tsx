@@ -84,6 +84,11 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
   const sigma = useRef<Sigma | null>(null);
   // The pill behind edge labels: the theme's panel colour, kept current by each render.
   const pillColor = useRef("#ffffff");
+  const pillBorder = useRef("#cccccc");
+  // The nodes whose edges always show their labels: the open entity, and the one under the pointer.
+  const focusNodes = useRef(new Set<string>());
+  const hoverNode = useRef<string | null>(null);
+  const hotEdge = useRef<string | null>(null);
   const graph = useRef(new Graph({ multi: false, type: "directed" }));
   const click = useRef(onNodeClick);
   click.current = onNodeClick;
@@ -132,7 +137,8 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       const lit = !!l.onPath || !!l.picked;
       const color = l.onPath ? p.v("--accent") : l.picked || l.hot || l.state === "cited" ? p.glow
         : l.state === "shown" ? (l.part !== null ? p.v(`--part-${l.part % 4}`) : p.edge) : p.faint;
-      const attrs = { type: l.both ? "line" : "arrow", label: !lit && (l.state === "faint" || l.state === "cut") ? "" : l.label, color,
+      const quiet = !lit && (l.state === "faint" || l.state === "cut");
+      const attrs = { type: l.both ? "line" : "arrow", label: l.label, quiet, color,
         size: lit ? 4.5 : l.hot ? 4 : l.state === "cited" ? 2.6 : v.overview && l.state === "faint" ? 1 : 1.4,
         zIndex: lit ? 4 : l.hot ? 3 : l.state === "cited" ? 2 : l.state === "shown" ? 1 : 0 };
       if (g.hasEdge(l.id)) g.mergeEdgeAttributes(l.id, attrs);
@@ -145,6 +151,8 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     sigma.current?.setSetting("labelColor", { color: p.ink });
     sigma.current?.setSetting("edgeLabelColor", { color: p.ink });
     pillColor.current = p.panel;
+    pillBorder.current = p.v("--line");
+    focusNodes.current = new Set(v.nodes.filter((n) => n.selected).map((n) => n.id));
     sigma.current?.refresh();
   };
 
@@ -152,7 +160,11 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     const p = palette();
     sigma.current = new Sigma(graph.current, box.current!, {
       renderEdgeLabels: true, defaultEdgeType: "arrow", defaultNodeType: "ringed", nodeProgramClasses: { ringed: RingedNode }, labelFont: "Public Sans", labelSize: 12, edgeLabelSize: EDGE_LABEL_PX,
-      edgeLabelFont: "Public Sans", edgeLabelWeight: "500", defaultDrawEdgeLabel: makeDrawEdgeLabel(() => pillColor.current),
+      edgeLabelFont: "Public Sans", edgeLabelWeight: "500", defaultDrawEdgeLabel: makeDrawEdgeLabel({
+        pill: () => pillColor.current, border: () => pillBorder.current,
+        zoom: () => sigma.current?.getCamera().ratio ?? 1,
+        focus: (node) => focusNodes.current.has(node) || hoverNode.current === node,
+        hot: (edge) => hotEdge.current === edge }),
       labelRenderedSizeThreshold: 0, labelColor: { color: p.ink }, edgeLabelColor: { color: p.ink }, zIndex: true,
       allowInvalidContainer: true, defaultDrawNodeHover: drawThemedHover, enableEdgeEvents: true,
     });
@@ -174,11 +186,11 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
         if (!d) return;
         const at = s.framedGraphToViewport({ x: d.x, y: d.y });
         const r = s.scaleSize(d.size);
-        frame.obstacles.push({ x0: at.x - r, y0: at.y - r, x1: at.x + r, y1: at.y + r });
+        frame.obstacles.push({ x0: at.x - r - 3, y0: at.y - r - 3, x1: at.x + r + 3, y1: at.y + r + 3 });
         if (measure && attrs.label) {
           measure.font = "12px Public Sans";
           const w = measure.measureText(String(attrs.label)).width;
-          frame.obstacles.push({ x0: at.x + r + 2, y0: at.y - 8, x1: at.x + r + 4 + w, y1: at.y + 8 });
+          frame.obstacles.push({ x0: at.x + r, y0: at.y - 9, x1: at.x + r + 10 + w * 1.08, y1: at.y + 9 });
         }
       });
     });
@@ -219,6 +231,7 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       if (hovered === edge) return;
       if (hovered && g.hasEdge(hovered)) g.setEdgeAttribute(hovered, "size", hoveredSize);
       hovered = edge && g.hasEdge(edge) ? edge : null;
+      hotEdge.current = hovered;
       if (hovered) { hoveredSize = g.getEdgeAttribute(hovered, "size") ?? 1.4; g.setEdgeAttribute(hovered, "size", hoveredSize + 2.5); }
       if (box.current) box.current.style.cursor = hovered ? "pointer" : "";
     };
@@ -233,6 +246,8 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       if (nearNode(event.x, event.y)) { setHover(null); if (box.current) box.current.style.cursor = "pointer"; return; }
       setHover(near(event.x, event.y));
     });
+    sigma.current.on("enterNode", ({ node }) => { hoverNode.current = node; sigma.current?.refresh(); });
+    sigma.current.on("leaveNode", () => { hoverNode.current = null; sigma.current?.refresh(); });
     sigma.current.on("enterNode", () => { setHover(null); if (box.current) box.current.style.cursor = "pointer"; });
     sigma.current.on("leaveNode", () => { if (box.current) box.current.style.cursor = ""; });
     paint();

@@ -45,13 +45,21 @@ export function placeEdgeLabel(a: Pt, b: Pt, ra: number, rb: number, w: number, 
 export const frame: { obstacles: Box[] } = { obstacles: [] };
 
 interface EdgeLabelSettings { edgeLabelSize: number; edgeLabelFont: string; edgeLabelWeight: string; edgeLabelColor: { color?: string } }
-type Display = { x: number; y: number; size: number; label?: string | null };
+type Display = { x: number; y: number; size: number; label?: string | null; key?: string };
 
-// A Sigma `defaultDrawEdgeLabel`. `pill` is the background colour behind the text.
-export function makeDrawEdgeLabel(pill: () => string) {
-  return (ctx: CanvasRenderingContext2D, edge: { label?: string | null }, source: Display, target: Display, settings: EdgeLabelSettings) => {
+// A quiet edge (context, not evidence: the overview's links, an answer's faint ones) shows its label only
+// when the view is zoomed in this far (camera ratio) or the edge touches the node in focus.
+export const QUIET_ZOOM = 0.55;
+
+export interface LabelLook { pill: () => string; border: () => string; zoom: () => number; focus: (node: string) => boolean; hot: (edge: string) => boolean }
+
+// A Sigma `defaultDrawEdgeLabel`.
+export function makeDrawEdgeLabel(look: LabelLook) {
+  return (ctx: CanvasRenderingContext2D, edge: { label?: string | null; quiet?: boolean; key?: string }, source: Display, target: Display, settings: EdgeLabelSettings) => {
     const label = edge.label;
     if (!label) return;
+    if (edge.quiet && look.zoom() > QUIET_ZOOM && !(source.key && look.focus(source.key))
+        && !(target.key && look.focus(target.key)) && !(edge.key && look.hot(edge.key))) return;
     const size = settings.edgeLabelSize;
     ctx.font = `${settings.edgeLabelWeight} ${size}px ${settings.edgeLabelFont}`;
     const w = ctx.measureText(label).width;
@@ -61,13 +69,16 @@ export function makeDrawEdgeLabel(pill: () => string) {
     ctx.save();
     ctx.translate(at.cx, at.cy);
     ctx.rotate(at.angle);
-    ctx.fillStyle = pill();
-    ctx.globalAlpha = 0.88;
+    ctx.fillStyle = look.pill();
+    ctx.globalAlpha = 0.92;
     ctx.beginPath();
     const bw = w + 2 * PAD_X, bh = size + 2 * PAD_Y;
     if (typeof ctx.roundRect === "function") ctx.roundRect(-bw / 2, -bh / 2, bw, bh, 4); else ctx.rect(-bw / 2, -bh / 2, bw, bh);
     ctx.fill();
     ctx.globalAlpha = 1;
+    ctx.strokeStyle = look.border();   // a thin edge, so the pill shows on a background of the same colour
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.fillStyle = settings.edgeLabelColor.color ?? "#000";
     ctx.textBaseline = "middle";
     ctx.fillText(label, -w / 2, 0);
