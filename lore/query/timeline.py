@@ -20,6 +20,7 @@ import sqlite3
 from typing import Iterable, Mapping, Sequence
 
 from lore.beats.store import Beat, beats_for_entities
+from lore.query import visible as visible_module
 from lore.query.models import BookInfo, Passage, SeedEntity, TimelineBeat
 from lore.query.position import order_passages
 
@@ -91,14 +92,21 @@ def select_beats(beats: Sequence[Beat], part_vector: list[float], lance,
     return [b for b in ordered if b.id in chosen]
 
 
+def _seen(beats: Sequence[Beat], visible) -> list[Beat]:
+    """The beats a reading position (`visible`: its books, see
+    lore/query/visible.py) lets the reader see; all of them without one."""
+    return [b for b in beats if visible_module.sees(visible, b.book_id, b.chapter_seq)]
+
+
 def part_timeline(conn: sqlite3.Connection, lance, seeds: Iterable[SeedEntity],
                   part_vector: list[float],
                   books: Mapping[str, BookInfo] | None,
-                  book_ids: Sequence[str] | None = None) -> list[Beat]:
+                  book_ids: Sequence[str] | None = None, visible=None) -> list[Beat]:
     """The selected beats for one part of a question; [] when it has no
     timeline entity or they have no beats. A part that names books keeps
     only those books' beats, as its passages are scoped to them
-    (agent.SCOPE_PENALTY)."""
+    (agent.SCOPE_PENALTY). Beats beyond a reading position (`visible`) are
+    dropped before any is chosen."""
     entities = timeline_entities(seeds)
     if not entities:
         return []
@@ -108,6 +116,7 @@ def part_timeline(conn: sqlite3.Connection, lance, seeds: Iterable[SeedEntity],
         return []
     if book_ids:
         beats = [b for b in beats if b.book_id in book_ids]
+    beats = _seen(beats, visible)
     if not beats:
         return []
     return select_beats(beats, part_vector, lance, books)
@@ -122,7 +131,7 @@ MAX_CANDIDATE_BEATS = 12
 
 def candidate_timeline(conn: sqlite3.Connection, candidates: Sequence[SeedEntity],
                        books: Mapping[str, BookInfo] | None,
-                       book_ids: Sequence[str] | None = None) -> list[Beat]:
+                       book_ids: Sequence[str] | None = None, visible=None) -> list[Beat]:
     """A few beats of each candidate, in story order: the earliest, the latest
     and one between (two each when many candidates share the cap). A part that
     names books keeps only those books' beats. [] when there are no
@@ -135,6 +144,7 @@ def candidate_timeline(conn: sqlite3.Connection, candidates: Sequence[SeedEntity
         return []
     if book_ids:
         beats = [b for b in beats if b.book_id in book_ids]
+    beats = _seen(beats, visible)
     each = max(MIN_BEATS_PER_CANDIDATE,
                min(BEATS_PER_CANDIDATE, MAX_CANDIDATE_BEATS // len(candidates)))
     chosen: dict[str, Beat] = {}
@@ -155,12 +165,13 @@ def candidate_timeline(conn: sqlite3.Connection, candidates: Sequence[SeedEntity
 def judgement_timeline(conn: sqlite3.Connection, lance, named: Sequence[SeedEntity],
                        candidates: Sequence[SeedEntity], part_vector: list[float],
                        books: Mapping[str, BookInfo] | None,
-                       book_ids: Sequence[str] | None = None) -> list[Beat]:
+                       book_ids: Sequence[str] | None = None, visible=None) -> list[Beat]:
     """A judgement part's beats: the question's own named characters get the
     ordinary timeline, the graph's candidates a few spread beats each. Other
     seeds (found by vector search, so possibly minor) bring none."""
-    beats = {b.id: b for b in part_timeline(conn, lance, named, part_vector, books, book_ids)}
-    for b in candidate_timeline(conn, candidates, books, book_ids):
+    beats = {b.id: b for b in part_timeline(conn, lance, named, part_vector, books, book_ids,
+                                            visible)}
+    for b in candidate_timeline(conn, candidates, books, book_ids, visible):
         beats.setdefault(b.id, b)
     return order_beats(list(beats.values()), books)
 

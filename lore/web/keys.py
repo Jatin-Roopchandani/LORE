@@ -13,9 +13,10 @@ refused key into `key_required` / `key_invalid`, never a stack trace.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -143,3 +144,21 @@ def with_user_key(user: str, keys: K.KeyService,
         return result
 
     return run
+
+
+@contextlib.contextmanager
+def user_key_bound(user: str, keys: K.KeyService) -> Iterator[KeyScope]:
+    """Bind `user`'s own key (an empty scope when they have none, or it no
+    longer decrypts, so nothing can fall back to the server's key) around a
+    synchronous model call, such as the entity intro. A refused key is marked,
+    exactly as on the ask path."""
+    try:
+        key = keys.key_for(user)
+    except (KeyRequired, K.KeyDecryptError):
+        key = None
+    scope = KeyScope(user, key, on_request=lambda model: keys.record_request(user, model))
+    del key
+    with key_scope.bound(scope):
+        yield scope
+    if scope.rejected:
+        keys.mark_rejected(user)

@@ -29,12 +29,18 @@ from lore.config import LoreConfig
 from lore.mcp import tools
 
 
+def _bypass(ignore_reading_position: bool) -> dict:
+    """The tools' `spoilers=True`, only when asked for: a call without it is unchanged."""
+    return {"spoilers": True} if ignore_reading_position else {}
+
+
 def build_server(config: LoreConfig) -> MCPServer:
     mcp = MCPServer("lore")
 
     @mcp.tool()
     async def lore_search(query: str, world: str | None = None,
-                          depth: Literal["auto", "deep", "focused"] = "auto") -> dict[str, Any]:
+                          depth: Literal["auto", "deep", "focused"] = "auto",
+                          ignore_reading_position: bool = False) -> dict[str, Any]:
         """Answer a question from the knowledge graph, with quoted citations.
 
         This is the only tool that spends Gemini budget (the other six never
@@ -50,12 +56,19 @@ def build_server(config: LoreConfig) -> MCPServer:
 
         `depth` is "auto" (the default: LORE judges whether the question
         needs a full, sectioned answer), "deep" or "focused".
+
+        A reading position set for the world (the web app's "Reading
+        position") limits the answer to what the reader has read and adds a
+        `position_note` saying so. Pass `ignore_reading_position=true` only
+        when the reader has asked to see everything.
         """
-        return await tools.lore_search(config, query, world=world, depth=depth)
+        return await tools.lore_search(config, query, world=world, depth=depth,
+                                       **_bypass(ignore_reading_position))
 
     @mcp.tool()
     async def vector_search(query: str, book_id: str | None = None,
-                            limit: int = 10, world: str | None = None) -> dict[str, Any]:
+                            limit: int = 10, world: str | None = None,
+                            ignore_reading_position: bool = False) -> dict[str, Any]:
         """Find passages nearest a query by meaning, optionally within one book
         or one `world` (an id or name).
 
@@ -63,8 +76,12 @@ def build_server(config: LoreConfig) -> MCPServer:
         the daily Gemini cap is reached. `limit` is clamped to 1-50. Needs
         the local Ollama server running to embed the query; if it is not,
         this returns upstream_unavailable.
+
+        Passages past the world's reading position are left out; pass
+        `ignore_reading_position=true` only when the reader asked to see everything.
         """
-        return await tools.vector_search(config, query, book_id, limit, world=world)
+        return await tools.vector_search(config, query, book_id, limit, world=world,
+                                         **_bypass(ignore_reading_position))
 
     @mcp.tool()
     def cypher_query(query: str) -> dict[str, Any]:
@@ -76,11 +93,15 @@ def build_server(config: LoreConfig) -> MCPServer:
         for the three allowlisted procedures show_tables, table_info and
         db_version. A question about a book titled "The Call of the Wild"
         must go through entity or subgraph instead.
+
+        This reads the raw graph and does NOT apply a reading position: use
+        entity, subgraph or lore_search for spoiler-safe reads.
         """
         return tools.cypher_query(config, query)
 
     @mcp.tool()
-    def entity(name: str, world: str | None = None) -> dict[str, Any]:
+    def entity(name: str, world: str | None = None,
+               ignore_reading_position: bool = False) -> dict[str, Any]:
         """The canonical card for one entity: aliases, books and edges.
 
         Resolves an alias to its canonical entity. An unknown name returns a
@@ -92,11 +113,16 @@ def build_server(config: LoreConfig) -> MCPServer:
         With `world` (an id or name) only that world's entity and edges are
         used. A name that two worlds share is ambiguous without it, and the
         error lists both with their worlds.
+
+        Under the world's reading position only what the reader has read is
+        shown, and the entity is named by the first name they met it under;
+        `ignore_reading_position=true` shows everything.
         """
-        return tools.entity(config, name, world=world)
+        return tools.entity(config, name, world=world, **_bypass(ignore_reading_position))
 
     @mcp.tool()
-    def subgraph(entity: str, depth: int = 1, world: str | None = None) -> dict[str, Any]:
+    def subgraph(entity: str, depth: int = 1, world: str | None = None,
+                 ignore_reading_position: bool = False) -> dict[str, Any]:
         """A bounded subgraph around one entity, as nodes and links.
 
         Each link is one subject->object pair: how many passages back it,
@@ -105,14 +131,21 @@ def build_server(config: LoreConfig) -> MCPServer:
         relationships; `depth` is clamped to 1-3. The result says when it
         was truncated. The walk stays inside the entity's world; `world` (an
         id or name) picks the entity's world when its name is shared.
+
+        Under the world's reading position only relationships the reader has
+        read are drawn; `ignore_reading_position=true` shows everything.
         """
-        return tools.subgraph(config, entity, depth, world=world)
+        return tools.subgraph(config, entity, depth, world=world,
+                              **_bypass(ignore_reading_position))
 
     @mcp.tool()
-    def library(world: str | None = None) -> dict[str, Any]:
+    def library(world: str | None = None,
+                ignore_reading_position: bool = False) -> dict[str, Any]:
         """Every book in the library, with its world, status and entity
-        counts; `world` (an id or name) lists one world's books."""
-        return tools.library(config, world=world)
+        counts; `world` (an id or name) lists one world's books. Books the
+        world's reading position has not reached are left out unless
+        `ignore_reading_position=true`."""
+        return tools.library(config, world=world, **_bypass(ignore_reading_position))
 
     @mcp.tool()
     def ingest_status(book_id: str) -> dict[str, Any]:

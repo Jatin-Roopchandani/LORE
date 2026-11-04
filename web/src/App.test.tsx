@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { KEYS } from "./messages";
@@ -16,6 +16,8 @@ const keySave = vi.fn((_key: string) => Promise.resolve({ present: true, last4: 
 const keyListeners = new Set<(p: string) => void>();
 const fireKeyProblem = (p: string) => keyListeners.forEach((l) => l(p));
 let askError = "interrupted";
+let position: Record<string, unknown> = { enabled: false, book_id: null, chapter: 0, read_books: [], books: [] };
+const setPosition = vi.fn((_w: string, body: Record<string, unknown>) => { position = { ...position, ...body }; return Promise.resolve({ world: { id: 1, name: "Alpha Saga" }, ...position }); });
 vi.mock("./api", () => ({
   authApi: { me: () => me() },
   keyApi: { get: () => keyStatus(), save: (k: string) => keySave(k), usage: () => Promise.resolve({ error: { code: "x", message: "" } }),
@@ -23,6 +25,8 @@ vi.mock("./api", () => ({
   onKeyProblem: (l: (p: string) => void) => { keyListeners.add(l); return () => { keyListeners.delete(l); }; },
   reportKeyProblem: (c: string) => fireKeyProblem(c),
   api: {
+    readingPosition: (w: string) => Promise.resolve({ world: { id: Number(w), name: "w" }, ...position }),
+    setReadingPosition: (w: string, body: Record<string, unknown>) => setPosition(w, body),
     settings: () => Promise.resolve({ show_internals: true }),
     library: (w?: string) => library(w),
     worlds: () => Promise.resolve(worlds),
@@ -41,7 +45,11 @@ vi.mock("./api", () => ({
 }));
 Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
 
-beforeEach(() => { localStorage.clear(); asked.length = 0; me.mockClear(); keyStatus.mockClear(); keySave.mockClear(); askError = "interrupted"; });
+beforeEach(() => {
+  localStorage.clear(); asked.length = 0; me.mockClear(); keyStatus.mockClear(); keySave.mockClear(); askError = "interrupted";
+  setPosition.mockClear();
+  position = { enabled: false, book_id: null, chapter: 0, read_books: [], books: [] };
+});
 afterEach(() => { document.head.innerHTML = ""; });
 
 test("multi-user mode asks who is signed in once, which re-issues a lost CSRF cookie; local mode does not", async () => {
@@ -173,4 +181,31 @@ test("local mode never asks about a key", async () => {
   render(<App />);
   await screen.findByPlaceholderText("Ask about your books…");
   expect(keyStatus).not.toHaveBeenCalled();
+});
+
+test("moving the reading position refetches the book list and the graph for that world, once", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    position = { enabled: true, book_id: "b1", chapter: 2, read_books: [],
+      books: [{ id: "b1", title: "Hollow Gate", series: null, series_index: null, chapters: 9, order: "current" }] };
+    localStorage.setItem("lore-world-v1", "1");
+    overview.mockClear(); library.mockClear();
+    render(<App />);
+    await waitFor(() => expect(overview).toHaveBeenCalledWith("1"));
+    expect(await screen.findByText("Up to Hollow Gate ch. 2")).toBeInTheDocument();
+    const before = { overview: overview.mock.calls.length, library: library.mock.calls.length };
+    fireEvent.click(screen.getByRole("button", { name: /Reading position/ }));
+    const slider = await screen.findByRole("slider");
+    fireEvent.change(slider, { target: { value: "4" } });
+    fireEvent.change(slider, { target: { value: "5" } });
+    expect(overview.mock.calls.length).toBe(before.overview);  // nothing until the slider settles
+    act(() => { vi.advanceTimersByTime(500); });
+    await waitFor(() => expect(overview.mock.calls.length).toBe(before.overview + 1));
+    expect(library.mock.calls.length).toBe(before.library + 1);
+    expect(setPosition).toHaveBeenCalledTimes(1);
+    expect(setPosition).toHaveBeenCalledWith("1", { enabled: true, book_id: "b1", chapter: 5, read_books: [] });
+    expect(overview).toHaveBeenLastCalledWith("1");
+  } finally {
+    vi.useRealTimers();
+  }
 });

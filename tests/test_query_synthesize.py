@@ -1053,7 +1053,12 @@ def _new_prompt_texts() -> str:
                       interpret.COUNTER_CHECK_BLOCK, interpret.NO_VERDICT_LINE,
                       interpret.NO_ANALYSIS_LINE, interpret.NO_COUNTER_LINE, interpret.LIMITS_LEAD,
                       write_module.COVERED_RULE, write_module.AVOID_RULE,
-                      synthesize_module.SUBJECT_RULE))
+                      synthesize_module.SUBJECT_RULE,
+                      write_module.REPAIR_LEAD, write_module.REPAIR_RULE, write_module.MISSING_RULE,
+                      write_module.REDUCE_RULE, write_module.AS_READING_RULE,
+                      write_module.FACT_RULE, write_module.NO_READINGS_RULE,
+                      write_module.READING_HOME_RULE, synthesize_module._RESTATED_BLOCK,
+                      synthesize_module._INFERENCE_BLOCK))
 
 
 def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
@@ -1091,7 +1096,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
 
     evals = Path(__file__).parents[1] / "evals/answer_quality"
     sets = [evals / "questions.json", evals / "heldout.json", evals / "arc.json",
-            evals / "interpretive.json", evals / "deep.json"]
+            evals / "interpretive.json", evals / "deep.json", evals / "factual2.json"]
     prompt = grams("\n".join((
         synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
         synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
@@ -1363,7 +1368,9 @@ async def test_claims_fallback_leaves_unanswered_empty():
     assert a.answer_style == "claims" and a.unanswered == ()
 
 
-async def test_one_sided_prose_over_parts_falls_back_to_claims():
+async def test_one_sided_prose_over_parts_falls_back_to_claims(monkeypatch):
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "COVERAGE", False)  # with it, code covers the other part
     gen = _per_part([Synthesis(claims=[WHY_D], can_answer=True),
                      Synthesis(claims=[WHY_S], can_answer=True)], [])
     write, _ = _gen(Prose(sentences=[Sentence(text="Stangerson shot her father.", claims=[2])]))
@@ -1371,6 +1378,16 @@ async def test_one_sided_prose_over_parts_falls_back_to_claims():
                                check=_check(["supported"] * 2, ["supported"]), write=write)
     assert a.answer_style == "claims" and len(a.claims) == 2
     assert PROSE_FALLBACK_NOTE in a.note
+
+
+async def test_with_coverage_one_sided_prose_gets_the_other_parts_claim():
+    gen = _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                     Synthesis(claims=[WHY_S], can_answer=True)], [])
+    write, _ = _gen(Prose(sentences=[Sentence(text="Stangerson shot her father.", claims=[2])]))
+    a = await synthesize_parts("Why?", SUBS, PARTS_EV, gen, mode="graph",
+                               check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "prose" and len(a.claims) == 2
+    assert {k for s in a.prose for k in s.claims} == {1, 2}
 
 
 def test_attribute_speech_adds_its_rule_only_when_on(monkeypatch) -> None:
@@ -1437,3 +1454,27 @@ def test_prompt_rules_name_no_character_book_or_genre() -> None:
              r"morstan|lestrade|baker street|mormon|agra|crime|crimes|murder|villain|villains|" \
              r"detective|treasure|darcy|bennet|wizard|dragon|magic|kingdom|elf|elves|quest|sword)\b"
     assert not re.findall(banned, text.lower())
+
+
+# PROSE_FACTUAL off (the shipped default since round 7): a plain factual answer
+# shows its checked claims and never calls the writer; answers that need the
+# writer (an interpretive shape, or a sized section: deep, lens, recap) keep it.
+@pytest.mark.factual_default
+async def test_a_factual_answer_shows_claims_by_default():
+    gen, _ = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])]))
+    a = await synthesize("Habits?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "claims" and wcalls == [] and len(a.claims) == 2
+
+
+@pytest.mark.factual_default
+@pytest.mark.parametrize("length", ["section", "lens", "recap", "short"])
+async def test_a_sized_section_keeps_the_writer_by_default(length):
+    from lore.query.synthesize import _finish, verify_claims
+    gen, _ = _gen(_TWO)
+    result = await gen("", None)
+    kept, _ = verify_claims(result, _EV.passages)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])]))
+    await _finish("Habits?", ["Habits?"], list(kept), _EV, _check(["supported"] * 2, ["supported"]), write, None,
+                  length=length)
+    assert len(wcalls) == 1

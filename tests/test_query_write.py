@@ -1,4 +1,5 @@
 """The writer: prompt, citation check, assembly and fallback rules."""
+from lore.query import write as write_module
 from lore.query.models import Claim, Passage, ProseSentence
 from lore.query.write import (
     Prose, Sentence, assemble, compose_text, verify_prose, write_answer, writer_prompt,
@@ -86,7 +87,8 @@ async def test_write_answer_returns_none_on_garbage_or_exception():
 
 async def test_write_answer_returns_the_prose():
     async def ok(prompt, schema):
-        assert schema is Prose
+        # FACT_FIDELITY: a factual answer has no reading kind, so no kinds in the schema
+        assert schema is write_module._StoryProse
         return Prose(sentences=[S("Hope loved Lucy.", [1])])
     out = await write_answer("q", ["q"], C, P, ok)
     assert out.sentences[0].claims == [1]

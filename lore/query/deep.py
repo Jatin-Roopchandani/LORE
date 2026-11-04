@@ -58,6 +58,7 @@ from lore.query.models import (
     Answer, AnswerSection, BookInfo, Claim, EdgeRow, Evidence, Passage, ProseSentence,
     SectionSpec, SeedEntity, TemplateCall,
 )
+from lore.query import visible as visible_module
 from lore.query.retrieval import search_chunks
 from lore.query.scope import Scope
 from lore.query.seed import _entities, named_seeds
@@ -243,8 +244,20 @@ def _counts(conn: sqlite3.Connection, sql: str, ids: Sequence[str]) -> dict[str,
     return out
 
 
-def _richness(conn: sqlite3.Connection, ids: Sequence[str]) -> tuple[dict[str, int], dict[str, int]]:
-    """(beats, codex statements) per entity id."""
+def _richness(conn: sqlite3.Connection, ids: Sequence[str],
+              visible=None) -> tuple[dict[str, int], dict[str, int]]:
+    """(beats, codex statements) per entity id; under a reading position
+    (`visible`), only those the reader has read are counted."""
+    if visible_module.capped(visible):
+        wanted = set(ids)
+        beats: dict[str, int] = {}
+        for b in _beats_of(ids, conn, visible):
+            for e in set(b.entity_ids) & wanted:
+                beats[e] = beats.get(e, 0) + 1
+        cx: dict[str, int] = {}
+        for line in _statements(conn, ids, visible):
+            cx[line[0]] = cx.get(line[0], 0) + 1
+        return beats, cx
     beats = _counts(conn, "SELECT entity_id, COUNT(DISTINCT beat_id) FROM beat_entities"
                           " WHERE entity_id IN ({marks}) GROUP BY entity_id", ids)
     cx = _counts(conn, "SELECT entity_id, COUNT(*) FROM codex_entries"
@@ -252,8 +265,24 @@ def _richness(conn: sqlite3.Connection, ids: Sequence[str]) -> tuple[dict[str, i
     return beats, cx
 
 
-def _summaries(conn: sqlite3.Connection, ids: Sequence[str]) -> dict[str, str]:
+def _statements(conn: sqlite3.Connection, ids: Sequence[str], visible) -> list[tuple[str, str, str]]:
+    """(entity id, aspect, text) of the codex statements of `ids` the reader has
+    read (`visible`)."""
+    try:
+        entries = codex_store.entries_for(conn, list(ids))
+    except sqlite3.OperationalError:
+        return []
+    where = codexslice._positions(conn, [s.chunk_id for e in entries for s in e.statements])
+    return [(e.entity_id, s.aspect, s.text) for e in entries for s in e.statements
+            if s.chunk_id in where and visible_module.sees(visible, *where[s.chunk_id])]
+
+
+def _summaries(conn: sqlite3.Connection, ids: Sequence[str], visible=None) -> dict[str, str]:
+    """One-line codex summaries by entity id. None while a reading position is
+    on: a summary is written over the whole story."""
     out: dict[str, str] = {}
+    if visible_module.capped(visible):
+        return out
     try:
         for entity_id in ids:
             found = codex_store.summary_for(conn, entity_id)
@@ -265,9 +294,10 @@ def _summaries(conn: sqlite3.Connection, ids: Sequence[str]) -> dict[str, str]:
 
 
 def _span(kuzu, book_ids: frozenset[str] | None) -> dict[str, set[tuple[str, int]]]:
-    """Per live entity, the (book, chapter) places its relationships fall in."""
-    where = "WHERE r.book_id IN $books " if book_ids else ""
-    params = {"books": sorted(book_ids)} if book_ids else {}
+    """Per live entity, the (book, chapter) places its relationships fall in (the
+    visible ones, under a reading position)."""
+    where = "WHERE true" + visible_module.book_clause(book_ids) + " " if book_ids else ""
+    params = visible_module.book_params(book_ids) if book_ids else {}
     places: dict[str, set[tuple[str, int]]] = {}
     for end in ("a", "b"):
         for entity_id, book, chapter, _ in kuzu.execute(
@@ -277,27 +307,37 @@ def _span(kuzu, book_ids: frozenset[str] | None) -> dict[str, set[tuple[str, int
     return places
 
 
-def _scoped_entities(kuzu, book_ids: frozenset[str] | None, book_names: frozenset[str]) -> dict[str, tuple]:
+def _scoped_entities(kuzu, book_ids: frozenset[str] | None, book_names: frozenset[str],
+                     infos: Mapping[str, BookInfo] | None = None) -> dict[str, tuple]:
     rows = kuzu.execute("MATCH (e:Entity) WHERE e.kind IN $kinds RETURN e.id, e.name, e.kind, e.books",
                         {"kinds": list(KINDS)})
-    return {r[0]: (str(r[1]), str(r[2]), tuple(r[3] or ())) for r in rows
-            if (book_ids is None or any(b in book_ids for b in r[3] or ()))
-            and normalize_name(str(r[1] or "")) not in book_names}
+    found = {r[0]: (str(r[1]), str(r[2]), tuple(r[3] or ())) for r in rows
+             if (book_ids is None or any(b in book_ids for b in r[3] or ()))
+             and normalize_name(str(r[1] or "")) not in book_names}
+    if visible_module.capped(book_ids):  # only those the reader has met, under the name met
+        names = visible_module.visible_names(kuzu, book_ids, list(found), infos)
+        found = {i: (visible_module.display_name(names, i, v[0]), v[1],
+                     tuple(b for b in v[2] if b in book_ids))
+                 for i, v in found.items() if i in names}
+    return found
 
 
 def gather_candidates(conn: sqlite3.Connection, kuzu, *, book_ids: frozenset[str] | None,
                       book_names: frozenset[str] = frozenset(),
-                      focus: Sequence[str] = ()) -> list[Candidate]:
+                      focus: Sequence[str] = (),
+                      books: Mapping[str, BookInfo] | None = None) -> list[Candidate]:
     """The most significant entities in scope, at most PER_KIND of each kind,
     ordered by kind (KINDS) and within a kind by significance: how many places in
     the story its relationships fall in, plus its beats and its codex
     statements. Entities the question names (`focus`) always stay. Book titles
-    and entities with no relationships are left out."""
-    entities = _scoped_entities(kuzu, book_ids, book_names)
+    and entities with no relationships are left out. Under a reading position
+    (`book_ids` a `VisibleBooks`) only what has been read counts, entities are
+    named by the earliest alias met, and no codex summary is shown."""
+    entities = _scoped_entities(kuzu, book_ids, book_names, books)
     places = _span(kuzu, book_ids)
     live = [i for i in entities if i in places]
-    beats, statements = _richness(conn, live)
-    summaries = _summaries(conn, live)
+    beats, statements = _richness(conn, live, book_ids)
+    summaries = _summaries(conn, live, book_ids)
     scored = []
     for i in live:
         name, kind, _ = entities[i]
@@ -320,18 +360,23 @@ def facet_candidates(conn: sqlite3.Connection, kuzu, focal: SeedEntity, *,
     entry covers, up to PERIODS stretches of its story, and the entities it is
     most involved with."""
     found = codex_store.entries_for(conn, [focal.id]) if _has_codex(conn) else []
-    summary = _one_line(found[0].summary, MAX_SUMMARY_CHARS) if found else ""
+    hidden = visible_module.capped(book_ids)  # a reading position: the summary is whole-story
+    summary = _one_line(found[0].summary, MAX_SUMMARY_CHARS) if found and not hidden else ""
+    read = ([t for _e, a, t in _statements(conn, [focal.id], book_ids)] if hidden else None)
     out = [Candidate(id=focal.id, name=focal.name, kind=focal.kind, entity_ids=(focal.id,),
                      summary=summary)]
     if found:
         for aspect in codex_store.ASPECTS:
-            texts = [s.text for s in found[0].statements if s.aspect == aspect]
+            texts = [visible_module.respell(s.text, [(found[0].name, focal.name)]) if hidden
+                     else s.text
+                     for s in found[0].statements
+                     if s.aspect == aspect and (read is None or s.text in read)]
             if texts:
                 out.append(Candidate(
                     id=f"{focal.id}#{aspect}", name=f"{focal.name}: {aspect}", kind="Aspect",
                     entity_ids=(focal.id,), summary=_one_line(texts[0], MAX_SUMMARY_CHARS),
                     score=len(texts), aspect=aspect))
-    beats = _beats_of([focal.id], conn, book_ids)
+    beats = visible_module.shown_beats(kuzu, book_ids, _beats_of([focal.id], conn, book_ids), books)
     ordered = timeline_module.order_beats(beats, books) if len(beats) >= MIN_PERIOD_BEATS else []
     for k in range(PERIODS if ordered else 0):
         mine = ordered[k * len(ordered) // PERIODS:(k + 1) * len(ordered) // PERIODS]
@@ -342,16 +387,16 @@ def facet_candidates(conn: sqlite3.Connection, kuzu, focal: SeedEntity, *,
                 kind="Period", entity_ids=(focal.id,),
                 summary=_one_line(mine[0].text, MAX_SUMMARY_CHARS), score=len(mine),
                 beat_ids=tuple(b.id for b in mine)))
-    where = "AND r.book_id IN $books " if book_ids else ""
+    where = visible_module.book_clause(book_ids) + " " if book_ids else ""
     params = {"id": focal.id, "limit": MAX_FACET_RELATIONS * 3}
     if book_ids:
-        params["books"] = sorted(book_ids)
+        params.update(visible_module.book_params(book_ids))
     neighbours = kuzu.execute(
         f"MATCH (a:Entity)-[r:REL]-(b:Entity) WHERE a.id = $id AND b.id <> $id {where}"
         "RETURN b.id AS other, count(r) AS n ORDER BY n DESC, other LIMIT $limit", params)
     ranked = [(str(r[0]), int(r[1])) for r in neighbours]
-    known = _scoped_entities(kuzu, book_ids, book_names)
-    summaries = _summaries(conn, [i for i, _ in ranked])
+    known = _scoped_entities(kuzu, book_ids, book_names, books)
+    summaries = _summaries(conn, [i for i, _ in ranked], book_ids)
     for other, n in [r for r in ranked if r[0] in known][:MAX_FACET_RELATIONS]:
         name, kind, _ = known[other]
         out.append(Candidate(id=other, name=name, kind=kind, entity_ids=(other, focal.id),
@@ -373,7 +418,8 @@ def _beats_of(entity_ids: Sequence[str], conn: sqlite3.Connection,
         beats = beats_for_entities(conn, list(entity_ids))
     except sqlite3.OperationalError:  # a library not migrated to beats yet
         return []
-    return [b for b in beats if not book_ids or b.book_id in book_ids]
+    return [b for b in beats if not book_ids
+            or visible_module.sees(book_ids, b.book_id, b.chapter_seq)]
 
 
 def planner_prompt(question: str, candidates: Sequence[Candidate],
@@ -566,15 +612,18 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
     and prose come back in the answer's numbering (the registry's). The claims
     step is asked the section's focus (the aspect of `question` it answers) and
     keeps only the facts that bear on it."""
-    seeds = _entities(kuzu, section.entity_ids, {i: 0.0 for i in section.entity_ids},
-                      frozenset(), scope.books)
+    seeds = visible_module.shown_seeds(
+        kuzu, scope.books,
+        _entities(kuzu, section.entity_ids, {i: 0.0 for i in section.entity_ids},
+                  frozenset(), scope.books), books)
     names = [s.name for s in seeds]
     ask = section_question(section.focus or section.heading, names)
     rows: list[EdgeRow] = []
     for seed in seeds:
         found = run_template(kuzu, TemplateCall("across_books", {
             "entity_id": seed.id, "limit": SECTION_EDGES_PER_BOOK}))
-        rows += [r for r in found if scope.allows(r.book_id)]
+        rows += visible_module.shown_rows(
+            kuzu, scope.books, [r for r in found if scope.sees(r.book_id, r.chapter_seq)], books)
     # The graph view stages a section's starting entities and relationships as it
     # starts, as it does for each part of an ordinary answer (part = the section).
     emit(on_event, "seeds", part=index, entities=list(seeds))
@@ -590,9 +639,12 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
     beats = [b for b in _beats_of([s.id for s in seeds if s.kind in timeline_module.TIMELINE_KINDS],
                                   conn, shown) if wanted(b)]
     beats = timeline_module.select_beats(beats, vector, lance, books) if beats else []
-    lines = codexslice.lines_for(conn, [s.id for s in seeds], book_ids=shown, aspects=aspects)
+    beats = visible_module.shown_beats(kuzu, scope.books, beats, books)
+    lines = codexslice.lines_for(conn, [s.id for s in seeds], book_ids=shown, aspects=aspects,
+                                 visible=scope.books)
     lines = (codexslice.select_lines(conn, lines, [s.id for s in seeds], vector, lance, books,
                                      SECTION_SPREAD, SECTION_RELEVANT) if lines else [])
+    lines = visible_module.shown_lines(kuzu, scope.books, lines, books)
     near = [(str(r["chunk_id"]), str(r.get("book_id", "")), int(r.get("chapter_seq", 0)))
             for r in search_chunks(lance, vector, SECTION_NEAR_K, book_ids=shown or scope.books)]
     chunk_ids = sorted({r.chunk_id for r in rows} | {c for c, _, _ in near}
@@ -606,7 +658,7 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
         extra |= {"codexes": [tuple(lines)], "codex_share": codexslice.CODEX_SHARE}
     evidence = assemble_ranked(conn, rows, extra_chunks=near,
                                max_chars=min(models.evidence_chars, SECTION_CHARS),
-                               score_lists=[scores], **extra)
+                               score_lists=[scores], visible=scope.books, **extra)
     if not evidence.passages:
         return SectionResult(None, [], [], [], seeds)
     unseen = _unseen(registry)
@@ -763,8 +815,10 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
     focal = None
     subject: list[SeedEntity] = []
     if len(named_ids) >= 1:
-        seeds = await named_seeds(kuzu, list(named_ids), exclude_names=book_names,
-                                  book_ids=scope.books)
+        seeds = visible_module.shown_seeds(
+            kuzu, scope.books,
+            await named_seeds(kuzu, list(named_ids), exclude_names=book_names,
+                              book_ids=scope.books), books)
         subject = list(seeds)
         focal = seeds[0] if len(seeds) == 1 else None
     emit(on_event, "step", name="plan", state="start", part=None, detail=None)
@@ -772,7 +826,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
                                    book_names=book_names)
                   if focal is not None else
                   gather_candidates(conn, kuzu, book_ids=scope_books, book_names=book_names,
-                                    focus=list(named_ids)))
+                                    focus=list(named_ids), books=books))
     raw = None
     if candidates:
         try:

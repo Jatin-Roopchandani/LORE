@@ -1,6 +1,7 @@
 export type StepName = "split" | "seeds" | "search" | "rank" | "write" | "compose" | "check";
-// Rows that exist only in a deep answer: the planner and one per section (see askReducer's deepSteps).
-export type DeepStepName = "plan" | "section";
+// Rows that exist only in a sectioned answer: the planner (or, for a recap, gathering the story's span) and one per
+// section (see askReducer's deepSteps).
+export type DeepStepName = "plan" | "recap" | "section";
 export type Depth = "auto" | "deep" | "focused";
 export const STEP_ORDER: StepName[] = ["split", "seeds", "search", "rank", "write", "compose", "check"];
 export interface Seed { id: string; name: string; kind: string; books: string[]; score: number | null }
@@ -39,7 +40,9 @@ export interface SearchResult { answer: string; mode: string; template: string |
   // are the argument below it.
   short_answer?: ProseSentence[];
   // Sections of a sectioned answer that failed or found nothing: they are left out of `sections`, counted here.
-  unwritten_sections?: number }
+  unwritten_sections?: number;
+  // Present only when a reading position limited the answer: "Answered from what you've read: up to chapter 9 of <book>".
+  position_note?: string }
 export interface PlanSection { index: number; heading: string; group?: string; group_title?: string; title?: string;
   entities: { id: string; name: string; kind: string }[] }
 export interface SectionEvent { type: "section"; t: number; index: number; kind: "section" | "close"; heading: string;
@@ -94,7 +97,13 @@ export interface Quote { quote: string; chunk_id: string; book_id: string; chapt
 export interface ProfileStatement extends Quote { text: string }
 export interface EntityProfile { id: string; name: string; kind: string; books: string[]; summary: string | null;
   aspects: { aspect: string; statements: ProfileStatement[] }[];
-  counts: { beats: number; relations: number; chapters: number }; world?: WorldRef }
+  counts: { beats: number; relations: number; chapters: number }; world?: WorldRef;
+  // Set while a reading position is on: the whole-story summary is hidden and the statements shown are those read so far.
+  summary_hidden?: boolean;
+  // Under a reading position: a short intro written only from what has been read. `intro_pending` means a
+  // written one may be fetched from /intro (the one shown meanwhile is the plain fallback).
+  intro?: string | null; intro_source?: "model" | "fallback" | "none"; intro_pending?: boolean }
+export interface EntityIntro { intro: string | null; source: "model" | "fallback" | "none" }
 export interface Beat { kind: string; text: string; quote: string; chunk_id: string; book_id: string; book_title: string | null;
   chapter: number; position_label: string; others: { id: string | null; name: string }[] }
 export interface Timeline { beats: Beat[]; order_note: string | null }
@@ -124,3 +133,13 @@ export interface KeyStatus { present: boolean; last4: string | null; added_at: s
 export interface KeySaved extends KeyStatus { check: "ok" | "unavailable"; warning?: string }
 export interface UsageToday { day: string; requests: number; limit: number; models: Record<string, number> }
 export interface NewInvite { code: string; link: string; expires_at: string }
+// A world's reading position: where the reader is, so the graph, panels and answers stay within what they have read.
+// `order` is each book against the one being read: "before"/"after" in its series, "unknown" (it has its own read toggle).
+/** A story chapter of a book: `seq` is the raw section a position stores, `number` the chapter as the reader counts it
+ *  (front and back matter are not counted), `heading` its name when the book gives one. */
+export interface PositionSection { seq: number; number: number; heading: string | null }
+export interface PositionBook { id: string; title: string; series: string | null; series_index: number | null; chapters: number;
+  order: "current" | "before" | "after" | "unknown"; sections?: PositionSection[] }
+export interface ReadingPositionData { world: WorldRef; enabled: boolean; book_id: string | null; chapter: number;
+  read_books: string[]; books: PositionBook[] }
+export interface ReadingPositionBody { enabled: boolean; book_id: string | null; chapter: number; read_books: string[] }

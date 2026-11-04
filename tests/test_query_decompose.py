@@ -41,7 +41,7 @@ async def test_parts_come_back_in_order() -> None:
         _returning(SubQuestions(sub_questions=["Who did it?", "Why did they do it?"]), sink))
     assert subs == ["Who did it?", "Why did they do it?"]
     (_, schema), = sink
-    assert schema is Decomposition  # SubQuestions only with both switches off
+    assert issubclass(schema, Decomposition)  # SubQuestions only with every switch off
 
 
 @pytest.mark.parametrize("bad", [
@@ -126,6 +126,7 @@ GOLDEN_OFF = json.loads((Path(__file__).parent / "golden" / "decompose_off.json"
 def switches_off(monkeypatch):
     monkeypatch.setattr(decompose_module, "INTERPRETIVE", False)
     monkeypatch.setattr(decompose_module, "DEEP", False)
+    monkeypatch.setattr(decompose_module, "RECAP", False)
 
 
 def _decomposition(*parts, depth="focused"):
@@ -156,6 +157,7 @@ async def test_off_ignores_kinds_lenses_and_depth(switches_off) -> None:
 
 
 def test_each_switch_adds_only_its_own_rules(monkeypatch) -> None:
+    monkeypatch.setattr(decompose_module, "RECAP", False)
     monkeypatch.setattr(decompose_module, "DEEP", False)
     only_kinds = decomposition_prompt("q?")
     assert '"lenses"' in only_kinds and '"depth"' not in only_kinds

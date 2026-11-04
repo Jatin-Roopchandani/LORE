@@ -336,3 +336,50 @@ def test_the_admin_sees_who_has_a_key_and_todays_requests(app, central, monkeypa
     users = {u["id"]: u for u in admin.get("/api/admin/users").json()["users"]}
     assert users["bob"]["has_key"] is True and users["bob"]["requests_today"] == 1
     assert users["alice"]["has_key"] is False and users["alice"]["requests_today"] == 0
+
+
+# --- the entity intro (the one explorer read that may call a model) --------------
+
+def test_the_entity_intro_runs_on_the_readers_own_key(alice, central, monkeypatch):
+    give_key(central, "alice")
+    seen = []
+
+    def intro(config, entity_id, **_):
+        seen.append((config.data_dir.name, gemini_api_key()))
+        return {"intro": "x", "source": "model"}
+
+    monkeypatch.setattr("lore.web.app.explore.intro", intro)
+    r = alice.get("/api/entity/e1/intro")
+    assert r.status_code == 200 and r.json()["source"] == "model"
+    assert seen == [("alice", FAKE_KEY)]
+
+
+def test_the_entity_intro_without_a_key_never_reaches_the_server_key(alice, monkeypatch):
+    from lore.inference.key_scope import KeyRequired
+    seen = []
+
+    def intro(config, entity_id, **_):
+        try:
+            gemini_api_key(local=lambda: "SERVER-KEY")
+        except KeyRequired:
+            seen.append("required")
+        return {"intro": None, "source": "fallback"}
+
+    monkeypatch.setattr("lore.web.app.explore.intro", intro)
+    assert alice.get("/api/entity/e1/intro").status_code == 200
+    assert seen == ["required"]
+
+
+def test_intro_model_takes_its_key_from_the_bound_scope(tmp_path, monkeypatch):
+    from lore.inference import key_scope
+    from lore.query import explore
+    from lore.config import SelectionConfig
+    cfg = LoreConfig(data_dir=tmp_path, selection=SelectionConfig(provider="gemini"))
+    monkeypatch.setattr("lore.inference.gemini.resolve_api_key",
+                        lambda **_: pytest.fail("the server key was read"))
+    keys = []
+    monkeypatch.setattr("lore.inference.gemini.GeminiClient.__init__",
+                        lambda self, key, **kw: keys.append(key) or setattr(self, "last_model", None))
+    with key_scope.bound(key_scope.KeyScope("alice", OTHER_KEY)):
+        made = explore._intro_model(cfg)
+    assert made is not None and keys == [OTHER_KEY]

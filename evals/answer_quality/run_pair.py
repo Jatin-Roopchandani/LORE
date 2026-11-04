@@ -55,6 +55,17 @@ ARM_SETTINGS = {
                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     "prose_answers": ("lore.query.write", "PROSE_ANSWERS",
                       lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Prose for plain factual answers too (write.PROSE_FACTUAL; off since round 7).
+    "prose_factual": ("lore.query.write", "PROSE_FACTUAL",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Every kept claim reaches the shown prose: a repair round, then code places
+    # what is still uncited (write.COVERAGE).
+    "coverage": ("lore.query.write", "COVERAGE",
+                 lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Readings only in labelled sentences: the fact rule, the check's
+    # inference_in_fact and its repair (write.FACT_FIDELITY).
+    "fact_fidelity": ("lore.query.write", "FACT_FIDELITY",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),
@@ -73,6 +84,11 @@ ARM_SETTINGS = {
     # The story timeline of the question's entities (lore/query/timeline.py).
     "timeline": ("lore.query.timeline", "TIMELINE",
                  lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Recap answers: a question asking what happens over a stretch of the story is
+    # answered from the stretch's beats, one section per stretch of chapters
+    # (lore/query/recap.py). `recap=false` is the code before it existed.
+    "recap": ("lore.query.decompose", "RECAP",
+              lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
 
 
@@ -122,6 +138,9 @@ async def ask(config, question: str, overrides, trace: list | None):
     # The `deep` arm asks at depth "deep"; any other arm lets the decomposer decide.
     depth = "deep" if overrides.get(("lore.query.decompose", "DEEP")) is True else None
     kw = {"depth": depth} if depth else {}
+    # Evals measure the whole story: a reading position saved in the library
+    # (and moved while a run is going) must not change what an arm can see.
+    kw["spoilers"] = True
     if WORLD is not None:
         kw["world"] = WORLD
     with _Applied(overrides):

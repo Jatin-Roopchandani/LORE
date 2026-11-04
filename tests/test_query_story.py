@@ -163,7 +163,8 @@ async def test_switch_on_the_schema_carries_gaps():
         seen["schema"] = schema
         return Prose(sentences=[S("A.", [1])])
     await write_answer("q", ["q"], CS, PS, gen, book_titles=TITLES, books=BOOKS)
-    assert seen["schema"] is Prose and "gaps" in Prose.model_fields
+    # FACT_FIDELITY: a factual answer has no reading kind, so the schema without kinds
+    assert seen["schema"] is write_module._StoryProse and "gaps" in Prose.model_fields
 
 
 def test_prose_gaps_default_empty():

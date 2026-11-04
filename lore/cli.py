@@ -24,6 +24,7 @@ from lore.graph.adjudicate import (
 from lore.graph.loader import PartialLoadError, load_book
 from lore.ingest.chunker import chunk_book
 from lore.ingest.epub import parse_epub
+from lore.ingest.matter import STORY, classify_book
 from lore.ingest.models import IngestError, book_id_for_file
 from lore.ingest.pdf import parse_pdf
 from lore.worlds import (
@@ -190,6 +191,7 @@ def ingest(
         book_id = book_id_for_file(path)
         parsed = parser(path)
         chunks = chunk_book(parsed, book_id)
+        sections = classify_book(parsed)
     except IngestError as exc:
         typer.echo(f"ingest failed: {exc}")
         raise typer.Exit(1)
@@ -205,7 +207,7 @@ def ingest(
             conn, book_id=book_id, title=parsed.title, author=parsed.author,
             source="upload", file_path=str(path), chunks=chunks,
             series=parsed.series, series_index=parsed.series_index,
-            world_id=world_id,
+            world_id=world_id, sections=sections,
         )
     finally:
         conn.close()
@@ -214,9 +216,12 @@ def ingest(
     if not created:
         typer.echo(f"{parsed.title} ({book_id}) already ingested — no-op")
         return
+    skipped = [s for s in sections if s.matter != STORY]
     typer.echo(
         f"{parsed.title} ({book_id}): "
         f"{len(parsed.chapters)} chapters, {len(chunks)} chunks"
+        + (f"; {len(skipped)} of the sections are front or back matter and are"
+           " not read as story" if skipped else "")
     )
 
 
@@ -572,6 +577,87 @@ def book_remove_from_graph(
         f"{target['title']}: removed {report.chunks} chunks,"
         f" {report.rel_edges} relationships, {report.entities_deleted} entities"
         f" ({report.entities_released} shared entities kept), {report.beats} beats")
+
+
+repair_app = typer.Typer(help="Repairs to an existing library that ask no model.",
+                         no_args_is_help=True)
+app.add_typer(repair_app, name="repair")
+
+
+@repair_app.command("matter")
+def repair_matter(
+    book: str | None = typer.Option(
+        None, "--book", help="one book (id, or its title or part of it); default every book"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="show what would change and change nothing"),
+) -> None:
+    """Classify books' sections as front matter, story or back matter, and
+    delete what front and back matter produced (beats, codex statements,
+    graph evidence, vectors). Asks no model; safe to run again.
+    """
+    from lore.graph.repair_matter import apply_repair, plan_repair
+
+    config = LoreConfig.load()
+    if not config.sqlite_path.exists():
+        typer.echo("no library yet")
+        raise typer.Exit(1)
+    conn = open_db(config.sqlite_path)
+    kuzu = lance = None
+    try:
+        targets = [_one_book(conn, book)] if book else list_books(conn)
+        if not dry_run:
+            for target in targets:
+                saved = get_job(conn, target["id"])
+                if saved is not None and is_fresh(saved, datetime.now(timezone.utc)):
+                    typer.echo(f"repair refused: a job is running for {target['title']}")
+                    raise typer.Exit(1)
+        graph = config.kuzu_dir / "graph"
+        if graph.exists():
+            kuzu = KuzuStore(graph, read_only=dry_run)
+        if config.lancedb_dir.exists():
+            lance = LanceStore(config.lancedb_dir)
+        roots = [Path.cwd(), config.data_dir.resolve().parent]
+        for target in targets:
+            plan = plan_repair(conn, kuzu, lance, target["id"], roots)
+            _print_matter_plan(plan, dry_run)
+            if not dry_run and (plan.changed or plan.deletes_anything):
+                apply_repair(conn, kuzu, lance, plan)
+    finally:
+        if kuzu is not None:
+            kuzu.close()
+        conn.close()
+
+
+def _print_matter_plan(plan, dry_run: bool) -> None:
+    from lore.ingest.matter import STORY, story_numbers
+
+    numbers = story_numbers(plan.sections)
+    verb = "would delete" if dry_run else "deleted"
+    typer.echo(f"{plan.title} ({plan.book_id}): sections read from the {plan.source};"
+               f" {len(numbers)} story chapters of {len(plan.sections)} sections"
+               + ("" if plan.changed else " (classification unchanged)"))
+    for c in plan.sections:
+        label = (f"story ch. {numbers[c.seq]}" if c.matter == STORY
+                 else f"{c.matter} matter ({c.reason})")
+        typer.echo(f"  section {c.seq}: {label}" + (f" - {c.heading}" if c.heading else ""))
+    if not plan.deletes_anything:
+        typer.echo("  nothing to delete")
+        return
+    typer.echo(f"  {verb}: {len(plan.beats)} beats, {len(plan.codex)} codex statements,"
+               f" {len(plan.rel_edges)} relationships, {plan.chunk_nodes} chunk nodes,"
+               f" {plan.chapter_nodes} chapter nodes, {len(plan.vector_chunks)} chunk vectors,"
+               f" {len(plan.entities_deleted)} entities; {len(plan.books_released)} entities"
+               " lose this book")
+    for beat_id, chapter, text in plan.beats:
+        typer.echo(f"    beat (section {chapter}): {text}")
+    for _sid, entity, statement in plan.codex:
+        typer.echo(f"    codex ({entity}): {statement}")
+    for subject, predicate, obj, chunk in plan.rel_edges:
+        typer.echo(f"    relationship: {subject} -[{predicate}]-> {obj}  ({chunk})")
+    for entity_id, name in plan.entities_deleted:
+        typer.echo(f"    entity: {name} ({entity_id})")
+    for entity_id in sorted(plan.books_released):
+        typer.echo(f"    entity {entity_id} loses this book")
 
 
 def _graph_build_key(

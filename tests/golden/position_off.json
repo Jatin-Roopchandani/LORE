@@ -1,0 +1,594 @@
+{
+ "all_worlds": {
+  "calls": {
+   "decompose": [],
+   "embed": [
+    [
+     "search_query: Who is Ren Ashby?"
+    ]
+   ],
+   "select": [
+    "You are choosing how to search a knowledge graph built from books.\n\nQuestion: Who is Ren Ashby?\n\nEntities found in passages related to the question, numbered:\n1) Ren Ashby (Character, in 2 books)\n2) Dorn Vale (Character, in 1 book)\n3) Mira Cole (Character, in 2 books)\n4) Lan Dray (Character, in 1 book)\n5) Pip Marsh (Character, in 1 book)\n\nAvailable searches, each with how many entities it takes:\n- neighbours (1 entity): Everything one named thing is directly involved in. Use for 'who does X deal with', 'what happens to X', 'tell me about X'.\n- two_hop (1 entity): The wider neighbourhood two steps out from one named thing. Use when the question is about indirect influence or consequences rather than direct dealings.\n- path_between (2 entities): How two named things are connected through something in between. Use for 'how are X and Y related', 'what links X to Y'.\n- by_predicate (1 entity): One specific kind of relationship involving one named thing. Use when the question names the relationship: who opposes X, who works for X, what X is a member of.\n- shared_neighbours (2 entities): Everything two named things are each involved in, so their common ground can be compared. Use for 'what do X and Y have in common', 'how do X and Y differ'.\n- across_books (1 entity): One named thing's involvements across every book it appears in, ordered by book then chapter. Use when the question compares books or asks how something differs between them.\n- chapter_window (1 entity): One named thing's involvements within a range of chapters. Use when the question is about a period: early on, later, by the end, in the first half.\n\nRelationship types for by_predicate (use exactly one of these):\nALLEGIANCE_TO, MEMBER_OF, LOCATED_IN, POSSESSES, INTERACTS_WITH, OPPOSES, LOVES, KILLS, BECOMES, EXPERIENCES\n\nChoose exactly one search. In \"entities\", give the NUMBERS of the\nentities it should use, from the numbered list above: one number for a\n1-entity search, two different numbers for a 2-entity search. For\nby_predicate, also give \"predicate\" from the relationship types above.\nIf the question asks about a period of the story, give the chapter\nrange; otherwise leave the chapter numbers at 0.\n",
+    "You are choosing how to search a knowledge graph built from books.\n\nQuestion: Who is Ren Ashby?\n\nEntities found in passages related to the question, numbered:\n1) Yan Vale (Character, in 1 book)\n2) Zed Quill (Character, in 1 book)\n\nAvailable searches, each with how many entities it takes:\n- neighbours (1 entity): Everything one named thing is directly involved in. Use for 'who does X deal with', 'what happens to X', 'tell me about X'.\n- two_hop (1 entity): The wider neighbourhood two steps out from one named thing. Use when the question is about indirect influence or consequences rather than direct dealings.\n- path_between (2 entities): How two named things are connected through something in between. Use for 'how are X and Y related', 'what links X to Y'.\n- by_predicate (1 entity): One specific kind of relationship involving one named thing. Use when the question names the relationship: who opposes X, who works for X, what X is a member of.\n- shared_neighbours (2 entities): Everything two named things are each involved in, so their common ground can be compared. Use for 'what do X and Y have in common', 'how do X and Y differ'.\n- across_books (1 entity): One named thing's involvements across every book it appears in, ordered by book then chapter. Use when the question compares books or asks how something differs between them.\n- chapter_window (1 entity): One named thing's involvements within a range of chapters. Use when the question is about a period: early on, later, by the end, in the first half.\n\nRelationship types for by_predicate (use exactly one of these):\nALLEGIANCE_TO, MEMBER_OF, LOCATED_IN, POSSESSES, INTERACTS_WITH, OPPOSES, LOVES, KILLS, BECOMES, EXPERIENCES\n\nChoose exactly one search. In \"entities\", give the NUMBERS of the\nentities it should use, from the numbered list above: one number for a\n1-entity search, two different numbers for a 2-entity search. For\nby_predicate, also give \"predicate\" from the relationship types above.\nIf the question asks about a period of the story, give the chapter\nrange; otherwise leave the chapter numbers at 0.\n"
+   ],
+   "synthesize": [
+    "Answer the question using only the numbered passages below.\n\nAnswer as a list of claims. Each claim has:\n- text: one claim, in your own words\n- passage: the number of the passage the claim comes from\n- quote: at least 4 words copied word for word from that passage\n\nA good answer is complete, not just the shortest reply. Give every fact in\nthe passages that a reader asking this would want: the direct answer, then\nthe circumstances, reasons, methods and consequences the passages give for\nit -- who, what, how and why. Read every passage, not only the first one\nthat answers. Each fact is its own claim with its own quote,\nnot one claim that summarises several.\nEvery claim must add a fact the earlier claims do not already state. Do not\nsay the same thing twice, even in other words or from a different passage;\nif two passages state one fact, make one claim and quote the clearer one.\nWhen the quote is a character speaking, or telling their own story in the\nfirst person, the claim is that character's account: say whose it is\n(\"<name> says ...\", \"according to <name> ...\"), never state it as plain fact.\nGive a reason, motive or consequence only when the quote itself states it.\nTwo facts from one passage stay two claims: never join them with \"because\",\n\"so\", \"since\", \"in order to\" or \"which led to\" unless the passage says so.\nIf the question asks about a kind of character or a role rather than a named\nperson, make claims for every character the passages show in that role,\nnot only the most prominent one, including anyone whose earlier actions\nset the events in motion.\nIf the question asks how something changed, developed or progressed, give\nclaims that show the state at different points in the story, from the\nearliest passages to the latest, including what characters show or do and\nnot only what is said outright.\nInclude claims about what characters do, choose and how they behave toward\neach other, not only what they say or what the narrator states.\nGive at most 8 claims; any past that are ignored.\nPrefer passages that state the answer directly\nover passages that only mention its subject.\n\nQuotes are checked by code. Any claim whose quote is not found, exactly as\nwritten, in the passage it names is discarded. A claim must say only what\nits quote says; do not combine passages into something neither one states.\nUse only what the passages say; never guess. Set can_answer to false only\nwhen no passage bears on the question, or when they answer only part of it\n-- then still give the claims they do support. A claim\nstates something the passages say; never make a claim about what the\npassages leave out.\nTo quote words that are not next to each other in the passage, join the\npieces with \"...\"; every piece must be copied word for word, in the\npassage's order, and be at least 3 words long.\n\nQuestion: Who is Ren Ashby?\n\nLeads: relationships extracted automatically from the passages. They can be\nwrong. Use them only to know where to look; a claim counts only if the\ncited passage itself says it. The number in brackets is the passage each\nlead came from.\n- Ren Ashby \u2014MET\u2192 Mira Cole [1] (Hollow Gate, chapter 1)\n- Ren Ashby \u2014BETRAYED\u2192 Mira Cole [3] (Hollow Gate, chapter 3)\n- Ren Ashby \u2014SERVES\u2192 Dorn Vale [3] (Hollow Gate, chapter 3)\n- Mira Cole \u2014TRUSTS\u2192 Ren Ashby [4] (Hollow Keep, chapter 1)\n- Zed Quill \u2014MET\u2192 Yan Vale [6] (Other Solo, chapter 1)\n\nStory timeline: short notes on moments from across the whole story, for the\npeople and things the question is about, in story order. Each line gives the\nnumber of the passage that holds the moment, where it falls in the story and\nwho it is about. The timeline is a map, not evidence. Use it to see the whole\nspan of the story, from the earliest moment to the latest and what lies\nbetween, then read those numbered passages. A claim still needs a quote copied\nword for word from a numbered passage; never quote a timeline line, and never\nmake a claim from a timeline line alone.\n- [1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby: EARLYBEAT\n- [3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter) Ren Ashby: LATEBEAT\n- [4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby: SEQUELBEAT\n\nCodex: short notes on what the books establish about the people and things the\nquestion is about, each under the aspect it belongs to, in story order. Each\nline gives the number of the passage that holds the statement, where it falls\nin the story, who it is about and the aspect. The codex is a map, not\nevidence. Use it to see which aspects exist and where the passages are, then\nread those numbered passages. A claim still needs a quote copied word for word\nfrom a numbered passage; never quote a codex line, and never make a claim from\na codex line alone.\n- [1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby, history: EARLYSTATE\n- [3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter) Ren Ashby, history: LATESTATE\n- [4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby, change: SEQUELSTATE\n\nPassages:\nPassages are in story order. Relative story order is unknown between: Hollow Gate, Hollow Keep (in that order); Other Solo.\n\n[1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter)\nMARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. \n\n[2] (Hollow Gate, book 1 of Hollow Saga, chapter 2, passage 1 in the chapter)\nMARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. \n\n[3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter)\nMARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. \n\n[4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter)\nMARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. \n\n[5] (Hollow Keep, book 2 of Hollow Saga, chapter 2, passage 1 in the chapter)\nMARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. \n\n[6] (Other Solo, chapter 1, passage 1 in the chapter)\nMARK-ob1-1 Zed Quill spoke with Yan Vale in the other realm. MARK-ob1-1 Zed Quill spoke with Yan Vale in the other realm. MARK-ob1-1 Zed Quill spoke with Yan Vale in the other realm. \n"
+   ]
+  },
+  "result": {
+   "answer": "The loaded books do not contain enough to answer that.",
+   "answer_style": "claims",
+   "claims": [],
+   "edges": [
+    {
+     "book_id": "hb1",
+     "chapter_seq": 1,
+     "chunk_id": "hb1:1:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb1-1 h_ren MET h_mira",
+     "object": "Mira Cole",
+     "object_id": "h_mira",
+     "predicate": "MET",
+     "predicate_raw": "MET",
+     "subject": "Ren Ashby",
+     "subject_id": "h_ren"
+    },
+    {
+     "book_id": "hb1",
+     "chapter_seq": 3,
+     "chunk_id": "hb1:3:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb1-3 h_ren BETRAYED h_mira",
+     "object": "Mira Cole",
+     "object_id": "h_mira",
+     "predicate": "BETRAYED",
+     "predicate_raw": "BETRAYED",
+     "subject": "Ren Ashby",
+     "subject_id": "h_ren"
+    },
+    {
+     "book_id": "hb1",
+     "chapter_seq": 3,
+     "chunk_id": "hb1:3:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb1-3 h_ren SERVES h_dorn",
+     "object": "Dorn Vale",
+     "object_id": "h_dorn",
+     "predicate": "SERVES",
+     "predicate_raw": "SERVES",
+     "subject": "Ren Ashby",
+     "subject_id": "h_ren"
+    },
+    {
+     "book_id": "hb2",
+     "chapter_seq": 1,
+     "chunk_id": "hb2:1:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb2-1 h_mira TRUSTS h_ren",
+     "object": "Ren Ashby",
+     "object_id": "h_ren",
+     "predicate": "TRUSTS",
+     "predicate_raw": "TRUSTS",
+     "subject": "Mira Cole",
+     "subject_id": "h_mira"
+    },
+    {
+     "book_id": "ob1",
+     "chapter_seq": 1,
+     "chunk_id": "ob1:1:0",
+     "confidence": 0.9,
+     "evidence": "MARK-ob1-1 o_zed MET o_yan",
+     "object": "Yan Vale",
+     "object_id": "o_yan",
+     "predicate": "MET",
+     "predicate_raw": "MET",
+     "subject": "Zed Quill",
+     "subject_id": "o_zed"
+    }
+   ],
+   "gaps": [],
+   "mode": "graph",
+   "model": "writer",
+   "note": null,
+   "passages": [
+    {
+     "book_id": "hb1",
+     "book_title": "Hollow Gate",
+     "chapter_seq": 1,
+     "chunk_id": "hb1:1:0",
+     "n": 1,
+     "text": "MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. "
+    },
+    {
+     "book_id": "hb1",
+     "book_title": "Hollow Gate",
+     "chapter_seq": 2,
+     "chunk_id": "hb1:2:0",
+     "n": 2,
+     "text": "MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. "
+    },
+    {
+     "book_id": "hb1",
+     "book_title": "Hollow Gate",
+     "chapter_seq": 3,
+     "chunk_id": "hb1:3:0",
+     "n": 3,
+     "text": "MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. "
+    },
+    {
+     "book_id": "hb2",
+     "book_title": "Hollow Keep",
+     "chapter_seq": 1,
+     "chunk_id": "hb2:1:0",
+     "n": 4,
+     "text": "MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. "
+    },
+    {
+     "book_id": "hb2",
+     "book_title": "Hollow Keep",
+     "chapter_seq": 2,
+     "chunk_id": "hb2:2:0",
+     "n": 5,
+     "text": "MARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. "
+    },
+    {
+     "book_id": "ob1",
+     "book_title": "Other Solo",
+     "chapter_seq": 1,
+     "chunk_id": "ob1:1:0",
+     "n": 6,
+     "text": "MARK-ob1-1 Zed Quill spoke with Yan Vale in the other realm. MARK-ob1-1 Zed Quill spoke with Yan Vale in the other realm. MARK-ob1-1 Zed Quill spoke with Yan Vale in the other realm. "
+    }
+   ],
+   "prose": [],
+   "requests": 0,
+   "sections": [],
+   "seeds": [
+    {
+     "books": [
+      "hb1",
+      "hb2"
+     ],
+     "id": "h_ren",
+     "kind": "Character",
+     "name": "Ren Ashby",
+     "score": 0.0
+    },
+    {
+     "books": [
+      "hb1"
+     ],
+     "id": "h_dorn",
+     "kind": "Character",
+     "name": "Dorn Vale",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "hb1",
+      "hb2"
+     ],
+     "id": "h_mira",
+     "kind": "Character",
+     "name": "Mira Cole",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "hb3"
+     ],
+     "id": "w_lan",
+     "kind": "Character",
+     "name": "Lan Dray",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "hb3"
+     ],
+     "id": "w_pip",
+     "kind": "Character",
+     "name": "Pip Marsh",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "ob1"
+     ],
+     "id": "o_yan",
+     "kind": "Character",
+     "name": "Yan Vale",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "ob1"
+     ],
+     "id": "o_zed",
+     "kind": "Character",
+     "name": "Zed Quill",
+     "score": 0.0024953223764896393
+    }
+   ],
+   "selection_model": "chooser",
+   "short_answer": [],
+   "sub_questions": [
+    "Who is Ren Ashby?"
+   ],
+   "template": "neighbours",
+   "unanswered": [],
+   "unwritten_sections": 0
+  }
+ },
+ "decomposed": {
+  "calls": {
+   "decompose": [
+    "You are splitting a question about books into the parts a search must cover.\n\nBooks in the library (a reference for names only): Hollow Gate; Hollow Keep; Wanderer Road\n\nQuestion: Who is Old Tam and what did Mira Cole know?\n\nReturn \"sub_questions\": a list of 1 to 4 self-contained questions that\ntogether ask exactly what the question asks.\n- If the question has one part, return the question unchanged as the only item.\n- Split per book only when the question explicitly asks about each book or\n  both books (\"in each novel\", \"in both novels\", \"in each book\", \"in both\n  books\"): then give one sub-question per book, naming that book.\n- Otherwise keep the question's own parts. Do not split a question by book\n  just because the library holds several books.\n- A question that asks \"who ... and why ...\" is two sub-questions: one\n  for who, one for why. Likewise \"what ... and how ...\".\n- If the question asks about a role or a theme (a kind of character, a\n  motive, a vice or a virtue) rather than a named person, make the parts\n  find every character it applies to, not only the most prominent one:\n  including those whose earlier actions set the events in motion.\n- Each sub-question must make sense on its own: repeat the names it needs\n  instead of \"he\", \"she\", \"it\", \"they\" or \"that\".\n- Do not answer, and do not add anything the question does not ask.\n\nEach item of \"sub_questions\" is an object with:\n- \"question\": the self-contained question, as above.\n- \"kind\": how the part can be answered.\n  - \"factual\": the books state it, in what happens and what characters do,\n    say or experience.\n  - \"interpretive\": the books give evidence but no sentence answers it. It\n    asks for a judgement, an evaluation, a comparison, the meaning or\n    significance of something, a reading of a character or a theme, or what\n    would have happened otherwise.\n  - \"beyond\": the books cannot settle it: the author's intent, facts about\n    the real world, or events outside the text.\n  A question that asks for an analysis or an assessment, for an explanation of\n  how or why that the books do not state outright, or to explore methods,\n  motives, themes or significance is \"interpretive\", not \"factual\", even when\n  it names one subject. Its lenses cover the distinct aspects the question asks\n  about (for example each method, motive or theme). What, who, when or where\n  stays factual.\n  When unsure, use \"factual\".\n- \"stance\": for an \"interpretive\" part only. What the part asks for.\n  - \"verdict\": it asks for a judgement or a choice: which, who is the most,\n    was something right, is something of a given kind, should someone have.\n    A short answer to it takes a position.\n  - \"analysis\": it asks to describe, explain, explore or analyse something\n    (its methods, motives, themes, development). Facts that summarise it are\n    a good answer; a position is optional.\n  When unsure, use \"analysis\".\n- \"label\": a short noun phrase of at most 6 words that names the part, to\n  mark its answer (not a question, no trailing punctuation, and no claim about\n  the answer). Needed only when the question has more than one part.\n- \"lenses\": for an \"interpretive\" part only (otherwise an empty list), up to\n  4 aspects of the story that would decide the part. Each lens is an object\n  with a \"question\" and a \"label\".\n  - \"question\": a self-contained question the text itself can answer.\n  - \"label\": a short noun phrase of at most 6 words that names the aspect, to\n    head a section (not a question, no trailing punctuation, and no claim\n    about the answer).\n  - Together the lenses must cover opposing sides of the part, and, for a part\n    that asks for an analysis, each distinct aspect it asks about.\n  - Each lens is concrete: what happens, what characters do, choose, hide or\n    change, what is said, and how it ends.\n  - No lens may assume or hint at the answer to the part.\n  - Repeat the names a lens needs, as for sub-questions.\n\nAlso return \"depth\", either \"deep\" or \"focused\", for the question as a whole.\n- \"deep\": a full answer must span many entities or much of the story: a whole\n  world, system, institution, people or place, the whole life of a character,\n  or a theme followed across a series.\n- \"focused\": a few passages answer it: a fact, an event, a relationship, one\n  choice or reason.\nWhen unsure, use \"focused\".\n"
+   ],
+   "embed": [
+    [
+     "search_query: Who is Old Tam and what did Mira Cole know?"
+    ],
+    [
+     "search_query: Who is Old Tam?",
+     "search_query: What did Mira Cole know?"
+    ]
+   ],
+   "select": [
+    "You are choosing how to search a knowledge graph built from books.\n\nQuestion: Who is Old Tam?\n\nEntities found in passages related to the question, numbered:\n1) Ren Ashby (Character, in 2 books)\n2) Mira Cole (Character, in 2 books)\n3) Dorn Vale (Character, in 1 book)\n4) Lan Dray (Character, in 1 book)\n5) Pip Marsh (Character, in 1 book)\n\nAvailable searches, each with how many entities it takes:\n- neighbours (1 entity): Everything one named thing is directly involved in. Use for 'who does X deal with', 'what happens to X', 'tell me about X'.\n- two_hop (1 entity): The wider neighbourhood two steps out from one named thing. Use when the question is about indirect influence or consequences rather than direct dealings.\n- path_between (2 entities): How two named things are connected through something in between. Use for 'how are X and Y related', 'what links X to Y'.\n- by_predicate (1 entity): One specific kind of relationship involving one named thing. Use when the question names the relationship: who opposes X, who works for X, what X is a member of.\n- shared_neighbours (2 entities): Everything two named things are each involved in, so their common ground can be compared. Use for 'what do X and Y have in common', 'how do X and Y differ'.\n- across_books (1 entity): One named thing's involvements across every book it appears in, ordered by book then chapter. Use when the question compares books or asks how something differs between them.\n- chapter_window (1 entity): One named thing's involvements within a range of chapters. Use when the question is about a period: early on, later, by the end, in the first half.\n\nRelationship types for by_predicate (use exactly one of these):\nALLEGIANCE_TO, MEMBER_OF, LOCATED_IN, POSSESSES, INTERACTS_WITH, OPPOSES, LOVES, KILLS, BECOMES, EXPERIENCES\n\nChoose exactly one search. In \"entities\", give the NUMBERS of the\nentities it should use, from the numbered list above: one number for a\n1-entity search, two different numbers for a 2-entity search. For\nby_predicate, also give \"predicate\" from the relationship types above.\nIf the question asks about a period of the story, give the chapter\nrange; otherwise leave the chapter numbers at 0.\n",
+    "You are choosing how to search a knowledge graph built from books.\n\nQuestion: What did Mira Cole know?\n\nEntities found in passages related to the question, numbered:\n1) Mira Cole (Character, in 2 books)\n2) Ren Ashby (Character, in 2 books)\n3) Dorn Vale (Character, in 1 book)\n4) Lan Dray (Character, in 1 book)\n5) Pip Marsh (Character, in 1 book)\n\nAvailable searches, each with how many entities it takes:\n- neighbours (1 entity): Everything one named thing is directly involved in. Use for 'who does X deal with', 'what happens to X', 'tell me about X'.\n- two_hop (1 entity): The wider neighbourhood two steps out from one named thing. Use when the question is about indirect influence or consequences rather than direct dealings.\n- path_between (2 entities): How two named things are connected through something in between. Use for 'how are X and Y related', 'what links X to Y'.\n- by_predicate (1 entity): One specific kind of relationship involving one named thing. Use when the question names the relationship: who opposes X, who works for X, what X is a member of.\n- shared_neighbours (2 entities): Everything two named things are each involved in, so their common ground can be compared. Use for 'what do X and Y have in common', 'how do X and Y differ'.\n- across_books (1 entity): One named thing's involvements across every book it appears in, ordered by book then chapter. Use when the question compares books or asks how something differs between them.\n- chapter_window (1 entity): One named thing's involvements within a range of chapters. Use when the question is about a period: early on, later, by the end, in the first half.\n\nRelationship types for by_predicate (use exactly one of these):\nALLEGIANCE_TO, MEMBER_OF, LOCATED_IN, POSSESSES, INTERACTS_WITH, OPPOSES, LOVES, KILLS, BECOMES, EXPERIENCES\n\nChoose exactly one search. In \"entities\", give the NUMBERS of the\nentities it should use, from the numbered list above: one number for a\n1-entity search, two different numbers for a 2-entity search. For\nby_predicate, also give \"predicate\" from the relationship types above.\nIf the question asks about a period of the story, give the chapter\nrange; otherwise leave the chapter numbers at 0.\n"
+   ],
+   "synthesize": [
+    "Answer the question using only the numbered passages below.\n\nAnswer as a list of claims. Each claim has:\n- text: one claim, in your own words\n- passage: the number of the passage the claim comes from\n- quote: at least 4 words copied word for word from that passage\n\nA good answer is complete, not just the shortest reply. Give every fact in\nthe passages that a reader asking this would want: the direct answer, then\nthe circumstances, reasons, methods and consequences the passages give for\nit -- who, what, how and why. Read every passage, not only the first one\nthat answers. Each fact is its own claim with its own quote,\nnot one claim that summarises several.\nEvery claim must add a fact the earlier claims do not already state. Do not\nsay the same thing twice, even in other words or from a different passage;\nif two passages state one fact, make one claim and quote the clearer one.\nWhen the quote is a character speaking, or telling their own story in the\nfirst person, the claim is that character's account: say whose it is\n(\"<name> says ...\", \"according to <name> ...\"), never state it as plain fact.\nGive a reason, motive or consequence only when the quote itself states it.\nTwo facts from one passage stay two claims: never join them with \"because\",\n\"so\", \"since\", \"in order to\" or \"which led to\" unless the passage says so.\nIf the question asks about a kind of character or a role rather than a named\nperson, make claims for every character the passages show in that role,\nnot only the most prominent one, including anyone whose earlier actions\nset the events in motion.\nIf the question asks how something changed, developed or progressed, give\nclaims that show the state at different points in the story, from the\nearliest passages to the latest, including what characters show or do and\nnot only what is said outright.\nInclude claims about what characters do, choose and how they behave toward\neach other, not only what they say or what the narrator states.\nGive at most 8 claims; any past that are ignored.\nPrefer passages that state the answer directly\nover passages that only mention its subject.\n\nQuotes are checked by code. Any claim whose quote is not found, exactly as\nwritten, in the passage it names is discarded. A claim must say only what\nits quote says; do not combine passages into something neither one states.\nUse only what the passages say; never guess. Set can_answer to false only\nwhen no passage bears on the question, or when they answer only part of it\n-- then still give the claims they do support. A claim\nstates something the passages say; never make a claim about what the\npassages leave out.\nTo quote words that are not next to each other in the passage, join the\npieces with \"...\"; every piece must be copied word for word, in the\npassage's order, and be at least 3 words long.\n\nQuestion: Who is Old Tam?\nThis is one part of the larger question: Who is Old Tam and what did Mira Cole know?\nAnswer this part fully; the other parts are answered separately.\n\nLeads: relationships extracted automatically from the passages. They can be\nwrong. Use them only to know where to look; a claim counts only if the\ncited passage itself says it. The number in brackets is the passage each\nlead came from.\n- Ren Ashby \u2014MET\u2192 Mira Cole [1] (Hollow Gate, chapter 1)\n- Ren Ashby \u2014BETRAYED\u2192 Mira Cole [3] (Hollow Gate, chapter 3)\n- Ren Ashby \u2014SERVES\u2192 Dorn Vale [3] (Hollow Gate, chapter 3)\n- Mira Cole \u2014TRUSTS\u2192 Ren Ashby [4] (Hollow Keep, chapter 1)\n\nStory timeline: short notes on moments from across the whole story, for the\npeople and things the question is about, in story order. Each line gives the\nnumber of the passage that holds the moment, where it falls in the story and\nwho it is about. The timeline is a map, not evidence. Use it to see the whole\nspan of the story, from the earliest moment to the latest and what lies\nbetween, then read those numbered passages. A claim still needs a quote copied\nword for word from a numbered passage; never quote a timeline line, and never\nmake a claim from a timeline line alone.\n- [1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby: EARLYBEAT\n- [3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter) Ren Ashby: LATEBEAT\n- [4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby: SEQUELBEAT\n\nCodex: short notes on what the books establish about the people and things the\nquestion is about, each under the aspect it belongs to, in story order. Each\nline gives the number of the passage that holds the statement, where it falls\nin the story, who it is about and the aspect. The codex is a map, not\nevidence. Use it to see which aspects exist and where the passages are, then\nread those numbered passages. A claim still needs a quote copied word for word\nfrom a numbered passage; never quote a codex line, and never make a claim from\na codex line alone.\n- [1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby, history: EARLYSTATE\n- [3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter) Ren Ashby, history: LATESTATE\n- [4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby, change: SEQUELSTATE\n\nPassages:\nPassages are in story order.\n\n[1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter)\nMARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. \n\n[2] (Hollow Gate, book 1 of Hollow Saga, chapter 2, passage 1 in the chapter)\nMARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. \n\n[3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter)\nMARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. \n\n[4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter)\nMARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. \n\n[5] (Hollow Keep, book 2 of Hollow Saga, chapter 2, passage 1 in the chapter)\nMARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. \n",
+    "Answer the question using only the numbered passages below.\n\nAnswer as a list of claims. Each claim has:\n- text: one claim, in your own words\n- passage: the number of the passage the claim comes from\n- quote: at least 4 words copied word for word from that passage\n\nA good answer is complete, not just the shortest reply. Give every fact in\nthe passages that a reader asking this would want: the direct answer, then\nthe circumstances, reasons, methods and consequences the passages give for\nit -- who, what, how and why. Read every passage, not only the first one\nthat answers. Each fact is its own claim with its own quote,\nnot one claim that summarises several.\nEvery claim must add a fact the earlier claims do not already state. Do not\nsay the same thing twice, even in other words or from a different passage;\nif two passages state one fact, make one claim and quote the clearer one.\nWhen the quote is a character speaking, or telling their own story in the\nfirst person, the claim is that character's account: say whose it is\n(\"<name> says ...\", \"according to <name> ...\"), never state it as plain fact.\nGive a reason, motive or consequence only when the quote itself states it.\nTwo facts from one passage stay two claims: never join them with \"because\",\n\"so\", \"since\", \"in order to\" or \"which led to\" unless the passage says so.\nIf the question asks about a kind of character or a role rather than a named\nperson, make claims for every character the passages show in that role,\nnot only the most prominent one, including anyone whose earlier actions\nset the events in motion.\nIf the question asks how something changed, developed or progressed, give\nclaims that show the state at different points in the story, from the\nearliest passages to the latest, including what characters show or do and\nnot only what is said outright.\nInclude claims about what characters do, choose and how they behave toward\neach other, not only what they say or what the narrator states.\nGive at most 8 claims; any past that are ignored.\nPrefer passages that state the answer directly\nover passages that only mention its subject.\n\nQuotes are checked by code. Any claim whose quote is not found, exactly as\nwritten, in the passage it names is discarded. A claim must say only what\nits quote says; do not combine passages into something neither one states.\nUse only what the passages say; never guess. Set can_answer to false only\nwhen no passage bears on the question, or when they answer only part of it\n-- then still give the claims they do support. A claim\nstates something the passages say; never make a claim about what the\npassages leave out.\nTo quote words that are not next to each other in the passage, join the\npieces with \"...\"; every piece must be copied word for word, in the\npassage's order, and be at least 3 words long.\n\nQuestion: What did Mira Cole know?\nThis is one part of the larger question: Who is Old Tam and what did Mira Cole know?\nAnswer this part fully; the other parts are answered separately.\n\nLeads: relationships extracted automatically from the passages. They can be\nwrong. Use them only to know where to look; a claim counts only if the\ncited passage itself says it. The number in brackets is the passage each\nlead came from.\n- Ren Ashby \u2014MET\u2192 Mira Cole [1] (Hollow Gate, chapter 1)\n- Ren Ashby \u2014BETRAYED\u2192 Mira Cole [3] (Hollow Gate, chapter 3)\n- Ren Ashby \u2014SERVES\u2192 Dorn Vale [3] (Hollow Gate, chapter 3)\n- Mira Cole \u2014TRUSTS\u2192 Ren Ashby [4] (Hollow Keep, chapter 1)\n\nStory timeline: short notes on moments from across the whole story, for the\npeople and things the question is about, in story order. Each line gives the\nnumber of the passage that holds the moment, where it falls in the story and\nwho it is about. The timeline is a map, not evidence. Use it to see the whole\nspan of the story, from the earliest moment to the latest and what lies\nbetween, then read those numbered passages. A claim still needs a quote copied\nword for word from a numbered passage; never quote a timeline line, and never\nmake a claim from a timeline line alone.\n- [1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby: EARLYBEAT\n- [3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter) Ren Ashby: LATEBEAT\n- [4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby: SEQUELBEAT\n\nCodex: short notes on what the books establish about the people and things the\nquestion is about, each under the aspect it belongs to, in story order. Each\nline gives the number of the passage that holds the statement, where it falls\nin the story, who it is about and the aspect. The codex is a map, not\nevidence. Use it to see which aspects exist and where the passages are, then\nread those numbered passages. A claim still needs a quote copied word for word\nfrom a numbered passage; never quote a codex line, and never make a claim from\na codex line alone.\n- [1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby, history: EARLYSTATE\n- [3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter) Ren Ashby, history: LATESTATE\n- [4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby, change: SEQUELSTATE\n\nPassages:\nPassages are in story order.\n\n[1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter)\nMARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. \n\n[2] (Hollow Gate, book 1 of Hollow Saga, chapter 2, passage 1 in the chapter)\nMARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. \n\n[3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter)\nMARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. \n\n[4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter)\nMARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. \n"
+   ]
+  },
+  "result": {
+   "answer": "The loaded books do not contain enough to answer that.",
+   "answer_style": "claims",
+   "claims": [],
+   "edges": [
+    {
+     "book_id": "hb1",
+     "chapter_seq": 1,
+     "chunk_id": "hb1:1:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb1-1 h_ren MET h_mira",
+     "object": "Mira Cole",
+     "object_id": "h_mira",
+     "predicate": "MET",
+     "predicate_raw": "MET",
+     "subject": "Ren Ashby",
+     "subject_id": "h_ren"
+    },
+    {
+     "book_id": "hb1",
+     "chapter_seq": 3,
+     "chunk_id": "hb1:3:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb1-3 h_ren BETRAYED h_mira",
+     "object": "Mira Cole",
+     "object_id": "h_mira",
+     "predicate": "BETRAYED",
+     "predicate_raw": "BETRAYED",
+     "subject": "Ren Ashby",
+     "subject_id": "h_ren"
+    },
+    {
+     "book_id": "hb1",
+     "chapter_seq": 3,
+     "chunk_id": "hb1:3:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb1-3 h_ren SERVES h_dorn",
+     "object": "Dorn Vale",
+     "object_id": "h_dorn",
+     "predicate": "SERVES",
+     "predicate_raw": "SERVES",
+     "subject": "Ren Ashby",
+     "subject_id": "h_ren"
+    },
+    {
+     "book_id": "hb2",
+     "chapter_seq": 1,
+     "chunk_id": "hb2:1:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb2-1 h_mira TRUSTS h_ren",
+     "object": "Ren Ashby",
+     "object_id": "h_ren",
+     "predicate": "TRUSTS",
+     "predicate_raw": "TRUSTS",
+     "subject": "Mira Cole",
+     "subject_id": "h_mira"
+    }
+   ],
+   "gaps": [],
+   "mode": "graph",
+   "model": "writer",
+   "note": null,
+   "passages": [
+    {
+     "book_id": "hb1",
+     "book_title": "Hollow Gate",
+     "chapter_seq": 1,
+     "chunk_id": "hb1:1:0",
+     "n": 1,
+     "text": "MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. "
+    },
+    {
+     "book_id": "hb1",
+     "book_title": "Hollow Gate",
+     "chapter_seq": 2,
+     "chunk_id": "hb1:2:0",
+     "n": 2,
+     "text": "MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. "
+    },
+    {
+     "book_id": "hb1",
+     "book_title": "Hollow Gate",
+     "chapter_seq": 3,
+     "chunk_id": "hb1:3:0",
+     "n": 3,
+     "text": "MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. "
+    },
+    {
+     "book_id": "hb2",
+     "book_title": "Hollow Keep",
+     "chapter_seq": 1,
+     "chunk_id": "hb2:1:0",
+     "n": 4,
+     "text": "MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. "
+    },
+    {
+     "book_id": "hb2",
+     "book_title": "Hollow Keep",
+     "chapter_seq": 2,
+     "chunk_id": "hb2:2:0",
+     "n": 5,
+     "text": "MARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. "
+    }
+   ],
+   "prose": [],
+   "requests": 0,
+   "sections": [],
+   "seeds": [
+    {
+     "books": [
+      "hb1",
+      "hb2"
+     ],
+     "id": "h_ren",
+     "kind": "Character",
+     "name": "Ren Ashby",
+     "score": 0.0
+    },
+    {
+     "books": [
+      "hb1",
+      "hb2"
+     ],
+     "id": "h_mira",
+     "kind": "Character",
+     "name": "Mira Cole",
+     "score": 0.0
+    },
+    {
+     "books": [
+      "hb1"
+     ],
+     "id": "h_dorn",
+     "kind": "Character",
+     "name": "Dorn Vale",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "hb3"
+     ],
+     "id": "w_lan",
+     "kind": "Character",
+     "name": "Lan Dray",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "hb3"
+     ],
+     "id": "w_pip",
+     "kind": "Character",
+     "name": "Pip Marsh",
+     "score": 0.0024953223764896393
+    }
+   ],
+   "selection_model": "chooser",
+   "short_answer": [],
+   "sub_questions": [
+    "Who is Old Tam?",
+    "What did Mira Cole know?"
+   ],
+   "template": "neighbours",
+   "unanswered": [],
+   "unwritten_sections": 0
+  }
+ },
+ "world": {
+  "calls": {
+   "decompose": [],
+   "embed": [
+    [
+     "search_query: Who is Ren Ashby?"
+    ]
+   ],
+   "select": [
+    "You are choosing how to search a knowledge graph built from books.\n\nQuestion: Who is Ren Ashby?\n\nEntities found in passages related to the question, numbered:\n1) Ren Ashby (Character, in 2 books)\n2) Dorn Vale (Character, in 1 book)\n3) Mira Cole (Character, in 2 books)\n4) Lan Dray (Character, in 1 book)\n5) Pip Marsh (Character, in 1 book)\n\nAvailable searches, each with how many entities it takes:\n- neighbours (1 entity): Everything one named thing is directly involved in. Use for 'who does X deal with', 'what happens to X', 'tell me about X'.\n- two_hop (1 entity): The wider neighbourhood two steps out from one named thing. Use when the question is about indirect influence or consequences rather than direct dealings.\n- path_between (2 entities): How two named things are connected through something in between. Use for 'how are X and Y related', 'what links X to Y'.\n- by_predicate (1 entity): One specific kind of relationship involving one named thing. Use when the question names the relationship: who opposes X, who works for X, what X is a member of.\n- shared_neighbours (2 entities): Everything two named things are each involved in, so their common ground can be compared. Use for 'what do X and Y have in common', 'how do X and Y differ'.\n- across_books (1 entity): One named thing's involvements across every book it appears in, ordered by book then chapter. Use when the question compares books or asks how something differs between them.\n- chapter_window (1 entity): One named thing's involvements within a range of chapters. Use when the question is about a period: early on, later, by the end, in the first half.\n\nRelationship types for by_predicate (use exactly one of these):\nALLEGIANCE_TO, MEMBER_OF, LOCATED_IN, POSSESSES, INTERACTS_WITH, OPPOSES, LOVES, KILLS, BECOMES, EXPERIENCES\n\nChoose exactly one search. In \"entities\", give the NUMBERS of the\nentities it should use, from the numbered list above: one number for a\n1-entity search, two different numbers for a 2-entity search. For\nby_predicate, also give \"predicate\" from the relationship types above.\nIf the question asks about a period of the story, give the chapter\nrange; otherwise leave the chapter numbers at 0.\n"
+   ],
+   "synthesize": [
+    "Answer the question using only the numbered passages below.\n\nAnswer as a list of claims. Each claim has:\n- text: one claim, in your own words\n- passage: the number of the passage the claim comes from\n- quote: at least 4 words copied word for word from that passage\n\nA good answer is complete, not just the shortest reply. Give every fact in\nthe passages that a reader asking this would want: the direct answer, then\nthe circumstances, reasons, methods and consequences the passages give for\nit -- who, what, how and why. Read every passage, not only the first one\nthat answers. Each fact is its own claim with its own quote,\nnot one claim that summarises several.\nEvery claim must add a fact the earlier claims do not already state. Do not\nsay the same thing twice, even in other words or from a different passage;\nif two passages state one fact, make one claim and quote the clearer one.\nWhen the quote is a character speaking, or telling their own story in the\nfirst person, the claim is that character's account: say whose it is\n(\"<name> says ...\", \"according to <name> ...\"), never state it as plain fact.\nGive a reason, motive or consequence only when the quote itself states it.\nTwo facts from one passage stay two claims: never join them with \"because\",\n\"so\", \"since\", \"in order to\" or \"which led to\" unless the passage says so.\nIf the question asks about a kind of character or a role rather than a named\nperson, make claims for every character the passages show in that role,\nnot only the most prominent one, including anyone whose earlier actions\nset the events in motion.\nIf the question asks how something changed, developed or progressed, give\nclaims that show the state at different points in the story, from the\nearliest passages to the latest, including what characters show or do and\nnot only what is said outright.\nInclude claims about what characters do, choose and how they behave toward\neach other, not only what they say or what the narrator states.\nGive at most 8 claims; any past that are ignored.\nPrefer passages that state the answer directly\nover passages that only mention its subject.\n\nQuotes are checked by code. Any claim whose quote is not found, exactly as\nwritten, in the passage it names is discarded. A claim must say only what\nits quote says; do not combine passages into something neither one states.\nUse only what the passages say; never guess. Set can_answer to false only\nwhen no passage bears on the question, or when they answer only part of it\n-- then still give the claims they do support. A claim\nstates something the passages say; never make a claim about what the\npassages leave out.\nTo quote words that are not next to each other in the passage, join the\npieces with \"...\"; every piece must be copied word for word, in the\npassage's order, and be at least 3 words long.\n\nQuestion: Who is Ren Ashby?\n\nLeads: relationships extracted automatically from the passages. They can be\nwrong. Use them only to know where to look; a claim counts only if the\ncited passage itself says it. The number in brackets is the passage each\nlead came from.\n- Ren Ashby \u2014MET\u2192 Mira Cole [1] (Hollow Gate, chapter 1)\n- Ren Ashby \u2014BETRAYED\u2192 Mira Cole [3] (Hollow Gate, chapter 3)\n- Ren Ashby \u2014SERVES\u2192 Dorn Vale [3] (Hollow Gate, chapter 3)\n- Mira Cole \u2014TRUSTS\u2192 Ren Ashby [4] (Hollow Keep, chapter 1)\n\nStory timeline: short notes on moments from across the whole story, for the\npeople and things the question is about, in story order. Each line gives the\nnumber of the passage that holds the moment, where it falls in the story and\nwho it is about. The timeline is a map, not evidence. Use it to see the whole\nspan of the story, from the earliest moment to the latest and what lies\nbetween, then read those numbered passages. A claim still needs a quote copied\nword for word from a numbered passage; never quote a timeline line, and never\nmake a claim from a timeline line alone.\n- [1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby: EARLYBEAT\n- [3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter) Ren Ashby: LATEBEAT\n- [4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby: SEQUELBEAT\n\nCodex: short notes on what the books establish about the people and things the\nquestion is about, each under the aspect it belongs to, in story order. Each\nline gives the number of the passage that holds the statement, where it falls\nin the story, who it is about and the aspect. The codex is a map, not\nevidence. Use it to see which aspects exist and where the passages are, then\nread those numbered passages. A claim still needs a quote copied word for word\nfrom a numbered passage; never quote a codex line, and never make a claim from\na codex line alone.\n- [1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby, history: EARLYSTATE\n- [3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter) Ren Ashby, history: LATESTATE\n- [4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter) Ren Ashby, change: SEQUELSTATE\n\nPassages:\nPassages are in story order.\n\n[1] (Hollow Gate, book 1 of Hollow Saga, chapter 1, passage 1 in the chapter)\nMARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. \n\n[2] (Hollow Gate, book 1 of Hollow Saga, chapter 2, passage 1 in the chapter)\nMARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. \n\n[3] (Hollow Gate, book 1 of Hollow Saga, chapter 3, passage 1 in the chapter)\nMARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. \n\n[4] (Hollow Keep, book 2 of Hollow Saga, chapter 1, passage 1 in the chapter)\nMARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. \n\n[5] (Hollow Keep, book 2 of Hollow Saga, chapter 2, passage 1 in the chapter)\nMARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. \n"
+   ]
+  },
+  "result": {
+   "answer": "The loaded books do not contain enough to answer that.",
+   "answer_style": "claims",
+   "claims": [],
+   "edges": [
+    {
+     "book_id": "hb1",
+     "chapter_seq": 1,
+     "chunk_id": "hb1:1:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb1-1 h_ren MET h_mira",
+     "object": "Mira Cole",
+     "object_id": "h_mira",
+     "predicate": "MET",
+     "predicate_raw": "MET",
+     "subject": "Ren Ashby",
+     "subject_id": "h_ren"
+    },
+    {
+     "book_id": "hb1",
+     "chapter_seq": 3,
+     "chunk_id": "hb1:3:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb1-3 h_ren BETRAYED h_mira",
+     "object": "Mira Cole",
+     "object_id": "h_mira",
+     "predicate": "BETRAYED",
+     "predicate_raw": "BETRAYED",
+     "subject": "Ren Ashby",
+     "subject_id": "h_ren"
+    },
+    {
+     "book_id": "hb1",
+     "chapter_seq": 3,
+     "chunk_id": "hb1:3:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb1-3 h_ren SERVES h_dorn",
+     "object": "Dorn Vale",
+     "object_id": "h_dorn",
+     "predicate": "SERVES",
+     "predicate_raw": "SERVES",
+     "subject": "Ren Ashby",
+     "subject_id": "h_ren"
+    },
+    {
+     "book_id": "hb2",
+     "chapter_seq": 1,
+     "chunk_id": "hb2:1:0",
+     "confidence": 0.9,
+     "evidence": "MARK-hb2-1 h_mira TRUSTS h_ren",
+     "object": "Ren Ashby",
+     "object_id": "h_ren",
+     "predicate": "TRUSTS",
+     "predicate_raw": "TRUSTS",
+     "subject": "Mira Cole",
+     "subject_id": "h_mira"
+    }
+   ],
+   "gaps": [],
+   "mode": "graph",
+   "model": "writer",
+   "note": null,
+   "passages": [
+    {
+     "book_id": "hb1",
+     "book_title": "Hollow Gate",
+     "chapter_seq": 1,
+     "chunk_id": "hb1:1:0",
+     "n": 1,
+     "text": "MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. MARK-hb1-1 Old Tam met Mira Cole at the gate of the hollow. "
+    },
+    {
+     "book_id": "hb1",
+     "book_title": "Hollow Gate",
+     "chapter_seq": 2,
+     "chunk_id": "hb1:2:0",
+     "n": 2,
+     "text": "MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. MARK-hb1-2 Old Tam walked the long road with Mira Cole. "
+    },
+    {
+     "book_id": "hb1",
+     "book_title": "Hollow Gate",
+     "chapter_seq": 3,
+     "chunk_id": "hb1:3:0",
+     "n": 3,
+     "text": "MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. MARK-hb1-3 SECRETFACT: Old Tam was truly Ren Ashby, and Ren Ashby betrayed Mira Cole to Dorn Vale. "
+    },
+    {
+     "book_id": "hb2",
+     "book_title": "Hollow Keep",
+     "chapter_seq": 1,
+     "chunk_id": "hb2:1:0",
+     "n": 4,
+     "text": "MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. MARK-hb2-1 Ren Ashby returned to the keep and Mira Cole trusted him. "
+    },
+    {
+     "book_id": "hb2",
+     "book_title": "Hollow Keep",
+     "chapter_seq": 2,
+     "chunk_id": "hb2:2:0",
+     "n": 5,
+     "text": "MARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. MARK-hb2-2 Ren Ashby held the keep through the winter. "
+    }
+   ],
+   "prose": [],
+   "requests": 0,
+   "sections": [],
+   "seeds": [
+    {
+     "books": [
+      "hb1",
+      "hb2"
+     ],
+     "id": "h_ren",
+     "kind": "Character",
+     "name": "Ren Ashby",
+     "score": 0.0
+    },
+    {
+     "books": [
+      "hb1"
+     ],
+     "id": "h_dorn",
+     "kind": "Character",
+     "name": "Dorn Vale",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "hb1",
+      "hb2"
+     ],
+     "id": "h_mira",
+     "kind": "Character",
+     "name": "Mira Cole",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "hb3"
+     ],
+     "id": "w_lan",
+     "kind": "Character",
+     "name": "Lan Dray",
+     "score": 0.0024953223764896393
+    },
+    {
+     "books": [
+      "hb3"
+     ],
+     "id": "w_pip",
+     "kind": "Character",
+     "name": "Pip Marsh",
+     "score": 0.0024953223764896393
+    }
+   ],
+   "selection_model": "chooser",
+   "short_answer": [],
+   "sub_questions": [
+    "Who is Ren Ashby?"
+   ],
+   "template": "neighbours",
+   "unanswered": [],
+   "unwritten_sections": 0
+  }
+ }
+}

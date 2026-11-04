@@ -11,6 +11,7 @@ vi.mock("./api", () => ({
     settings: () => Promise.resolve({ show_internals: true }), library: () => Promise.resolve({ books: [], note: null }), worlds: () => Promise.resolve(worlds),
     quota: () => Promise.resolve({ provider: "gemini", models: [], resets_at: "2026-10-08T07:00:00Z" }), mcp: () => Promise.resolve({ error: { code: "x", message: "x" } }),
     entities: () => Promise.resolve({ entities: [] }), overview: (w?: string) => overview(w),
+    readingPosition: () => Promise.resolve({ error: { code: "x", message: "x" } }),
   },
   isError: (x: unknown) => typeof x === "object" && x !== null && "error" in x,
   onKeyProblem: () => () => {},  // local mode: no Gemini key screen

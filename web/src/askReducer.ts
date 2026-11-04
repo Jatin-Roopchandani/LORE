@@ -4,7 +4,7 @@ import { STEP_ORDER, type ApiError, type AskEvent, type Claim, type Edge, type P
 export type StepState = "pending" | "running" | "done" | "skipped" | "failed";
 export interface StepView { name: StepName; state: StepState; detail: string | null; startedAt: number | null; doneAt: number | null }
 // The planner row and one row per section of a deep answer, in the order they arrived.
-export interface DeepStepView { kind: "plan" | "section"; part: number | null; state: StepState; detail: string | null; startedAt: number | null; doneAt: number | null }
+export interface DeepStepView { kind: "plan" | "recap" | "section"; part: number | null; state: StepState; detail: string | null; startedAt: number | null; doneAt: number | null }
 export interface PlanView { scope: string; candidates: number; sections: PlanSection[] }
 // One section of a sectioned answer as it streams in: writing, then done, skipped (budget) or failed.
 export interface SectionView { index: number; kind: "section" | "close"; heading: string;
@@ -49,17 +49,17 @@ function setAt<T>(list: T[], index: number, value: T): T[] {
   return copy;
 }
 
-const isDeepStep = (name: string) => name === "plan" || name === "section";
+const isDeepStep = (name: string) => name === "plan" || name === "recap" || name === "section";
 
 function deepStep(s: AskState, event: Extract<AskEvent, { type: "step" }>): AskState {
-  const kind = event.name as "plan" | "section";
-  const part = kind === "plan" ? null : event.part;
+  const kind = event.name as "plan" | "recap" | "section";
+  const part = kind === "section" ? event.part : null;
   const at = s.deepSteps.findIndex((d) => d.kind === kind && d.part === part);
   if (event.state === "start") {
     const row: DeepStepView = { kind, part, state: "running", detail: null, startedAt: event.t, doneAt: null };
     const deepSteps = at < 0 ? [...s.deepSteps, row] : setAt<DeepStepView>(s.deepSteps, at, { ...s.deepSteps[at], state: "running" });
-    // The planner is where the generic rows stop: the question has been split.
-    const steps = kind === "plan"
+    // The planner (or a recap's gathering) is where the generic rows stop: the question has been split.
+    const steps = kind !== "section"
       ? s.steps.map((x) => x.name === "split" && x.state !== "done" ? { ...x, state: "done" as const, doneAt: event.t } : x) : s.steps;
     return { ...s, deepSteps, steps };
   }
