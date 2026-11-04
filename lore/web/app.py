@@ -17,7 +17,7 @@ import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
@@ -25,6 +25,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import sessionmaker
 
+from lore.auth.csrf import csrf_guard
+from lore.auth.current import SessionRefresh
+from lore.auth.routes import build_router as build_auth_router
 from lore.central import queue
 from lore.central.db import database_url, make_engine, make_session_factory
 from lore.central.models import KIND_MOVE, KIND_PROCESS
@@ -40,7 +43,7 @@ from lore.orchestrator.pipeline import processing_budget_left
 from lore.query import explore
 from lore.tenancy import (
     CurrentUser, InvalidUserId, config_for, multi_user_enabled,
-    resolve_user as default_resolver, validate_user_id,
+    require_session_user, resolve_user as default_resolver, validate_user_id,
 )
 from lore.web.ask import ask_events
 from lore.worlds import (
@@ -48,6 +51,9 @@ from lore.worlds import (
     rename_world,
 )
 from lore.web.security import OriginGuard, allowed_hosts, allowed_origins
+
+if TYPE_CHECKING:
+    from lore.auth.settings import AuthSettings
 
 STATIC = Path(__file__).parent / "static"
 MCP_PORT = 8765
@@ -152,7 +158,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                clock: Callable[[], datetime] | None = None,
                multi_user: bool | None = None,
                resolve_user: Callable[[Request], CurrentUser] | None = None,
-               central_sessions: sessionmaker | None = None):
+               central_sessions: sessionmaker | None = None,
+               auth: "AuthSettings | None" = None,
+               mailer: "Mailer | None" = None,
+               providers: "dict[str, Provider] | None" = None,
+               auth_clock: Callable[[], datetime] | None = None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing.
 
@@ -162,17 +172,32 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     never cached, so nothing can leak from one user to the next). In local
     mode (the default) the one local user's library is `config.data_dir`
     itself, as before. `multi_user` (default: LORE_MULTI_USER) and
-    `resolve_user` (default: lore.tenancy.resolve_user) are seams for tests
-    and, in step 2, for auth.
+    `resolve_user` (default: lore.tenancy.resolve_user) are seams for tests.
+
+    Multi mode also needs `auth` (default: read from the environment; the app
+    refuses to start without the session and CSRF secrets), a `mailer`
+    (default: Resend), the OAuth `providers` (default: Google and GitHub as
+    configured) and `auth_clock`: see lore.auth. Every state-changing request
+    must carry the per-session CSRF token (see `csrf_guard`).
 
     Book processing: in local mode Continue and Move run in a thread of this
     process, one book at a time, as ever. In multi mode they ENQUEUE a job in
     the central database (`central_sessions`, default LORE_DATABASE_URL) for
     `lore worker` to run, and answer 202 at once.
     """
-    api = FastAPI(title="LORE", docs_url=None, redoc_url=None)
     multi = multi_user_enabled() if multi_user is None else multi_user
-    resolver = resolve_user or default_resolver
+    auth_ctx = None
+    if multi:
+        from lore.auth.setup import build_context
+        auth_ctx = build_context(
+            config, auth=auth, mailer=mailer, providers=providers,
+            central_sessions=central_sessions, clock=auth_clock)
+        central_sessions = auth_ctx.sessions
+    api = FastAPI(title="LORE", docs_url=None, redoc_url=None,
+                  dependencies=[Depends(csrf_guard)] if multi else None)
+    # `create_app(multi_user=True)` must mean sessions even when the env flag
+    # is not set (the default resolver reads the env), so name the resolver.
+    resolver = resolve_user or (require_session_user if multi else default_resolver)
     base = config
 
     def current_user(request: Request) -> CurrentUser:
@@ -193,6 +218,9 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         return library_of(current_user(request))
 
     sessions: list[sessionmaker | None] = [central_sessions]
+    if auth_ctx is not None:
+        api.state.auth = auth_ctx
+        api.include_router(build_auth_router(auth_ctx))
 
     def enqueue(user: CurrentUser, book_id: str, kind: str,
                 payload: dict | None = None):
@@ -544,4 +572,5 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     api.mount("/", StaticFiles(directory=STATIC, html=True, check_dir=False),
               name="static")
 
-    return OriginGuard(api, allowed_hosts(host, port), allowed_origins(host, port, dev))
+    inner = SessionRefresh(api, auth_ctx.settings) if auth_ctx is not None else api
+    return OriginGuard(inner, allowed_hosts(host, port), allowed_origins(host, port, dev))

@@ -101,15 +101,19 @@ def resolve_user(request: Request) -> CurrentUser:
     """THE hook: who is making this request.
 
     Local mode returns the fixed local user, whatever the request says.
-    Multi mode must name a user from the request; until step 2 (auth) there
-    is no way to, so it fails closed with 401. Step 2 replaces the body of
-    `_user_from_session` below (cookie -> session row -> central `users` row
-    -> `CurrentUser(id)`); nothing else changes. Tests install their own
-    resolver through `create_app(resolve_user=...)`; no test header exists in
-    this module, so none can be switched on in production.
+    Multi mode must name a user from the request: the `lore_session` cookie,
+    resolved through the central database (`_user_from_session`). Anything
+    else is 401. Tests may install their own resolver through
+    `create_app(resolve_user=...)`; no test header exists in this module, so
+    none can be switched on in production.
     """
     if not multi_user_enabled():
         return LOCAL_USER
+    return require_session_user(request)
+
+
+def require_session_user(request: Request) -> CurrentUser:
+    """The signed-in user, or 401 (the multi-mode resolver)."""
     user = _user_from_session(request)
     if user is None:
         raise HTTPException(401, "sign in required")
@@ -117,5 +121,7 @@ def resolve_user(request: Request) -> CurrentUser:
 
 
 def _user_from_session(request: Request) -> CurrentUser | None:
-    """Step 2 plugs in here. Returns None when the request is not signed in."""
-    return None
+    """The signed-in user (cookie -> session row -> active central user), or
+    None when the request is not signed in. See lore.auth.current."""
+    from lore.auth.current import session_user  # auth is multi-mode only
+    return session_user(request)

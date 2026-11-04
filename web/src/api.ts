@@ -18,6 +18,20 @@ export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   return { events, rest };
 }
 
+// The per-session CSRF token the server sets in a readable cookie. Every state-changing request echoes it in a
+// header (a page on another site can send the cookie but cannot read it). Local mode has no such cookie, so nothing
+// is sent there.
+export const CSRF_COOKIE = "lore_csrf";
+export function csrfHeaders(): Record<string, string> {
+  try {
+    const hit = document.cookie.split(";").map((c) => c.trim()).find((c) => c.startsWith(`${CSRF_COOKIE}=`));
+    const token = hit ? decodeURIComponent(hit.slice(CSRF_COOKIE.length + 1)) : "";
+    return token ? { "X-CSRF-Token": token } : {};
+  } catch {
+    return {};
+  }
+}
+
 const errorEvent = (code: string, message: string): AskEvent => ({ type: "error", t: 0, error: { code, message } });
 
 // `world`: a world id as a string, or "all" (the same value the graph calls take).
@@ -27,7 +41,7 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
   try {
     response = await fetch("/api/ask", {
       method: "POST", signal,
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...csrfHeaders() },
       body: JSON.stringify({ question, ...(world ? { world } : {}), ...(depth ? { depth } : {}) }),
     });
   } catch {
@@ -76,7 +90,7 @@ export const isError = (x: unknown): x is { error: ApiError } =>
 // Starts or resumes a book's processing. 202 gives {started: true}; 409 gives {error: {code, message}}.
 export async function postContinue(id: string): Promise<{ started: true } | { error: ApiError }> {
   try {
-    const r = await fetch(`/api/books/${encodeURIComponent(id)}/continue`, { method: "POST", headers: { Accept: "application/json" } });
+    const r = await fetch(`/api/books/${encodeURIComponent(id)}/continue`, { method: "POST", headers: { Accept: "application/json", ...csrfHeaders() } });
     if (r.status === 404) return { error: { code: "not_found", message: "" } };
     return (await r.json()) as { started: true } | { error: ApiError };
   } catch {
@@ -89,7 +103,7 @@ const withWorld = (path: string, world?: string) =>
 
 async function sendJson<T>(method: string, path: string, body?: object): Promise<T | { error: ApiError }> {
   try {
-    const r = await fetch(path, { method, headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}) },
+    const r = await fetch(path, { method, headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}), ...(method === "GET" ? {} : csrfHeaders()) },
       body: body ? JSON.stringify(body) : undefined });
     return (await r.json()) as T | { error: ApiError };
   } catch {

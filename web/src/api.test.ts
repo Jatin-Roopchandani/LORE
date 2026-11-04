@@ -1,4 +1,4 @@
-import { api, parseSse, streamAsk } from "./api";
+import { api, csrfHeaders, parseSse, streamAsk } from "./api";
 
 const frame = (event: string, data: object) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
@@ -120,4 +120,43 @@ test("the explorer reads hit the right paths, in the world", async () => {
   expect(lastCall()[0]).toBe("/api/path?a=a_zed&b=a_yan&max=4&world=all");
   await api.passage("ba1:1:0", "2");
   expect(lastCall()[0]).toBe("/api/passage/ba1%3A1%3A0?world=2");
+});
+
+describe("the CSRF token", () => {
+  const setCookie = (value: string) => { document.cookie = `lore_csrf=${value}; path=/`; };
+  afterEach(() => { document.cookie = "lore_csrf=; path=/; max-age=0"; });
+
+  test("is read from the lore_csrf cookie", () => {
+    setCookie("abc123");
+    expect(csrfHeaders()).toEqual({ "X-CSRF-Token": "abc123" });
+  });
+
+  test("nothing is sent when there is no cookie (local mode)", () => {
+    expect(csrfHeaders()).toEqual({});
+  });
+
+  test("every mutating call sends it", async () => {
+    setCookie("tok");
+    jsonFetch({ started: true });
+    await api.continueBook("b1");
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    await api.moveBook("b1", "W", true);
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    await api.createWorld("Z");
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    await api.renameWorld(1, "Z");
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    await api.deleteWorld(1);
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    jsonFetch({}, 400);
+    for await (const _ of streamAsk("who?", new AbortController().signal)) { /* drain */ }
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+  });
+
+  test("reads do not carry it", async () => {
+    setCookie("tok");
+    jsonFetch();
+    await api.worlds();
+    expect(lastCall()[1]!.headers).not.toHaveProperty("X-CSRF-Token");
+  });
 });

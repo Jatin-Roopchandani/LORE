@@ -9,18 +9,13 @@ from fastapi.testclient import TestClient
 from lore.config import LoreConfig
 from lore.tenancy import CurrentUser, config_for
 from lore.web.app import create_app
+from tests.auth_fixtures import ACT_AS as HEADER, ActAsClient, make_app, make_settings
+from tests.central_fixtures import central_sessions
 from tests.mcp_fixtures import build_store_triple
 
-HEADER = "X-Test-User"
-
-
-def header_resolver(request):
-    """The tests' stand-in for step 2's auth: the user is a request header."""
-    from fastapi import HTTPException
-    user = request.headers.get(HEADER)
-    if user is None:
-        raise HTTPException(401, "sign in required")
-    return CurrentUser(user)
+# Every request here carries a REAL session (cookie, CSRF token and a row in
+# the central database): `ActAsClient` turns `headers={HEADER: "alice"}` into
+# alice's session, so the test still goes through the cookie -> user hook.
 
 
 @pytest.fixture
@@ -61,10 +56,15 @@ async def library_search(config, query, models=None, on_event=None, world=None,
 
 
 @pytest.fixture
-def client(root, libraries, monkeypatch):
+def central(tmp_path):
+    sessions, _ = central_sessions(tmp_path, users=("alice", "bob", "carol"))
+    return sessions
+
+
+@pytest.fixture
+def client(root, libraries, central, monkeypatch):
     monkeypatch.setattr("lore.web.app.tools.lore_search", library_search)
-    app = create_app(root, multi_user=True, resolve_user=header_resolver)
-    return TestClient(app, base_url="http://127.0.0.1:8766")
+    return ActAsClient(make_app(root, central), central)
 
 
 def get(client, user, path, **params):
@@ -173,7 +173,7 @@ def test_ask_runs_against_the_askers_library_only(client, root):
     assert b["data_dir"] == str(root.data_dir / "users" / "bob")
 
 
-def test_one_users_running_question_does_not_block_another(root, libraries,
+def test_one_users_running_question_does_not_block_another(root, libraries, central,
                                                            monkeypatch):
     gate = asyncio.Event()
     started = []
@@ -185,7 +185,13 @@ def test_one_users_running_question_does_not_block_another(root, libraries,
                 "edges": [], "seeds": [], "sub_questions": []}
 
     monkeypatch.setattr("lore.web.app.tools.lore_search", slow)
-    app = create_app(root, multi_user=True, resolve_user=header_resolver)
+    app = make_app(root, central)
+    from tests.auth_fixtures import sign_in
+    creds = {}
+    for user in ("alice", "bob"):
+        c = sign_in(app, central, user)
+        creds[user] = {"Cookie": "; ".join(f"{k}={v}" for k, v in c.cookies.items()),
+                       "X-CSRF-Token": c.headers["X-CSRF-Token"]}
 
     async def go():
         import httpx
@@ -194,7 +200,7 @@ def test_one_users_running_question_does_not_block_another(root, libraries,
                                      base_url="http://127.0.0.1:8766") as c:
             async def post(user):
                 r = await c.post("/api/ask", json={"question": "q"},
-                                 headers={HEADER: user})
+                                 headers=creds[user])
                 return r.text
             first = asyncio.create_task(post("alice"))
             while started != ["alice"]:
@@ -222,6 +228,12 @@ def test_unauthenticated_requests_are_refused_everywhere(client):
 @pytest.mark.parametrize("evil", ["..", "../alice", "alice/../bob", "a/b", "/etc",
                                   "ALICE", "local", ""])
 def test_path_traversal_ids_are_rejected_and_touch_nothing(client, root, evil):
+    # Even a user row with such an id, holding a live session, reaches no path.
+    from lore.central.models import User
+    if evil:
+        with client._sessions() as db:
+            db.add(User(id=evil, email=f"{abs(hash(evil))}@example.org"))
+            db.commit()
     before = sorted(p.name for p in (root.data_dir / "users").iterdir())
     r = client.get("/api/library", headers={HEADER: evil})
     assert r.status_code == 401
@@ -231,15 +243,22 @@ def test_path_traversal_ids_are_rejected_and_touch_nothing(client, root, evil):
     assert sorted(p.name for p in root.data_dir.iterdir()) == ["users"]
 
 
-def test_a_resolver_cannot_hand_out_the_local_library_in_multi_mode(root, libraries):
-    app = create_app(root, multi_user=True, resolve_user=lambda r: CurrentUser(
+def test_a_resolver_cannot_hand_out_the_local_library_in_multi_mode(root, libraries,
+                                                                    central):
+    app = make_app(root, central, resolve_user=lambda r: CurrentUser(
         "local", is_local=True))
     client = TestClient(app, base_url="http://127.0.0.1:8766")
     assert client.get("/api/library").status_code == 401
 
 
 def test_the_default_multi_mode_resolver_fails_closed(root, libraries, monkeypatch):
+    # The whole production path: flag and secrets from the environment, no
+    # session cookie, so no library. (The header means nothing to the app.)
     monkeypatch.setenv("LORE_MULTI_USER", "1")
+    monkeypatch.setenv("LORE_SESSION_SECRET", "s" * 40)
+    monkeypatch.setenv("LORE_CSRF_SECRET", "c" * 40)
+    monkeypatch.setenv("LORE_BASE_URL", "http://127.0.0.1:8766")
+    monkeypatch.setenv("LORE_COOKIE_SECURE", "0")
     client = TestClient(create_app(root), base_url="http://127.0.0.1:8766")
     assert client.get("/api/library", headers={HEADER: "alice"}).status_code == 401
 

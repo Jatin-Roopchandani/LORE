@@ -115,7 +115,7 @@ def test_waitlist_and_invites_are_schema_ready(session):
     session.add(User(id="u1", email="a@x.org"))
     session.flush()
     session.add(Waitlist(email="w@x.org", reading="Dracula"))
-    session.add(Invite(code="abc", created_by="u1"))
+    session.add(Invite(code_hash="abc", created_by="u1"))
     session.commit()
     assert session.scalars(sa.select(Waitlist)).one().status == "pending"
     assert session.get(Invite, "abc").used_by is None

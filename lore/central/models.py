@@ -2,9 +2,13 @@
 
 Portable types only (String, Integer, JSON, an explicit-UTC DateTime), so the
 same Alembic migrations run on SQLite (local mode, tests) and Postgres (prod).
-`users`, `jobs`, `waitlist` and `invites` exist from step 1; the tables for
-identities, sessions, keys, chats and traces arrive with the steps that use
-them.
+`users`, `jobs`, `waitlist` and `invites` exist from step 1; step 2 adds
+`identities`, `sessions`, `login_tokens` and `rate_hits`. The tables for keys,
+chats and traces arrive with the steps that use them.
+
+Every bearer secret is stored as its SHA-256 only (session ids, magic-link
+tokens, invite codes): a copy of the database is not a set of working
+credentials.
 """
 from __future__ import annotations
 
@@ -121,7 +125,7 @@ class Job(Base):
 
 
 class Waitlist(Base):
-    """Invite requests (release spec §8a). Schema only until step 7."""
+    """Invite requests (release spec §8a): pending, invited or declined."""
 
     __tablename__ = "waitlist"
 
@@ -136,11 +140,12 @@ class Waitlist(Base):
 
 
 class Invite(Base):
-    """Sign-up codes (release spec §3). Schema only until step 2."""
+    """Sign-up codes (release spec §3). One use each; the code itself is shown
+    once, when it is made, and only its SHA-256 is stored."""
 
     __tablename__ = "invites"
 
-    code: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
     created_by: Mapped[str | None] = mapped_column(
         sa.String(64), sa.ForeignKey("users.id", ondelete="SET NULL"))
     used_by: Mapped[str | None] = mapped_column(
@@ -148,3 +153,75 @@ class Invite(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
                                                  default=utcnow)
     expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class Identity(Base):
+    """A way a user signs in: (provider, the provider's id for them)."""
+
+    __tablename__ = "identities"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    provider_user_id: Mapped[str] = mapped_column(sa.String(255), nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+
+    __table_args__ = (
+        sa.UniqueConstraint("provider", "provider_user_id", name="uq_identity"),
+        sa.CheckConstraint("provider IN ('google', 'github', 'email')",
+                           name="ck_identities_provider"),
+        sa.Index("ix_identities_user", "user_id"),
+    )
+
+
+class AuthSession(Base):
+    """A signed-in browser. The cookie holds a random 256-bit token; the row's
+    key is its SHA-256."""
+
+    __tablename__ = "sessions"
+
+    token_hash: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    # Slides forward on use, rewritten at most once a day (`refreshed_at`).
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    refreshed_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                   default=utcnow)
+    user_agent: Mapped[str | None] = mapped_column(sa.String(300))
+
+    __table_args__ = (
+        sa.Index("ix_sessions_user", "user_id"),
+        sa.Index("ix_sessions_expires", "expires_at"),
+    )
+
+
+class LoginToken(Base):
+    """A magic-link token: single use, 15 minutes, stored hashed. `invite` is
+    the invite code the link carries (a hash is useless for the carry, and the
+    token is single use and short-lived, so the code is kept in the row)."""
+
+    __tablename__ = "login_tokens"
+
+    token_hash: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    email: Mapped[str] = mapped_column(sa.String(320), nullable=False)
+    invite_hash: Mapped[str | None] = mapped_column(sa.String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class RateHit(Base):
+    """One counted request for a rate limit; `key` is a hash (`kind:sha256`)."""
+
+    __tablename__ = "rate_hits"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(sa.String(80), nullable=False)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utcnow)
+
+    __table_args__ = (sa.Index("ix_rate_hits_key_at", "key", "at"),)

@@ -16,7 +16,7 @@ from lore.web.app import create_app
 from lore.worker import Worker
 from lore.worlds import get_world, list_worlds
 from tests.central_fixtures import central_sessions
-from tests.test_web_tenancy import HEADER, header_resolver
+from tests.auth_fixtures import ACT_AS as HEADER, ActAsClient, make_app
 from tests.test_worker import FakeStage, book_job, library
 
 NOW = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
@@ -34,11 +34,10 @@ def env(tmp_path):
         calls.append(cfg.data_dir)
         return []
 
-    app = create_app(base, multi_user=True, resolve_user=header_resolver,
-                     central_sessions=sessions, stages_factory=no_threads,
-                     move_stages_factory=lambda c, w: no_threads(c),
-                     clock=lambda: NOW)
-    return (TestClient(app, base_url="http://127.0.0.1:8766"), base, sessions, calls)
+    app = make_app(base, sessions, stages_factory=no_threads,
+                   move_stages_factory=lambda c, w: no_threads(c),
+                   clock=lambda: NOW)
+    return (ActAsClient(app, sessions), base, sessions, calls)
 
 
 def central_jobs(sessions):
