@@ -282,7 +282,12 @@ class KeyService:
         working key wakes the user's paused jobs.
         """
         key = normalize_key(text)  # KeyFormatError before any request
-        result = self._checker.check(key)
+        try:
+            result = self._checker.check(key)
+        except Exception as exc:  # noqa: BLE001 - a checker must not raise; if it does,
+            # "could not tell", and only the exception's type is logged.
+            log.warning("the Gemini key check failed (%s)", type(exc).__name__)
+            result = CHECK_UNAVAILABLE
         if result == CHECK_INVALID:
             return SaveOutcome(False, result)
         now = self._now()
