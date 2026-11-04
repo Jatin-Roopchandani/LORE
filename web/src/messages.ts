@@ -65,7 +65,8 @@ export const POSITION = {
   switchLabel: "Limit everything to what I have read",
   bookLabel: "The book you are reading",
   chapterLabel: "Last chapter you finished",
-  chapterValue: (n: number, max: number) => `Chapter ${n} of ${max}`,
+  chapterValue: (n: number, max: number, heading?: string | null) =>
+    n === 0 ? `Not started (${max} chapters)` : `Ch. ${n} of ${max}${heading ? ` \u00b7 ${heading}` : ""}`,
   bookOption: (title: string, index: number | null) => (index == null ? title : `${title} (book ${index})`),
   readHeading: "Books of unknown order",
   readHint: "LORE never guesses the order of books that are not in one series. Mark the ones you have read.",
@@ -74,7 +75,8 @@ export const POSITION = {
   chapterShort: (n: number) => (n === 0 ? "start" : `ch. ${n}`),
   noteLabel: "Reading position note",
   summaryHidden: "The summary covers the whole story, so it is hidden while a reading position is on. These are the statements from what you have read.",
-  badgeLabel: (title: string, chapter: number) => `Reading position on: up to ${title}, chapter ${chapter}`,
+  badgeLabel: (title: string, chapter: number, heading?: string | null) =>
+    `Reading position on: up to ${title}, chapter ${chapter}${heading ? ` (${heading})` : ""}`,
   chooseWorld: "Choose a world to set a reading position. Positions already set still apply.",
   off: "Everything is shown, spoilers included.",
   on: "The graph, entity panels and answers stay within what you have read.",

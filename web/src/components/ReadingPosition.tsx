@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { api, isError } from "../api";
 import { POSITION } from "../messages";
-import type { PositionBook, ReadingPositionBody, ReadingPositionData } from "../types";
+import type { PositionBook, PositionSection, ReadingPositionBody, ReadingPositionData } from "../types";
 import { ALL_WORLDS } from "../worlds";
 
 // Consecutive slider moves make one request, so the graph is refetched once, not on every step.
@@ -9,6 +9,14 @@ export const SLIDER_DEBOUNCE_MS = 350;
 
 const bodyOf = (d: ReadingPositionData, patch: Partial<ReadingPositionBody>): ReadingPositionBody =>
   ({ enabled: d.enabled, book_id: d.book_id, chapter: d.chapter, read_books: d.read_books, ...patch });
+
+/** The book's story chapters (a server that sends none: chapters 1..n, unnamed). */
+export const storyOf = (book: PositionBook): PositionSection[] =>
+  book.sections ?? Array.from({ length: book.chapters }, (_, i) => ({ seq: i + 1, number: i + 1, heading: null }));
+/** How many story chapters a stored position (a raw section, `seq`) has finished: the slider's value. */
+export const placeOf = (sections: PositionSection[], seq: number) => sections.filter((s) => s.seq <= seq).length;
+/** The raw section to store for "finished `n` story chapters" (0: nothing read). */
+const seqOf = (sections: PositionSection[], n: number) => (n <= 0 ? 0 : sections[Math.min(n, sections.length) - 1]?.seq ?? 0);
 
 /** The "Reading position" control (the button shows the position while it is on), next to the world selector: an on/off switch, the book being read
  *  (in series order, with read toggles for books of unknown order) and a slider for the last chapter finished.
@@ -24,7 +32,7 @@ export function ReadingPosition({ world, onChange = () => {} }: { world: string;
   const [data, setData] = useState<ReadingPositionData | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
-  // The slider's value while it is being moved; the stored one follows after the debounce.
+  // The slider's value (story chapters finished) while it is being moved; the stored one follows after the debounce.
   const [draft, setDraft] = useState<number | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -61,7 +69,11 @@ export function ReadingPosition({ world, onChange = () => {} }: { world: string;
 
   const books = data?.books ?? [];
   const current: PositionBook | undefined = books.find((b) => b.id === data?.book_id);
-  const chapter = draft ?? data?.chapter ?? 0;
+  // The stored `chapter` is a raw section (chapter_seq); the reader sees story chapters, numbered from 1.
+  const sections = current ? storyOf(current) : [];
+  const chapter = draft ?? placeOf(sections, data?.chapter ?? 0);
+  const heading = chapter > 0 ? sections[chapter - 1]?.heading ?? null : null;
+  const count = sections.length;
   const save = (patch: Partial<ReadingPositionBody>) => { if (data) void store(bodyOf(data, patch)); };
   const turn = (on: boolean) => {
     if (!data) return;
@@ -78,7 +90,8 @@ export function ReadingPosition({ world, onChange = () => {} }: { world: string;
     if (!data) return;
     setDraft(n);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => { timer.current = null; void store(bodyOf(data, { chapter: n })); }, SLIDER_DEBOUNCE_MS);
+    const seq = seqOf(sections, n);
+    timer.current = setTimeout(() => { timer.current = null; void store(bodyOf(data, { chapter: seq })); }, SLIDER_DEBOUNCE_MS);
   };
 
   const unknown = books.filter((b) => b.order === "unknown");
@@ -88,8 +101,8 @@ export function ReadingPosition({ world, onChange = () => {} }: { world: string;
   return (
     <div className="pop" ref={root}>
       <button ref={trigger} className={`tbtn pos-btn${on ? " on" : ""}`} type="button" aria-haspopup="dialog" aria-expanded={open}
-        aria-label={reading ? POSITION.badgeLabel(reading.title, chapter) : POSITION.label} title={reading ? POSITION.badgeLabel(reading.title, chapter) : undefined}
-        style={reading && reading.chapters > 0 ? ({ "--pos-done": `${Math.min(100, (100 * chapter) / reading.chapters)}%` } as CSSProperties) : undefined}
+        aria-label={reading ? POSITION.badgeLabel(reading.title, chapter, heading) : POSITION.label} title={reading ? POSITION.badgeLabel(reading.title, chapter, heading) : undefined}
+        style={reading && count > 0 ? ({ "--pos-done": `${Math.min(100, (100 * chapter) / count)}%` } as CSSProperties) : undefined}
         onClick={() => setOpen(!open)}>
         <Bookmark filled={on} />
         {reading ? (<><span className="pos-title">{reading.title}</span><span className="pos-ch">{POSITION.chapterShort(chapter)}</span></>)
@@ -116,9 +129,9 @@ export function ReadingPosition({ world, onChange = () => {} }: { world: string;
             </select>
             {current && (<>
               <label className="pos-field" htmlFor={`${uid}-chapter`}>{POSITION.chapterLabel}</label>
-              <input id={`${uid}-chapter`} type="range" min={0} max={Math.max(current.chapters, 0)} step={1} value={Math.min(chapter, current.chapters)}
-                aria-valuetext={POSITION.chapterValue(chapter, current.chapters)} onChange={(e) => slide(Number(e.target.value))} />
-              <span className="mono">{POSITION.chapterValue(chapter, current.chapters)}</span>
+              <input id={`${uid}-chapter`} type="range" min={0} max={count} step={1} value={Math.min(chapter, count)}
+                aria-valuetext={POSITION.chapterValue(chapter, count, heading)} onChange={(e) => slide(Number(e.target.value))} />
+              <span className="mono">{POSITION.chapterValue(chapter, count, heading)}</span>
             </>)}
             {unknown.length > 0 && (
               <fieldset className="pos-read">

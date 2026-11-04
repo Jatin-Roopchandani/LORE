@@ -119,6 +119,46 @@ describe("the chapter slider", () => {
   });
 });
 
+describe("a book with front matter", () => {
+  beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+  afterEach(() => vi.useRealTimers());
+
+  // Raw sections 1-4 are a licence, a title page and a contents page; the story is sections 5-7.
+  const sections = [{ seq: 5, number: 1, heading: "Mr. Holmes" }, { seq: 6, number: 2, heading: null },
+    { seq: 7, number: 3, heading: "The Lauriston Gardens Mystery" }];
+  beforeEach(() => {
+    books.push({ id: "b9", title: "Scarlet Road", series: null, series_index: null, chapters: 3, order: "unknown", sections });
+  });
+  afterEach(() => { books.pop(); });
+
+  test("the slider counts story chapters only and names them; a stored section keeps its place", async () => {
+    stored = { enabled: true, book_id: "b9", chapter: 7, read_books: [] };
+    render(<ReadingPosition world="1" />);
+    expect(await screen.findByRole("status")).toHaveTextContent("Up to Scarlet Road ch. 3");
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(POSITION.label) }));
+    const slider = await screen.findByRole("slider", { name: POSITION.chapterLabel });
+    expect(slider).toHaveAttribute("max", "3");
+    expect(slider).toHaveValue("3");
+    expect(slider).toHaveAttribute("aria-valuetext", "Ch. 3 of 3 \u00b7 The Lauriston Gardens Mystery");
+    expect(screen.getByText(POSITION.chapterValue(3, 3, "The Lauriston Gardens Mystery"))).toBeInTheDocument();
+    fireEvent.change(slider, { target: { value: "1" } });
+    act(() => { vi.advanceTimersByTime(SLIDER_DEBOUNCE_MS + 50); });
+    // Story chapter 1 is raw section 5: that is what is stored.
+    await waitFor(() => expect(api.setReadingPosition).toHaveBeenLastCalledWith("1", expect.objectContaining({ chapter: 5 })));
+    expect(slider).toHaveAttribute("aria-valuetext", "Ch. 1 of 3 \u00b7 Mr. Holmes");
+    fireEvent.change(slider, { target: { value: "0" } });
+    act(() => { vi.advanceTimersByTime(SLIDER_DEBOUNCE_MS + 50); });
+    await waitFor(() => expect(api.setReadingPosition).toHaveBeenLastCalledWith("1", expect.objectContaining({ chapter: 0 })));
+    expect(slider).toHaveAttribute("aria-valuetext", POSITION.chapterValue(0, 3));
+  });
+
+  test("a position stored inside the front matter reads as not started", async () => {
+    stored = { enabled: true, book_id: "b9", chapter: 3, read_books: [] };
+    render(<ReadingPosition world="1" />);
+    expect(await screen.findByRole("status")).toHaveTextContent("Up to Scarlet Road ch. 0");
+  });
+});
+
 test("with all worlds shown there is nothing to set and it says why; no request is made", async () => {
   render(<ReadingPosition world="all" />);
   await userEvent.click(screen.getByRole("button", { name: new RegExp(POSITION.label) }));

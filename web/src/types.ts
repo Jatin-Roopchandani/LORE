@@ -122,8 +122,11 @@ export interface PassageText { chunk_id: string; book_id: string; book_title: st
 
 // A world's reading position: where the reader is, so the graph, panels and answers stay within what they have read.
 // `order` is each book against the one being read: "before"/"after" in its series, "unknown" (it has its own read toggle).
+/** A story chapter of a book: `seq` is the raw section a position stores, `number` the chapter as the reader counts it
+ *  (front and back matter are not counted), `heading` its name when the book gives one. */
+export interface PositionSection { seq: number; number: number; heading: string | null }
 export interface PositionBook { id: string; title: string; series: string | null; series_index: number | null; chapters: number;
-  order: "current" | "before" | "after" | "unknown" }
+  order: "current" | "before" | "after" | "unknown"; sections?: PositionSection[] }
 export interface ReadingPositionData { world: WorldRef; enabled: boolean; book_id: string | null; chapter: number;
   read_books: string[]; books: PositionBook[] }
 export interface ReadingPositionBody { enabled: boolean; book_id: string | null; chapter: number; read_books: string[] }

@@ -178,14 +178,25 @@ def series_order(infos: Mapping[str, BookInfo], book_ids: Iterable[str]) -> list
 
 @dataclass(frozen=True)
 class PositionView:
-    """A position that applies, for the note an answer carries and the badge."""
+    """A position that applies, for the note an answer carries and the badge.
+
+    `chapter` is the stored chapter_seq (the cap); `number` and `heading` are
+    the story chapter it falls in, as the reader counts it (front matter is
+    not counted; lore/ingest/matter.py), when the caller knows them."""
 
     book_id: str
     title: str
     chapter: int
+    number: int | None = None
+    heading: str | None = None
+
+    def place(self) -> str:
+        n = self.chapter if self.number is None else self.number
+        named = f" ({self.heading})" if self.heading and n else ""
+        return f"up to chapter {n}{named} of {self.title}"
 
     def note(self) -> str:
-        return f"Answered from what you've read: up to chapter {self.chapter} of {self.title}"
+        return f"Answered from what you've read: {self.place()}"
 
 
 def position_note(views: Sequence[PositionView]) -> str | None:
@@ -196,7 +207,7 @@ def position_note(views: Sequence[PositionView]) -> str | None:
         return None
     if len(views) == 1:
         return views[0].note()
-    parts = "; ".join(f"up to chapter {v.chapter} of {v.title}" for v in views)
+    parts = "; ".join(v.place() for v in views)
     return f"Answered from what you've read: {parts}"
 
 

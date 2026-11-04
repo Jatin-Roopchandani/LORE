@@ -24,10 +24,10 @@ for one request. With no position on, nothing here differs from before.
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
-from lore.ingest.registry import book_rows
+from lore.ingest.registry import book_rows, story_chapters, story_place
 from lore.query import visible
 from lore.reading_position import enabled_positions
 from lore.worlds import World, list_worlds
@@ -95,8 +95,16 @@ def _with_position(conn: sqlite3.Connection, scopes: list[Scope]) -> list[Scope]
         made = (visible.visible_books(scope.books or frozenset(), stored, infos)
                 if stored is not None and scope.books is not None else None)
         out.append(scope if made is None else
-                   Scope(made[0], scope.world_id, scope.world, made[1]))
+                   Scope(made[0], scope.world_id, scope.world, _counted(conn, made[1])))
     return out
+
+
+def _counted(conn: sqlite3.Connection, view: visible.PositionView) -> visible.PositionView:
+    """The view with the story chapter its stored chapter_seq falls in, as the
+    reader counts chapters (front matter is not one)."""
+    place = story_place(story_chapters(conn, view.book_id), view.chapter)
+    return replace(view, number=place["number"] if place else 0,
+                   heading=place["heading"] if place else None)
 
 
 def resolve_scopes(conn: sqlite3.Connection, world: int | str | None = None, *,

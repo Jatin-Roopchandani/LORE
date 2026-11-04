@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
-from lore.ingest.registry import book_rows, list_books
+from lore.ingest.registry import book_rows, list_books, story_chapters
 from lore.mcp import tools
 from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import GOOGLE_DAY_ZONE, day_report, today
@@ -233,8 +233,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             if found is None:
                 return _api_error(404, "not_found", f"no world {ref!r}")
             rows = {b["id"]: b for b in list_books(conn) if b["world_id"] == found.id}
+            # A stored `chapter` is a chapter_seq (the last raw section read);
+            # the reader picks among story chapters only (`sections`), numbered
+            # from 1 and named by their headings (lore/ingest/matter.py).
             chapters = dict(conn.execute(
                 "SELECT book_id, MAX(chapter_seq) FROM chunks GROUP BY book_id").fetchall())
+            story = {b: story_chapters(conn, b) for b in rows}
             if body is not None:
                 bad = _invalid_position(body, rows, chapters)
                 if bad:
@@ -256,7 +260,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             "read_books": [b for b in (stored.read_books if stored else ()) if b in rows],
             "books": [{"id": b, "title": rows[b]["title"], "series": rows[b]["series"],
                        "series_index": rows[b]["series_index"],
-                       "chapters": int(chapters.get(b) or 0),
+                       "chapters": len(story[b]),
+                       "sections": story[b],
                        "order": "current" if b == current else relation.get(b, "unknown")}
                       for b in visible.series_order(infos, rows)],
         }
