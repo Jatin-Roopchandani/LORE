@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import Graph from "graphology";
 import Sigma from "sigma";
 import { nearestEdge, nodeAt, type PickNode } from "../edgePick";
+import { EDGE_LABEL_PX, frame, makeDrawEdgeLabel } from "../edgeLabel";
 import { createNodeBorderProgram } from "@sigma/node-border";
 import { nodeLabel, type GraphView } from "../graphView";
 import { worldSlot } from "../worlds";
@@ -81,6 +82,8 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     pinned?: boolean; fitRequest?: number; focusId?: string | null; focusRequest?: number }) {
   const box = useRef<HTMLDivElement>(null);
   const sigma = useRef<Sigma | null>(null);
+  // The pill behind edge labels: the theme's panel colour, kept current by each render.
+  const pillColor = useRef("#ffffff");
   const graph = useRef(new Graph({ multi: false, type: "directed" }));
   const click = useRef(onNodeClick);
   click.current = onNodeClick;
@@ -135,19 +138,22 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       if (g.hasEdge(l.id)) g.mergeEdgeAttributes(l.id, attrs);
       else if (!g.hasDirectedEdge(l.source, l.target)) g.addEdgeWithKey(l.id, l.source, l.target, attrs);
     }
-    // Sigma's label grid hides labels that share a cell; the overview names every node, so it lifts the cap.
-    sigma.current?.setSetting("labelDensity", v.overview ? 100 : 1);
-    sigma.current?.setSetting("labelGridCellSize", v.overview ? 30 : 100);
+    // Sigma's label grid hides labels that share a cell, and Sigma labels an edge only when both its ends
+    // are labelled, so a hidden name also hid relationships: every view names every node.
+    sigma.current?.setSetting("labelDensity", 100);
+    sigma.current?.setSetting("labelGridCellSize", 30);
     sigma.current?.setSetting("labelColor", { color: p.ink });
-    sigma.current?.setSetting("edgeLabelColor", { color: p.muted });
+    sigma.current?.setSetting("edgeLabelColor", { color: p.ink });
+    pillColor.current = p.panel;
     sigma.current?.refresh();
   };
 
   useEffect(() => {
     const p = palette();
     sigma.current = new Sigma(graph.current, box.current!, {
-      renderEdgeLabels: true, defaultEdgeType: "arrow", defaultNodeType: "ringed", nodeProgramClasses: { ringed: RingedNode }, labelFont: "Public Sans", labelSize: 12, edgeLabelSize: 10,
-      labelRenderedSizeThreshold: 0, labelColor: { color: p.ink }, edgeLabelColor: { color: p.muted }, zIndex: true,
+      renderEdgeLabels: true, defaultEdgeType: "arrow", defaultNodeType: "ringed", nodeProgramClasses: { ringed: RingedNode }, labelFont: "Public Sans", labelSize: 12, edgeLabelSize: EDGE_LABEL_PX,
+      edgeLabelFont: "Public Sans", edgeLabelWeight: "500", defaultDrawEdgeLabel: makeDrawEdgeLabel(() => pillColor.current),
+      labelRenderedSizeThreshold: 0, labelColor: { color: p.ink }, edgeLabelColor: { color: p.ink }, zIndex: true,
       allowInvalidContainer: true, defaultDrawNodeHover: drawThemedHover, enableEdgeEvents: true,
     });
     sigma.current.on("clickNode", ({ node }) => click.current(node));
@@ -157,6 +163,25 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     });
     // Near-miss clicks and hovers on nodes: the dot plus a margin, or its drawn label.
     const measure = document.createElement("canvas").getContext("2d");
+    // Before each frame, the edge labels' obstacles: every node's dot and its name.
+    sigma.current.on("beforeRender", () => {
+      const s = sigma.current;
+      frame.obstacles = [];
+      if (!s) return;
+      graph.current.forEachNode((id, attrs) => {
+        if (attrs.hidden) return;
+        const d = s.getNodeDisplayData(id);
+        if (!d) return;
+        const at = s.framedGraphToViewport({ x: d.x, y: d.y });
+        const r = s.scaleSize(d.size);
+        frame.obstacles.push({ x0: at.x - r, y0: at.y - r, x1: at.x + r, y1: at.y + r });
+        if (measure && attrs.label) {
+          measure.font = "12px Public Sans";
+          const w = measure.measureText(String(attrs.label)).width;
+          frame.obstacles.push({ x0: at.x + r + 2, y0: at.y - 8, x1: at.x + r + 4 + w, y1: at.y + 8 });
+        }
+      });
+    });
     const nearNode = (x: number, y: number): string | null => {
       const s = sigma.current;
       if (!s) return null;
