@@ -186,3 +186,52 @@ def test_a_job_that_keeps_dying_is_failed(session):
     job = session.scalars(sa.select(Job)).one()
     assert (job.state, job.outcome) == ("failed", "abandoned")
     assert queue.claim_next(session, "w", now=now) is None
+
+
+# --- paused jobs (a missing or rejected Gemini key, release step 3) ----------
+
+def test_pause_user_parks_only_that_users_queued_jobs(session):
+    a1, _ = queue.enqueue(session, "alice", "b1", "process")
+    a2, _ = queue.enqueue(session, "alice", "b2", "process")
+    b1, _ = queue.enqueue(session, "bob", "b1", "process")
+    assert sorted(queue.pause_user(session, "alice")) == sorted([a1.id, a2.id])
+    states = {j.id: j.state for j in session.scalars(sa.select(Job))}
+    assert states == {a1.id: "paused", a2.id: "paused", b1.id: "queued"}
+
+
+def test_paused_jobs_are_never_claimed(session):
+    queue.enqueue(session, "alice", "b1", "process")
+    queue.pause_user(session, "alice")
+    assert queue.claim_next(session, "w1", now=T0) is None
+
+
+def test_resume_user_queues_them_again(session):
+    a1, _ = queue.enqueue(session, "alice", "b1", "process")
+    queue.pause_user(session, "alice")
+    assert queue.resume_user(session, "alice") == [a1.id]
+    assert queue.claim_next(session, "w1", now=T0).id == a1.id
+
+
+def test_asking_again_wakes_a_paused_job_instead_of_adding_one(session):
+    a1, _ = queue.enqueue(session, "alice", "b1", "process")
+    queue.pause_user(session, "alice")
+    again, created = queue.enqueue(session, "alice", "b1", "process")
+    assert not created and again.id == a1.id and again.state == "queued"
+    assert session.scalar(sa.select(sa.func.count()).select_from(Job)) == 1
+
+
+def test_a_held_job_can_be_paused_by_its_holder_only(session):
+    queue.enqueue(session, "alice", "b1", "process")
+    job = queue.claim_next(session, "w1", now=T0)
+    assert queue.pause(session, job.id, "w2", outcome="key_invalid") is False
+    assert queue.pause(session, job.id, "w1", outcome="key_invalid") is True
+    session.refresh(job)
+    assert (job.state, job.claimed_by, job.outcome) == ("paused", None, "key_invalid")
+
+
+def test_the_database_allows_one_live_job_per_book_counting_paused(session):
+    queue.enqueue(session, "alice", "b1", "process")
+    queue.pause_user(session, "alice")
+    session.add(Job(user_id="alice", book_id="b1", kind="process", state="queued"))
+    with pytest.raises(IntegrityError):
+        session.commit()

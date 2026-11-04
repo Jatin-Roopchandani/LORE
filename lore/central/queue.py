@@ -30,8 +30,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from lore.central.models import (
-    ACTIVE_STATES, CLAIMED, DONE, FAILED, KIND_MOVE, KIND_PROCESS, QUEUED, Job,
-    User, utcnow,
+    CLAIMED, DONE, FAILED, KIND_MOVE, KIND_PROCESS, LIVE_STATES, PAUSED, QUEUED,
+    Job, User, utcnow,
 )
 
 KINDS = (KIND_PROCESS, KIND_MOVE)
@@ -51,8 +51,9 @@ def enqueue(session: Session, user_id: str, book_id: str, kind: str,
             payload: dict | None = None) -> tuple[Job, bool]:
     """Queue a job; returns (job, created).
 
-    A book has at most one live (queued or claimed) job, so a second request
-    for the same book finds the first and `created` is False.
+    A book has at most one live (queued, claimed or paused) job, so a second
+    request for the same book finds the first and `created` is False. A
+    paused one is woken (queued again): asking again is the user's resume.
     """
     if kind not in KINDS:
         raise ValueError(f"unknown job kind {kind!r}")
@@ -68,8 +69,11 @@ def enqueue(session: Session, user_id: str, book_id: str, kind: str,
             session.rollback()
             live = session.scalars(sa.select(Job).where(
                 Job.user_id == user_id, Job.book_id == book_id,
-                Job.state.in_(ACTIVE_STATES))).first()
+                Job.state.in_(LIVE_STATES))).first()
             if live is not None:
+                if live.state == PAUSED:
+                    live.state = QUEUED
+                    session.commit()
                 return live, False
     raise RuntimeError("could not enqueue the job")
 
@@ -169,3 +173,46 @@ def requeue_stale(session: Session, *, now: datetime | None = None,
         if res.rowcount == 1:
             touched.append(job_id)
     return touched
+
+
+def pause(session: Session, job_id: int, worker_id: str, *, outcome: str,
+          error: str | None = None) -> bool:
+    """Park a held job as paused (its user's key is missing or was refused).
+    False when the claim was lost."""
+    res = session.execute(
+        sa.update(Job)
+        .where(Job.id == job_id, Job.state == CLAIMED, Job.claimed_by == worker_id)
+        .values(state=PAUSED, outcome=outcome, error=(error or None) and error[:4000],
+                claimed_by=None, claimed_at=None, heartbeat_at=None)
+        .execution_options(synchronize_session=False))
+    session.commit()
+    return res.rowcount == 1
+
+
+def pause_user(session: Session, user_id: str) -> list[int]:
+    """Every queued job of this user becomes paused (a claimed one finishes
+    on its own and parks itself). Commits; returns the ids."""
+    ids = list(session.scalars(sa.select(Job.id).where(
+        Job.user_id == user_id, Job.state == QUEUED)))
+    if ids:
+        session.execute(
+            sa.update(Job).where(Job.id.in_(ids), Job.state == QUEUED)
+            .values(state=PAUSED, outcome="key_invalid")
+            .execution_options(synchronize_session=False))
+    session.commit()
+    session.expire_all()  # loaded Job objects see the new state
+    return ids
+
+
+def resume_user(session: Session, user_id: str) -> list[int]:
+    """This user's paused jobs go back to queued. Commits; returns the ids."""
+    ids = list(session.scalars(sa.select(Job.id).where(
+        Job.user_id == user_id, Job.state == PAUSED)))
+    if ids:
+        session.execute(
+            sa.update(Job).where(Job.id.in_(ids), Job.state == PAUSED)
+            .values(state=QUEUED, outcome=None, error=None)
+            .execution_options(synchronize_session=False))
+    session.commit()
+    session.expire_all()
+    return ids

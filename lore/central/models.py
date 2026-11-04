@@ -3,8 +3,10 @@
 Portable types only (String, Integer, JSON, an explicit-UTC DateTime), so the
 same Alembic migrations run on SQLite (local mode, tests) and Postgres (prod).
 `users`, `jobs`, `waitlist` and `invites` exist from step 1; step 2 adds
-`identities`, `sessions`, `login_tokens` and `rate_hits`. The tables for keys,
-chats and traces arrive with the steps that use them.
+`identities`, `sessions`, `login_tokens` and `rate_hits`; step 3 adds
+`api_keys` (each user's Gemini key, AES-GCM encrypted: lore.central.keys) and
+`usage` (requests per user, day and model). Chats and traces arrive with the
+steps that use them.
 
 Every bearer secret is stored as its SHA-256 only (session ids, magic-link
 tokens, invite codes): a copy of the database is not a set of working
@@ -21,11 +23,17 @@ UTC = timezone.utc
 
 # Job states. A job is `queued`, then `claimed` by one worker, then `done` or
 # `failed`. A stale claim goes back to `queued` (see lore.central.queue).
+# `paused`: the user's Gemini key is missing or was rejected; the job waits,
+# not failed, and goes back to `queued` when the user saves a working key.
 QUEUED = "queued"
 CLAIMED = "claimed"
+PAUSED = "paused"
 DONE = "done"
 FAILED = "failed"
 ACTIVE_STATES = (QUEUED, CLAIMED)
+# A book has at most one job in these states (uq_jobs_active_book).
+LIVE_STATES = (QUEUED, CLAIMED, PAUSED)
+_LIVE_SQL = "state IN ('queued', 'claimed', 'paused')"
 
 KIND_PROCESS = "process"  # continue (or start) a book's processing
 KIND_MOVE = "move"        # move a book to another world; payload: {"world": id}
@@ -108,12 +116,14 @@ class Job(Base):
 
     __table_args__ = (
         sa.CheckConstraint("kind IN ('process', 'move')", name="ck_jobs_kind"),
-        sa.CheckConstraint("state IN ('queued', 'claimed', 'done', 'failed')",
-                           name="ck_jobs_state"),
-        # At most one live job per book: a second Continue finds the first.
+        sa.CheckConstraint(
+            "state IN ('queued', 'claimed', 'paused', 'done', 'failed')",
+            name="ck_jobs_state"),
+        # At most one live job per book: a second Continue finds the first
+        # (a paused one too, which it wakes).
         sa.Index("uq_jobs_active_book", "user_id", "book_id", unique=True,
-                 sqlite_where=sa.text("state IN ('queued', 'claimed')"),
-                 postgresql_where=sa.text("state IN ('queued', 'claimed')")),
+                 sqlite_where=sa.text(_LIVE_SQL),
+                 postgresql_where=sa.text(_LIVE_SQL)),
         # At most one claimed job per user, enforced by the database: this
         # is the per-user serialisation, and it holds however many workers
         # race for the claim.
@@ -225,3 +235,52 @@ class RateHit(Base):
     at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utcnow)
 
     __table_args__ = (sa.Index("ix_rate_hits_key_at", "key", "at"),)
+
+
+class ApiKey(Base):
+    """A user's Gemini key, sealed with AES-256-GCM (lore.central.keys).
+
+    `ciphertext` and `nonce` open only with the master key `key_version`
+    names and only for this `user_id` (it is the associated data). `last4` is
+    the one part ever shown back. `last_error` is a fixed code, never provider
+    text: `rejected` (Gemini refused the key) or `unchecked` (it could not be
+    checked when it was saved).
+    """
+
+    __tablename__ = "api_keys"
+
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    provider: Mapped[str] = mapped_column(sa.String(16), nullable=False,
+                                          default="gemini")
+    ciphertext: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
+    nonce: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
+    key_version: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    last4: Mapped[str] = mapped_column(sa.String(4), nullable=False)
+    added_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                               default=utcnow)
+    last_ok_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    last_error: Mapped[str | None] = mapped_column(sa.String(32))
+
+    __table_args__ = (
+        sa.CheckConstraint("provider IN ('gemini')", name="ck_api_keys_provider"),
+    )
+
+    def __repr__(self) -> str:  # the sealed bytes are not for log lines either
+        return f"ApiKey(user_id={self.user_id!r}, last4=..{self.last4})"
+
+
+class Usage(Base):
+    """Model requests per user, Google's (Pacific) day and model: the account
+    menu's "used today" and the admin's view. The per-user budget itself is
+    enforced from the ledger in the user's own lore.db, as in local mode."""
+
+    __tablename__ = "usage"
+
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[str] = mapped_column(sa.String(10), primary_key=True)  # YYYY-MM-DD
+    model: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    requests: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+
+    __table_args__ = (sa.Index("ix_usage_day", "day"),)

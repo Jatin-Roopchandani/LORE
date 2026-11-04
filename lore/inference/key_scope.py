@@ -1,0 +1,144 @@
+"""Whose Gemini key a model call uses: the one place every client gets its key.
+
+Local mode (the default) is unchanged: the key comes from the environment or
+`~/.config/lore/gemini.env`, exactly as `resolve_api_key` always read it.
+
+Multi mode (release step 3): each user brings their own key, stored encrypted
+in the central database (lore.central.keys). A unit of work for one user (a
+question in the web app, a job in the worker) decrypts that user's key and
+BINDS it here for its duration:
+
+    with key_scope.bound(KeyScope(user_id, key, on_request=...)):
+        ...  # every GeminiClient built in here gets this user's key
+
+Every construction site (query models, extraction, adjudication and the
+first-person narrator, disambiguation, beats, codex) asks `gemini_api_key()`
+for its key instead of reading the key file itself. In multi mode, or inside
+any bound scope, the server's key file and environment are never consulted:
+with no user key bound, `gemini_api_key()` raises KeyRequired.
+
+The binding is a ContextVar, so it follows the work into `asyncio.run` and
+into tasks created inside the scope, and never leaks to another request or
+job. The plaintext key lives only in the scope object and in the client's
+request header, never in a repr, a log line or an exception message.
+"""
+from __future__ import annotations
+
+import contextlib
+import os
+from collections.abc import Callable, Iterator
+from contextvars import ContextVar
+
+from lore.inference.gemini import (
+    GeminiError,
+    default_key_file,
+    resolve_api_key,
+)
+
+ENV_MULTI_USER = "LORE_MULTI_USER"  # same flag as lore.tenancy (not imported: no fastapi here)
+
+
+class KeyRequired(GeminiError):
+    """No Gemini key for this user. Never carries a key."""
+
+    def __init__(self, message: str = "add your Gemini API key in Account settings"
+                 " before asking or processing") -> None:
+        super().__init__(message)
+
+
+class KeyScope:
+    """One user's key for one unit of work, plus what happened with it.
+
+    `on_request(model)` is called once per HTTP attempt (the per-user usage
+    count). `rejected` turns True when Gemini refuses the key (401/403, or a
+    400 that says API_KEY_INVALID), whatever the calling code then does with
+    the exception, so the web app and the worker can tell a bad key from any
+    other failure.
+    """
+
+    __slots__ = ("user_id", "_key", "_on_request", "rejected")
+
+    def __init__(self, user_id: str, key: str | None,
+                 on_request: Callable[[str], None] | None = None) -> None:
+        self.user_id = user_id
+        self._key = key
+        self._on_request = on_request
+        self.rejected = False
+
+    @property
+    def key(self) -> str | None:
+        return self._key
+
+    def __repr__(self) -> str:  # never the key
+        state = "with a key" if self._key else "no key"
+        return f"KeyScope(user_id={self.user_id!r}, {state})"
+
+    __str__ = __repr__
+
+    def __reduce__(self):  # not picklable: a pickle would carry the key
+        raise TypeError("a KeyScope is not picklable")
+
+
+_BOUND: ContextVar[KeyScope | None] = ContextVar("lore_gemini_key", default=None)
+
+
+@contextlib.contextmanager
+def bound(scope: KeyScope) -> Iterator[KeyScope]:
+    """Bind `scope` for the work inside the block (this context only)."""
+    token = _BOUND.set(scope)
+    try:
+        yield scope
+    finally:
+        _BOUND.reset(token)
+
+
+def current() -> KeyScope | None:
+    return _BOUND.get()
+
+
+def multi_user_enabled() -> bool:
+    return os.environ.get(ENV_MULTI_USER, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def server_key_forbidden() -> bool:
+    """True when the server's own key (file or environment) must not be used."""
+    return _BOUND.get() is not None or multi_user_enabled()
+
+
+def gemini_api_key(explicit: str | None = None, *,
+                   local: Callable[[], str | None] | None = None) -> str | None:
+    """The key a new GeminiClient must use.
+
+    `explicit` (a CLI's own resolved key) wins. Then a bound user's key. In
+    multi mode, or in a bound scope with no key, KeyRequired: never the
+    server's file. Otherwise (local mode) `local()`, by default today's
+    `resolve_api_key` with the key file; it may return None (each caller words
+    that refusal). Callers pass their own `local` so the lookup stays in their
+    module, where it always was.
+    """
+    if explicit:
+        return explicit
+    scope = _BOUND.get()
+    if scope is not None:
+        if scope.key:
+            return scope.key
+        raise KeyRequired()
+    if multi_user_enabled():
+        raise KeyRequired()
+    if local is not None:
+        return local()
+    return resolve_api_key(key_file=default_key_file())
+
+
+def note_request(model: str) -> None:
+    """Called by GeminiClient once per attempt; counts it for the bound user."""
+    scope = _BOUND.get()
+    if scope is not None and scope._on_request is not None:
+        scope._on_request(model)
+
+
+def note_rejection() -> None:
+    """Called by GeminiClient when Gemini refuses the key."""
+    scope = _BOUND.get()
+    if scope is not None:
+        scope.rejected = True

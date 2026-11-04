@@ -1477,6 +1477,37 @@ def admin_grant(email: str = typer.Argument(help="the person's email address")) 
     typer.echo(f"{user.email} is now an admin" + (" (account created)" if created else ""))
 
 
+@admin_app.command(name="rotate-keys")
+def admin_rotate_keys() -> None:
+    """Re-encrypt every stored Gemini key under the current master key.
+
+    Set the new master key as LORE_KEY_ENCRYPTION_KEY and the previous one as
+    LORE_KEY_ENCRYPTION_KEY_OLD, run this, then remove the OLD variable."""
+    from lore.central.db import database_url, make_engine, make_session_factory
+    from lore.central.keys import KeyConfigError, KeyDecryptError, MasterKeys, rotate_all
+
+    try:
+        master = MasterKeys.from_env()
+    except KeyConfigError as exc:
+        typer.echo(f"lore admin: {exc}", err=True)
+        raise typer.Exit(2)
+    sessions = make_session_factory(make_engine(database_url(LoreConfig.load())))
+    try:
+        count = rotate_all(sessions, master)
+    except KeyDecryptError as exc:
+        typer.echo(f"lore admin: {exc}; nothing was changed", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"re-encrypted {count} key(s) under the current master key")
+
+
+@admin_app.command(name="generate-master-key")
+def admin_generate_master_key() -> None:
+    """Print a new random master key for LORE_KEY_ENCRYPTION_KEY (keep it secret)."""
+    from lore.central.keys import generate_master_key
+
+    typer.echo(generate_master_key())
+
+
 @app.command(name="worker")
 def worker_command(
     poll: float = typer.Option(2.0, help="seconds between looks at an empty queue"),
