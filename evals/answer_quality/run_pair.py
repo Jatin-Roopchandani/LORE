@@ -58,6 +58,10 @@ ARM_SETTINGS = {
     # Prose for plain factual answers too (write.PROSE_FACTUAL; off since round 7).
     "prose_factual": ("lore.query.write", "PROSE_FACTUAL",
                       lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Every kept claim reaches the shown prose: a repair round, then code places
+    # what is still uncited (write.COVERAGE).
+    "coverage": ("lore.query.write", "COVERAGE",
+                 lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),

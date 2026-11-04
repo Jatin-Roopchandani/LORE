@@ -16,6 +16,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from lore.query.models import Answer
+from lore.query.write import answer_coverage
 
 ERROR_CODES = frozenset(
     {"no_graph", "budget_exhausted", "cypher_rejected", "not_found", "timeout",
@@ -151,6 +152,9 @@ class SearchResult(BaseModel):
     # Set only when a reading position limited the answer ("Answered from what
     # you've read: up to chapter 9 of <book>"); lore_search leaves it out otherwise.
     position_note: str | None = None
+    # The share of the answer's kept claims its shown prose cites
+    # (write.answer_coverage); None for an answer shown as its claim list.
+    coverage: float | None = None
 
 
 class ChunkHit(BaseModel):
@@ -306,6 +310,7 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
         short_answer=[_prose_out(s) for s in answer.short_answer],
         unwritten_sections=answer.unwritten,
         position_note=answer.position_note,
+        coverage=answer_coverage(answer),
     )
 
 

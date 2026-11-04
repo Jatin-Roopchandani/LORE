@@ -10,7 +10,7 @@ rules: prose that does not pass is never shown -- the claim list is.
 from __future__ import annotations
 
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Awaitable, Callable, Iterable, Sequence
 
 from pydantic import BaseModel, ConfigDict, create_model
@@ -55,9 +55,23 @@ READINGS = True
 MAX_READINGS = 2
 MIN_READING_CLAIMS = 2
 
+# COVERAGE (2026-11-04, spec writer-fidelity): no checked claim is lost
+# between the claims step and the shown answer. After the check, code finds
+# the kept claims no shown sentence cites (a claim the check says a shown
+# sentence restates is cited by that sentence instead). The writer gets one
+# repair round for them (`Repair`), checked again; any claim still uncited is
+# then placed by code as its own sentence (`place_uncited`). A short answer
+# (deep or recap) summarises and is exempt. It lives in the story writer and
+# check, so it needs STORY_ORDER (`coverage_on`). Off gives the code before it.
+COVERAGE = True
+
 
 def readings_on() -> bool:
     return READINGS and STORY_ORDER
+
+
+def coverage_on() -> bool:
+    return COVERAGE and STORY_ORDER
 
 
 # The sentence as the model was asked for it before READINGS (and still is
@@ -301,6 +315,53 @@ _READINGS_RULE = """- Each sentence has a `kind`: "fact" (the default) or "readi
 """.format(max_readings=MAX_READINGS, min_claims=MIN_READING_CLAIMS)
 
 
+# The repair round (COVERAGE): added after the facts of the story writer prompt,
+# with the draft that passed the check and what it left out.
+REPAIR_LEAD = "This is a revision. The earlier draft of the answer, each sentence with the facts it uses:"
+REPAIR_RULE = """
+{lead}
+{draft}
+
+Revise it:
+{rules}- Leave every other sentence of the draft as it is, in its place, with its own
+  facts in `claims`. Return the whole answer again, not only the changes.
+"""
+MISSING_RULE = """- These facts are not in the draft yet: {numbers}. Work each one into the
+  paragraph where it belongs, in story order: into a sentence about the same
+  moment where that reads naturally, or as a sentence of its own. List it in
+  that sentence's `claims`. Add only what is new: say nothing the draft already
+  says.
+"""
+
+
+@dataclass(frozen=True)
+class Repair:
+    """What the writer is asked to fix in its one repair round: the `draft`
+    sentences that passed the check (claims in the claims' own numbering) and
+    the `missing` claims (1-based) no shown sentence cites."""
+
+    draft: tuple = ()
+    missing: tuple[int, ...] = ()
+
+
+def repair_block(repair: Repair, shown_number: dict[int, int]) -> str:
+    """The repair round's text. `shown_number`: a claim's own number -> its
+    number in the prompt's story-ordered list."""
+    def nums(ks) -> str:
+        return ", ".join(str(shown_number.get(k, k)) for k in ks)
+    lines = []
+    for i, s in enumerate(repair.draft, start=1):
+        start = "(new paragraph) " if s.new_paragraph and i > 1 else ""
+        kind = getattr(s, "kind", "fact")
+        label = f" [{kind}]" if kind != "fact" else ""
+        lines.append(f"  {i}. {start}{s.text.strip()}{label} (facts {nums(s.claims)})")
+    rules = ""
+    if repair.missing:
+        rules += MISSING_RULE.format(numbers=nums(sorted(repair.missing, key=lambda k: shown_number.get(k, k))))
+    return REPAIR_RULE.format(lead=REPAIR_LEAD, draft="\n".join(lines) or "  (no sentence passed)",
+                              rules=rules)
+
+
 def _title(book_id: str, book_titles: dict[str, str] | None) -> str:
     return (book_titles or {}).get(book_id) or book_id
 
@@ -348,8 +409,10 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
                   books: dict[str, BookInfo] | None = None,
                   shape: "interpret.Shape | None" = None,
                   length: str | None = None, covered: Sequence[str] = (),
-                  avoid: Sequence[str] = ()) -> str:
-    """`avoid`: sentences an earlier draft wrote that the check rejected (AVOID_RULE).
+                  avoid: Sequence[str] = (), repair: Repair | None = None) -> str:
+    """`repair`: the repair round (COVERAGE, story prompt only): the draft and
+    what it left out, added after the facts (`repair_block`).
+    `avoid`: sentences an earlier draft wrote that the check rejected (AVOID_RULE).
     `covered`: the headings of the sections written before this one (a lens
     section's writer), listed so it does not re-explain them (COVERED_RULE).
     `shape`: the interpretive answer's shape (interpret.py), only with
@@ -380,9 +443,12 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
                   if covered else "")
         after = (AVOID_RULE.format(sentences="\n".join(f"  - {t}" for t in avoid))
                  if avoid else "")
-        return STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
-                                          order_note=note, readings=rules,
-                                          length=LENGTH_RULES[length] + before + after)
+        prompt = STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
+                                            order_note=note, readings=rules,
+                                            length=LENGTH_RULES[length] + before + after)
+        if repair is not None:
+            prompt += repair_block(repair, {i + 1: shown for shown, i in enumerate(indices, start=1)})
+        return prompt
     by_number = {p.n: p for p in passages}
     lines = []
     for number, claim in enumerate(claims, start=1):
@@ -410,7 +476,7 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
                        books: dict[str, BookInfo] | None = None,
                        shape: "interpret.Shape | None" = None,
                        length: str | None = None, covered: Sequence[str] = (),
-                       avoid: Sequence[str] = ()) -> Prose | None:
+                       avoid: Sequence[str] = (), repair: Repair | None = None) -> Prose | None:
     """The writer's prose, or None on any failure: a failed extra step must
     never cost the user the checked claims (they are the fallback).
 
@@ -428,7 +494,7 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     try:
         reply = await generate(
             writer_prompt(question, sub_questions, claims, passages, book_titles, books, shape,
-                          length, covered, avoid),
+                          length, covered, avoid, repair),
             (Prose if kinds else _StoryProse) if STORY_ORDER else _PlainProse)
     except Exception:  # noqa: BLE001 -- see the docstring
         return None
@@ -644,6 +710,96 @@ def coverage_gaps(prose: Sequence[ProseSentence], part_claims: Sequence[Sequence
     (1-based, as in `ProseSentence.claims`)."""
     cited = {k for s in prose for k in s.claims}
     return [i for i, ks in enumerate(part_claims) if ks and not cited.intersection(ks)]
+
+
+def cite_restated(sentences: Sequence[Sentence], claim_ok: Sequence[bool],
+                  sentence_ok: Sequence[bool], restated: Sequence[int] | None) -> list[Sentence]:
+    """COVERAGE: a kept claim that no passing sentence cites, but that the check
+    says a passing fact sentence restates (`restated`, per claim: that
+    sentence's 1-based number, or 0), is cited by that sentence: it says the
+    claim already, so the claim is covered without being said twice."""
+    out = list(sentences)
+    if not restated or len(restated) != len(claim_ok) or len(sentence_ok) != len(out):
+        return out
+    passing = [ok and all(1 <= k <= len(claim_ok) and claim_ok[k - 1] for k in s.claims)
+               for s, ok in zip(out, sentence_ok)]
+    cited = {k for s, ok in zip(out, passing) if ok for k in s.claims}
+    for k, at in enumerate(restated, start=1):
+        if (claim_ok[k - 1] and k not in cited and 1 <= at <= len(out) and passing[at - 1]
+                and getattr(out[at - 1], "kind", "fact") == "fact"):
+            out[at - 1] = out[at - 1].model_copy(update={"claims": [*out[at - 1].claims, k]})
+            cited.add(k)
+    return out
+
+
+def _as_sentence(text: str) -> str:
+    text = " ".join(text.split())
+    if text and text[0].islower():
+        text = text[0].upper() + text[1:]
+    return text if text[-1:] in ".!?\"'”’" else text + "."
+
+
+def place_uncited(prose: Sequence[ProseSentence], claim_texts: Sequence[str],
+                  claim_passages: Sequence[int]) -> tuple[ProseSentence, ...]:
+    """COVERAGE's last step: every claim (1-based, as in `ProseSentence.claims`)
+    that no sentence cites is added as its own fact sentence, the claim's text
+    with its citation, after the last fact sentence of the paragraph whose fact
+    sentences cite its passage most often (the earliest such paragraph on a
+    tie), or of the last paragraph when none does; a reading or counter-case
+    stays after the facts it follows. Nothing else changes."""
+    out = list(prose)
+    if not out:
+        return ()
+    cited = {k for s in out for k in s.claims}
+    for k in range(1, len(claim_texts) + 1):
+        if k in cited or not claim_texts[k - 1].strip():
+            continue
+        paragraphs: list[list[int]] = []
+        for i, s in enumerate(out):
+            if i == 0 or s.new_paragraph:
+                paragraphs.append([i, i])
+            else:
+                paragraphs[-1][1] = i
+        passage = claim_passages[k - 1]
+        scores = [sum(passage in s.passages for s in out[a:b + 1] if s.kind == "fact")
+                  for a, b in paragraphs]
+        best = (max(range(len(paragraphs)), key=lambda j: (scores[j], -j)) if any(scores)
+                else len(paragraphs) - 1)
+        first, last = paragraphs[best]
+        facts = [i for i in range(first, last + 1) if out[i].kind == "fact"]
+        out.insert((facts[-1] if facts else last) + 1, ProseSentence(
+            text=_as_sentence(claim_texts[k - 1]), claims=(k,), passages=(passage,)))
+        cited.add(k)
+    return tuple(out)
+
+
+def coverage(prose: Sequence[ProseSentence], n_claims: int) -> float | None:
+    """The share of the kept claims (1..n_claims) that the prose cites; None
+    when there is no prose or no claim."""
+    if not prose or n_claims <= 0:
+        return None
+    cited = {k for s in prose for k in s.claims if 1 <= k <= n_claims}
+    return round(len(cited) / n_claims, 3)
+
+
+def answer_coverage(answer) -> float | None:
+    """`coverage` of an answer as shown: a prose answer's prose and short answer
+    over its claims; a sectioned answer's prose sections over their own claims
+    (a section shown as its claim list, the close and the short answer do not
+    count). None for an answer with no prose."""
+    style = getattr(answer, "answer_style", "claims")
+    if style == "prose":
+        return coverage((*answer.prose, *answer.short_answer), len(answer.claims))
+    if style == "sectioned":
+        own = cited = 0
+        for x in answer.sections:
+            if x.style != "prose" or x.kind != "section" or x.claims_end < x.claims_start or x.claims_start < 1:
+                continue
+            span = set(range(x.claims_start, x.claims_end + 1))
+            own += len(span)
+            cited += len(span & {k for s in x.prose for k in s.claims})
+        return round(cited / own, 3) if own else None
+    return None
 
 
 def paragraphs_by_book(prose: Sequence[ProseSentence],

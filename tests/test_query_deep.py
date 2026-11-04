@@ -756,6 +756,8 @@ async def test_with_deep_off_everything_is_what_it_was(tmp_path, monkeypatch, na
     asked for, are byte-identical to the code before deep answers (pinned from
     6d931a7)."""
     monkeypatch.setattr(decompose_module, "DEEP", False)
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "COVERAGE", False)  # pinned before coverage existed
     config = build_deep_library(tmp_path)
     scripted = Scripted(plan)
     answer, events = await run_scenario(config, scripted, depth="deep")

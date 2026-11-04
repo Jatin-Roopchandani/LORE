@@ -510,7 +510,8 @@ async def test_a_reading_from_one_lens_only_is_dropped_by_code():
                              S("The evidence suggests Rin was committed.", [1, 2], "reading")])
     script = Script(LENS_CLAIMS, prose, ["supported"] * 2)
     a = await _answer(script)
-    assert [s.kind for s in a.prose] == ["fact", "fact"]
+    # the third fact, which no sentence cites, is placed by code (COVERAGE)
+    assert [s.kind for s in a.prose] == ["fact", "fact", "fact"]
     assert [s.text for s in a.short_answer] == [interpret.NO_VERDICT_LINE]
 
 

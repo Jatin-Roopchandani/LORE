@@ -281,6 +281,7 @@ def test_an_answer_of_facts_alone_is_checked_exactly_as_before():
 
 def test_the_check_prompt_is_unchanged_when_off(monkeypatch):
     monkeypatch.setattr(w, "READINGS", False)
+    monkeypatch.setattr(w, "COVERAGE", False)
     sents = [S("Rin met a teacher and trained.", [1, 2]), S("Rin trained.", [3])]
     assert faithfulness_prompt(CS, PS, TITLES, books=BOOKS) == GOLDEN["check_plain"]
     assert faithfulness_prompt(CS, PS, TITLES, sents, books=BOOKS, gaps=["x"]) == GOLDEN["check_sentences"]
@@ -333,7 +334,8 @@ async def test_a_supported_reading_reaches_the_answer_marked():
     prompts = []
     a = await _ask(prose, ("supported",) * 3, prompts)
     assert a.answer_style == "prose"
-    assert [s.kind for s in a.prose] == ["fact", "fact", "reading"]
+    # the fact the writer left out is placed by code (COVERAGE), before the reading
+    assert [s.kind for s in a.prose] == ["fact", "fact", "fact", "reading"]
     assert "This suggests a growing commitment." in a.text
     assert "(reading)" in prompts[0]
 
@@ -342,7 +344,7 @@ async def test_an_unsupported_reading_is_removed_and_the_facts_stay():
     prose = Prose(sentences=[S("Rin met a teacher.", [2]), S("Rin trained with the sword.", [3]),
                              R("This suggests a growing commitment.", [2, 3])])
     a = await _ask(prose, ("supported", "supported", "not_supported"))
-    assert a.answer_style == "prose" and [s.kind for s in a.prose] == ["fact", "fact"]
+    assert a.answer_style == "prose" and [s.kind for s in a.prose] == ["fact", "fact", "fact"]
     assert "commitment" not in a.text
 
 

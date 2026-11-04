@@ -1363,7 +1363,9 @@ async def test_claims_fallback_leaves_unanswered_empty():
     assert a.answer_style == "claims" and a.unanswered == ()
 
 
-async def test_one_sided_prose_over_parts_falls_back_to_claims():
+async def test_one_sided_prose_over_parts_falls_back_to_claims(monkeypatch):
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "COVERAGE", False)  # with it, code covers the other part
     gen = _per_part([Synthesis(claims=[WHY_D], can_answer=True),
                      Synthesis(claims=[WHY_S], can_answer=True)], [])
     write, _ = _gen(Prose(sentences=[Sentence(text="Stangerson shot her father.", claims=[2])]))
@@ -1371,6 +1373,16 @@ async def test_one_sided_prose_over_parts_falls_back_to_claims():
                                check=_check(["supported"] * 2, ["supported"]), write=write)
     assert a.answer_style == "claims" and len(a.claims) == 2
     assert PROSE_FALLBACK_NOTE in a.note
+
+
+async def test_with_coverage_one_sided_prose_gets_the_other_parts_claim():
+    gen = _per_part([Synthesis(claims=[WHY_D], can_answer=True),
+                     Synthesis(claims=[WHY_S], can_answer=True)], [])
+    write, _ = _gen(Prose(sentences=[Sentence(text="Stangerson shot her father.", claims=[2])]))
+    a = await synthesize_parts("Why?", SUBS, PARTS_EV, gen, mode="graph",
+                               check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "prose" and len(a.claims) == 2
+    assert {k for s in a.prose for k in s.claims} == {1, 2}
 
 
 def test_attribute_speech_adds_its_rule_only_when_on(monkeypatch) -> None:

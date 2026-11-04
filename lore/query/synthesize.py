@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from lore.query import interpret
 from lore.query import write as write_module
@@ -39,7 +39,8 @@ from lore.query.models import (
 )
 from lore.query.position import order_passages
 from lore.query.write import (
-    SHORT_ANSWER_HEADING, assemble, book_infos, clean_gaps, compose_answer, compose_text, coverage_gaps, paragraphs_by_book, part_texts, split_items,
+    SHORT_ANSWER_HEADING, Repair, assemble, book_infos, cite_restated, clean_gaps, compose_answer,
+    compose_text, coverage_gaps, paragraphs_by_book, part_texts, place_uncited, split_items,
     valid_unanswered, verify_prose, write_answer,
 )
 
@@ -623,6 +624,34 @@ class Faithfulness(_PlainFaithfulness):
     gap_judgements: list[Judgement] = []
 
 
+class RestatedJudgement(Judgement):
+    # COVERAGE: the 1-based number of a sentence that already says everything
+    # this claim says, or 0.
+    restated_by: int = 0
+
+
+def _fidelity_schema(restated: bool) -> type[BaseModel]:
+    """The check's reply when it also judges coverage (write.COVERAGE). Shown
+    to the model as "Faithfulness", like the schema it extends."""
+    fields = {}
+    if restated:
+        fields["judgements"] = (list[RestatedJudgement], ...)
+    return create_model("Faithfulness", __base__=Faithfulness, __module__=__name__, **fields)
+
+
+_FIDELITY_SCHEMAS = {True: _fidelity_schema(True)}
+
+
+def check_schema(with_sentences: bool) -> type[BaseModel]:
+    """The schema the check is asked for: the plain one without STORY_ORDER,
+    and with sentences to judge, the one carrying the coverage verdicts that
+    are switched on."""
+    if not write_module.STORY_ORDER:
+        return _PlainFaithfulness
+    restated = with_sentences and write_module.coverage_on()
+    return _FIDELITY_SCHEMAS[True] if restated else Faithfulness
+
+
 _CHECK_PROMPT = """Check each numbered claim against the one passage it cites.
 
 Passages:
@@ -707,6 +736,13 @@ fairly support this reading; it is worded visibly as a reading ("suggests",
 the claims.
 "{not_supported}": it overreaches beyond the claims, is stated as plain
 fact, or adds detail.
+"""
+
+# COVERAGE: which claims a sentence already says, so code adds no duplicate of them.
+_RESTATED_BLOCK = """
+For each claim, also give restated_by in its judgements entry: the number of a
+sentence above that already says everything the claim says, whether or not
+that sentence lists the claim; 0 when no sentence does.
 """
 
 # Gaps are statements that the facts leave something out; code shows them
@@ -801,6 +837,8 @@ def faithfulness_prompt(
             prompt += _READINGS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
         if shape is not None:
             prompt += interpret.check_blocks(shape, kinds, SUPPORTED, NOT_SUPPORTED)
+        if write_module.coverage_on():
+            prompt += _RESTATED_BLOCK
         if story and gaps:
             prompt += _GAPS_BLOCK.format(
                 gaps="\n".join(f"{i}. gap: {g}" for i, g in enumerate(gaps, start=1)),
@@ -871,6 +909,9 @@ class CheckOutcome:
     # Per gap asked: True when the check agrees the facts leave it open.
     # None when no gaps were asked or the verdicts did not line up.
     gap_ok: list[bool] | None = None
+    # COVERAGE, per claim: the 1-based number of the sentence that restates it,
+    # or 0. None when not asked.
+    restated: list[int] | None = None
 
 
 async def check_answer(
@@ -894,16 +935,19 @@ async def check_answer(
     if not claims:
         return CheckOutcome([], [], True, [], None)
     passages = list(passages)
-    gap_ok = None
+    gap_ok = restated = None
     try:
         result = await check(
             faithfulness_prompt(claims, passages, book_titles, sentences, books, gaps, shape),
-            Faithfulness if write_module.STORY_ORDER else _PlainFaithfulness)
+            check_schema(bool(sentences)))
         verdicts = validated_verdicts(result, len(claims))
         sentence_ok = (validated_sentence_verdicts(result, len(sentences))
                        if sentences and verdicts is not None else None)
         if gaps and sentences and verdicts is not None and write_module.STORY_ORDER:
             gap_ok = validated_gap_verdicts(result, len(gaps))
+        if sentence_ok is not None and write_module.coverage_on():
+            restated = [_sentence_number(getattr(j, "restated_by", 0), len(sentences))
+                        for j in result.judgements]
     except Exception:  # noqa: BLE001 -- see check_claims
         verdicts, sentence_ok = None, None
     if verdicts is None:
@@ -912,7 +956,17 @@ async def check_answer(
     dropped: list[tuple[Claim, str]] = []
     for claim, (supported, reason) in zip(claims, verdicts):
         (kept.append(claim) if supported else dropped.append((claim, reason)))
-    return CheckOutcome(kept, dropped, True, [ok for ok, _ in verdicts], sentence_ok, gap_ok)
+    return CheckOutcome(kept, dropped, True, [ok for ok, _ in verdicts], sentence_ok, gap_ok,
+                        restated)
+
+
+def _sentence_number(value, count: int) -> int:
+    """A sentence number the check gave, or 0 when it is not one of 1..count."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return n if 1 <= n <= count else 0
 
 
 async def check_claims(
@@ -983,9 +1037,27 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
                                  gaps=gaps if sentences else None, shape=shape)
     skipped = None if outcome.ran else CHECK_SKIPPED_NOTE
     prose: tuple[ProseSentence, ...] = ()
+    # COVERAGE: every kept claim the check did not cut reaches the shown prose.
+    # A short answer summarises the sections after it, so it is exempt.
+    enforce = write_module.coverage_on() and length not in ("short", "recap_short")
+
+    def build(sents, n_written, outc):
+        if enforce:
+            sents = cite_restated(sents, outc.claim_ok, outc.sentence_ok, outc.restated)
+        return assemble(sents, n_written, outc.claim_ok, outc.sentence_ok, passage_of)
+
     if sentences is not None:
-        built = (assemble(sentences, written, outcome.claim_ok, outcome.sentence_ok, passage_of)
-                 if sentences and outcome.ran and outcome.sentence_ok is not None else None)
+        ready = bool(sentences) and outcome.ran and outcome.sentence_ok is not None
+        built = build(sentences, written, outcome) if ready else None
+        if built and enforce:
+            # The repair round serves a draft that passed: a draft that did not
+            # takes the fallback (or a section's rewrite) as before.
+            repaired = await _repair(question, sub_questions, kept, evidence, check, write,
+                                     book_titles, books, shape, length, covered, sentences,
+                                     outcome, gaps)
+            better = build(*repaired) if repaired is not None else None
+            if better:  # used only if it passes too; else the first draft stands
+                built, (sentences, written, outcome) = better, repaired
         rejected = ([s.text for s, ok in zip(sentences, outcome.sentence_ok or [])
                      if not ok and getattr(s, "kind", "fact") == "fact"]
                     if sentences and len(outcome.sentence_ok or []) == len(sentences) else [])
@@ -1002,10 +1074,12 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
                                               book_titles=book_titles, sentences=second,
                                               books=books, shape=shape)
                 if outcome2.ran and outcome2.sentence_ok is not None:
-                    built = assemble(second, len(split_items(again)), outcome2.claim_ok,
-                                     outcome2.sentence_ok, passage_of)
+                    built = build(second, len(split_items(again)), outcome2)
                     if built:
                         outcome, gaps = outcome2, []
+        if built and enforce:
+            built = place_uncited(built, [c.text for c in outcome.kept],
+                                  [c.passage for c in outcome.kept])
         if built and part_claims is not None:
             numbered = [[outcome.kept.index(c) + 1 for c in cs if c in outcome.kept]
                         for cs in part_claims]
@@ -1029,6 +1103,50 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
         prose, shown_gaps = interpret.close_answer(prose, shape, shown_gaps, survivors), ()
     return (outcome.kept, [c for c, _ in outcome.dropped], prose, skipped, prose_note,
             tuple(missing) if prose else (), shown_gaps)
+
+
+def uncited_claims(sentences: Sequence["Sentence"], outcome: CheckOutcome) -> list[int]:
+    """The kept claims (1-based) that no sentence the check passed cites, and
+    that the check does not say a passing fact sentence restates."""
+    ok = outcome.sentence_ok or []
+    claim_ok = outcome.claim_ok
+    passing = [good and all(1 <= k <= len(claim_ok) and claim_ok[k - 1] for k in s.claims)
+               for s, good in zip(sentences, ok)]
+    cited = {k for s, good in zip(sentences, passing) if good for k in s.claims}
+    restated = outcome.restated or []
+    covered = {k for k, at in enumerate(restated, start=1)
+               if 1 <= at <= len(sentences) and passing[at - 1]
+               and getattr(sentences[at - 1], "kind", "fact") == "fact"}
+    return [k for k, good in enumerate(claim_ok, start=1)
+            if good and k not in cited and k not in covered]
+
+
+async def _repair(question, sub_questions, kept, evidence, check, write, book_titles, books,
+                  shape, length, covered, sentences, outcome, gaps):
+    """COVERAGE's repair round: (sentences, written, outcome) of the writer's
+    revised draft, checked again, or None when nothing needs repair or the
+    round failed (the first draft then stands, and code places what it left
+    out). The writer sees the sentences that passed and the claims they leave
+    out, and is asked to work those in without changing the rest."""
+    missing = uncited_claims(sentences, outcome)
+    if not missing:
+        return None
+    ok = outcome.sentence_ok or []
+    shown = [s for s, good in zip(sentences, ok)
+             if good and all(outcome.claim_ok[k - 1] for k in s.claims)]
+    again = await write_answer(question, sub_questions, kept, evidence.passages, write,
+                               book_titles=book_titles, books=books, shape=shape, length=length,
+                               covered=covered, repair=Repair(draft=tuple(shown),
+                                                              missing=tuple(missing)))
+    second = (verify_prose(again, len(kept), [c.text for c in kept], shape)
+              if again is not None else [])
+    if not second:
+        return None
+    outcome2 = await check_answer(kept, evidence.passages, check, book_titles=book_titles,
+                                  sentences=second, books=books, gaps=gaps or None, shape=shape)
+    if not (outcome2.ran and outcome2.sentence_ok is not None):
+        return None
+    return second, len(split_items(again)), outcome2
 
 
 async def synthesize(
