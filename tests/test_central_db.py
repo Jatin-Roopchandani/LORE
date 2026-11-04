@@ -148,7 +148,10 @@ def test_migrations_apply_on_a_throwaway_postgres():
         with engine.connect() as conn:
             assert not compare_metadata(MigrationContext.configure(conn), Base.metadata)
         with central.make_session_factory(engine)() as s:
+            # No relationship() ties Job to User, so the unit of work does not order
+            # the inserts by the foreign key: flush the user first, as the app does.
             s.add(User(id="u1", email="a@x.org"))
+            s.flush()
             s.add(Job(user_id="u1", book_id="b1", kind="process"))
             s.commit()
     finally:
