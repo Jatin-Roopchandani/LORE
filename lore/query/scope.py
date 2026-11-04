@@ -14,6 +14,12 @@ optional `world` argument (id or name) into the scopes to search:
 A scope whose books are the whole library is unscoped (`books=None`): it
 filters nothing, so a one-world library takes exactly the code path it took
 before worlds existed.
+
+A world's stored reading position (lore/reading_position.py), when switched on,
+narrows its scope to what the reader has read: `books` becomes a
+`visible.VisibleBooks` (the books with anything visible, some capped at a
+chapter) and `position` says where the reader is. `spoilers=True` skips this,
+for one request. With no position on, nothing here differs from before.
 """
 from __future__ import annotations
 
@@ -21,6 +27,9 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Iterable
 
+from lore.ingest.registry import book_rows
+from lore.query import visible
+from lore.reading_position import enabled_positions
 from lore.worlds import World, list_worlds
 
 ALL_WORLDS = "all"
@@ -37,9 +46,17 @@ class Scope:
     books: frozenset[str] | None = None
     world_id: int | None = None
     world: str | None = None
+    # Where the reader is, when a reading position limits this scope.
+    position: visible.PositionView | None = None
 
     def allows(self, book_id: str) -> bool:
+        """Whether any of the book may be read (the book level of `sees`)."""
         return self.books is None or book_id in self.books
+
+    def sees(self, book_id: str, chapter: int) -> bool:
+        """Whether the chunk at (book, chapter) may be read: the one visibility
+        predicate (lore/query/visible.py)."""
+        return visible.sees(self.books, book_id, chapter)
 
     def allows_any(self, book_ids: Iterable[str]) -> bool:
         return self.books is None or any(b in self.books for b in book_ids)
@@ -66,9 +83,27 @@ def _blank(world) -> bool:
     return world is None or (isinstance(world, str) and not world.strip())
 
 
-def resolve_scopes(conn: sqlite3.Connection, world: int | str | None = None) -> list[Scope]:
+def _with_position(conn: sqlite3.Connection, scopes: list[Scope]) -> list[Scope]:
+    """Each scope narrowed by its world's switched-on reading position."""
+    positions = enabled_positions(conn)
+    if not positions:
+        return scopes
+    infos = book_rows(conn)
+    out = []
+    for scope in scopes:
+        stored = positions.get(scope.world_id) if scope.world_id is not None else None
+        made = (visible.visible_books(scope.books or frozenset(), stored, infos)
+                if stored is not None and scope.books is not None else None)
+        out.append(scope if made is None else
+                   Scope(made[0], scope.world_id, scope.world, made[1]))
+    return out
+
+
+def resolve_scopes(conn: sqlite3.Connection, world: int | str | None = None, *,
+                   spoilers: bool = False) -> list[Scope]:
     """The scopes to search, in world-id order (see the module docstring).
-    Raises UnknownWorld for a `world` that is not one of the library's."""
+    Raises UnknownWorld for a `world` that is not one of the library's.
+    `spoilers=True` ignores any reading position."""
     try:
         worlds = list_worlds(conn)
     except sqlite3.OperationalError:  # a library from before worlds
@@ -91,7 +126,9 @@ def resolve_scopes(conn: sqlite3.Connection, world: int | str | None = None) -> 
         orphans = [r[0] for r in conn.execute("SELECT id FROM books WHERE world_id IS NULL")]
         if orphans:
             scopes.append(Scope(frozenset(orphans)))
-    if len(scopes) == 1 and scopes[0].books >= everything:
+    if not spoilers:
+        scopes = _with_position(conn, scopes)
+    if len(scopes) == 1 and scopes[0].position is None and scopes[0].books >= everything:
         only = scopes[0]
         return [Scope(None, only.world_id, only.world)]
     return scopes
@@ -105,12 +142,17 @@ def union(scopes: list[Scope]) -> frozenset[str] | None:
     """Every book any scope may read; None when one of them reads them all."""
     if any(s.books is None for s in scopes):
         return None
-    return frozenset().union(*(s.books for s in scopes))
+    return visible.merge(s.books for s in scopes)
 
 
-def world_books(conn: sqlite3.Connection, world: int | str | None) -> frozenset[str] | None:
+def world_books(conn: sqlite3.Connection, world: int | str | None, *,
+                spoilers: bool = False) -> frozenset[str] | None:
     """The books a read-only lookup may use: the named world's, or None (no
-    filter) when no world is named. Raises UnknownWorld."""
+    filter) when no world is named. Raises UnknownWorld. A reading position that
+    is on narrows this, also with no world named (every world's, each by its own
+    position); `spoilers=True` ignores it."""
     if _blank(world) or str(world).strip().casefold() == ALL_WORLDS:
-        return None
-    return union(resolve_scopes(conn, world))
+        if spoilers or not enabled_positions(conn):
+            return None
+        return union(resolve_scopes(conn, None))
+    return union(resolve_scopes(conn, world, spoilers=spoilers))
