@@ -515,3 +515,38 @@ def test_stretch_graph_is_empty_without_a_graph_or_linked_beats() -> None:
     chapters = (_chapter("b", 1, 1),)
     stretch = recap_module.Stretch("b", chapters, "Chapter 1", "chapter 1 of B")
     assert recap_module.stretch_graph(None, stretch, [_beat("b", 1, 0)], Scope(), {}) == ([], [])
+
+
+def test_a_one_chapter_section_is_headed_with_the_chapters_own_name() -> None:
+    chapters = [_chapter("b", 5, 20), _chapter("b", 6, 20), _chapter("b", 7, 20)]
+    out = recap_module.plan_stretches(chapters, {"b": "B"}, per_section=20,
+                                      numbers={("b", 5): 1, ("b", 6): 2, ("b", 7): 3},
+                                      names={("b", 5): "Mr. Ana", ("b", 7): "The Gate"})
+    assert [s.heading for s in out] == ["Chapter 1 · Mr. Ana", "Chapter 2", "Chapter 3 · The Gate"]
+    assert out[0].focus == "chapter 1 of B"  # what the claims step is asked: no name in it
+    joined = recap_module.plan_stretches(chapters, {"b": "B"}, per_section=60,
+                                         numbers={("b", 5): 1, ("b", 6): 2, ("b", 7): 3},
+                                         names={("b", 5): "Mr. Ana"})
+    assert [s.heading for s in joined] == ["Chapters 1–3"]
+
+
+async def test_sections_carry_no_repeated_subtitle_and_stay_in_story_order(config) -> None:
+    scripted = RecapModels(Recap("story"))
+    position(config, "hb2", 2)
+    answer, events = await ask(config, scripted)
+    assert all(s.title == "" for s in answer.sections)
+    plan = next(e for e in events if e["type"] == "plan")
+    assert all(s["title"] == "" for s in plan["sections"])
+    done = [e["index"] for e in events if e["type"] == "section" and e["state"] == "done"]
+    assert done == sorted(done)  # registered and shown in story order however they were drafted
+    starts = [c.claims_start for c in answer.sections]
+    assert starts == sorted(starts)
+
+
+async def test_the_gist_is_told_to_reach_the_end_of_the_stretch(config) -> None:
+    scripted = RecapModels(Recap("story"))
+    position(config, "hb2", 2)
+    answer, _ = await ask(config, scripted)
+    last = answer.sections[-1].heading
+    short_prompts = [p for p in scripted.prompts("write") if "where things stand at its end" in p]
+    assert short_prompts and last in short_prompts[-1]

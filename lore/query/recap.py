@@ -34,6 +34,7 @@ never evidence. Nothing here knows any library or any question.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import re
@@ -80,6 +81,10 @@ RECAP_SECTION_BEATS = 24
 THIN_CHAPTER_PASSAGES = 3
 # Requests: the same ceiling as a deep answer, with room for the short answer.
 RECAP_MAX_REQUESTS = deep_module.DEEP_MAX_REQUESTS
+# Sections drafted at once. Each reads only its own chapters, so drafting them
+# together changes nothing they see; they are still numbered and shown in story
+# order. Three keep well inside a free key's requests per minute.
+RECAP_CONCURRENCY = 3
 # The short answer: the gist, at most this many sentences, from at most this many
 # claims spread over the sections.
 SHORT_SENTENCES = 2
@@ -141,6 +146,13 @@ def chapter_numbers(conn: sqlite3.Connection,
     (every chapter, numbered in order, for a book not classified)."""
     return {(b, c["seq"]): c["number"] for b in sorted(set(book_ids))
             for c in story_chapters(conn, b)}
+
+
+def chapter_names(conn: sqlite3.Connection,
+                  book_ids: Sequence[str]) -> dict[tuple[str, int], str]:
+    """(book, chapter_seq) -> the chapter's own heading, where the book has one."""
+    return {(b, c["seq"]): c["heading"] for b in sorted(set(book_ids))
+            for c in story_chapters(conn, b) if c.get("heading")}
 
 
 def _seq(chunk_id: str) -> int:
@@ -383,23 +395,27 @@ def balanced_split(weights: Sequence[int], k: int) -> list[list[int]]:
     return groups
 
 
-def chapter_label(chapters: Sequence[int]) -> str:
-    """"Chapter 4", or "Chapters 3–6" for several (first to last)."""
+def chapter_label(chapters: Sequence[int], name: str | None = None) -> str:
+    """"Chapter 4", "Chapter 4 · The Name" when one named chapter, or
+    "Chapters 3–6" for several (first to last)."""
     first, last = min(chapters), max(chapters)
-    return f"Chapter {first}" if first == last else f"Chapters {first}–{last}"
+    if first != last:
+        return f"Chapters {first}–{last}"
+    return f"Chapter {first} · {name}" if name else f"Chapter {first}"
 
 
 def plan_stretches(chapters: Sequence[Chapter], titles: Mapping[str, str],
                    max_sections: int = RECAP_MAX_SECTIONS,
                    per_section: int = SECTION_CHUNKS,
-                   numbers: Mapping[tuple[str, int], int] | None = None) -> list[Stretch]:
+                   numbers: Mapping[tuple[str, int], int] | None = None,
+                   names: Mapping[tuple[str, int], str] | None = None) -> list[Stretch]:
     """The span's sections, in story order. Each holds consecutive chapters of
     one book; their number grows with the span's text (one per `per_section`
     chunks, at most `max_sections`, at least one per book), and they are shared
     among the books by how much text each holds. A span over several books
     groups its sections under the book titles. Headings use the book's own
     chapter numbers (`numbers`, from `Span.numbers`), else the raw chapter_seq."""
-    numbers = numbers or {}
+    numbers, names = numbers or {}, names or {}
     by_book: dict[str, list[Chapter]] = {}
     for c in chapters:
         by_book.setdefault(c.book_id, []).append(c)
@@ -421,9 +437,11 @@ def plan_stretches(chapters: Sequence[Chapter], titles: Mapping[str, str],
         title = titles.get(book_id) or book_id
         for group in balanced_split([len(c.chunks) for c in mine], share[book_id]):
             members = tuple(mine[i] for i in group)
-            label = chapter_label([numbers.get(c.key, c.chapter) for c in members])
+            plain = chapter_label([numbers.get(c.key, c.chapter) for c in members])
+            label = chapter_label([numbers.get(c.key, c.chapter) for c in members],
+                                  names.get(members[0].key) if len(members) == 1 else None)
             out.append(Stretch(book_id, members, label,
-                               f"{label[0].lower()}{label[1:]} of {title}",
+                               f"{plain[0].lower()}{plain[1:]} of {title}",
                                group=title if multi else ""))
     return out
 
@@ -517,14 +535,20 @@ async def short_gist(question: str, sections: Sequence[AnswerSection], claims: S
     summary" line when none survives."""
     picked = deep_module._spread(sections, SHORT_CLAIMS)
     numbers = [k for _, k in picked]
+    # The gist must reach the end of the stretch, not stop at its first chapters:
+    # the writer is told where the stretch ends, and a longer recap gets a third sentence.
+    sentences = SHORT_SENTENCES + (1 if len(sections) >= 4 else 0)
+    ask = (f"{question} (The gist must run from the start of the stretch to where things "
+           f"stand at its end, in {sections[-1].heading}, in at most {sentences} sentences.)"
+           if sections else question)
     try:
         got = await deep_module.cited_prose(
-            question, [question], [claims[k - 1] for k in numbers], passages, models,
+            ask, [ask], [claims[k - 1] for k in numbers], passages, models,
             length="recap_short", book_titles=dict(book_titles or {}), books=dict(books or {}))
     except Exception:  # noqa: BLE001 -- the sections are written; the gist is an extra
         log.exception("the recap's short answer failed")
         got = None
-    chosen = [s for s in got or () if s.kind == "fact"][:SHORT_SENTENCES]
+    chosen = [s for s in got or () if s.kind == "fact"][:sentences]
     if not chosen:
         return (ProseSentence(text=deep_module.NO_SUMMARY_LINE, claims=(), passages=(),
                               new_paragraph=True, kind="limit", short=True),)
@@ -545,23 +569,30 @@ def compose_recap(sections: Sequence[AnswerSection], short: Sequence[ProseSenten
     return "\n\n".join(blocks)
 
 
-async def run_stretch(index: int, stretch: Stretch, span: Span, *, question: str, models,
-                      titles: Mapping[str, str], books: Mapping[str, BookInfo],
-                      registry: deep_module.Registry,
-                      covered: Sequence[str]) -> tuple[AnswerSection | None, list, list]:
-    """One section: its evidence, its claims (an earlier section's facts dropped), its
-    prose. (section or None when nothing was found, its claims, the passages it added)."""
+async def draft_stretch(stretch: Stretch, span: Span, *, question: str, models,
+                        titles: Mapping[str, str], books: Mapping[str, BookInfo],
+                        registry: deep_module.Registry, covered: Sequence[str]):
+    """One section's checked claims and prose, before it is numbered: (answer,
+    evidence), or (None, evidence) when nothing was found. Drafts of different
+    sections may run at once: each reads only its own chapters."""
     evidence, _shown = section_evidence(stretch, span.beats,
                                         min(models.evidence_chars, RECAP_SECTION_CHARS))
     if not evidence.passages:
-        return None, [], []
+        return None, evidence
     unseen = deep_module._unseen(registry)
     spec = SectionSpec(part_of=question, max_claims=RECAP_SECTION_CLAIMS, length="recap",
                        focus=stretch.focus, covered=tuple(covered), skip=unseen)
     answer = await synthesize(f"What happens in {stretch.focus}?", evidence, models.synthesize,
                               mode="graph", check=models.check, write=models.write,
                               book_titles=dict(titles), books=dict(books), section=spec)
-    if not answer.claims:
+    return (answer if answer.claims else None), evidence
+
+
+def register_stretch(stretch: Stretch, answer, evidence,
+                     registry: deep_module.Registry) -> tuple[AnswerSection | None, list, list]:
+    """Number a drafted section into the answer (sections are registered in
+    story order): (section or None, its claims, the passages it added)."""
+    if answer is None:
         return None, [], []
     local = {p.n: p for p in evidence.passages}
     claims, offset, added = registry.add(answer.claims, local)
@@ -573,7 +604,7 @@ async def run_stretch(index: int, stretch: Stretch, span: Span, *, question: str
     section = AnswerSection(heading=stretch.heading, prose=prose, text=text,
                             claims_start=offset + 1, claims_end=offset + len(claims), style=style,
                             note=answer.note, group=stretch.group, group_title=stretch.group,
-                            title=f"What happens in {stretch.focus}")
+                            title="")
     return section, claims, added
 
 
@@ -636,7 +667,8 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
     # are the ones the reader has met.
     span = replace(span, beats=tuple(visible_module.shown_beats(kuzu, scope.books,
                                                                 list(span.beats), books)))
-    stretches = plan_stretches(span.chapters, titles, numbers=span.numbers)
+    stretches = plan_stretches(span.chapters, titles, numbers=span.numbers,
+                               names=chapter_names(conn, sorted({c.book_id for c in span.chapters})))
     chapters = len(span.chapters)
     found = (f"{len(span.beats)} beats" if span.beats
              else f"{sum(len(c.chunks) for c in span.chapters)} passages")
@@ -649,7 +681,7 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
                           note=None, sub_questions=(question,))
         return None
     emit(on_event, "plan", scope=span.order_note, candidates=len(span.beats),
-         sections=[{"index": i, "heading": s.heading, "title": f"What happens in {s.focus}",
+         sections=[{"index": i, "heading": s.heading, "title": "",
                     "group": s.group, "group_title": s.group, "entities": []}
                    for i, s in enumerate(stretches)])
     emit(on_event, "parts", sub_questions=[s.heading for s in stretches])
@@ -659,54 +691,69 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
     failures: list[BaseException] = []
     empties = 0
     edges: list = []
-    for index, stretch in enumerate(stretches):
-        reason = None
-        if spend.n + deep_module.SECTION_REQUESTS + deep_module.TAIL_REQUESTS > RECAP_MAX_REQUESTS:
-            reason = "budget"
-        elif models.spend_ok is not None and not models.spend_ok():
-            reason = "reserve"
-        meta = {"group": stretch.group, "group_title": stretch.group,
-                "title": f"What happens in {stretch.focus}"}
-        if reason:
-            skipped.append(stretch.heading)
-            emit(on_event, "section", index=index, state="skipped", kind="section",
-                 heading=stretch.heading, reason=reason, **meta)
-            continue
-        emit(on_event, "step", name="section", state="start", part=index, detail=None)
-        emit(on_event, "section", index=index, state="start", kind="section",
-             heading=stretch.heading, **meta)
-        seeds, rows = stretch_graph(kuzu, stretch, span.beats, scope, books)
-        if seeds:
-            emit(on_event, "seeds", part=index, entities=list(seeds))
-            emit(on_event, "edges", part=index, template="across_books", total=len(rows),
-                 edges=rows[:EDGES_PER_PART_CAP])
-            edges += rows
-        try:
-            section, claims, added = await run_stretch(
-                index, stretch, span, question=question, models=models, titles=titles,
-                books=books, registry=registry, covered=[d.heading for d in done])
-        except Exception as err:  # noqa: BLE001 -- one section failing leaves the others
-            log.exception("recap section %r failed", stretch.heading)
-            failures.append(err)
-            emit(on_event, "section", index=index, state="done", kind="section",
-                 heading=stretch.heading, style="failed", text="", prose=[], claims=[],
-                 claims_range=None, passages=[], note="the section could not be written", **meta)
-            emit(on_event, "step", name="section", state="done", part=index, detail="failed")
-            continue
-        if section is None:
-            empties += 1
-            emit(on_event, "section", index=index, state="done", kind="section",
-                 heading=stretch.heading, style="empty", text="", prose=[], claims=[],
-                 claims_range=None, passages=[], note=None, **meta)
+    gate = asyncio.Semaphore(RECAP_CONCURRENCY)
+
+    async def draft(index: int, stretch: Stretch):
+        """("skipped", reason) | ("failed", error) | ("ok", answer, evidence)."""
+        nonlocal edges
+        async with gate:
+            if spend.n + deep_module.SECTION_REQUESTS + deep_module.TAIL_REQUESTS > RECAP_MAX_REQUESTS:
+                return ("skipped", "budget")
+            if models.spend_ok is not None and not models.spend_ok():
+                return ("skipped", "reserve")
+            emit(on_event, "step", name="section", state="start", part=index, detail=None)
+            emit(on_event, "section", index=index, state="start", kind="section",
+                 heading=stretch.heading, group=stretch.group, group_title=stretch.group, title="")
+            seeds, rows = stretch_graph(kuzu, stretch, span.beats, scope, books)
+            if seeds:
+                emit(on_event, "seeds", part=index, entities=list(seeds))
+                emit(on_event, "edges", part=index, template="across_books", total=len(rows),
+                     edges=rows[:EDGES_PER_PART_CAP])
+                edges = edges + rows
+            try:
+                answer, evidence = await draft_stretch(
+                    stretch, span, question=question, models=models, titles=titles, books=books,
+                    registry=registry, covered=[s.heading for s in stretches[:index]])
+            except Exception as err:  # noqa: BLE001 -- one section failing leaves the others
+                log.exception("recap section %r failed", stretch.heading)
+                return ("failed", err)
+            return ("ok", answer, evidence)
+
+    tasks = [asyncio.create_task(draft(i, s)) for i, s in enumerate(stretches)]
+    try:
+        for index, (stretch, task) in enumerate(zip(stretches, tasks)):
+            meta = {"group": stretch.group, "group_title": stretch.group, "title": ""}
+            outcome = await task
+            if outcome[0] == "skipped":
+                skipped.append(stretch.heading)
+                emit(on_event, "section", index=index, state="skipped", kind="section",
+                     heading=stretch.heading, reason=outcome[1], **meta)
+                continue
+            if outcome[0] == "failed":
+                failures.append(outcome[1])
+                emit(on_event, "section", index=index, state="done", kind="section",
+                     heading=stretch.heading, style="failed", text="", prose=[], claims=[],
+                     claims_range=None, passages=[], note="the section could not be written", **meta)
+                emit(on_event, "step", name="section", state="done", part=index, detail="failed")
+                continue
+            section, claims, added = register_stretch(stretch, outcome[1], outcome[2], registry)
+            if section is None:
+                empties += 1
+                emit(on_event, "section", index=index, state="done", kind="section",
+                     heading=stretch.heading, style="empty", text="", prose=[], claims=[],
+                     claims_range=None, passages=[], note=None, **meta)
+                emit(on_event, "step", name="section", state="done", part=index,
+                     detail="nothing found")
+                continue
+            done.append(section)
+            event = deep_module._section_event(index, "section", section, stretch.heading, claims,
+                                               added, section.style)
+            emit(on_event, "section", **(event | meta))
             emit(on_event, "step", name="section", state="done", part=index,
-                 detail="nothing found")
-            continue
-        done.append(section)
-        event = deep_module._section_event(index, "section", section, stretch.heading, claims,
-                                           added, section.style)
-        emit(on_event, "section", **(event | meta))
-        emit(on_event, "step", name="section", state="done", part=index,
-             detail=f"{len(claims)} claims")
+                 detail=f"{len(claims)} claims")
+    finally:
+        for task in tasks:
+            task.cancel()
     if not done:
         if failures and len(failures) + len(skipped) == len(stretches):
             raise failures[-1]
