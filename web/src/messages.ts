@@ -98,6 +98,7 @@ export const LIBRARY = {
   continue: "Continue", retry: "Retry", process: "Process",
   action: (verb: string, title: string) => `${verb} ${title}`,
   pausedDefault: "Paused until the daily allowance resets.",
+  pausedKey: "Paused: your Gemini key needs attention.",
   failedDefault: "Processing failed.",
   startFailed: "Couldn't start processing.",
   gemini: (used: number, limit: number, reserve: number, internals: boolean) =>
@@ -273,6 +274,10 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
       return { text: error.message || "There's no graph yet. Process a book first." };
     case "bad_request":
       return { text: error.message || "That question couldn't be sent. Questions are 1 to 2,000 characters." };
+    case "key_required":
+      return { text: "Add your Gemini API key to ask questions." };
+    case "key_invalid":
+      return { text: "Gemini refused your API key. Replace it to carry on." };
     default:
       return { text: error.message || "Something went wrong.", retry: true };
   }
@@ -337,6 +342,43 @@ export const AUTH = {
   notFound: "There's nothing at this address.",
 };
 
+// Each user's own Gemini key (multi-user mode): onboarding, the account menu and the errors that lead back to them.
+export const KEYS = {
+  onboardingTitle: "Add your Gemini API key",
+  replaceTitle: "Replace your Gemini API key",
+  why: "LORE reads your books and answers your questions with Google's Gemini models. Each reader brings their own free key, so LORE costs you nothing and your allowance is yours alone.",
+  getKey: "Get a free key from Google AI Studio",
+  getKeyUrl: "https://aistudio.google.com/app/apikey",
+  freeTier: "The free tier allows about 1,000 requests a day, and resets at midnight Pacific time. A question takes a handful; processing a book takes more.",
+  privacy: "The passages LORE finds and your questions are sent to Gemini under your own key. Your key is stored encrypted and is never shown in full again.",
+  rejected: "Gemini refused your saved key. It may have been deleted or expired. Paste a new one to carry on; your paused books continue once it works.",
+  fieldLabel: "Gemini API key",
+  placeholder: "Paste your key here",
+  save: "Check and save",
+  checking: "Checking…",
+  saved: "Key saved.",
+  continue: "Continue",
+  cancel: "Cancel",
+  errors: {
+    key_format: "That doesn't look like a Gemini API key. Copy the whole key from Google AI Studio and paste it again.",
+    key_invalid: "Gemini didn't accept that key. Check you copied all of it, or create a new key in Google AI Studio.",
+    rate_limited: "Too many tries. Please wait a while and try again.",
+    unreachable: "LORE isn't reachable right now. Check your connection and try again.",
+  } as Record<string, string>,
+  saveFailed: "The key couldn't be saved. Please try again.",
+  // The account menu.
+  section: "Gemini key",
+  endingIn: (last4: string) => `Key ending in …${last4}`,
+  none: "No key saved.",
+  needsReplacing: "Gemini refused this key. Replace it to carry on.",
+  unchecked: "Not confirmed yet: it will be checked on your next question.",
+  replace: "Replace",
+  remove: "Remove",
+  removeConfirm: "Remove your key? Asking questions and processing books stop until you add one again.",
+  removeYes: "Remove key",
+  usage: (used: number, limit: number) => `Requests used today: ${used.toLocaleString("en")} / about ${limit.toLocaleString("en")}`,
+};
+
 // The admin page.
 export const ADMIN = {
   title: "Admin",
@@ -360,5 +402,6 @@ export const ADMIN = {
   copy: "Copy",
   copied: "Copied",
   users: "Users",
-  userColumns: { email: "Email", name: "Name", role: "Role", status: "Status", joined: "Joined" },
+  userColumns: { email: "Email", name: "Name", role: "Role", status: "Status", joined: "Joined", key: "Gemini key", today: "Requests today" },
+  hasKey: "Saved", noKey: "None",
 };

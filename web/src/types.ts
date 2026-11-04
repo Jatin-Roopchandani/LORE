@@ -79,7 +79,7 @@ export interface SubgraphLink { subject: string; subject_id: string; object: str
   count: number; predicates: Record<string, number> }
 export interface SubgraphData { nodes: SubgraphNode[]; edges: SubgraphLink[]; truncated: boolean; depth: number }
 export const edgeKey = (e: Edge) => `${e.subject_id}|${e.predicate}|${e.object_id}|${e.chunk_id}`;
-export interface BookJob { stage: string; state: "running" | "waiting_quota" | "failed" | "done" | "idle";
+export interface BookJob { stage: string; state: "running" | "waiting_quota" | "waiting_key" | "failed" | "done" | "idle";
   done: number; total: number; stopped_reason: string | null; resumable_at: string | null;
   can_continue: boolean; continue_reason: string }
 export interface LibraryBook { id: string; title: string; author: string | null; status: string;
@@ -116,5 +116,11 @@ export interface AuthProviders { providers: string[]; email: boolean; invite_onl
 export interface Me { user: { id: string; email: string; name: string | null; role: "user" | "admin" } }
 export interface WaitlistEntry { id: number; email: string; reading: string | null; status: "pending" | "invited" | "declined";
   created_at: string; invited_at: string | null }
-export interface AdminUser { id: string; email: string; name: string | null; role: string; status: string; created_at: string }
+export interface AdminUser { id: string; email: string; name: string | null; role: string; status: string; created_at: string;
+  has_key?: boolean; requests_today?: number }
+// The signed-in user's Gemini key (multi-user mode): never the key itself, only its last four characters.
+export interface KeyStatus { present: boolean; last4: string | null; added_at: string | null; last_ok_at: string | null;
+  last_error: "rejected" | "unchecked" | null }
+export interface KeySaved extends KeyStatus { check: "ok" | "unavailable"; warning?: string }
+export interface UsageToday { day: string; requests: number; limit: number; models: Record<string, number> }
 export interface NewInvite { code: string; link: string; expires_at: string }

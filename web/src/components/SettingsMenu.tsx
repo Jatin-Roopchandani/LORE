@@ -1,8 +1,47 @@
 import { useEffect, useRef, useState } from "react";
-import { api, authApi, isError, nav } from "../api";
-import { AUTH, UI } from "../messages";
+import { api, authApi, isError, keyApi, nav, reportKeyProblem } from "../api";
+import { AUTH, KEYS, UI } from "../messages";
 import { isMulti } from "../routing";
-import type { McpInfo, Me } from "../types";
+import type { KeyStatus, McpInfo, Me, UsageToday } from "../types";
+import { KeyForm } from "./KeyOnboarding";
+
+// The account menu's Gemini key: its last four characters, today's requests, Replace and Remove.
+function KeySettings() {
+  const [key, setKey] = useState<KeyStatus | null>(null);
+  const [usage, setUsage] = useState<UsageToday | null>(null);
+  const [mode, setMode] = useState<"view" | "replace" | "remove">("view");
+  const load = () => {
+    keyApi.get().then((k) => { if (!isError(k) && typeof k.present === "boolean") setKey(k); });
+    keyApi.usage().then((u) => { if (!isError(u) && typeof u.requests === "number") setUsage(u); });
+  };
+  useEffect(load, []);
+  const remove = async () => {
+    const r = await keyApi.remove();
+    if (!isError(r)) { setKey(null); setMode("view"); reportKeyProblem("key_required"); }
+  };
+  if (!key) return null;
+  return (<>
+    <h4>{KEYS.section}</h4>
+    <p className="hint">{key.present && key.last4 ? KEYS.endingIn(key.last4) : KEYS.none}</p>
+    {key.last_error === "rejected" && <div className="notice error" role="alert">{KEYS.needsReplacing}</div>}
+    {key.last_error === "unchecked" && <p className="hint">{KEYS.unchecked}</p>}
+    {usage && <p className="hint">{KEYS.usage(usage.requests, usage.limit)}</p>}
+    {mode === "view" && (
+      <div className="key-actions">
+        <button className="tbtn" type="button" onClick={() => setMode("replace")}>{KEYS.replace}</button>
+        {key.present && <button className="tbtn" type="button" onClick={() => setMode("remove")}>{KEYS.remove}</button>}
+      </div>
+    )}
+    {mode === "replace" && <KeyForm onSaved={(k) => { setKey(k); setMode("view"); load(); }} onCancel={() => setMode("view")} />}
+    {mode === "remove" && (<>
+      <p className="hint">{KEYS.removeConfirm}</p>
+      <div className="key-actions">
+        <button className="tbtn" type="button" onClick={remove}>{KEYS.removeYes}</button>
+        <button className="tbtn" type="button" onClick={() => setMode("view")}>{KEYS.cancel}</button>
+      </div>
+    </>)}
+  </>);
+}
 
 function Snip({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -45,6 +84,7 @@ export function SettingsMenu({ showInternals }: { showInternals: boolean }) {
             <p className="hint">{me.email}</p>
             {me.role === "admin" && <a className="tbtn" href="/admin">{AUTH.admin}</a>}
             <button className="tbtn" type="button" onClick={signOut}>{AUTH.signOut}</button>
+            <KeySettings />
           </>)}
           {showInternals && (<>
             <h4>Connect an MCP client</h4>

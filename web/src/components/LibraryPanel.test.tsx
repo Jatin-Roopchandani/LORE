@@ -280,3 +280,11 @@ test("the codex stage has its own label and progress bar, beside remove and reas
   expect(STAGE_LABEL.reassign).toBe("Changing its world");
   vi.clearAllTimers();
 });
+
+test("paused for the Gemini key: the reason shows and Continue is enabled at once", async () => {
+  status = { gemini, books: [book("a", job({ state: "waiting_key", stopped_reason: "Paused: Gemini refused your API key. Replace it in Account settings, then this book continues.",
+    can_continue: true }))] };
+  await open();
+  expect(screen.getByText(/Gemini refused your API key/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Continue Book a" })).toBeEnabled();
+});

@@ -80,7 +80,8 @@ export function Admin() {
       <div className="admin-scroll"><table className="admin-table" aria-label={ADMIN.users}>
         <thead><tr>{Object.values(ADMIN.userColumns).map((c) => <th key={c}>{c}</th>)}</tr></thead>
         <tbody>{(users ?? []).map((u) => (
-          <tr key={u.id}><td>{u.email}</td><td>{u.name}</td><td>{u.role}</td><td>{u.status}</td><td>{day(u.created_at)}</td></tr>))}</tbody>
+          <tr key={u.id}><td>{u.email}</td><td>{u.name}</td><td>{u.role}</td><td>{u.status}</td><td>{day(u.created_at)}</td>
+            <td>{u.has_key ? ADMIN.hasKey : ADMIN.noKey}</td><td>{u.requests_today ?? 0}</td></tr>))}</tbody>
       </table></div>
     </PageShell>
   );

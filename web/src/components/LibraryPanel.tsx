@@ -25,13 +25,13 @@ function Row({ book, now, busy, error, onGo, onMove, children }: { book: Library
       </div>
       <span className="hint">{LIBRARY.progress(job.done, job.total)}</span>
     </>);
-  } else if (job?.state === "waiting_quota" || job?.state === "idle") {
+  } else if (job?.state === "waiting_quota" || job?.state === "idle" || job?.state === "waiting_key") {
     const at = job.resumable_at ? new Date(job.resumable_at) : null;
     const left = at ? Math.max(0, Math.ceil((at.getTime() - now) / 60000)) : 0;
     const enabled = at ? now >= at.getTime() : job.can_continue;
     body = (<>
       <span className="lib-state">{LIBRARY.paused}</span>
-      <span className="hint">{job.stopped_reason || LIBRARY.pausedDefault}</span>
+      <span className="hint">{job.stopped_reason || (job.state === "waiting_key" ? LIBRARY.pausedKey : LIBRARY.pausedDefault)}</span>
       {at && !enabled && <span className="hint">{LIBRARY.continuesAfter(clock(at), LIBRARY.inHM(left))}</span>}
       {btn(LIBRARY.continue, !enabled)}
     </>);

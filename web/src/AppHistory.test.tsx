@@ -13,6 +13,7 @@ vi.mock("./api", () => ({
     entities: () => Promise.resolve({ entities: [] }), overview: (w?: string) => overview(w),
   },
   isError: (x: unknown) => typeof x === "object" && x !== null && "error" in x,
+  onKeyProblem: () => () => {},  // local mode: no Gemini key screen
   streamAsk: async function* () { yield { type: "error", t: 0, error: { code: "interrupted", message: "" } }; },
 }));
 // Reduced motion is on (replays are instant); the narrow-screen query follows `narrow`.

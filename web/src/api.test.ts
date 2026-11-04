@@ -1,4 +1,4 @@
-import { adminApi, api, authApi, csrfHeaders, nav, parseSse, streamAsk } from "./api";
+import { adminApi, api, authApi, csrfHeaders, keyApi, nav, onKeyProblem, parseSse, streamAsk } from "./api";
 
 const frame = (event: string, data: object) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
@@ -215,5 +215,43 @@ describe("signed-out and strict errors", () => {
     expect([lastCall()[0], lastCall()[1]!.method]).toEqual(["/auth/logout", "POST"]);
     await adminApi.createInvite(7);
     expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ days: 7 });
+  });
+});
+
+describe("the user's Gemini key", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  test("the key calls use the right paths, verbs and bodies", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ present: false }))));
+    await keyApi.get();
+    await keyApi.save("AIzaKEY");
+    await keyApi.remove();
+    await keyApi.usage();
+    const calls = (fetch as any).mock.calls.map(([url, init]: [string, RequestInit | undefined]) => [url, init?.method ?? "GET", init?.body]);
+    expect(calls).toEqual([["/api/me/key", "GET", undefined], ["/api/me/key", "PUT", JSON.stringify({ key: "AIzaKEY" })],
+      ["/api/me/key", "DELETE", undefined], ["/api/me/usage", "GET", undefined]]);
+  });
+
+  test("an ask answered key_required or key_invalid reports it", async () => {
+    const seen: string[] = [];
+    const stop = onKeyProblem((p) => seen.push(p));
+    for (const code of ["key_required", "key_invalid", "busy"]) {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(frame("error", { t: 0, error: { code, message: "" } }), { status: 200 })));
+      for await (const _ of streamAsk("who?", new AbortController().signal)) { /* drain */ }
+    }
+    stop();
+    expect(seen).toEqual(["key_required", "key_invalid"]);
+  });
+
+  test("a Continue or a move answered key_required reports it; the key routes themselves do not", async () => {
+    const seen: string[] = [];
+    const stop = onKeyProblem((p) => seen.push(p));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "key_required", message: "" } }), { status: 409 })));
+    await api.continueBook("b1");
+    await api.moveBook("b1", 2);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "key_invalid", message: "" } }), { status: 400 })));
+    expect(await keyApi.save("AIzaBAD")).toEqual({ error: { code: "key_invalid", message: "" } });
+    stop();
+    expect(seen).toEqual(["key_required", "key_required"]);
   });
 });

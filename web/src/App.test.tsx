@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
+import { KEYS } from "./messages";
 
 const quota = vi.fn(() => Promise.resolve({ provider: "gemini", models: [], resets_at: "2026-10-08T07:00:00Z" }));
 const overview = vi.fn((_world?: string) => Promise.resolve({ nodes: [{ id: "h", name: "Holmes", kind: "Character", books: [] }], edges: [], truncated: false, depth: 0 }));
@@ -9,8 +10,18 @@ const library = vi.fn((_world?: string) => Promise.resolve({ books: [], note: nu
 const worlds = [{ id: 1, name: "Alpha Saga", books: [] }, { id: 2, name: "Beta Realm", books: [] }];
 const asked: (string | undefined)[] = [];
 const me = vi.fn(() => Promise.resolve({ user: { id: "u", email: "me@example.org", name: null, role: "user" } }));
+// The signed-in user's Gemini key (multi-user mode); the key-problem channel is the real one, so tests can fire it.
+const keyStatus = vi.fn(() => Promise.resolve({ present: true, last4: "1234", added_at: null, last_ok_at: null, last_error: null } as object));
+const keySave = vi.fn((_key: string) => Promise.resolve({ present: true, last4: "WXYZ", added_at: null, last_ok_at: null, last_error: null, check: "ok" } as object));
+const keyListeners = new Set<(p: string) => void>();
+const fireKeyProblem = (p: string) => keyListeners.forEach((l) => l(p));
+let askError = "interrupted";
 vi.mock("./api", () => ({
   authApi: { me: () => me() },
+  keyApi: { get: () => keyStatus(), save: (k: string) => keySave(k), usage: () => Promise.resolve({ error: { code: "x", message: "" } }),
+    remove: () => Promise.resolve({ deleted: true }) },
+  onKeyProblem: (l: (p: string) => void) => { keyListeners.add(l); return () => { keyListeners.delete(l); }; },
+  reportKeyProblem: (c: string) => fireKeyProblem(c),
   api: {
     settings: () => Promise.resolve({ show_internals: true }),
     library: (w?: string) => library(w),
@@ -21,15 +32,16 @@ vi.mock("./api", () => ({
     overview: (w?: string) => overview(w),
   },
   isError: (x: unknown) => typeof x === "object" && x !== null && "error" in x,
-  // The stream drops before any answer.
+  // The stream drops before any answer (or fails with `askError`, reporting a key problem as the real client does).
   streamAsk: async function* (_q: string, _signal: AbortSignal, world?: string) {
     asked.push(world);
-    yield { type: "error", t: 0, error: { code: "interrupted", message: "" } };
+    if (askError !== "interrupted") fireKeyProblem(askError);
+    yield { type: "error", t: 0, error: { code: askError, message: "" } };
   },
 }));
 Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
 
-beforeEach(() => { localStorage.clear(); asked.length = 0; me.mockClear(); });
+beforeEach(() => { localStorage.clear(); asked.length = 0; me.mockClear(); keyStatus.mockClear(); keySave.mockClear(); askError = "interrupted"; });
 afterEach(() => { document.head.innerHTML = ""; });
 
 test("multi-user mode asks who is signed in once, which re-issues a lost CSRF cookie; local mode does not", async () => {
@@ -109,4 +121,56 @@ test("replaying a question asked in another world switches the selector to it", 
   await waitFor(() => expect(screen.getByRole("combobox", { name: "World" })).toHaveValue("2"));
   expect(localStorage.getItem("lore-world-v1")).toBe("2");
   await waitFor(() => expect(overview).toHaveBeenLastCalledWith("2"));
+});
+
+// --- each user's own Gemini key (multi-user mode) ---
+
+const multi = () => { document.head.innerHTML = '<meta name="lore-multi" content="1">'; };
+const noKey = { present: false, last4: null, added_at: null, last_ok_at: null, last_error: null };
+
+test("a signed-in user without a key sees the onboarding screen, and saving one opens the app", async () => {
+  multi();
+  keyStatus.mockResolvedValueOnce(noKey);
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: KEYS.onboardingTitle })).toBeInTheDocument();
+  expect(screen.queryByPlaceholderText("Ask about your books…")).toBeNull();
+  expect(screen.getByRole("link", { name: KEYS.getKey })).toHaveAttribute("href", "https://aistudio.google.com/app/apikey");
+  expect(screen.getByText(/about 1,000 requests a day/)).toBeInTheDocument();
+  expect(screen.getByText(/midnight Pacific/)).toBeInTheDocument();
+  expect(screen.getByText(/sent to Gemini under your own key/)).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText(KEYS.fieldLabel), "AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake123");
+  await userEvent.click(screen.getByRole("button", { name: KEYS.save }));
+  expect(keySave).toHaveBeenCalledWith("AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake123");
+  expect(await screen.findByPlaceholderText("Ask about your books…")).toBeInTheDocument();
+});
+
+test("a user with a key goes straight to the app", async () => {
+  multi();
+  render(<App />);
+  expect(await screen.findByPlaceholderText("Ask about your books…")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: KEYS.onboardingTitle })).toBeNull();
+  expect(keyStatus).toHaveBeenCalledTimes(1);
+});
+
+test("a key Gemini refused opens the replace screen", async () => {
+  multi();
+  keyStatus.mockResolvedValueOnce({ ...noKey, present: true, last4: "1234", last_error: "rejected" });
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: KEYS.replaceTitle })).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(KEYS.rejected);
+});
+
+test.each([["key_required", KEYS.onboardingTitle], ["key_invalid", KEYS.replaceTitle]])(
+  "an ask answered %s routes to the key screen", async (code, heading) => {
+    multi();
+    askError = code;
+    render(<App />);
+    await userEvent.type(await screen.findByPlaceholderText("Ask about your books…"), "who?{Enter}");
+    expect(await screen.findByRole("heading", { name: heading })).toBeInTheDocument();
+  });
+
+test("local mode never asks about a key", async () => {
+  render(<App />);
+  await screen.findByPlaceholderText("Ask about your books…");
+  expect(keyStatus).not.toHaveBeenCalled();
 });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, authApi, isError } from "./api";
+import { api, authApi, isError, keyApi, onKeyProblem } from "./api";
 import { ChatPane } from "./components/ChatPane";
+import { KeyOnboarding } from "./components/KeyOnboarding";
 import { GraphPane } from "./components/GraphPane";
 import { HistorySidebar } from "./components/HistorySidebar";
 import { QuickSwitcher } from "./components/QuickSwitcher";
@@ -11,7 +12,30 @@ import type { Book, SubgraphData, World } from "./types";
 import { useAsk } from "./useAsk";
 import { loadWorld, resolveWorld, saveWorld } from "./worlds";
 
+// Multi-user mode: whether the signed-in user has a working Gemini key. `checking` while it is asked for (nothing is
+// drawn yet), `missing` or `invalid` show the key screen instead of the app. Local mode is always `ok`.
+type KeyState = "checking" | "ok" | "missing" | "invalid";
+
 export default function App() {
+  const [keyState, setKeyState] = useState<KeyState>(() => (isMulti() ? "checking" : "ok"));
+  // Multi-user: ask who we are once, so a lost or stale CSRF cookie is re-issued before the first POST (saving a key too).
+  useEffect(() => { if (isMulti()) authApi.me(); }, []);
+  useEffect(() => {
+    if (!isMulti()) return;
+    keyApi.get().then((k) => {
+      if (isError(k)) { setKeyState("ok"); return; }  // the calls themselves will say key_required if it matters
+      setKeyState(!k.present ? "missing" : k.last_error === "rejected" ? "invalid" : "ok");
+    });
+  }, []);
+  // An ask, a Continue or a move answered key_required or key_invalid: back to the key screen.
+  useEffect(() => onKeyProblem((p) => setKeyState(p === "key_invalid" ? "invalid" : "missing")), []);
+  if (keyState === "checking") return <div className="app" aria-busy="true" />;
+  if (keyState === "missing" || keyState === "invalid")
+    return <KeyOnboarding reason={keyState} onDone={() => setKeyState("ok")} />;
+  return <ReadingApp />;
+}
+
+function ReadingApp() {
   // The remembered world choice; the list of worlds (null while loading) can still overrule it.
   const [stored, setStored] = useState<string | null>(() => loadWorld());
   const [worlds, setWorlds] = useState<World[] | null>(null);
@@ -42,8 +66,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => { applyTheme(loadTheme()); }, []);
-  // Multi-user: ask who we are once, so a lost or stale CSRF cookie is re-issued before the first POST.
-  useEffect(() => { if (isMulti()) authApi.me(); }, []);
   useEffect(() => {
     api.settings().then((s) => { if (!isError(s)) setShowInternals(s.show_internals); });
   }, []);

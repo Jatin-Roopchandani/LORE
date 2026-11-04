@@ -1,5 +1,5 @@
-import type { AdminUser, ApiError, AskEvent, AuthProviders, Me, NewInvite, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult,
-  PassageText, PathResult, Quota, Relations, SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
+import type { AdminUser, ApiError, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
+  EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult, PassageText, PathResult, Quota, Relations, SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   const events: AskEvent[] = [];
@@ -34,6 +34,18 @@ export function csrfHeaders(): Record<string, string> {
 
 const errorEvent = (code: string, message: string): AskEvent => ({ type: "error", t: 0, error: { code, message } });
 
+// Multi-user mode: the server answers `key_required` (no Gemini key saved yet) or `key_invalid` (Gemini refused it) to an ask
+// or a Continue. Whoever listens (the app) sends the user to the key screen; the call still returns its error as usual.
+export type KeyProblem = "key_required" | "key_invalid";
+const keyListeners = new Set<(problem: KeyProblem) => void>();
+export function onKeyProblem(listener: (problem: KeyProblem) => void): () => void {
+  keyListeners.add(listener);
+  return () => { keyListeners.delete(listener); };
+}
+export function reportKeyProblem(code: string | undefined): void {
+  if (code === "key_required" || code === "key_invalid") keyListeners.forEach((l) => l(code));
+}
+
 // `world`: a world id as a string, or "all" (the same value the graph calls take).
 // `depth`: auto, deep or focused; left out of the body when not given.
 export async function* streamAsk(question: string, signal: AbortSignal, world?: string, depth?: Depth): AsyncGenerator<AskEvent> {
@@ -67,6 +79,7 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
       buffer = parsed.rest;
       for (const e of parsed.events) {
         if (e.type === "answer" || e.type === "error") finished = true;
+        if (e.type === "error") reportKeyProblem(e.error.code);
         yield e;
       }
     }
@@ -116,7 +129,9 @@ export async function postContinue(id: string): Promise<{ started: true } | { er
     const r = await fetch(`/api/books/${encodeURIComponent(id)}/continue`, { method: "POST", headers: { Accept: "application/json", ...csrfHeaders() } });
     if (r.status === 404) return { error: { code: "not_found", message: "" } };
     if (signedOut(r)) return { error: { code: "unauthorized", message: "" } };
-    return (await r.json()) as { started: true } | { error: ApiError };
+    const body = (await r.json()) as { started: true } | { error: ApiError };
+    if (isError(body)) reportKeyProblem(body.error.code);
+    return body;
   } catch {
     return { error: { code: "unreachable", message: "" } };
   }
@@ -129,7 +144,10 @@ async function sendJson<T>(method: string, path: string, body?: object, strict =
   try {
     const r = await fetch(path, { method, headers: { Accept: "application/json", ...(body ? { "Content-Type": "application/json" } : {}), ...(method === "GET" ? {} : csrfHeaders()) },
       body: body ? JSON.stringify(body) : undefined });
-    return await readJson<T>(r, strict);
+    const out = await readJson<T>(r, strict);
+    // A move answers key_required too; the key routes themselves do not route (their screen is already open).
+    if (isError(out) && !path.startsWith("/api/me/key")) reportKeyProblem(out.error.code);
+    return out;
   } catch {
     return { error: { code: "unreachable", message: "" } };
   }
@@ -178,6 +196,14 @@ export const authApi = {
   // Always 202. `website` is the honeypot: the form leaves it empty.
   joinWaitlist: (email: string, reading: string, consent: boolean, website = "") =>
     sendJson<{ ok: true }>("POST", "/api/waitlist", { email, reading, consent, website }, true),
+};
+
+// The signed-in user's own Gemini key (multi-user mode). The server never sends the key back, only its last four characters.
+export const keyApi = {
+  get: () => getJson<KeyStatus>("/api/me/key", true),
+  save: (key: string) => sendJson<KeySaved>("PUT", "/api/me/key", { key }, true),
+  remove: () => sendJson<{ deleted: boolean }>("DELETE", "/api/me/key", undefined, true),
+  usage: () => getJson<UsageToday>("/api/me/usage", true),
 };
 
 export const adminApi = {
