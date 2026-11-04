@@ -20,7 +20,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import sessionmaker
@@ -567,9 +569,49 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     @api.get("/", include_in_schema=False)
     def root():
         index = STATIC / "index.html"
+        if multi:  # the public homepage (a placeholder until step 7)
+            return _spa_page()
         if index.exists():
             return FileResponse(index, headers={"Cache-Control": "no-cache"})
         return HTMLResponse(_NOT_BUILT)
+
+    def _spa_page() -> HTMLResponse:
+        """The web app's one HTML page, marked as multi-user so the script
+        knows which page to draw for the address (see web/src/routing.ts)."""
+        index = STATIC / "index.html"
+        if not index.exists():
+            return HTMLResponse(_NOT_BUILT)
+        html = index.read_text(encoding="utf-8").replace(
+            "</head>", '<meta name="lore-multi" content="1"></head>', 1)
+        return HTMLResponse(html, headers={
+            "Cache-Control": "no-store", "X-Frame-Options": "DENY",
+            "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff"})
+
+    if multi:
+        from lore.auth.current import session_user
+
+        def _redirect(path: str) -> RedirectResponse:
+            return RedirectResponse(path, status_code=303,
+                                    headers={"Cache-Control": "no-store"})
+
+        # Public pages: anyone. The page draws itself from the address.
+        @api.get("/waitlist", include_in_schema=False)
+        @api.get("/privacy", include_in_schema=False)
+        @api.get("/terms", include_in_schema=False)
+        def public_page():
+            return _spa_page()
+
+        @api.get("/signin", include_in_schema=False)
+        def signin_page(request: Request):
+            # Already signed in: straight to the app.
+            return _redirect("/app") if session_user(request) else _spa_page()
+
+        # The app and the admin page need a session; without one, sign in.
+        # (The API behind them checks again: this is only the front door.)
+        @api.get("/app", include_in_schema=False)
+        @api.get("/admin", include_in_schema=False)
+        def private_page(request: Request):
+            return _spa_page() if session_user(request) else _redirect("/signin")
 
     api.mount("/", StaticFiles(directory=STATIC, html=True, check_dir=False),
               name="static")
