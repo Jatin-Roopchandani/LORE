@@ -38,11 +38,12 @@ import logging
 import math
 import re
 import sqlite3
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Mapping, Sequence
 
 from lore.beats.store import Beat, beats_for_books
 from lore.extract.embed import QUERY_PREFIX
+from lore.ingest.registry import story_chapters
 from lore.query import deep as deep_module
 from lore.query import visible as visible_module
 from lore.query.decompose import Recap
@@ -126,6 +127,17 @@ class Span:
     beats: tuple[Beat, ...]
     order_note: str = ""
     requested: bool = False
+    # (book, chapter_seq) -> the chapter's number as the book counts it (front
+    # matter is not a chapter; lore/ingest/matter.py), for the section headings.
+    numbers: Mapping[tuple[str, int], int] = field(default_factory=dict)
+
+
+def chapter_numbers(conn: sqlite3.Connection,
+                    book_ids: Sequence[str]) -> dict[tuple[str, int], int]:
+    """(book, chapter_seq) -> the book's own chapter number, story chapters only
+    (every chapter, numbered in order, for a book not classified)."""
+    return {(b, c["seq"]): c["number"] for b in sorted(set(book_ids))
+            for c in story_chapters(conn, b)}
 
 
 def _seq(chunk_id: str) -> int:
@@ -241,10 +253,13 @@ async def gather_span(conn: sqlite3.Connection, lance, recap: Recap, *, scope: S
             return Span((), (), requested=True)
     chunks = _load_chunks(conn, candidates, scope.books)
     ordered, note = _ordered(chunks, books)
+    numbers = chapter_numbers(conn, sorted({c.book_id for c in ordered}))
     if recap.span == "chapters":
+        # "Chapters 3 to 5" are the book's own chapter numbers, not raw sections.
         book = _chapters_book(ordered, scope, requested)
         first, last = recap.first or 0, recap.last if recap.last is not None else 10 ** 9
-        ordered = [c for c in ordered if c.book_id == book and first <= c.chapter <= last]
+        ordered = [c for c in ordered if c.book_id == book
+                   and first <= numbers.get((c.book_id, c.chapter), c.chapter) <= last]
         requested = True
     elif recap.span == "since" and ordered:
         anchor = await _anchor(lance, recap.since, ordered, conn, scope, embed)
@@ -260,7 +275,8 @@ async def gather_span(conn: sqlite3.Connection, lance, recap: Recap, *, scope: S
     beats = [b for b in beats if (b.book_id, b.chapter_seq) in keys and b.chunk_id in shown
              and visible_module.sees(scope.books, b.book_id, b.chapter_seq)]
     beats = dedupe_beats(order_beats(beats, books))
-    return Span(tuple(chapters), tuple(beats), note, requested and not chapters)
+    return Span(tuple(chapters), tuple(beats), note, requested and not chapters,
+                {c.key: numbers[c.key] for c in chapters if c.key in numbers})
 
 
 def _chapters_book(ordered: Sequence[Chunk], scope: Scope, requested: bool) -> str | None:
@@ -372,12 +388,15 @@ def chapter_label(chapters: Sequence[int]) -> str:
 
 def plan_stretches(chapters: Sequence[Chapter], titles: Mapping[str, str],
                    max_sections: int = RECAP_MAX_SECTIONS,
-                   per_section: int = SECTION_CHUNKS) -> list[Stretch]:
+                   per_section: int = SECTION_CHUNKS,
+                   numbers: Mapping[tuple[str, int], int] | None = None) -> list[Stretch]:
     """The span's sections, in story order. Each holds consecutive chapters of
     one book; their number grows with the span's text (one per `per_section`
     chunks, at most `max_sections`, at least one per book), and they are shared
     among the books by how much text each holds. A span over several books
-    groups its sections under the book titles."""
+    groups its sections under the book titles. Headings use the book's own
+    chapter numbers (`numbers`, from `Span.numbers`), else the raw chapter_seq."""
+    numbers = numbers or {}
     by_book: dict[str, list[Chapter]] = {}
     for c in chapters:
         by_book.setdefault(c.book_id, []).append(c)
@@ -399,7 +418,7 @@ def plan_stretches(chapters: Sequence[Chapter], titles: Mapping[str, str],
         title = titles.get(book_id) or book_id
         for group in balanced_split([len(c.chunks) for c in mine], share[book_id]):
             members = tuple(mine[i] for i in group)
-            label = chapter_label([c.chapter for c in members])
+            label = chapter_label([numbers.get(c.key, c.chapter) for c in members])
             out.append(Stretch(book_id, members, label,
                                f"{label[0].lower()}{label[1:]} of {title}",
                                group=title if multi else ""))
@@ -574,7 +593,7 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
     # are the ones the reader has met.
     span = replace(span, beats=tuple(visible_module.shown_beats(kuzu, scope.books,
                                                                 list(span.beats), books)))
-    stretches = plan_stretches(span.chapters, titles)
+    stretches = plan_stretches(span.chapters, titles, numbers=span.numbers)
     chapters = len(span.chapters)
     found = (f"{len(span.beats)} beats" if span.beats
              else f"{sum(len(c.chunks) for c in span.chapters)} passages")
