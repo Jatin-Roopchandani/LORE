@@ -57,6 +57,12 @@ def _not_found() -> JSONResponse:
                         status_code=404)
 
 
+def _history_full() -> JSONResponse:
+    return JSONResponse({"error": {"code": "history_full", "message":
+                                   "Your history is full. Delete some chats to save more."}},
+                        status_code=409)
+
+
 def _no_store(body: dict, status: int = 200) -> JSONResponse:
     return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
 
@@ -102,6 +108,8 @@ def build_history_router(central: Callable[[], sessionmaker[Session]],
                     messages=[m.model_dump() for m in body.messages], now=now())
             except H.NotFound:
                 return _not_found()
+            except H.HistoryFull:
+                return _history_full()
             session.commit()
             return _no_store({"chat": H.chat_out(made), "created": created},
                              201 if created else 200)

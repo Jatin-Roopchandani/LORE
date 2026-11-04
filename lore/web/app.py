@@ -56,6 +56,7 @@ from lore.tenancy import (
     require_session_user, resolve_user as default_resolver, validate_user_id,
 )
 from lore.web.ask import ask_events
+from lore.web.limits import BodyLimit
 from lore.web.request_id import RequestId
 from lore.web.history import build_history_router, record_answer
 from lore.worlds import (
@@ -775,11 +776,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             with central()() as session:
                 chat_id = message_id = None
                 if result is not None:
-                    chat_id, message_id = record_answer(
-                        session, owner, chat_id=body.chat_id, question=body.question,
-                        world=body.world, depth=body.depth, result=result,
-                        events=events, request_id=trace.request_id, now=now)
-                    out = {"chat_id": chat_id, "message_id": message_id}
+                    try:
+                        chat_id, message_id = record_answer(
+                            session, owner, chat_id=body.chat_id, question=body.question,
+                            world=body.world, depth=body.depth, result=result,
+                            events=events, request_id=trace.request_id, now=now)
+                        out = {"chat_id": chat_id, "message_id": message_id}
+                    except history_store.HistoryFull:
+                        session.rollback()  # shown, not saved; the trace still is
+                        out = {"history_full": True}
                 elif body.chat_id is not None:
                     try:  # a failed answer still links to the chat it was asked in
                         chat_id = history_store.get_chat(session, owner, body.chat_id)[0].id
@@ -850,7 +855,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     api.mount("/", StaticFiles(directory=STATIC, html=True, check_dir=False),
               name="static")
     # Every request gets an id, on its log lines and in X-Request-Id; /api/ask
-    # keys its trace by it.
+    # keys its trace by it. Request bodies are capped (lore.web.limits).
+    api.add_middleware(BodyLimit)
     api.add_middleware(RequestId)
 
     hosts, origins = allowed_hosts(host, port), allowed_origins(host, port, dev)

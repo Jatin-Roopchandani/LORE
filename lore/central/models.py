@@ -340,6 +340,10 @@ class Message(Base):
     request_id: Mapped[str | None] = mapped_column(sa.String(36))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
                                                  default=utcnow)
+    # Bytes this row stores (question + answer_json as JSON): the per-user
+    # history quota adds these up (lore.central.history.MAX_USER_BYTES).
+    size: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0,
+                                      server_default="0")
 
     __table_args__ = (sa.Index("ix_messages_chat", "chat_id", "id"),)
 
