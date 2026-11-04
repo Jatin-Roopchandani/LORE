@@ -310,3 +310,9 @@ export const THEME = {
   systemHint: "Follows your device",
   groups: { dark: "Dark", light: "Light" },
 };
+
+// The entity profile's introduction under a reading position (written only from what has been read).
+export const PROFILE = {
+  introLabel: "Introduction so far",
+  introHint: "Written only from what you have read so far.",
+};

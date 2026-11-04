@@ -98,7 +98,11 @@ export interface EntityProfile { id: string; name: string; kind: string; books: 
   aspects: { aspect: string; statements: ProfileStatement[] }[];
   counts: { beats: number; relations: number; chapters: number }; world?: WorldRef;
   // Set while a reading position is on: the whole-story summary is hidden and the statements shown are those read so far.
-  summary_hidden?: boolean }
+  summary_hidden?: boolean;
+  // Under a reading position: a short intro written only from what has been read. `intro_pending` means a
+  // written one may be fetched from /intro (the one shown meanwhile is the plain fallback).
+  intro?: string | null; intro_source?: "model" | "fallback" | "none"; intro_pending?: boolean }
+export interface EntityIntro { intro: string | null; source: "model" | "fallback" | "none" }
 export interface Beat { kind: string; text: string; quote: string; chunk_id: string; book_id: string; book_title: string | null;
   chapter: number; position_label: string; others: { id: string | null; name: string }[] }
 export interface Timeline { beats: Beat[]; order_note: string | null }

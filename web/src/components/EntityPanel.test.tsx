@@ -1,12 +1,12 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../api";
-import { EXPLORE, POSITION } from "../messages";
+import { EXPLORE, POSITION, PROFILE } from "../messages";
 import { EntityPanel } from "./EntityPanel";
 
 vi.mock("../api", () => ({
   api: {
-    profile: vi.fn(), timeline: vi.fn(), relations: vi.fn(), entity: vi.fn(), passage: vi.fn(), subgraph: vi.fn(), search: vi.fn(), path: vi.fn(),
+    profile: vi.fn(), intro: vi.fn(), timeline: vi.fn(), relations: vi.fn(), entity: vi.fn(), passage: vi.fn(), subgraph: vi.fn(), search: vi.fn(), path: vi.fn(),
   },
   isError: (x: unknown) => typeof x === "object" && x !== null && "error" in x,
 }));
@@ -189,10 +189,53 @@ test("moving the reading position refetches the profile and the open tab", async
   await waitFor(() => expect(m(api.timeline).mock.calls.length).toBeGreaterThanOrEqual(2));
 });
 
-test("under a reading position the whole-story summary is replaced by a hint and the statements read so far", async () => {
-  m(api.profile).mockResolvedValue({ ...profile, summary: null, summary_hidden: true });
+test("under a reading position the intro replaces the summary, then the statements read so far", async () => {
+  m(api.profile).mockResolvedValue({ ...profile, summary: null, summary_hidden: true,
+    intro: "Zed is a ferryman.", intro_source: "model", intro_pending: false });
   render(<EntityPanel {...props()} />);
-  expect(await screen.findByText(POSITION.summaryHidden)).toBeInTheDocument();
+  const intro = await screen.findByLabelText(PROFILE.introLabel);
+  expect(intro).toHaveTextContent("Zed is a ferryman.");
+  expect(screen.getByText(PROFILE.introHint)).toBeInTheDocument();
   expect(screen.queryByText(profile.summary)).toBeNull();
+  expect(screen.queryByText(POSITION.summaryHidden)).toBeNull();
   expect(screen.getByText(/Zed is patient\./)).toBeInTheDocument();
+  expect(api.intro).not.toHaveBeenCalled(); // already written
+});
+
+test("a fallback intro shows at once and is replaced by the written one", async () => {
+  m(api.profile).mockResolvedValue({ ...profile, summary: null, summary_hidden: true,
+    intro: "Zed is a ferryman. Zed crosses the marsh.", intro_source: "fallback", intro_pending: true });
+  let release: (v: unknown) => void = () => {};
+  m(api.intro).mockReturnValue(new Promise((r) => { release = r; }));
+  render(<EntityPanel {...props()} />);
+  expect(await screen.findByLabelText(PROFILE.introLabel)).toHaveTextContent("Zed is a ferryman. Zed crosses the marsh.");
+  expect(api.intro).toHaveBeenCalledWith("a_zed", "1");
+  release({ intro: "Zed Quill is a ferryman who has crossed the marsh.", source: "model" });
+  await waitFor(() => expect(screen.getByLabelText(PROFILE.introLabel)).toHaveTextContent("Zed Quill is a ferryman who has crossed the marsh."));
+});
+
+test("a failed intro request keeps the fallback and shows no error", async () => {
+  m(api.profile).mockResolvedValue({ ...profile, summary: null, summary_hidden: true,
+    intro: "Zed is a ferryman.", intro_source: "fallback", intro_pending: true });
+  m(api.intro).mockResolvedValue({ error: { code: "unreachable", message: "boom" } });
+  render(<EntityPanel {...props()} />);
+  expect(await screen.findByLabelText(PROFILE.introLabel)).toHaveTextContent("Zed is a ferryman.");
+  await waitFor(() => expect(api.intro).toHaveBeenCalled());
+  expect(screen.queryByText("boom")).toBeNull();
+  expect(screen.getByLabelText(PROFILE.introLabel)).toHaveTextContent("Zed is a ferryman.");
+});
+
+test("aspects show in the order identity, role, nature, abilities, relationships, history, change", async () => {
+  const st = (text: string) => ({ text, quote: `${text} quoted here`, chunk_id: "ba1:1:0", book_id: "ba1", chapter: 1 });
+  const aspects = ["change", "history", "relationships", "abilities", "nature", "role", "identity"]
+    .map((aspect) => ({ aspect, statements: [st(`${aspect} line`)] }));
+  m(api.profile).mockResolvedValue({ ...profile, aspects });
+  render(<EntityPanel {...props()} />);
+  await screen.findByText("Identity");
+  const headings = screen.getAllByRole("heading", { level: 4 }).map((h) => h.textContent);
+  expect(headings).toEqual(["Identity", "Role", "Nature", "Abilities", "Relationships", "History", "Change"]);
+  // with no position, the whole-story summary leads and no intro is asked for
+  expect(screen.getByText(profile.summary)).toBeInTheDocument();
+  expect(screen.queryByLabelText(PROFILE.introLabel)).toBeNull();
+  expect(api.intro).not.toHaveBeenCalled();
 });

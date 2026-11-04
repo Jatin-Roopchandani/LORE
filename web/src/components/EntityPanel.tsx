@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api, isError } from "../api";
-import { EXPLORE, POSITION } from "../messages";
+import { EXPLORE, PROFILE } from "../messages";
 import type { Beat, Depth, EntityProfile, Relation, SearchHit, SubgraphData, Timeline } from "../types";
 import { EntitySearch } from "./EntitySearch";
 import { QuoteChip } from "./QuoteChip";
@@ -82,14 +82,37 @@ function Quotes({ items, world, bookTitles }: { items: { quote: string; chunk_id
   return <>{items.map((q) => <QuoteChip key={`${q.chunk_id}:${q.quote}`} chunkId={q.chunk_id} quote={q.quote} bookId={q.book_id} chapter={q.chapter} world={world} bookTitles={bookTitles} />)}</>;
 }
 
+// Who it is first, what it does next, then the rest; an aspect the panel does not know goes last.
+const ASPECT_ORDER = ["identity", "role", "nature", "abilities", "relationships", "history", "change"];
+const aspectRank = (a: string) => { const i = ASPECT_ORDER.indexOf(a); return i < 0 ? ASPECT_ORDER.length : i; };
+
+// Under a reading position: the intro the profile carries (a written one, or the plain fallback at once),
+// replaced by a written one when the server can make it. A failed request keeps what is shown.
+function useIntro(id: string, world: string | undefined, profile: EntityProfile) {
+  const [intro, setIntro] = useState<string | null>(profile.intro ?? null);
+  useEffect(() => {
+    setIntro(profile.intro ?? null);
+    if (!profile.intro_pending) return;
+    let live = true;
+    api.intro(id, world).then((r) => { if (live && !isError(r) && r.intro) setIntro(r.intro); }, () => {});
+    return () => { live = false; };
+  }, [id, world, profile]);
+  return intro;
+}
+
 function ProfileTab({ id, world, profile, bookTitles }: { id: string; world?: string; profile: EntityProfile; bookTitles?: Map<string, string> }) {
-  const empty = !profile.summary && profile.aspects.length === 0;
+  const intro = useIntro(id, world, profile);
+  const empty = !profile.summary && !intro && profile.aspects.length === 0;
+  const aspects = [...profile.aspects].sort((a, b) => aspectRank(a.aspect) - aspectRank(b.aspect));
   return (
     <div className="stack">
       <span className="mono">{EXPLORE.counts(profile.counts)}</span>
       {profile.summary && <p className="summary">{profile.summary}</p>}
-      {profile.summary_hidden && <p className="hint">{POSITION.summaryHidden}</p>}
-      {profile.aspects.map((a) => (
+      {!profile.summary && intro && (<>
+        <p className="summary" aria-label={PROFILE.introLabel}>{intro}</p>
+        <p className="hint">{PROFILE.introHint}</p>
+      </>)}
+      {aspects.map((a) => (
         <section key={a.aspect}>
           <h4>{EXPLORE.aspect(a.aspect)}</h4>
           <ul className="plain">
