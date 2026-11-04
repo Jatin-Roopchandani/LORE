@@ -244,3 +244,21 @@ re-tested on a fresh factual set before `PROSE_FACTUAL` comes back on.
 
 Round 8 measures the other nine behaviours: the new defaults with PROSE_FACTUAL off, against
 all of them off.
+
+**2026-11-04: the writer-fidelity set (`factual2.json`, 24 questions) and its bar, fixed before the run.**
+
+The fix in `docs/superpowers/specs/2026-11-04-writer-fidelity-design.md` (COVERAGE,
+FACT_FIDELITY) is tested on a fresh factual set: 24 questions over both novels, written from
+the book text and checked against every earlier set (dev, held-out, arc, interpretive, deep,
+recap) for repeated questions, topics and key facts (`tests/test_eval_factual2.py`). 3 ask for
+a single fact, 14 for several, 7 compare the two books.
+
+Arms: `prose_factual=true` (with the fix) against `prose_factual=false`, paired, graded blind
+and answer-only:
+
+    run_pair.py --set factual2 --world <Holmes world> --trace \
+        --arm prose_factual=true --arm prose_factual=false
+
+Bar: false claims no higher than control; key facts no worse than -2 in total; readability
+preferred with a sign test p < 0.05; prose fallback at most 25% (`trace_report.py` also prints
+each prose answer's `coverage`). If it passes, `PROSE_FACTUAL` goes back on.

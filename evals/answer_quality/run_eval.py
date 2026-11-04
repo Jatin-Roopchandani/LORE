@@ -36,7 +36,10 @@ SETS = {"dev": HERE / "questions.json", "heldout": HERE / "heldout.json",
         "arc": HERE / "arc.json",
         "interpretive": HERE / "interpretive.json",
         "deep": HERE / "deep.json",
-        "recap": HERE / "recap.json"}
+        "recap": HERE / "recap.json",
+        # 24 fresh factual questions over both books, for the writer-fidelity
+        # eval (prose_factual on vs off; bar in GRADING.md, 2026-11-04).
+        "factual2": HERE / "factual2.json"}
 RUNS = HERE / "runs"
 
 
@@ -194,7 +197,8 @@ def main() -> None:
                              " milestones only) or arc (16, timeline/arc"
                              " questions, never tuned on -- see GRADING.md),"
                              " interpretive (16) or deep (10), both blind"
-                             " sets graded per GRADING.md")
+                             " sets graded per GRADING.md, recap (8) or"
+                             " factual2 (24, the writer-fidelity set)")
     parser.add_argument("--evidence-only", action="store_true",
                         help="stop before writing answers; record only the"
                              " evidence (for retrieval/recall.py --run)")

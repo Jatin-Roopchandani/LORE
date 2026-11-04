@@ -1,0 +1,407 @@
+[
+ {
+  "id": "F1",
+  "type": "multi",
+  "question": "In A Study in Scarlet, how did the London newspapers explain the Brixton Road murder the day after it was discovered: what did the Daily Telegraph, the Standard and the Daily News each say?",
+  "verified": "The Daily Telegraph put it down to political refugees and revolutionists, pointing to the victim's German name, the absence of any other motive and the inscription on the wall, and ended by urging the Government to watch foreigners in England more closely. The Standard remarked that such lawless outrages usually occurred under a Liberal Administration, from the unsettling of the masses and the weakening of authority. The Daily News had no doubt the crime was political: Continental despotism had driven to England men bound by a code of honour whose breach was punished by death, and it said every effort should be made to find the secretary, Stangerson.",
+  "key_facts": [
+   "Daily Telegraph: the work of political refugees and revolutionists (the German name, no other motive, the inscription)",
+   "Daily Telegraph: urged the Government to keep a closer watch over foreigners in England",
+   "Standard: such outrages usually occur under a Liberal Administration, from the weakening of authority",
+   "Daily News: certainly a political crime, by men driven to England by Continental despotism and bound by a code punished by death",
+   "Daily News: every effort should be made to find the secretary Stangerson"
+  ],
+  "evidence": [
+   "05ab674df048d13f:10:0",
+   "05ab674df048d13f:10:1"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F2",
+  "type": "single",
+  "question": "In A Study in Scarlet, why does Holmes call the case \"a study in scarlet\"?",
+  "verified": "Using \"a little art jargon\", Holmes says there is the scarlet thread of murder running through the colourless skein of life, and that their duty is to unravel it, isolate it and expose every inch of it.",
+  "key_facts": [
+   "The scarlet thread of murder runs through the colourless skein of life (art jargon)",
+   "Their duty is to unravel it, isolate it and expose every inch of it"
+  ],
+  "evidence": [
+   "05ab674df048d13f:8:11"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F3",
+  "type": "multi",
+  "question": "In A Study in Scarlet, before Watson knew what Holmes did for a living, which callers did he see visiting Holmes at Baker Street?",
+  "verified": "A little sallow, rat-faced, dark-eyed man introduced as Mr. Lestrade, who came three or four times in one week; a fashionably dressed young girl who stayed half an hour or more; the same afternoon a grey-headed, seedy visitor like a pedlar, much excited, closely followed by a slip-shod elderly woman; an old white-haired gentleman; and a railway porter in his velveteen uniform. When they came Holmes asked for the sitting-room and Watson retired to his bedroom.",
+  "key_facts": [
+   "Lestrade: a little sallow, rat-faced, dark-eyed man, three or four times in one week",
+   "A fashionably dressed young girl",
+   "A grey-headed, seedy visitor like a pedlar, followed by a slip-shod elderly woman",
+   "An old white-haired gentleman",
+   "A railway porter in velveteen uniform",
+   "Holmes asked for the sitting-room and Watson went to his bedroom"
+  ],
+  "evidence": [
+   "05ab674df048d13f:6:7"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F4",
+  "type": "multi",
+  "question": "In A Study in Scarlet, how did Gregson find out where Enoch Drebber had been lodging in London?",
+  "verified": "From the hat found beside the dead man, made by John Underwood and Sons, 129 Camberwell Road. Gregson went to Underwood, who looked through his books and found he had sent the hat to a Mr. Drebber at Charpentier's Boarding Establishment, Torquay Terrace. Holmes had already noticed the hatter's name but had not gone there.",
+  "key_facts": [
+   "The hat beside the body was by John Underwood and Sons, 129 Camberwell Road",
+   "Gregson asked the hatter, whose books showed the hat was sent to Mr. Drebber",
+   "The address was Charpentier's Boarding Establishment, Torquay Terrace",
+   "Holmes had noticed the hatter's name but had not been there"
+  ],
+  "evidence": [
+   "05ab674df048d13f:10:5",
+   "05ab674df048d13f:10:6"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F5",
+  "type": "multi",
+  "question": "How does Watson describe Sherlock Holmes's appearance in A Study in Scarlet?",
+  "verified": "Rather over six feet tall and so excessively lean that he seemed considerably taller; sharp, piercing eyes (except in his intervals of torpor); a thin, hawk-like nose that gave him an air of alertness and decision; a prominent, square chin marking a man of determination; and hands always blotted with ink and stained with chemicals, yet with an extraordinary delicacy of touch.",
+  "key_facts": [
+   "Rather over six feet, and so lean he seemed taller",
+   "Sharp, piercing eyes",
+   "A thin, hawk-like nose giving an air of alertness and decision",
+   "A prominent, square chin of determination",
+   "Hands blotted with ink and stained with chemicals, with extraordinary delicacy of touch"
+  ],
+  "evidence": [
+   "05ab674df048d13f:6:1"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F6",
+  "type": "multi",
+  "question": "In A Study in Scarlet, what emblem had the Latter Day Saints chosen, and why were long streams of laden mules passing through their city on the morning Lucy Ferrier rode into town?",
+  "verified": "They had chosen the bees' hive for their emblem (\"as busy as the bees whose hive they have chosen for their emblem\"). The mules were all heading west because the gold fever had broken out in California, and the Overland Route lay through the City of the Elect.",
+  "key_facts": [
+   "Their emblem is the hive of the bees",
+   "Gold fever had broken out in California and the Overland Route ran through their city"
+  ],
+  "evidence": [
+   "05ab674df048d13f:13:4",
+   "05ab674df048d13f:13:5"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F7",
+  "type": "multi",
+  "question": "When the lone wanderer and the little girl are found on the alkali plain in A Study in Scarlet, what had happened to the rest of their party, and in what order did they die?",
+  "verified": "Their party had left a river expecting to strike another soon, but something went wrong with the compasses or the map and it never turned up, so the water ran out. Mr. Bender died first, then Indian Pete, then Mrs. McGregor, then Johnny Hones, and then the girl's mother; only the man and the girl, about five years old, were left.",
+  "key_facts": [
+   "They missed the next river (compasses or map wrong) and the water ran out",
+   "Order of deaths: Mr. Bender, Indian Pete, Mrs. McGregor, Johnny Hones, then the girl's mother",
+   "Only the man and the girl of about five were left"
+  ],
+  "evidence": [
+   "05ab674df048d13f:12:3",
+   "05ab674df048d13f:12:4",
+   "05ab674df048d13f:12:5"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F8",
+  "type": "single",
+  "question": "In A Study in Scarlet, after hearing Constable Rance's story, what did Holmes give him and what did he tell him about his prospects in the police?",
+  "verified": "Holmes gave him a half-sovereign and told him he was afraid he would never rise in the force: his head should be for use as well as ornament, and he might have gained his sergeant's stripes the night before. In the cab Holmes called him a blundering fool.",
+  "key_facts": [
+   "Holmes gave him a half-sovereign",
+   "He would never rise in the force; his head should be for use as well as ornament",
+   "He might have gained his sergeant's stripes last night"
+  ],
+  "evidence": [
+   "05ab674df048d13f:8:10"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F9",
+  "type": "multi",
+  "question": "In The Sign of the Four, who was François Le Villard, what had Holmes done for him, and how does Holmes rate him as a detective?",
+  "verified": "Le Villard had lately come to the front in the French detective service and consulted Holmes over a case concerning a will; Holmes referred him to two parallel cases, at Riga in 1857 and St. Louis in 1871, which suggested the true solution. His letter of thanks was full of \"magnifiques\", \"coup-de-maîtres\" and \"tours-de-force\". Holmes says he has the Celtic power of quick intuition and two of the three qualities of the ideal detective, observation and deduction, but lacks the wide range of exact knowledge; he is translating Holmes's small works into French.",
+  "key_facts": [
+   "A rising man in the French detective service who consulted Holmes about a will",
+   "Holmes referred him to two parallel cases, at Riga in 1857 and St. Louis in 1871",
+   "His letter was full of admiration (magnifiques, coup-de-maîtres, tours-de-force)",
+   "He has observation and deduction (quick intuition) but lacks exact knowledge",
+   "He is translating Holmes's works into French"
+  ],
+  "evidence": [
+   "0ee225a9a3b5fbc2:4:4",
+   "0ee225a9a3b5fbc2:4:5"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F10",
+  "type": "multi",
+  "question": "What does Mary Morstan tell Holmes about her life before her father came home in 1878?",
+  "verified": "Her father was an officer in an Indian regiment who sent her home when she was quite a child. Her mother was dead and she had no relative in England, so she was placed in a comfortable boarding establishment in Edinburgh, where she stayed until she was seventeen. In 1878 her father, senior captain of his regiment, got twelve months' leave and came home.",
+  "key_facts": [
+   "Her father, an officer in an Indian regiment, sent her home as a small child",
+   "Her mother was dead and she had no relative in England",
+   "She was at a boarding establishment in Edinburgh until she was seventeen",
+   "In 1878 her father, senior captain of his regiment, came home on twelve months' leave"
+  ],
+  "evidence": [
+   "0ee225a9a3b5fbc2:5:2"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F11",
+  "type": "single",
+  "question": "In The Sign of the Four, what did Holmes serve when he insisted that Athelney Jones dine at Baker Street?",
+  "verified": "Oysters and a brace of grouse, with something a little choice in white wines; after dinner he filled three glasses with port for a toast to the expedition.",
+  "key_facts": [
+   "Oysters",
+   "A brace of grouse",
+   "Something choice in white wines"
+  ],
+  "evidence": [
+   "0ee225a9a3b5fbc2:12:14",
+   "0ee225a9a3b5fbc2:13:0"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F12",
+  "type": "multi",
+  "question": "Before the chase on the Thames in The Sign of the Four, what boat, men and arrangement for the treasure box did Holmes ask Athelney Jones for, and what change did he make to the boat?",
+  "verified": "Holmes wanted a fast police-boat, a steam launch, at the Westminster Stairs at seven o'clock, and two staunch men in case of resistance; once the men were secured, Watson was to take the treasure box round to the young lady to whom half of it rightfully belonged and let her be the first to open it (Jones agreed, provided it went to the authorities afterwards). At the wharf Holmes had the green lamp that marked the launch as a police-boat taken off.",
+  "key_facts": [
+   "A fast police-boat (steam launch) at the Westminster Stairs at seven",
+   "Two staunch men in case of resistance",
+   "Watson to take the box to Miss Morstan and let her open it first",
+   "The green lamp marking it as a police-boat was taken off"
+  ],
+  "evidence": [
+   "0ee225a9a3b5fbc2:12:13",
+   "0ee225a9a3b5fbc2:12:14",
+   "0ee225a9a3b5fbc2:13:0"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F13",
+  "type": "multi",
+  "question": "On the cab ride from the Lyceum to Thaddeus Sholto's house, what muddled story did Watson tell Miss Morstan, and which streets did Holmes name along the way?",
+  "verified": "Trying to amuse her with his Afghan adventures, Watson was so excited that she declares he told her how a musket looked into his tent at the dead of night and he fired a double-barrelled tiger cub at it. Holmes named the route: Rochester Row, Vincent Square, the Vauxhall Bridge Road, over the bridge to the Surrey side, then Wordsworth Road, Priory Road, Lark Hall Lane, Stockwell Place, Robert Street and Cold Harbor Lane.",
+  "key_facts": [
+   "Watson told her a musket looked into his tent at night and he fired a double-barrelled tiger cub at it",
+   "Rochester Row, Vincent Square, the Vauxhall Bridge Road, over the bridge to the Surrey side",
+   "Wordsworth Road, Priory Road, Lark Hall Lane, Stockwell Place, Robert Street, Cold Harbor Lane"
+  ],
+  "evidence": [
+   "0ee225a9a3b5fbc2:6:6",
+   "0ee225a9a3b5fbc2:6:7"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F14",
+  "type": "multi",
+  "question": "In The Sign of the Four, what did Holmes conclude from the handwriting of Mary Morstan's papers, and what did he say about the handwriting of the note he showed Watson afterwards?",
+  "verified": "The addresses on the pearl boxes were in disguised hands, but the letter and they were undoubtedly by the same person: the irrepressible Greek e breaks out, and there is the same twirl of the final s. Mary said it was nothing like her father's hand. Of the other note, Holmes said the long letters hardly rise above the common herd (that d might be an a, that l an e), whereas men of character always differentiate their long letters; there was vacillation in the k's and self-esteem in the capitals.",
+  "key_facts": [
+   "The papers are disguised hands except the letter, but all by the same person",
+   "The Greek e and the twirl of the final s give it away",
+   "The writing was nothing like her father's",
+   "Of the note: the long letters hardly rise above the rest, a sign of no character",
+   "Vacillation in the k's and self-esteem in the capitals"
+  ],
+  "evidence": [
+   "0ee225a9a3b5fbc2:5:6",
+   "0ee225a9a3b5fbc2:5:7"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F15",
+  "type": "multi",
+  "question": "How does Watson describe Athelney Jones when he first comes into the room at Pondicherry Lodge?",
+  "verified": "A very stout, portly man in a grey suit who strode heavily in; red-faced, burly and plethoric, with a pair of very small twinkling eyes looking out keenly from between swollen, puffy pouches, and a muffled, husky, wheezing voice.",
+  "key_facts": [
+   "Very stout and portly, in a grey suit",
+   "Red-faced, burly and plethoric",
+   "Very small twinkling eyes between swollen, puffy pouches",
+   "A muffled, husky voice (he wheezed)"
+  ],
+  "evidence": [
+   "0ee225a9a3b5fbc2:9:7"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F16",
+  "type": "multi",
+  "question": "When Watson told the story of the night at Pondicherry Lodge in Camberwell, how did Mrs. Forrester describe it, and what did Mary Morstan add?",
+  "verified": "Mrs. Forrester cried that it was a romance: an injured lady, half a million in treasure, a black cannibal and a wooden-legged ruffian, taking the place of the conventional dragon or wicked earl. Mary added \"And two knight-errants to the rescue\", with a bright glance at Watson.",
+  "key_facts": [
+   "Mrs. Forrester called it a romance",
+   "An injured lady, half a million in treasure, a black cannibal and a wooden-legged ruffian",
+   "They take the place of the conventional dragon or wicked earl",
+   "Mary added: two knight-errants to the rescue"
+  ],
+  "evidence": [
+   "0ee225a9a3b5fbc2:12:1"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F17",
+  "type": "multi",
+  "question": "In The Sign of the Four, why did Holmes decide that Jonathan Small's small companion could not be one of the Indians associated with Small?",
+  "verified": "At first the strange weapons made him think so, but the remarkable footmarks changed his mind: some inhabitants of the Indian Peninsula are small, but none could leave such marks. The Hindoo proper has long, thin feet, and the sandal-wearing Mohammedan has the great toe well separated from the others because of the thong.",
+  "key_facts": [
+   "The footmarks, not the weapons, decided it: no small man of the Indian Peninsula could leave such marks",
+   "The Hindoo proper has long, thin feet",
+   "The sandal-wearing Mohammedan's great toe is well separated by the thong"
+  ],
+  "evidence": [
+   "0ee225a9a3b5fbc2:11:12"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F18",
+  "type": "comparison",
+  "question": "In each novel, what was the weather like when Holmes and Watson first set out on the case?",
+  "verified": "In A Study in Scarlet, driving to the Brixton Road, it was a foggy, cloudy morning with a dun-coloured veil over the house-tops, like the reflection of the mud-coloured streets, and the dull weather depressed Watson. In The Sign of the Four it was a September evening, not yet seven, after a dreary day: a dense drizzly fog lay low on the city, mud-coloured clouds drooped over muddy streets and the Strand lamps were misty splotches of light.",
+  "key_facts": [
+   "SiS: a foggy, cloudy morning with a dun-coloured veil over the house-tops",
+   "SiS: the dull weather depressed Watson",
+   "SoF: a September evening after a dreary day, with a dense drizzly fog over the city",
+   "SoF: mud-coloured clouds and the Strand lamps only misty splotches of light"
+  ],
+  "evidence": [
+   "05ab674df048d13f:7:3",
+   "05ab674df048d13f:7:4",
+   "0ee225a9a3b5fbc2:6:3",
+   "0ee225a9a3b5fbc2:6:4"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F19",
+  "type": "comparison",
+  "question": "How does each novel describe the face of the first murder victim when Watson first sees the body?",
+  "verified": "In A Study in Scarlet, Enoch Drebber's rigid face bore an expression of horror and, it seemed, hatred such as Watson had never seen on human features; with his low forehead, blunt nose and prognathous jaw it gave him a simious, ape-like look. In The Sign of the Four, Bartholomew Sholto's face, seen through the keyhole, was the very image of his twin Thaddeus's, set in a horrible smile, a fixed and unnatural grin more jarring than any scowl; in the room it was a ghastly, inscrutable smile.",
+  "key_facts": [
+   "SiS: an expression of horror and hatred never seen on human features",
+   "SiS: with the low forehead, blunt nose and prognathous jaw, an ape-like look",
+   "SoF: a face just like his twin Thaddeus's",
+   "SoF: set in a horrible smile, a fixed and unnatural grin"
+  ],
+  "evidence": [
+   "05ab674df048d13f:7:8",
+   "0ee225a9a3b5fbc2:8:7",
+   "0ee225a9a3b5fbc2:8:8"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F20",
+  "type": "comparison",
+  "question": "Holmes mentions monographs he has written in both novels. Which subjects does he name in each?",
+  "verified": "In A Study in Scarlet he says he has made a special study of cigar ashes and written a monograph on it, and can tell the ash of any known brand of cigar or tobacco at a glance. In The Sign of the Four he names \"Upon the Distinction between the Ashes of the Various Tobaccoes\", listing 140 forms of cigar, cigarette and pipe tobacco with coloured plates; a monograph on tracing footsteps, with remarks on plaster of Paris for preserving impressions; and a work on the influence of a trade upon the form of the hand, with lithotypes of the hands of slaters, sailors, cork-cutters, compositors, weavers and diamond-polishers.",
+  "key_facts": [
+   "SiS: a monograph on cigar ashes; he can tell any brand's ash at a glance",
+   "SoF: on the ashes of the various tobaccos, 140 forms with coloured plates",
+   "SoF: on tracing footsteps, with plaster of Paris to preserve impressions",
+   "SoF: on the influence of a trade on the form of the hand (slaters, sailors, cork-cutters, compositors, weavers, diamond-polishers)"
+  ],
+  "evidence": [
+   "05ab674df048d13f:8:2",
+   "0ee225a9a3b5fbc2:4:5",
+   "0ee225a9a3b5fbc2:4:6"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F21",
+  "type": "comparison",
+  "question": "In each novel Holmes talks about subjects unrelated to the case at a moment of action. What does he talk about on the drive to Lauriston Gardens, and at the dinner before the river chase?",
+  "verified": "Driving to the Brixton Road in A Study in Scarlet, he prattled about Cremona fiddles and the difference between a Stradivarius and an Amati. At the dinner with Athelney Jones in The Sign of the Four he spoke on miracle-plays, mediaeval pottery, Stradivarius violins, the Buddhism of Ceylon and the war-ships of the future, as though he had made a special study of each.",
+  "key_facts": [
+   "SiS: Cremona fiddles and the difference between a Stradivarius and an Amati",
+   "SoF: miracle-plays and mediaeval pottery",
+   "SoF: Stradivarius violins",
+   "SoF: the Buddhism of Ceylon and the war-ships of the future"
+  ],
+  "evidence": [
+   "05ab674df048d13f:7:3",
+   "0ee225a9a3b5fbc2:13:0"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F22",
+  "type": "comparison",
+  "question": "In each novel, when does Holmes tell Watson to have his revolver with him, and what weapon does Watson have?",
+  "verified": "In A Study in Scarlet, while waiting for whoever would answer the ring advertisement, Holmes asks whether Watson has any arms; Watson has his old service revolver and a few cartridges, and Holmes tells him to clean and load it and put it in his pocket. In The Sign of the Four, after the dinner and before the river expedition, Holmes asks whether he has a pistol; Watson has his old service-revolver in his desk, and Holmes tells him to take it. (Earlier, on Toby's trail, Watson had only his stick.)",
+  "key_facts": [
+   "SiS: before the visitor who answers the ring advertisement",
+   "SiS: his old service revolver, which Holmes tells him to clean and load",
+   "SoF: before the river expedition, after the dinner",
+   "SoF: his old service-revolver from his desk"
+  ],
+  "evidence": [
+   "05ab674df048d13f:9:2",
+   "05ab674df048d13f:9:3",
+   "05ab674df048d13f:9:4",
+   "0ee225a9a3b5fbc2:13:0"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F23",
+  "type": "comparison",
+  "question": "What does Holmes say against theorizing or guessing in each novel?",
+  "verified": "In A Study in Scarlet, on the drive to Lauriston Gardens, he says it is a capital mistake to theorize before you have all the evidence, because it biases the judgment (he has no data yet). In The Sign of the Four, after reading Watson's watch, he says he never guesses: it is a shocking habit, destructive to the logical faculty.",
+  "key_facts": [
+   "SiS: a capital mistake to theorize before you have all the evidence",
+   "SiS: it biases the judgment",
+   "SoF: he never guesses",
+   "SoF: guessing is a shocking habit, destructive to the logical faculty"
+  ],
+  "evidence": [
+   "05ab674df048d13f:7:4",
+   "0ee225a9a3b5fbc2:4:12"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ },
+ {
+  "id": "F24",
+  "type": "comparison",
+  "question": "In each novel Holmes picks up or recommends a book that has nothing to do with the case. Which book is it in each, and what does he say about it?",
+  "verified": "In A Study in Scarlet, while waiting for the visitor, he shows a queer old book he picked up at a stall, \"De Jure inter Gentes\", published in Latin at Liege in the Lowlands in 1642, printed by Philippe de Croy, with \"Ex libris Guliolmi Whyte\" on the fly-leaf; he wonders who William Whyte was, probably a seventeenth-century lawyer. In The Sign of the Four he recommends Winwood Reade's \"Martyrdom of Man\" to Watson as one of the most remarkable books ever penned.",
+  "key_facts": [
+   "SiS: De Jure inter Gentes, picked up at a stall",
+   "SiS: in Latin, printed at Liege in 1642 (Philippe de Croy), owned by William Whyte",
+   "SoF: Winwood Reade's Martyrdom of Man",
+   "SoF: one of the most remarkable books ever penned"
+  ],
+  "evidence": [
+   "05ab674df048d13f:9:4",
+   "0ee225a9a3b5fbc2:5:7"
+  ],
+  "source": "factual2: written 2026-11-04 from the book text (chunks table), for the writer-fidelity eval"
+ }
+]

@@ -1096,7 +1096,7 @@ def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:
 
     evals = Path(__file__).parents[1] / "evals/answer_quality"
     sets = [evals / "questions.json", evals / "heldout.json", evals / "arc.json",
-            evals / "interpretive.json", evals / "deep.json"]
+            evals / "interpretive.json", evals / "deep.json", evals / "factual2.json"]
     prompt = grams("\n".join((
         synthesize_module._PROMPT, synthesize_module._FACTS_RULE,
         synthesize_module._FULL_FACTS_RULE, synthesize_module._PART_CONTEXT,
