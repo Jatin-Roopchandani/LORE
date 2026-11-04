@@ -6,6 +6,11 @@ Streamable HTTP instead.
 
 In stdio mode stdout is the protocol channel: nothing here may print to it.
 
+Tenancy: MCP is LOCAL-MODE ONLY for the beta (release spec §6). It serves the
+one `LoreConfig` it is given, i.e. the local user's library, and has no notion
+of a request's user: never expose it from a multi-user deployment. A per-user
+token (resolving to `lore.tenancy.config_for(base, user)`) can come later.
+
 Operational note: an engine crash takes the whole process down. Kuzu 0.11.3
 segfaults on `CALL read_csv_serial('<path>')`; the cypher guard rejects that
 name and allowlists only show_tables, table_info and db_version, so the known

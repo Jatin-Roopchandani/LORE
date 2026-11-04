@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
@@ -34,6 +34,10 @@ from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.move import prepare_move
 from lore.orchestrator.pipeline import processing_budget_left, run_book
 from lore.query import explore
+from lore.tenancy import (
+    CurrentUser, InvalidUserId, config_for, multi_user_enabled,
+    resolve_user as default_resolver, validate_user_id,
+)
 from lore.web.ask import ask_events
 from lore.worlds import (
     WorldError, books_in, create_world, delete_world, get_world, list_worlds,
@@ -171,19 +175,52 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                dev: bool = False,
                stages_factory: Callable[[LoreConfig], list] | None = None,
                move_stages_factory: Callable[[LoreConfig, int], list] | None = None,
-               clock: Callable[[], datetime] | None = None):
+               clock: Callable[[], datetime] | None = None,
+               multi_user: bool | None = None,
+               resolve_user: Callable[[Request], CurrentUser] | None = None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
-    book processing."""
+    book processing.
+
+    `config` is the BASE config: its `data_dir` is the data root. Every route
+    resolves the request's user and works on `config_for(config, user)`, the
+    user's own library, opened per request (see lore.mcp.stores: handles are
+    never cached, so nothing can leak from one user to the next). In local
+    mode (the default) the one local user's library is `config.data_dir`
+    itself, as before. `multi_user` (default: LORE_MULTI_USER) and
+    `resolve_user` (default: lore.tenancy.resolve_user) are seams for tests
+    and, in step 2, for auth.
+    """
     api = FastAPI(title="LORE", docs_url=None, redoc_url=None)
+    multi = multi_user_enabled() if multi_user is None else multi_user
+    resolver = resolve_user or default_resolver
+    base = config
+
+    def current_user(request: Request) -> CurrentUser:
+        return resolver(request)
+
+    def library_of(user: CurrentUser) -> LoreConfig:
+        """The one place a user becomes a library: their own config."""
+        if user.is_local:
+            if multi:  # nobody may claim the single-user library in multi mode
+                raise HTTPException(401, "invalid user")
+            return base
+        try:
+            return config_for(base, validate_user_id(user.id))
+        except InvalidUserId:
+            raise HTTPException(401, "invalid user") from None
+
+    def user_config(request: Request) -> LoreConfig:
+        return library_of(current_user(request))
+
     make_stages = stages_factory or _default_stages
     make_move_stages = move_stages_factory or _move_stages
     now_utc = clock or (lambda: datetime.now(timezone.utc))
     runner_slot = threading.Lock()  # held while a processing job runs
 
-    def recover() -> None:
+    def recover(cfg: LoreConfig) -> None:
         """A job whose runner died resumes from Continue, no reset wait."""
         try:
-            conn = open_db(config.sqlite_path)
+            conn = open_db(cfg.sqlite_path)
             try:
                 jobs.recover_stale(conn, now_utc())
             finally:
@@ -191,11 +228,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         except sqlite3.Error:
             pass
 
-    recover()
+    if not multi:  # multi mode recovers each user's library when it is read
+        recover(base)
 
     @api.get("/api/books")
-    def books():
-        recover()
+    def books(config: LoreConfig = Depends(user_config)):
+        recover(config)
         now = now_utc()
         conn = open_db(config.sqlite_path)
         try:
@@ -211,7 +249,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
              "job": _job_out(by_book.get(b["id"]), now)}
             for b in rows], "gemini": gemini}
 
-    def _process(book_id: str, move_world: int | None = None) -> None:
+    def _process(config: LoreConfig, book_id: str,
+                 move_world: int | None = None) -> None:
         conn = open_db(config.sqlite_path)  # its own connection: another thread
         try:
             stages = (make_move_stages(config, move_world) if move_world is not None
@@ -232,7 +271,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             runner_slot.release()
 
     @api.post("/api/books/{book_id}/continue", status_code=202)
-    def continue_book(book_id: str):
+    def continue_book(book_id: str, config: LoreConfig = Depends(user_config)):
         if not runner_slot.acquire(blocking=False):
             return _api_error(409, "busy", "another book is being processed")
         handed_off = False
@@ -256,7 +295,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                     return _api_error(409, "not_resumable", str(exc))
             finally:
                 conn.close()
-            threading.Thread(target=_process, args=(book_id, move_world),
+            threading.Thread(target=_process, args=(config, book_id, move_world),
                              daemon=True).start()
             handed_off = True
         finally:
@@ -265,7 +304,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         return {"started": True}
 
     @api.post("/api/books/{book_id}/move")
-    def move_book(book_id: str, body: MoveBody):
+    def move_book(book_id: str, body: MoveBody,
+                  config: LoreConfig = Depends(user_config)):
         if not runner_slot.acquire(blocking=False):
             return _api_error(409, "busy", "another book is being processed")
         handed_off = False
@@ -294,7 +334,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                     return JSONResponse({"started": False})  # nothing to move
             except JobRefused as exc:
                 return _api_error(409, "busy", str(exc))
-            threading.Thread(target=_process, args=(book_id, target.id),
+            threading.Thread(target=_process, args=(config, book_id, target.id),
                              daemon=True).start()
             handed_off = True
             created = None  # the world is in use now
@@ -312,7 +352,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 runner_slot.release()
 
     @api.get("/api/worlds")
-    def worlds():
+    def worlds(config: LoreConfig = Depends(user_config)):
         conn = open_db(config.sqlite_path)
         try:
             rows = list_books(conn)
@@ -330,7 +370,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         return {"id": w.id, "name": w.name}
 
     @api.post("/api/worlds", status_code=201)
-    def create_a_world(body: WorldBody):
+    def create_a_world(body: WorldBody, config: LoreConfig = Depends(user_config)):
         conn = open_db(config.sqlite_path)
         try:
             if body.name.strip() and get_world(conn, body.name) is not None:
@@ -345,7 +385,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             conn.close()
 
     @api.patch("/api/worlds/{world_id}")
-    def rename_a_world(world_id: int, body: WorldBody):
+    def rename_a_world(world_id: int, body: WorldBody,
+                       config: LoreConfig = Depends(user_config)):
         conn = open_db(config.sqlite_path)
         try:
             if get_world(conn, world_id) is None:
@@ -363,7 +404,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             conn.close()
 
     @api.delete("/api/worlds/{world_id}")
-    def delete_a_world(world_id: int):
+    def delete_a_world(world_id: int, config: LoreConfig = Depends(user_config)):
         conn = open_db(config.sqlite_path)
         try:
             if get_world(conn, world_id) is None:
@@ -380,12 +421,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             conn.close()
 
     @api.get("/api/library")
-    def library(world: str | None = None):
+    def library(world: str | None = None, config: LoreConfig = Depends(user_config)):
         return tools.library(config, world=world)
 
     @api.get("/api/entity")
     def entity(id: str | None = None, name: str | None = None,
-               world: str | None = None):
+               world: str | None = None, config: LoreConfig = Depends(user_config)):
         if id:
             return tools.entity_by_id(config, id, world=world)
         if name:
@@ -393,13 +434,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         raise HTTPException(400, "give id or name")
 
     @api.get("/api/entities")
-    def entities(ids: str = "", world: str | None = None):
+    def entities(ids: str = "", world: str | None = None,
+                 config: LoreConfig = Depends(user_config)):
         return tools.entities_by_ids(config, [i for i in ids.split(",") if i],
                                      world=world)
 
     @api.get("/api/subgraph")
     def subgraph(id: str | None = None, name: str | None = None,
-                 depth: int = Query(1, ge=1, le=3), world: str | None = None):
+                 depth: int = Query(1, ge=1, le=3), world: str | None = None,
+                 config: LoreConfig = Depends(user_config)):
         if id:
             return tools.subgraph_by_id(config, id, depth, world=world)
         if name:
@@ -407,46 +450,54 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         raise HTTPException(400, "give id or name")
 
     @api.get("/api/overview")
-    def overview(limit: int = 40, world: str | None = None):
+    def overview(limit: int = 40, world: str | None = None,
+                 config: LoreConfig = Depends(user_config)):
         return tools.overview(config, limit, world=world)
 
     # The graph explorer's reads: stored data only, never a model call.
     @api.get("/api/entity/{entity_id}/profile")
-    def entity_profile(entity_id: str, world: str | None = None):
+    def entity_profile(entity_id: str, world: str | None = None,
+                       config: LoreConfig = Depends(user_config)):
         return explore.profile(config, entity_id, world=world)
 
     @api.get("/api/entity/{entity_id}/timeline")
-    def entity_timeline(entity_id: str, world: str | None = None):
+    def entity_timeline(entity_id: str, world: str | None = None,
+                        config: LoreConfig = Depends(user_config)):
         return explore.timeline(config, entity_id, world=world)
 
     @api.get("/api/entity/{entity_id}/relations")
-    def entity_relations(entity_id: str, world: str | None = None):
+    def entity_relations(entity_id: str, world: str | None = None,
+                         config: LoreConfig = Depends(user_config)):
         return explore.relations(config, entity_id, world=world)
 
     @api.get("/api/edge")
-    def edge(a: str, b: str, world: str | None = None):
+    def edge(a: str, b: str, world: str | None = None,
+             config: LoreConfig = Depends(user_config)):
         return explore.edge(config, a, b, world=world)
 
     @api.get("/api/search")
     def search(q: str = "", world: str | None = None,
-               limit: int = Query(explore.SEARCH_LIMIT_DEFAULT, ge=1)):
+               limit: int = Query(explore.SEARCH_LIMIT_DEFAULT, ge=1),
+               config: LoreConfig = Depends(user_config)):
         return explore.search(config, q, world=world, limit=limit)
 
     @api.get("/api/path")
     def path(a: str, b: str, world: str | None = None,
-             max: int = Query(explore.PATH_MAX_HOPS, ge=1)):
+             max: int = Query(explore.PATH_MAX_HOPS, ge=1),
+             config: LoreConfig = Depends(user_config)):
         return explore.path(config, a, b, world=world, max_hops=max)
 
     @api.get("/api/passage/{chunk_id}")
-    def passage(chunk_id: str, world: str | None = None):
+    def passage(chunk_id: str, world: str | None = None,
+                config: LoreConfig = Depends(user_config)):
         return explore.passage(config, chunk_id, world=world)
 
     @api.get("/api/quota")
-    def quota():
+    def quota(config: LoreConfig = Depends(user_config)):
         return _quota(config)
 
     @api.get("/api/mcp")
-    def mcp():
+    def mcp(config: LoreConfig = Depends(user_config)):
         return {
             "stdio_command": f"claude mcp add lore -- {shlex.quote(_lore_executable())} mcp",
             "http_command": f"lore mcp --http --port {MCP_PORT}",
@@ -455,10 +506,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         }
 
     @api.get("/api/settings")
-    def settings():
+    def settings(config: LoreConfig = Depends(user_config)):
         return {"show_internals": config.web.show_internals}
 
-    lock = asyncio.Lock()
+    # One question at a time PER USER: one user's long answer must not make
+    # another's `busy`. Locks only; no store handle is held across requests.
+    locks: dict[str, asyncio.Lock] = {}
 
     @api.post("/api/ask")
     async def ask(request: Request):
@@ -468,8 +521,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             body = AskBody.model_validate(await request.json())
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
+        user = current_user(request)
+        cfg = library_of(user)
+        lock = locks.setdefault(user.id, asyncio.Lock())
         return StreamingResponse(
-            ask_events(config, body.question, lock, search=tools.lore_search,
+            ask_events(cfg, body.question, lock, search=tools.lore_search,
                        world=body.world, depth=body.depth),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
