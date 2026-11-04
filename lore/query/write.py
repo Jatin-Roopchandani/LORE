@@ -65,6 +65,17 @@ MIN_READING_CLAIMS = 2
 # check, so it needs STORY_ORDER (`coverage_on`). Off gives the code before it.
 COVERAGE = True
 
+# FACT_FIDELITY (2026-11-04, spec writer-fidelity): readings only in labelled
+# sentences. A sentence of kind "fact" says only what its cited facts say (the
+# writer's FACT_RULE). The check flags a fact sentence that states an
+# interpretation its claims do not (`inference_in_fact`); the repair round asks
+# the writer to reduce it to its facts' wording, or, where the answer allows
+# readings (`readings_allowed`), to make it a labelled reading; a flagged fact
+# sentence left after that is not shown, and COVERAGE places its claims. An
+# answer with no interpretive part carries no readings at all. Needs
+# STORY_ORDER (`fidelity_on`). Off gives the code before it.
+FACT_FIDELITY = True
+
 
 def readings_on() -> bool:
     return READINGS and STORY_ORDER
@@ -72,6 +83,16 @@ def readings_on() -> bool:
 
 def coverage_on() -> bool:
     return COVERAGE and STORY_ORDER
+
+
+def fidelity_on() -> bool:
+    return FACT_FIDELITY and STORY_ORDER
+
+
+def readings_allowed(shape: "interpret.Shape | None", length: str | None = None) -> bool:
+    """Whether a flagged fact sentence may become a reading: READINGS on, and an
+    answer with an interpretive part, written whole (not a deep section)."""
+    return readings_on() and shape is not None and shape.interpretive and length is None
 
 
 # The sentence as the model was asked for it before READINGS (and still is
@@ -314,6 +335,23 @@ _READINGS_RULE = """- Each sentence has a `kind`: "fact" (the default) or "readi
   A reading is a single sentence. Every other sentence is a fact.
 """.format(max_readings=MAX_READINGS, min_claims=MIN_READING_CLAIMS)
 
+# FACT_FIDELITY: what a fact sentence may say, with one contrasting example from
+# a made-up story; then where an interpretation may go, if anywhere.
+FACT_RULE = """- A sentence of kind "fact" says only what its cited facts say. It adds no
+  motive, intention, judgement or evaluation that those facts do not state:
+  no "to protect her", "out of jealousy", "cruelly", "bravely" or "showing his
+  cunning" unless a fact says so. For example, from the fact "Mara locked the
+  lighthouse door and kept the key", write "Mara locked the lighthouse door
+  and kept the key", not "Mara locked the door to keep her brother out" or
+  "Mara jealously guarded the lighthouse".
+"""
+NO_READINGS_RULE = """- Every sentence of this answer is a fact. Leave out any interpretation of
+  what the facts show.
+"""
+READING_HOME_RULE = """- An interpretation belongs only in a sentence of kind "reading" or
+  "counter", worded as one, never in a sentence of kind "fact".
+"""
+
 
 # The repair round (COVERAGE): added after the facts of the story writer prompt,
 # with the draft that passed the check and what it left out.
@@ -332,6 +370,14 @@ MISSING_RULE = """- These facts are not in the draft yet: {numbers}. Work each o
   that sentence's `claims`. Add only what is new: say nothing the draft already
   says.
 """
+# FACT_FIDELITY: a draft fact sentence the check found stating an interpretation.
+REDUCE_RULE = """- Draft sentences {numbers} state an interpretation their facts do not
+  contain: a motive, intention, judgement or evaluation. Rewrite each to say
+  only what its facts say, with the same facts in `claims`.
+"""
+AS_READING_RULE = """  If that interpretation is worth keeping, you may also give it as a sentence
+  of kind "reading", worded visibly as one, as the reading rules above allow.
+"""
 
 
 @dataclass(frozen=True)
@@ -342,6 +388,10 @@ class Repair:
 
     draft: tuple = ()
     missing: tuple[int, ...] = ()
+    # FACT_FIDELITY: draft sentences (1-based) to reduce to their facts' wording,
+    # and whether the writer may keep the interpretation as a reading instead.
+    reduce: tuple[int, ...] = ()
+    as_reading: bool = False
 
 
 def repair_block(repair: Repair, shown_number: dict[int, int]) -> str:
@@ -358,6 +408,10 @@ def repair_block(repair: Repair, shown_number: dict[int, int]) -> str:
     rules = ""
     if repair.missing:
         rules += MISSING_RULE.format(numbers=nums(sorted(repair.missing, key=lambda k: shown_number.get(k, k))))
+    if repair.reduce:
+        rules += REDUCE_RULE.format(numbers=", ".join(str(i) for i in repair.reduce))
+        if repair.as_reading:
+            rules += AS_READING_RULE
     return REPAIR_RULE.format(lead=REPAIR_LEAD, draft="\n".join(lines) or "  (no sentence passed)",
                               rules=rules)
 
@@ -438,7 +492,11 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
             parts = "\n".join(interpret.part_labels(shape))
             rules = interpret.writer_rule(shape)
         else:  # a deep answer's section or short answer states facts
-            rules = _READINGS_RULE if readings_on() and length is None else ""
+            rules = (_READINGS_RULE if readings_on() and length is None and not fidelity_on()
+                     else "")
+        if fidelity_on():
+            rules += FACT_RULE + (READING_HOME_RULE if shape is not None and shape.interpretive
+                                  else NO_READINGS_RULE)
         before = (COVERED_RULE.format(headings="\n".join(f"  - {h}" for h in covered))
                   if covered else "")
         after = (AVOID_RULE.format(sentences="\n".join(f"  - {t}" for t in avoid))
@@ -490,7 +548,9 @@ async def write_answer(question: str, sub_questions: Sequence[str], claims: Sequ
     # kinds in the reply, and a stray reading is dropped, not relabelled. Its short
     # answer may carry a reading when it is given a shape (interpret.py).
     part = length is not None
-    kinds = (readings_on() and not part) or shape is not None
+    # FACT_FIDELITY: an answer with no interpretive part has no readings, so its
+    # sentences carry no kind.
+    kinds = (readings_on() and not part and not fidelity_on()) or shape is not None
     try:
         reply = await generate(
             writer_prompt(question, sub_questions, claims, passages, book_titles, books, shape,

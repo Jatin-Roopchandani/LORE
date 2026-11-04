@@ -62,6 +62,10 @@ ARM_SETTINGS = {
     # what is still uncited (write.COVERAGE).
     "coverage": ("lore.query.write", "COVERAGE",
                  lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Readings only in labelled sentences: the fact rule, the check's
+    # inference_in_fact and its repair (write.FACT_FIDELITY).
+    "fact_fidelity": ("lore.query.write", "FACT_FIDELITY",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),

@@ -39,9 +39,10 @@ class Models:
     sentence, "supported" unless it returns otherwise. `restated`: per claim."""
 
     def __init__(self, drafts, claim_verdicts=("supported",) * 3, sentence_verdict=None,
-                 restated=None):
+                 restated=None, inference=None):
         self.drafts, self.claim_verdicts = list(drafts), claim_verdicts
         self.sentence_verdict = sentence_verdict or (lambda i, text: "supported")
+        self.inference = inference or (lambda i, text: False)
         self.restated = restated
         self.write_prompts, self.check_prompts = [], []
 
@@ -59,15 +60,14 @@ class Models:
     async def check(self, prompt, schema):
         self.check_prompts.append(prompt)
         texts = re.findall(r"^\d+\. sentence(?: \(\w+\))?: (.*)$", prompt, re.M)
-        claim_extra = ({"restated_by": r} for r in self.restated) if self.restated else None
-        judgements = []
-        for i, v in enumerate(self.claim_verdicts, start=1):
-            extra = next(claim_extra) if claim_extra else {}
-            judgements.append(schema.model_fields["judgements"].annotation.__args__[0](
-                claim=i, verdict=v, reason="r", **extra))
-        return schema(judgements=judgements,
-                      sentence_judgements=[_j(i, self.sentence_verdict(i, t))
-                                           for i, t in enumerate(texts, start=1)])
+        restated = list(self.restated or [0] * len(self.claim_verdicts))
+        return schema.model_validate({
+            "judgements": [{"claim": i, "verdict": v, "reason": "r", "restated_by": r}
+                           for i, (v, r) in enumerate(zip(self.claim_verdicts, restated), start=1)],
+            "sentence_judgements": [
+                {"claim": i, "verdict": self.sentence_verdict(i, t), "reason": "r",
+                 "inference_in_fact": self.inference(i, t)}
+                for i, t in enumerate(texts, start=1)]})
 
     async def ask(self):
         return await synthesize("How did Rin grow?", EVIDENCE, self.generate, mode="graph",
@@ -254,6 +254,8 @@ def test_the_check_asks_for_restated_by_only_with_coverage_on(monkeypatch):
     assert check_schema(False) is synth.Faithfulness
     monkeypatch.setattr(w, "COVERAGE", False)
     assert "restated_by" not in faithfulness_prompt(CS, PS, TITLES, sentences, BOOKS)
+    assert "restated_by" not in str(check_schema(True).model_json_schema())
+    monkeypatch.setattr(w, "FACT_FIDELITY", False)
     assert check_schema(True) is synth.Faithfulness
 
 

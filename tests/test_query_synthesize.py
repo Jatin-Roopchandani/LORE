@@ -1053,7 +1053,12 @@ def _new_prompt_texts() -> str:
                       interpret.COUNTER_CHECK_BLOCK, interpret.NO_VERDICT_LINE,
                       interpret.NO_ANALYSIS_LINE, interpret.NO_COUNTER_LINE, interpret.LIMITS_LEAD,
                       write_module.COVERED_RULE, write_module.AVOID_RULE,
-                      synthesize_module.SUBJECT_RULE))
+                      synthesize_module.SUBJECT_RULE,
+                      write_module.REPAIR_LEAD, write_module.REPAIR_RULE, write_module.MISSING_RULE,
+                      write_module.REDUCE_RULE, write_module.AS_READING_RULE,
+                      write_module.FACT_RULE, write_module.NO_READINGS_RULE,
+                      write_module.READING_HOME_RULE, synthesize_module._RESTATED_BLOCK,
+                      synthesize_module._INFERENCE_BLOCK))
 
 
 def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:

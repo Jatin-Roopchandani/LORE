@@ -94,7 +94,11 @@ def test_a_beyond_part_adds_its_writer_rule():
     assert "(beyond the books)" in prompt and VP in prompt
 
 
-def test_without_a_shape_the_writer_prompt_is_unchanged():
+def test_without_a_shape_the_writer_prompt_is_unchanged(monkeypatch):
+    prompt = writer_prompt("How did Rin grow?", ["How did Rin grow?"], CS, PS, TITLES, books=BOOKS)
+    # FACT_FIDELITY: an answer with no interpretive part has no readings
+    assert w._READINGS_RULE not in prompt and w.NO_READINGS_RULE in prompt
+    monkeypatch.setattr(w, "FACT_FIDELITY", False)
     prompt = writer_prompt("How did Rin grow?", ["How did Rin grow?"], CS, PS, TITLES, books=BOOKS)
     assert w._READINGS_RULE in prompt and "Evidence for:" not in prompt and VP not in prompt
 
@@ -122,7 +126,7 @@ async def test_a_counter_kind_is_kept_only_for_an_interpretive_answer():
     on = await w.write_answer("q", list(SHAPE.parts), CS, PS, generate, shape=SHAPE)
     assert _kinds(on.sentences) == ["fact", "counter", "fact", "reading"]  # a writer's limit is a fact
     off = await w.write_answer("q", ["q"], CS, PS, generate)
-    assert _kinds(off.sentences) == ["fact", "fact", "fact", "reading"]
+    assert _kinds(off.sentences) == ["fact"] * 4  # FACT_FIDELITY: no readings without a shape
 
 
 # ---- the code guards --------------------------------------------------------------

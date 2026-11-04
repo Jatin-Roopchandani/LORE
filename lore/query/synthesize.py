@@ -630,26 +630,37 @@ class RestatedJudgement(Judgement):
     restated_by: int = 0
 
 
-def _fidelity_schema(restated: bool) -> type[BaseModel]:
-    """The check's reply when it also judges coverage (write.COVERAGE). Shown
-    to the model as "Faithfulness", like the schema it extends."""
+class FlaggedJudgement(Judgement):
+    # FACT_FIDELITY: the sentence is a fact but states an interpretation its
+    # cited claims do not.
+    inference_in_fact: bool = False
+
+
+def _fidelity_schema(restated: bool, inference: bool) -> type[BaseModel]:
+    """The check's reply when it also judges coverage (write.COVERAGE) or
+    interpretation in facts (write.FACT_FIDELITY). Shown to the model as
+    "Faithfulness", like the schema it extends."""
     fields = {}
     if restated:
         fields["judgements"] = (list[RestatedJudgement], ...)
+    if inference:
+        fields["sentence_judgements"] = (list[FlaggedJudgement], [])
     return create_model("Faithfulness", __base__=Faithfulness, __module__=__name__, **fields)
 
 
-_FIDELITY_SCHEMAS = {True: _fidelity_schema(True)}
+_FIDELITY_SCHEMAS = {(r, i): _fidelity_schema(r, i)
+                     for r in (True, False) for i in (True, False) if r or i}
 
 
 def check_schema(with_sentences: bool) -> type[BaseModel]:
     """The schema the check is asked for: the plain one without STORY_ORDER,
-    and with sentences to judge, the one carrying the coverage verdicts that
-    are switched on."""
+    and with sentences to judge, the one carrying the verdicts that are
+    switched on."""
     if not write_module.STORY_ORDER:
         return _PlainFaithfulness
-    restated = with_sentences and write_module.coverage_on()
-    return _FIDELITY_SCHEMAS[True] if restated else Faithfulness
+    key = (with_sentences and write_module.coverage_on(),
+           with_sentences and write_module.fidelity_on())
+    return _FIDELITY_SCHEMAS[key] if any(key) else Faithfulness
 
 
 _CHECK_PROMPT = """Check each numbered claim against the one passage it cites.
@@ -743,6 +754,17 @@ _RESTATED_BLOCK = """
 For each claim, also give restated_by in its judgements entry: the number of a
 sentence above that already says everything the claim says, whether or not
 that sentence lists the claim; 0 when no sentence does.
+"""
+
+# FACT_FIDELITY: a fact sentence that says more than its claims in the way of
+# interpretation, judged apart from the verdict.
+_INFERENCE_BLOCK = """
+Also set inference_in_fact in each sentence_judgements entry. For a sentence
+marked with a kind other than fact, set it false. For any other sentence, set
+it true when the sentence states an interpretation that its cited claims do
+not state (a motive, an intention, a judgement or an evaluation, such as "to
+protect her", "cruelly", "out of jealousy" or "a sign of his guilt"), even if
+the rest of it is supported; false otherwise.
 """
 
 # Gaps are statements that the facts leave something out; code shows them
@@ -839,6 +861,8 @@ def faithfulness_prompt(
             prompt += interpret.check_blocks(shape, kinds, SUPPORTED, NOT_SUPPORTED)
         if write_module.coverage_on():
             prompt += _RESTATED_BLOCK
+        if write_module.fidelity_on():
+            prompt += _INFERENCE_BLOCK
         if story and gaps:
             prompt += _GAPS_BLOCK.format(
                 gaps="\n".join(f"{i}. gap: {g}" for i, g in enumerate(gaps, start=1)),
@@ -912,6 +936,9 @@ class CheckOutcome:
     # COVERAGE, per claim: the 1-based number of the sentence that restates it,
     # or 0. None when not asked.
     restated: list[int] | None = None
+    # FACT_FIDELITY, per sentence: True when the check says it is a fact
+    # stating an interpretation its claims do not. None when not asked.
+    inference: list[bool] | None = None
 
 
 async def check_answer(
@@ -935,7 +962,7 @@ async def check_answer(
     if not claims:
         return CheckOutcome([], [], True, [], None)
     passages = list(passages)
-    gap_ok = restated = None
+    gap_ok = restated = inference = None
     try:
         result = await check(
             faithfulness_prompt(claims, passages, book_titles, sentences, books, gaps, shape),
@@ -948,6 +975,9 @@ async def check_answer(
         if sentence_ok is not None and write_module.coverage_on():
             restated = [_sentence_number(getattr(j, "restated_by", 0), len(sentences))
                         for j in result.judgements]
+        if sentence_ok is not None and write_module.fidelity_on():
+            inference = [getattr(j, "inference_in_fact", False) is True
+                         for j in result.sentence_judgements]
     except Exception:  # noqa: BLE001 -- see check_claims
         verdicts, sentence_ok = None, None
     if verdicts is None:
@@ -957,7 +987,7 @@ async def check_answer(
     for claim, (supported, reason) in zip(claims, verdicts):
         (kept.append(claim) if supported else dropped.append((claim, reason)))
     return CheckOutcome(kept, dropped, True, [ok for ok, _ in verdicts], sentence_ok, gap_ok,
-                        restated)
+                        restated, inference)
 
 
 def _sentence_number(value, count: int) -> int:
@@ -1040,21 +1070,32 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     # COVERAGE: every kept claim the check did not cut reaches the shown prose.
     # A short answer summarises the sections after it, so it is exempt.
     enforce = write_module.coverage_on() and length not in ("short", "recap_short")
+    # FACT_FIDELITY: a fact sentence stating an interpretation is repaired, or not shown.
+    fix_facts = write_module.fidelity_on()
 
     def build(sents, n_written, outc):
+        sents, ok = list(sents), list(outc.sentence_ok or [])
         if enforce:
-            sents = cite_restated(sents, outc.claim_ok, outc.sentence_ok, outc.restated)
-        return assemble(sents, n_written, outc.claim_ok, outc.sentence_ok, passage_of)
+            sents = cite_restated(sents, outc.claim_ok, ok, outc.restated)
+        if fix_facts and outc.inference and len(outc.inference) == len(sents) == len(ok):
+            # Not shown, and not counted against the prose: its claims are
+            # true, and COVERAGE places them in their own words.
+            flagged = [flag and getattr(s, "kind", "fact") == "fact"
+                       for s, flag in zip(sents, outc.inference)]
+            n_written -= sum(flagged)
+            sents = [s for s, f in zip(sents, flagged) if not f]
+            ok = [g for g, f in zip(ok, flagged) if not f]
+        return assemble(sents, n_written, outc.claim_ok, ok, passage_of)
 
     if sentences is not None:
         ready = bool(sentences) and outcome.ran and outcome.sentence_ok is not None
         built = build(sentences, written, outcome) if ready else None
-        if built and enforce:
+        if built and (enforce or fix_facts):
             # The repair round serves a draft that passed: a draft that did not
             # takes the fallback (or a section's rewrite) as before.
             repaired = await _repair(question, sub_questions, kept, evidence, check, write,
                                      book_titles, books, shape, length, covered, sentences,
-                                     outcome, gaps)
+                                     outcome, gaps, enforce)
             better = build(*repaired) if repaired is not None else None
             if better:  # used only if it passes too; else the first draft stands
                 built, (sentences, written, outcome) = better, repaired
@@ -1122,22 +1163,30 @@ def uncited_claims(sentences: Sequence["Sentence"], outcome: CheckOutcome) -> li
 
 
 async def _repair(question, sub_questions, kept, evidence, check, write, book_titles, books,
-                  shape, length, covered, sentences, outcome, gaps):
-    """COVERAGE's repair round: (sentences, written, outcome) of the writer's
-    revised draft, checked again, or None when nothing needs repair or the
-    round failed (the first draft then stands, and code places what it left
-    out). The writer sees the sentences that passed and the claims they leave
-    out, and is asked to work those in without changing the rest."""
-    missing = uncited_claims(sentences, outcome)
-    if not missing:
-        return None
+                  shape, length, covered, sentences, outcome, gaps, enforce=True):
+    """The repair round: (sentences, written, outcome) of the writer's revised
+    draft, checked again, or None when nothing needs repair or the round
+    failed (the first draft then stands, and code places what it left out).
+    The writer sees the sentences that passed, the claims they leave out
+    (COVERAGE, when `enforce`) and the fact sentences the check found stating
+    an interpretation (FACT_FIDELITY), and is asked to fix those without
+    changing the rest."""
+    missing = uncited_claims(sentences, outcome) if enforce else []
     ok = outcome.sentence_ok or []
-    shown = [s for s, good in zip(sentences, ok)
-             if good and all(outcome.claim_ok[k - 1] for k in s.claims)]
+    flags = (outcome.inference if write_module.fidelity_on() and outcome.inference
+             and len(outcome.inference) == len(sentences) else [False] * len(sentences))
+    passing = [(s, flag) for s, good, flag in zip(sentences, ok, flags)
+               if good and all(outcome.claim_ok[k - 1] for k in s.claims)]
+    shown = [s for s, _ in passing]
+    reduce = [i for i, (s, flag) in enumerate(passing, start=1)
+              if flag and getattr(s, "kind", "fact") == "fact"]
+    if not missing and not reduce:
+        return None
+    repair = Repair(draft=tuple(shown), missing=tuple(missing), reduce=tuple(reduce),
+                    as_reading=write_module.readings_allowed(shape, length))
     again = await write_answer(question, sub_questions, kept, evidence.passages, write,
                                book_titles=book_titles, books=books, shape=shape, length=length,
-                               covered=covered, repair=Repair(draft=tuple(shown),
-                                                              missing=tuple(missing)))
+                               covered=covered, repair=repair)
     second = (verify_prose(again, len(kept), [c.text for c in kept], shape)
               if again is not None else [])
     if not second:

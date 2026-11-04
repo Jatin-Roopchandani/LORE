@@ -19,6 +19,14 @@ from lore.query.write import (
 from tests.test_query_story import BOOKS, CS, PS, TITLES, _claims_prompt_fixture
 
 GOLDEN = json.loads((Path(__file__).parent / "golden_readings_off.json").read_text())
+
+
+@pytest.fixture(autouse=True)
+def _readings_in_factual_answers(monkeypatch):
+    """These tests cover READINGS in an answer with no interpretive part, the
+    path FACT_FIDELITY closes (it allows no readings there; see
+    tests/test_query_fidelity.py), so they run with it off."""
+    monkeypatch.setattr(w, "FACT_FIDELITY", False)
 TEXTS = [c.text for c in CS]
 
 
