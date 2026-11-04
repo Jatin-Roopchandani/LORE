@@ -1447,6 +1447,31 @@ def migrate_command() -> None:
     typer.echo("central database is up to date")
 
 
+admin_app = typer.Typer(help="Administer a multi-user deployment.", no_args_is_help=True)
+app.add_typer(admin_app, name="admin")
+
+
+@admin_app.command(name="grant")
+def admin_grant(email: str = typer.Argument(help="the person's email address")) -> None:
+    """Make the person with this email an admin (the admin page, /admin).
+
+    The only way to become one: nothing in the web app grants it. If they have
+    not signed in yet, their account is created now, so the first sign-in with
+    this verified email is the admin's. Run `lore migrate` first."""
+    from lore.auth.accounts import grant_admin, normalize_email
+    from lore.central.db import database_url, make_engine, make_session_factory
+
+    address = normalize_email(email)
+    if address is None:
+        typer.echo(f"lore admin: {email!r} is not an email address", err=True)
+        raise typer.Exit(2)
+    sessions = make_session_factory(make_engine(database_url(LoreConfig.load())))
+    with sessions() as db:
+        user, created = grant_admin(db, address)
+        db.commit()
+    typer.echo(f"{user.email} is now an admin" + (" (account created)" if created else ""))
+
+
 @app.command(name="worker")
 def worker_command(
     poll: float = typer.Option(2.0, help="seconds between looks at an empty queue"),

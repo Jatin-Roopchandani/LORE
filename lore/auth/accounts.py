@@ -144,3 +144,18 @@ def _active(user: User | None) -> SignIn:
     if user is None or user.status != "active":
         return SignIn(Outcome.DISABLED)
     return SignIn(Outcome.OK, user.id)
+
+
+def grant_admin(db: Session, email: str) -> tuple[User, bool]:
+    """Make the user with this (normalized) email an admin, creating the
+    account if there is none. Returns (user, created)."""
+    from lore.central.models import utcnow
+    user = user_by_email(db, email)
+    created = user is None
+    if user is None:
+        user = User(id=str(uuid.uuid4()), email=email, role="admin",
+                    status="active", created_at=utcnow())
+        db.add(user)
+    user.role = "admin"
+    db.flush()
+    return user, created
