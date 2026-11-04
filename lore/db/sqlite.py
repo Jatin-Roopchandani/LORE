@@ -253,6 +253,27 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
         ],
     ),
+    # Story matter (2026-11-04): each raw section of a book (`chapter_seq`)
+    # classified at ingest (lore/ingest/matter.py) as front matter, story or
+    # back matter, with the heading's short name. Extraction and beats read
+    # only story sections; the reading position numbers only those. A book
+    # with no rows here (ingested before this) is all story until
+    # `lore repair matter` classifies it.
+    (
+        14,
+        [
+            """
+            CREATE TABLE sections (
+                book_id     TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                chapter_seq INTEGER NOT NULL,
+                matter      TEXT NOT NULL,             -- front, story, back
+                reason      TEXT NOT NULL DEFAULT '',  -- why it is not story
+                heading     TEXT,
+                PRIMARY KEY (book_id, chapter_seq)
+            )
+            """,
+        ],
+    ),
     # Entity intros (2026-11-04): the short, spoiler-safe introduction a
     # profile shows under a reading position (lore/codex/intro.py), cached per
     # (entity, world, hash of what the model was shown, prompt hash).

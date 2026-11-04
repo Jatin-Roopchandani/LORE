@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from lore.db.sqlite import open_db, schema_version
+from lore.db.sqlite import MIGRATIONS, open_db, schema_version
 from lore.ingest.models import Chunk
 from lore.ingest.registry import ingest_book, list_books
 
@@ -23,7 +23,7 @@ def _chunks(n: int) -> list[Chunk]:
 
 def test_migration_v2_applies(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "lore.db")
-    assert schema_version(conn) == 12
+    assert schema_version(conn) == MIGRATIONS[-1][0]
     tables = {
         r[0]
         for r in conn.execute(

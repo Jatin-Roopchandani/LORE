@@ -180,6 +180,19 @@ class LanceStore:
         escaped = book_id.replace("'", "''")
         self._db.open_table("chunks").delete(f"book_id = '{escaped}'")
 
+    def present_chunks(self, chunk_ids: list[str]) -> set[str]:
+        """The ones among `chunk_ids` that have a row."""
+        if not chunk_ids:
+            return set()
+        rows = (self._db.open_table("chunks").search()
+                .where(f"chunk_id IN ({_quoted(chunk_ids)})")
+                .select(["chunk_id"]).limit(None).to_list())
+        return {row["chunk_id"] for row in rows}
+
+    def delete_chunks(self, chunk_ids: list[str]) -> None:
+        if chunk_ids:
+            self._db.open_table("chunks").delete(f"chunk_id IN ({_quoted(chunk_ids)})")
+
     def delete_entities(self, entity_ids: list[str]) -> None:
         if not entity_ids:
             return

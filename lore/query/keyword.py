@@ -19,6 +19,7 @@ import re
 import sqlite3
 from typing import Collection
 
+from lore.ingest.registry import non_story_chapters
 from lore.query import visible
 from lore.resolve.entityhood import is_boilerplate_chunk
 
@@ -52,11 +53,14 @@ class KeywordIndex:
         self._db.execute(
             "CREATE VIRTUAL TABLE c USING fts5(id UNINDEXED, book_id UNINDEXED,"
             " chapter_seq UNINDEXED, text)")
+        # Front and back matter (a contents page, a licence) is no story.
+        matter = non_story_chapters(conn)
         self._db.executemany(
             "INSERT INTO c VALUES (?, ?, ?, ?)",
             (row for row in conn.execute(
                 "SELECT id, book_id, chapter_seq, text FROM chunks")
-             if not is_boilerplate_chunk(row[3])))
+             if not is_boilerplate_chunk(row[3])
+             and row[2] not in matter.get(row[1], ())))
 
     def search(self, text: str, limit: int, book_id: str | None = None,
                book_ids: Collection[str] | None = None) -> list[tuple[str, str, int]]:
