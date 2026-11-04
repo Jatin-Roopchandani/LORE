@@ -203,6 +203,13 @@ def record_answer(session: Session, user: str, *, chat_id: str | None, question:
     return chat.id, message.id
 
 
+def _position_note(answer: dict | None) -> str | None:
+    """The reading-position note a stored answer carried, None when it had none."""
+    result = answer.get("result") if isinstance(answer, dict) else None
+    note = result.get("position_note") if isinstance(result, dict) else None
+    return note if isinstance(note, str) else None
+
+
 def _answer_text(answer: dict | None) -> str:
     """What a turn of history says the answer was: its short answer, else the
     answer text (cut later by decompose.clip_history). "" for an answer that
@@ -220,7 +227,7 @@ def _answer_text(answer: dict | None) -> str:
     return text if isinstance(text, str) else ""
 
 
-def history_turns(messages, *, world) -> list[dict]:
+def history_turns(messages, *, world, position_note: str | None = None) -> list[dict]:
     """A chat's last turns, as the history a follow-up is asked with: each
     {question, answer}, the question as it was understood (its standalone
     rewrite, when it had one) and the answer's short answer or its start.
@@ -229,7 +236,12 @@ def history_turns(messages, *, world) -> list[dict]:
     reading position when given, and only those asked in the same world as the
     follow-up, so no other world's text reaches the prompt. An answer that was
     not kept, or had no text, is left out. Capped by decompose.clip_history:
-    at most MAX_HISTORY_TURNS turns and MAX_HISTORY_CHARS characters."""
+    at most MAX_HISTORY_TURNS turns and MAX_HISTORY_CHARS characters.
+
+    `position_note`: the note the follow-up itself will carry when a reading
+    position limits it. Then only turns answered under that same position are
+    used, so an earlier answer given with spoilers shown, with no position, or
+    at a later position never puts later names into the rewrite."""
     from lore.query.decompose import clip_history
     world_s = None if world is None else str(world)
     turns = []
@@ -237,6 +249,8 @@ def history_turns(messages, *, world) -> list[dict]:
         if message.world != world_s:
             continue
         answer = _answer_text(message.answer_json)
+        if position_note is not None and _position_note(message.answer_json) != position_note:
+            continue
         if answer:
             turns.append({"question": message.standalone or message.question,
                           "answer": answer})

@@ -130,14 +130,16 @@ test("clicking an entry replays it and switches the world when it was asked else
   expect(localStorage.getItem("lore-world-v1")).toBe("2");
 });
 
-test("New question clears the answer, returns the graph to the library and focuses the ask box", async () => {
+test("New chat clears the answer, returns the graph to the library and focuses the ask box", async () => {
   render(<App />);
   await openHistory();
   await userEvent.click(await screen.findByRole("button", { name: "Where is the marsh?" }));
   expect(await screen.findByRole("group", { name: "Graph view" })).toBeInTheDocument();
   await openHistory(); // an answer: the This answer | Library toggle
   expect(screen.queryByText(UI.emptyIntro)).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: HISTORY.newQuestion }));
+  // The drawer's own New chat (the thread bar has one too).
+  const drawer = screen.getByRole("dialog", { name: HISTORY.title });
+  await userEvent.click(within(drawer).getByRole("button", { name: HISTORY.newQuestion }));
   expect(await screen.findByText(UI.emptyIntro)).toBeInTheDocument();
   expect(screen.queryByRole("group", { name: "Graph view" })).toBeNull(); // nothing asked: the library alone
   expect(screen.getByText(UI.overviewStage)).toBeInTheDocument();

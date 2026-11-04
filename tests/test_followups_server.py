@@ -217,3 +217,22 @@ def test_migration_0008_adds_and_drops_the_standalone_column(tmp_path):
     engine = sa.create_engine(url)
     assert "standalone" not in {c["name"] for c in sa.inspect(engine).get_columns("messages")}
     engine.dispose()
+
+
+def test_under_a_reading_position_only_turns_answered_at_that_position_are_used(central):
+    note = "Answered from what you've read: up to chapter 3 of B"
+    at_position = result("early")
+    at_position["position_note"] = note
+    later = result("past the position")
+    later["position_note"] = "Answered from what you've read: up to chapter 9 of B"
+    chat_id = _messages(central, "alice", [
+        ("with spoilers", {"result": result("names the culprit"), "steps": []}, None),
+        ("at a later position", {"result": later, "steps": []}, None),
+        ("at this position", {"result": at_position, "steps": []}, None),
+    ])
+    with central() as s:
+        _, messages = H.get_chat(s, "alice", chat_id)
+    assert history_turns(messages, world=None, position_note=note) == [
+        {"question": "at this position", "answer": "early"}]
+    # With no position on (or spoilers shown), every turn is fair context.
+    assert len(history_turns(messages, world=None)) == 3

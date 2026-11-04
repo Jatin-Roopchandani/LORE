@@ -250,7 +250,7 @@ export const EXPLORE = {
 export const HISTORY = {
   title: "History", open: "History", close: "Close history",
   toggleLabel: (open: boolean) => (open ? "Hide history" : "Show history"),
-  newQuestion: "New question", newQuestionHint: "Clear the answer, show the library and start a fresh question.",
+  newQuestion: "New chat", newQuestionHint: "Start a new conversation: clear the answer, show the library and focus the ask box.",
   search: "Search history", searchPlaceholder: "Search questions\u2026",
   groups: { today: "Today", yesterday: "Yesterday", week: "This week", earlier: "Earlier" },
   empty: "Questions you ask will be listed here.",

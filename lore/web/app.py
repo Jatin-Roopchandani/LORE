@@ -746,6 +746,22 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     # another's `busy`. Locks only; no store handle is held across requests.
     locks: dict[str, asyncio.Lock] = {}
 
+    def _position_note_now(cfg, world, spoilers: bool) -> str | None:
+        """The note a question asked now would carry: None with spoilers shown or
+        no reading position on (lore.query.visible.position_note)."""
+        if spoilers:
+            return None
+        from lore.query import visible as visible_module
+        from lore.query.scope import resolve_scopes
+        conn = open_db(cfg.sqlite_path)
+        try:
+            scopes = resolve_scopes(conn, world)
+        except Exception:  # noqa: BLE001 -- an unknown world fails later, as it always has
+            return None
+        finally:
+            conn.close()
+        return visible_module.position_note([s.position for s in scopes if s.position])
+
     @api.post("/api/ask")
     async def ask(request: Request, spoilers: bool = False):
         if request.headers.get("content-type", "").split(";")[0] != "application/json":
@@ -769,7 +785,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 except history_store.NotFound:
                     return JSONResponse({"error": {"code": "not_found",
                                                    "message": "no such chat"}}, status_code=404)
-                history = history_turns(earlier, world=body.world)
+                history = history_turns(earlier, world=body.world,
+                                        position_note=_position_note_now(cfg, body.world, spoilers))
         # The question's trace, keyed by this request's id (lore.web.request_id):
         # every model call it makes, captured inside the user's key scope so
         # the trace is redacted against their key.
