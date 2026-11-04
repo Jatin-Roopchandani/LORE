@@ -234,6 +234,25 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             "CREATE INDEX idx_codex_entries_world ON codex_entries(world_id)",
         ],
     ),
+    # Reading position (2026-11-04): where a reader is in a world, so every
+    # read stays within what they have read. `chapter` is the last chapter
+    # finished in `book_id`; `read_books` (JSON list of book ids) are the
+    # books of unknown order the reader says they have read. Off by default.
+    (
+        13,
+        [
+            """
+            CREATE TABLE reading_positions (
+                world_id   INTEGER PRIMARY KEY REFERENCES worlds(id) ON DELETE CASCADE,
+                book_id    TEXT REFERENCES books(id) ON DELETE SET NULL,
+                chapter    INTEGER NOT NULL DEFAULT 0,
+                read_books TEXT NOT NULL DEFAULT '[]',
+                enabled    INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+        ],
+    ),
 ]
 
 
