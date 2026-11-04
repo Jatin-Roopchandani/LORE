@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { api, isError } from "../api";
 import { POSITION } from "../messages";
 import type { PositionBook, ReadingPositionBody, ReadingPositionData } from "../types";
@@ -10,10 +10,16 @@ export const SLIDER_DEBOUNCE_MS = 350;
 const bodyOf = (d: ReadingPositionData, patch: Partial<ReadingPositionBody>): ReadingPositionBody =>
   ({ enabled: d.enabled, book_id: d.book_id, chapter: d.chapter, read_books: d.read_books, ...patch });
 
-/** The "Reading position" control and its badge, next to the world selector: an on/off switch, the book being read
+/** The "Reading position" control (the button shows the position while it is on), next to the world selector: an on/off switch, the book being read
  *  (in series order, with read toggles for books of unknown order) and a slider for the last chapter finished.
  *  The position lives on the server (per world); `onChange` is called after each stored change so the graph,
  *  the panels and the book list can refetch. */
+const Bookmark = ({ filled }: { filled: boolean }) => (
+  <svg className="pos-icon" width="12" height="14" viewBox="0 0 12 14" aria-hidden="true">
+    <path d="M1.5 1.5h9v11L6 9.6l-4.5 2.9z" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+  </svg>
+);
+
 export function ReadingPosition({ world, onChange = () => {} }: { world: string; onChange?: () => void }) {
   const [data, setData] = useState<ReadingPositionData | null>(null);
   const [failed, setFailed] = useState(false);
@@ -76,15 +82,22 @@ export function ReadingPosition({ world, onChange = () => {} }: { world: string;
   };
 
   const unknown = books.filter((b) => b.order === "unknown");
-  const showBadge = !!(data?.enabled && current);
+  // The book shown on the button: set only while the position is on.
+  const reading = data?.enabled && current ? current : null;
+  const on = !!reading;
   return (
     <div className="pop" ref={root}>
-      <button ref={trigger} className="tbtn" type="button" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span>{POSITION.label}</span><span className="caret" aria-hidden="true">▾</span>
+      <button ref={trigger} className={`tbtn pos-btn${on ? " on" : ""}`} type="button" aria-haspopup="dialog" aria-expanded={open}
+        aria-label={reading ? POSITION.badgeLabel(reading.title, chapter) : POSITION.label} title={reading ? POSITION.badgeLabel(reading.title, chapter) : undefined}
+        style={reading && reading.chapters > 0 ? ({ "--pos-done": `${Math.min(100, (100 * chapter) / reading.chapters)}%` } as CSSProperties) : undefined}
+        onClick={() => setOpen(!open)}>
+        <Bookmark filled={on} />
+        {reading ? (<><span className="pos-title">{reading.title}</span><span className="pos-ch">{POSITION.chapterShort(chapter)}</span></>)
+          : <span>{POSITION.label}</span>}
+        <span className="caret" aria-hidden="true">▾</span>
       </button>
-      {showBadge && current && (
-        <span className="pos-badge" role="status" aria-label={POSITION.badgeLabel(current.title, chapter)}>{POSITION.badge(current.title, chapter)}</span>
-      )}
+      {/* For screen readers; the visible state is the button itself. */}
+      {reading && <span className="visually-hidden" role="status">{POSITION.badge(reading.title, chapter)}</span>}
       {open && (
         <div className="menu pos-menu" role="dialog" aria-label={POSITION.label}>
           {!oneWorld && <p className="hint">{POSITION.chooseWorld}</p>}

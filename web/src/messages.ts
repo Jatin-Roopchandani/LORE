@@ -69,6 +69,7 @@ export const POSITION = {
   readHint: "LORE never guesses the order of books that are not in one series. Mark the ones you have read.",
   readLabel: (title: string) => `I have read ${title}`,
   badge: (title: string, chapter: number) => `Up to ${title} ch. ${chapter}`,
+  chapterShort: (n: number) => (n === 0 ? "start" : `ch. ${n}`),
   noteLabel: "Reading position note",
   summaryHidden: "The summary covers the whole story, so it is hidden while a reading position is on. These are the statements from what you have read.",
   badgeLabel: (title: string, chapter: number) => `Reading position on: up to ${title}, chapter ${chapter}`,
