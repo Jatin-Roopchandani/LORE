@@ -387,3 +387,26 @@ class Trace(Base):
         sa.Index("ix_traces_user", "user_id", "created_at"),
         sa.Index("ix_traces_chat", "chat_id"),
     )
+
+
+class Report(Base):
+    """A user's report of an answer ("this answer was wrong"), quoting the
+    request id of the question, so an admin can open its trace. `status` is
+    `open` or `resolved`. Kept when the trace expires (the note still says
+    what went wrong); deleted with the account."""
+
+    __tablename__ = "reports"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    request_id: Mapped[str] = mapped_column(sa.String(36), nullable=False)
+    note: Mapped[str | None] = mapped_column(sa.Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    status: Mapped[str] = mapped_column(sa.String(16), nullable=False, default="open")
+
+    __table_args__ = (
+        sa.CheckConstraint("status IN ('open', 'resolved')", name="ck_reports_status"),
+        sa.Index("ix_reports_created", "created_at"),
+    )

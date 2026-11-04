@@ -440,6 +440,22 @@ export const ADMIN = {
   copied: "Copied",
   users: "Users",
   userColumns: { email: "Email", name: "Name", role: "Role", status: "Status", joined: "Joined", key: "Gemini key", today: "Requests today" },
+  reports: "Reported answers",
+  noReports: "No reports yet.",
+  reportColumns: { when: "When", email: "Email", question: "Question", note: "Note", status: "Status", actions: "" },
+  reportStatus: { open: "Open", resolved: "Resolved" } as Record<string, string>,
+  openTrace: "Open trace",
+  resolve: "Resolve",
+  traceGone: "This trace has expired (traces are kept 30 days).",
+  traceTitle: "Trace",
+  traceQuestion: "Question",
+  traceDecomposition: "Decomposition",
+  traceCalls: (n: number) => `Model calls (${n})`,
+  traceAnswer: "Answer",
+  traceError: "Error",
+  tracePrompt: "Prompt",
+  traceReply: "Reply",
+  traceClose: "Close trace",
   hasKey: "Saved", noKey: "None",
 };
 
@@ -449,3 +465,16 @@ export const PROFILE = {
   introHint: "Written only from what you have read so far.",
 };
 
+
+// "Report this answer" under each answer (release step 4).
+export const REPORT = {
+  link: "Report this answer",
+  title: "Report this answer",
+  lead: "Tell us what was wrong, if you like. The report includes this question's record, so we can see how the answer was made.",
+  noteLabel: "What was wrong? (optional)",
+  send: "Send report",
+  sending: "Sending…",
+  cancel: "Cancel",
+  thanks: "Thanks. Your report was sent.",
+  failed: "The report couldn't be sent. Please try again.",
+};

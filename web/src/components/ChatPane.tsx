@@ -3,6 +3,7 @@ import { errorMessage, POSITION, UI } from "../messages";
 import { Claims } from "./Claims";
 import { Prose } from "./Prose";
 import { HowPanel } from "./HowPanel";
+import { ReportAnswer } from "./ReportAnswer";
 import { AskBox } from "./AskBox";
 import { Sections } from "./Sections";
 import { ShortAnswer } from "./ShortAnswer";
@@ -73,6 +74,7 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
               </>
             )}
             {notFound.length > 0 && <p className="note">{UI.partial(notFound)}</p>}
+            {state.status === "done" && state.requestId && <ReportAnswer key={state.requestId} requestId={state.requestId} />}
             <HowPanel state={state} showInternals={showInternals} />
           </div>
         )}

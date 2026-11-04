@@ -27,4 +27,7 @@ export const chatsApi = {
   create: (body: NewChatBody) => call<{ chat: ChatSummary; created: boolean }>("POST", "/api/chats", body),
   rename: (id: string, title: string) => call<{ chat: ChatSummary }>("PATCH", `/api/chats/${encodeURIComponent(id)}`, { title }),
   remove: (id: string) => call<{ deleted: true }>("DELETE", `/api/chats/${encodeURIComponent(id)}`),
+  // "Report this answer": the question's request id and an optional note (only the user's own questions).
+  report: (request_id: string, note: string) => call<{ report: { id: number; status: string } }>("POST", "/api/reports",
+    { request_id, ...(note.trim() ? { note: note.trim() } : {}) }),
 };

@@ -166,4 +166,42 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
              "has_key": u.id in with_key, "requests_today": int(used.get(u.id) or 0)}
             for u in rows]}
 
+    # --- reported answers and their traces (release step 4) ------------
+
+    @router.get("/api/admin/reports")
+    def list_reports(_admin: str = Depends(require_admin)):
+        from lore.central.models import Report, Trace
+        from lore.web.history import report_out
+        with ctx.sessions() as db:
+            rows = db.execute(
+                sa.select(Report, User.email, Trace.question)
+                .join(User, User.id == Report.user_id)
+                .outerjoin(Trace, Trace.request_id == Report.request_id)
+                .order_by(Report.created_at.desc(), Report.id.desc()).limit(500)).all()
+        return JSONResponse({"reports": [
+            {**report_out(r), "user_id": r.user_id, "email": email, "question": question,
+             "trace": question is not None}
+            for r, email, question in rows]}, headers={"Cache-Control": "no-store"})
+
+    @router.post("/api/admin/reports/{report_id}/resolve")
+    def resolve_report(report_id: int, _admin: str = Depends(require_admin)):
+        from lore.central.models import Report
+        from lore.web.history import report_out
+        with ctx.sessions() as db:
+            row = db.get(Report, report_id)
+            if row is None:
+                return _error(404, "not_found", "no such report")
+            row.status = "resolved"
+            db.commit()
+            return {"report": report_out(row)}
+
+    @router.get("/api/admin/traces/{request_id}")
+    def get_trace(request_id: str, _admin: str = Depends(require_admin)):
+        from lore.central import traces
+        with ctx.sessions() as db:
+            row = traces.get(db, request_id)
+            if row is None:
+                return _error(404, "not_found", "no such trace (kept 30 days)")
+            return JSONResponse(traces.trace_out(row), headers={"Cache-Control": "no-store"})
+
     return router

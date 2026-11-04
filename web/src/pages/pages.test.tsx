@@ -182,6 +182,27 @@ describe("Admin", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 
+  test("lists reported answers and opens a report's trace, each call collapsible", async () => {
+    const report = { id: 5, request_id: "req-9", note: "wrong book", created_at: "2026-11-04T10:00:00+00:00", status: "open",
+      user_id: "u2", email: "reader@example.org", question: "Who met Watson?", trace: true };
+    const trace = { request_id: "req-9", user_id: "u2", created_at: "x", question: "Who met Watson?", world: null, depth: null,
+      decomposition: { parts: { sub_questions: ["who?"] } }, steps: [], error: null, timings: null, model_usage: null,
+      calls: [{ stage: "synthesize", model: "flash", prompt: "THE PROMPT", reply: "THE REPLY", latency_ms: 12, ok: true, error: null, attempts: [] }],
+      answer: { answer: "Holmes met Watson." } };
+    serve((url) => url === "/api/admin/reports" ? { body: { reports: [report] } }
+      : url === "/api/admin/traces/req-9" ? { body: trace }
+      : url === "/api/admin/waitlist" ? { body: { entries: [] } } : { body: users });
+    render(<Admin />);
+    const table = await screen.findByRole("table", { name: ADMIN.reports });
+    expect(within(table).getByText("wrong book")).toBeInTheDocument();
+    await userEvent.click(within(table).getByRole("button", { name: ADMIN.openTrace }));
+    const view = await screen.findByRole("region", { name: ADMIN.traceTitle });
+    expect(within(view).getByText(ADMIN.traceCalls(1))).toBeInTheDocument();
+    expect(within(view).getByText("1. synthesize · flash · 12 ms")).toBeInTheDocument();
+    expect(within(view).getByText("THE PROMPT")).toBeInTheDocument();
+    expect(within(view).getByText("Holmes met Watson.")).toBeInTheDocument();
+  });
+
   test("an empty waitlist says so", async () => {
     serve((url) => url === "/api/admin/waitlist" ? { body: { entries: [] } } : { body: users });
     render(<Admin />);

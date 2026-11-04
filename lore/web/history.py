@@ -48,6 +48,11 @@ class NewChat(BaseModel):
                                           max_length=MAX_IMPORT_MESSAGES)
 
 
+class NewReport(BaseModel):
+    request_id: str = Field(min_length=1, max_length=64)
+    note: str | None = Field(None, max_length=2000)
+
+
 class Rename(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 
@@ -136,7 +141,30 @@ def build_history_router(central: Callable[[], sessionmaker[Session]],
             session.commit()
             return _no_store({"deleted": True})
 
+    # "Report this answer": only for the user's own questions (by their
+    # trace), so nobody can attach notes to, or learn of, someone else's.
+    @router.post("/api/reports")
+    def report(request: Request, body: NewReport):
+        from lore.central import traces
+        from lore.central.models import Report
+        uid = user_id(request)
+        with central()() as session:
+            if not traces.owned_by(session, body.request_id, uid):
+                return JSONResponse({"error": {"code": "not_found",
+                                               "message": "no such answer"}}, status_code=404)
+            row = Report(user_id=uid, request_id=body.request_id,
+                         note=(body.note or "").strip() or None, created_at=now(),
+                         status="open")
+            session.add(row)
+            session.commit()
+            return _no_store({"report": report_out(row)}, 201)
+
     return router
+
+
+def report_out(row) -> dict:
+    return {"id": row.id, "request_id": row.request_id, "note": row.note,
+            "created_at": row.created_at.isoformat(), "status": row.status}
 
 
 def answer_payload(result: dict, events: list[dict]) -> dict:

@@ -1,4 +1,4 @@
-import type { AdminUser, ApiError, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
+import type { AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
   EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
   SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
@@ -208,4 +208,7 @@ export const adminApi = {
   decline: (id: number) => sendJson<{ declined: true; entry: WaitlistEntry }>("POST", `/api/admin/waitlist/${id}/decline`, {}, true),
   createInvite: (days: number) => sendJson<NewInvite>("POST", "/api/admin/invites", { days }, true),
   users: () => getJson<{ users: AdminUser[] }>("/api/admin/users", true),
+  reports: () => getJson<{ reports: AdminReport[] }>("/api/admin/reports", true),
+  resolveReport: (id: number) => sendJson<{ report: AdminReport }>("POST", `/api/admin/reports/${id}/resolve`, {}, true),
+  trace: (requestId: string) => getJson<TraceRecord>(`/api/admin/traces/${encodeURIComponent(requestId)}`, true),
 };

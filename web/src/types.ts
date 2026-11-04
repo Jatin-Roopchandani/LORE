@@ -159,3 +159,11 @@ export interface ChatList { chats: ChatSummary[]; next_offset: number | null }
 export interface ChatDetail { chat: ChatSummary; messages: ChatMessage[] }
 export interface NewChatBody { client_id?: string; title?: string; world?: string; created_at?: string;
   messages?: { question: string; answer?: StoredAnswer; depth?: string; world?: string }[] }
+// Reported answers and their traces (admin only).
+export interface AdminReport { id: number; request_id: string; note: string | null; created_at: string; status: "open" | "resolved";
+  user_id: string; email: string; question: string | null; trace: boolean }
+export interface TraceCall { stage: string; model: string | null; prompt: string | null; reply: string | null; latency_ms: number | null;
+  ok: boolean | null; error: string | null; attempts?: { model: string; ok: boolean; latency_ms: number; error: string | null }[] }
+export interface TraceRecord { request_id: string; user_id: string; created_at: string; question: string; world: string | null; depth: string | null;
+  decomposition: Record<string, unknown> | null; steps: unknown; calls: TraceCall[] | { truncated: true; bytes: number } | null;
+  answer: { answer?: string } | null; error: string | null; timings: Record<string, unknown> | null; model_usage: Record<string, unknown> | null }
