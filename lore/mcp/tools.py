@@ -14,6 +14,7 @@ import math
 
 import httpx
 
+from lore import tracing
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.registry import book_rows, list_books
@@ -1101,6 +1102,9 @@ async def lore_search(config: LoreConfig, query: str,
                 if dataclasses.is_dataclass(models):
                     models = dataclasses.replace(
                         models, spend_ok=lambda: _check_synthesis_budget(config) is None)
+            # A question with a trace bound (the web app's /api/ask, the answer
+            # evals) records every model call it makes (lore.tracing).
+            models = tracing.maybe_traced(models)
             titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
             # `world` only when given: nothing else changes for a caller without one.
             scope = {} if world is None else {"world": world}

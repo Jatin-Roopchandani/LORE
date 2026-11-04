@@ -66,26 +66,16 @@ def _traced(models, sink: list):
     For diagnosis: an answer records only the claims that survived, so
     whether the model proposed few claims or code dropped them (quote not
     found, near-duplicate, faithfulness check) is otherwise invisible.
+    Captured by lore.tracing, the helper the web app's trace store uses; the
+    eval keeps the raw values (`kind`, `prompt`, `reply`) as before.
     """
-    import dataclasses
+    from lore import tracing
 
-    def wrap(kind, generate):
-        if generate is None:
-            return None
+    def keep(stage, prompt, reply):
+        sink.append({"kind": stage, "prompt": prompt,
+                     "reply": reply.model_dump(mode="json")})
 
-        async def traced(prompt, schema):
-            reply = await generate(prompt, schema)
-            sink.append({"kind": kind, "prompt": prompt,
-                         "reply": reply.model_dump(mode="json")})
-            return reply
-        return traced
-
-    return dataclasses.replace(
-        models, select=wrap("select", models.select),
-        synthesize=wrap("synthesize", models.synthesize),
-        decompose=wrap("decompose", models.decompose),
-        check=wrap("check", models.check),
-        write=wrap("write", models.write))
+    return tracing.traced_models(models, tracing.Trace(on_call=keep))
 
 
 def _evidence_only_models(config):

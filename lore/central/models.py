@@ -342,3 +342,44 @@ class Message(Base):
                                                  default=utcnow)
 
     __table_args__ = (sa.Index("ix_messages_chat", "chat_id", "id"),)
+
+
+class Trace(Base):
+    """Everything one question did (release step 4), keyed by its request id:
+    the decomposition, the step events the UI showed, every model call in
+    order (stage, model, prompt, reply, latency, ok or error, and its HTTP
+    attempts), the answer or the error, timings and requests per model.
+
+    Built by lore.tracing; prompts and replies are capped at 64 KB and every
+    text is redacted (no API key, cookie or session id can enter). Kept 30
+    days (lore.central.traces.purge_expired); deleting the chat or the
+    account deletes it. Readable only by admins and `lore trace`.
+    """
+
+    __tablename__ = "traces"
+
+    request_id: Mapped[str] = mapped_column(sa.String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    chat_id: Mapped[str | None] = mapped_column(
+        sa.String(36), sa.ForeignKey("chats.id", ondelete="CASCADE"))
+    message_id: Mapped[int | None] = mapped_column(
+        sa.Integer, sa.ForeignKey("messages.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    question: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    world: Mapped[str | None] = mapped_column(sa.String(200))
+    depth: Mapped[str | None] = mapped_column(sa.String(16))
+    decomposition_json: Mapped[dict | None] = mapped_column(sa.JSON)
+    steps_json: Mapped[list | dict | None] = mapped_column(sa.JSON)
+    calls_json: Mapped[list | dict | None] = mapped_column(sa.JSON)
+    answer_json: Mapped[dict | None] = mapped_column(sa.JSON)
+    error: Mapped[str | None] = mapped_column(sa.Text)
+    timings_json: Mapped[dict | None] = mapped_column(sa.JSON)
+    model_usage_json: Mapped[dict | None] = mapped_column(sa.JSON)
+
+    __table_args__ = (
+        sa.Index("ix_traces_created", "created_at"),
+        sa.Index("ix_traces_user", "user_id", "created_at"),
+        sa.Index("ix_traces_chat", "chat_id"),
+    )

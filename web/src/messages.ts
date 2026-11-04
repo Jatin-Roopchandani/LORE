@@ -370,7 +370,10 @@ export const AUTH = {
   privacy: "Privacy",
   terms: "Terms",
   privacyTitle: "Privacy",
-  privacyBody: "This page is a placeholder while the beta starts. The full privacy note arrives before anyone is invited.",
+  // TODO(release step 7): the full privacy page. It must keep saying what is traced and who can read it.
+  privacyBody: "This page is a placeholder while the beta starts. The full privacy note arrives before anyone is invited."
+    + " Each question you ask keeps a trace for 30 days (your question, the book passages LORE read, and the model's"
+    + " replies) so a reported answer can be looked into; only LORE's administrators can read traces.",
   termsTitle: "Terms",
   termsBody: "This page is a placeholder while the beta starts. The full terms arrive before anyone is invited.",
   notFound: "There's nothing at this address.",

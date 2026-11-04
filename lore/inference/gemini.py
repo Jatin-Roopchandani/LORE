@@ -302,6 +302,21 @@ class GeminiClient:
     async def _generate_one(
         self, model: str, prompt: str, generation_config: dict
     ) -> str:
+        """One HTTP attempt; reported to the bound trace (lore.tracing), if any,
+        whether it answered or failed."""
+        started = time.monotonic()
+        try:
+            text = await self._attempt(model, prompt, generation_config)
+        except Exception as exc:
+            tracing.note_attempt(model, ok=False, latency_s=time.monotonic() - started,
+                                 error=exc)
+            raise
+        tracing.note_attempt(model, ok=True, latency_s=time.monotonic() - started)
+        return text
+
+    async def _attempt(
+        self, model: str, prompt: str, generation_config: dict
+    ) -> str:
         await self._throttle(model)
         self._last_request_at[model] = self._now()
         self.requests_made += 1
@@ -472,4 +487,5 @@ class GeminiClient:
         await self._client.aclose()
 
 
+from lore import tracing  # noqa: E402
 from lore.inference import key_scope  # noqa: E402 - it imports this module first

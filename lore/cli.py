@@ -1538,6 +1538,36 @@ def migrate_command() -> None:
     typer.echo("central database is up to date")
 
 
+@app.command(name="trace")
+def trace_command(
+    request_id: str = typer.Argument(help="the request id (X-Request-Id, or the report's)"),
+    as_json: bool = typer.Option(False, "--json", help="print the stored record as JSON"),
+) -> None:
+    """Print one question's trace: the question, its decomposition, every model
+    call (prompt, reply, attempts) and the answer. Traces are kept 30 days in
+    the central database (LORE_DATABASE_URL; by default beside the data root)."""
+    import json as _json
+
+    import sqlalchemy as sa
+
+    from lore.central import traces
+    from lore.central.db import database_url, make_engine, make_session_factory
+
+    engine = make_engine(database_url(LoreConfig.load()))
+    if "traces" not in sa.inspect(engine).get_table_names():
+        typer.echo("lore trace: no traces yet (the central database has no traces table;"
+                   " ask a question in lore ui, or run lore migrate)", err=True)
+        raise typer.Exit(1)
+    with make_session_factory(engine)() as session:
+        row = traces.get(session, request_id.strip())
+        if row is None:
+            typer.echo(f"lore trace: no trace {request_id!r} (traces are kept 30 days)",
+                       err=True)
+            raise typer.Exit(1)
+        typer.echo(_json.dumps(traces.trace_out(row), indent=2, ensure_ascii=False)
+                   if as_json else traces.render_text(row))
+
+
 admin_app = typer.Typer(help="Administer a multi-user deployment.", no_args_is_help=True)
 app.add_typer(admin_app, name="admin")
 

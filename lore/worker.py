@@ -63,6 +63,9 @@ REJECTED_REASON = ("Paused: Gemini refused your API key. Replace it in Account"
                    " settings, then this book continues.")
 
 
+PURGE_EVERY = timedelta(hours=1)
+
+
 class Outcome(NamedTuple):
     outcome: str
     failed: bool = False
@@ -134,12 +137,31 @@ class Worker:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._stale_after = stale_after
         self._heartbeat_every = heartbeat_every
+        self._purged_at: datetime | None = None
+
+    def purge_traces(self) -> int:
+        """Delete traces past their retention, at most once an hour (one
+        indexed delete); a failure is logged, never fatal."""
+        now = self._clock()
+        if self._purged_at is not None and now - self._purged_at < PURGE_EVERY:
+            return 0
+        self._purged_at = now
+        try:
+            from lore.central import traces
+            with self.sessions() as session:
+                gone = traces.purge_expired(session, now)
+                session.commit()
+            return gone
+        except Exception:  # noqa: BLE001
+            log.exception("purging expired traces failed")
+            return 0
 
     # --- one pass ---------------------------------------------------------
 
     def run_once(self) -> Job | None:
         """Requeue abandoned jobs, claim one and run it. The finished job,
         or None when nothing was waiting."""
+        self.purge_traces()
         with self.sessions() as session:
             queue.requeue_stale(session, now=self._clock(), max_age=self._stale_after)
             job = queue.claim_next(session, self.worker_id, now=self._clock())

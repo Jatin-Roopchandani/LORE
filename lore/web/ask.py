@@ -29,8 +29,10 @@ def sse(event: str, data: dict) -> bytes:
 
 async def ask_events(config, question: str, lock: asyncio.Lock,
                      search=None, world=None, depth=None,
-                     spoilers=False, on_finish=None) -> AsyncIterator[bytes]:
-    """`on_finish(result, error, events)`, when given, runs once the question
+                     spoilers=False, on_finish=None,
+                     request_id: str | None = None) -> AsyncIterator[bytes]:
+    """`request_id`, when given, is the first event (`request`), so the UI
+    can quote it in a report. `on_finish(result, error, events)`, when given, runs once the question
     has ended, before the final event is sent: `result` is the answer (None
     when it failed), `error` the error dict (None on success; code
     `cancelled` when the client went away), `events` every event sent, each
@@ -64,6 +66,8 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
         yield sse("error", stamp({"error": BUSY}))
         return
     async with lock:
+        if request_id is not None:
+            yield emit("request", stamp({"request_id": request_id}))
         queue: asyncio.Queue[dict] = asyncio.Queue()
         getter = None
         # `world` only when given, so a search that takes none still works.

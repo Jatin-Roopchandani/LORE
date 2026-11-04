@@ -146,7 +146,7 @@ def test_the_endpoint_streams_server_sent_events(client):
     with client.stream("POST", "/api/ask", json={"question": "who?"}) as r:
         assert r.headers["content-type"].startswith("text/event-stream")
         body = b"".join(r.iter_bytes())
-    assert [e for e, _ in parse([body])] == ["step", "parts", "answer"]
+    assert [e for e, _ in parse([body])] == ["request", "step", "parts", "answer"]
 
 
 @pytest.mark.parametrize("question", ["", "   ", "x" * 2001])

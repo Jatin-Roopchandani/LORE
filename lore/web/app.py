@@ -8,6 +8,7 @@ MCP; 4xx only for a malformed request to this API).
 from __future__ import annotations
 
 import asyncio
+import logging
 import shlex
 import shutil
 import socket
@@ -34,8 +35,11 @@ from lore.auth.routes import build_router as build_auth_router
 from lore.central import queue
 from lore.central.db import database_url, make_engine, make_session_factory
 from lore.central.db import upgrade as upgrade_central
+from lore.central import history as history_store
+from lore.central import traces as trace_store
 from lore.central.history import ensure_user
 from lore.central.models import KIND_MOVE, KIND_PROCESS
+from lore import tracing
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.registry import book_rows, list_books, story_chapters
@@ -52,6 +56,7 @@ from lore.tenancy import (
     require_session_user, resolve_user as default_resolver, validate_user_id,
 )
 from lore.web.ask import ask_events
+from lore.web.request_id import RequestId
 from lore.web.history import build_history_router, record_answer
 from lore.worlds import (
     WorldError, books_in, create_world, delete_world, get_world, list_worlds,
@@ -288,8 +293,22 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 with sessions[0]() as session:
                     ensure_user(session, LOCAL_USER_ID)
                     session.commit()
+                purge_traces()
                 local_ready[0] = True
         return sessions[0]
+
+    def purge_traces() -> None:
+        """Traces past their 30 days go: at start-up (multi mode) or when the
+        local central database is first opened. Never fatal."""
+        try:
+            with sessions[0]() as session:
+                trace_store.purge_expired(session, datetime.now(timezone.utc))
+                session.commit()
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).exception("purging expired traces failed")
+
+    if multi:
+        purge_traces()
 
     def central_user(request: Request) -> str:
         """The user's id in the central database (`local` in local mode)."""
@@ -732,29 +751,50 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         user = current_user(request)
         cfg = library_of(user)
         lock = locks.setdefault(user.id, asyncio.Lock())
-        search = tools.lore_search
+        owner = central_user(request)
+        # The question's trace, keyed by this request's id (lore.web.request_id):
+        # every model call it makes, captured inside the user's key scope so
+        # the trace is redacted against their key.
+        trace = tracing.Trace(request_id=tracing.current_request_id()
+                              or tracing.new_request_id())
+        search = tracing.traced_search(tools.lore_search, trace)
         if multi:  # the asker's own Gemini key, bound for this question only
             from lore.web.keys import with_user_key
             search = with_user_key(user.id, key_service, search)
-        owner = central_user(request)
 
         def save(result: dict | None, error: dict | None, events: list[dict]) -> dict:
-            """The finished question: appended to the user's chat when it
-            was answered. Returns the chat it went to, for the answer event."""
-            if result is None:
-                return {}
+            """The finished question: appended to the user's chat when it was
+            answered, and its trace stored either way. Returns the chat it
+            went to, for the answer event."""
+            if trace.finished_s is None or (error and not trace.error):
+                trace.finish(answer=result if trace.answer is None else trace.answer,
+                             error=f"{error.get('code')}: {error.get('message')}"
+                             if error else None)
+            now = datetime.now(timezone.utc)
+            out: dict = {}
             with central()() as session:
-                chat_id, message_id = record_answer(
-                    session, owner, chat_id=body.chat_id, question=body.question,
-                    world=body.world, depth=body.depth, result=result, events=events,
-                    request_id=None, now=datetime.now(timezone.utc))
+                chat_id = message_id = None
+                if result is not None:
+                    chat_id, message_id = record_answer(
+                        session, owner, chat_id=body.chat_id, question=body.question,
+                        world=body.world, depth=body.depth, result=result,
+                        events=events, request_id=trace.request_id, now=now)
+                    out = {"chat_id": chat_id, "message_id": message_id}
+                elif body.chat_id is not None:
+                    try:  # a failed answer still links to the chat it was asked in
+                        chat_id = history_store.get_chat(session, owner, body.chat_id)[0].id
+                    except history_store.NotFound:
+                        chat_id = None
+                trace_store.save(session, trace, user_id=owner, question=body.question,
+                                 world=body.world, depth=body.depth, chat_id=chat_id,
+                                 message_id=message_id, now=now)
                 session.commit()
-            return {"chat_id": chat_id, "message_id": message_id}
+            return out
 
         return StreamingResponse(
             ask_events(cfg, body.question, lock, search=search,
                        world=body.world, depth=body.depth, on_finish=save,
-                       **_bypass(spoilers)),
+                       request_id=trace.request_id, **_bypass(spoilers)),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
@@ -809,6 +849,9 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     api.mount("/", StaticFiles(directory=STATIC, html=True, check_dir=False),
               name="static")
+    # Every request gets an id, on its log lines and in X-Request-Id; /api/ask
+    # keys its trace by it.
+    api.add_middleware(RequestId)
 
     hosts, origins = allowed_hosts(host, port), allowed_origins(host, port, dev)
     inner = api
