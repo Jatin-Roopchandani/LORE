@@ -175,7 +175,8 @@ def test_a_mutation_without_the_token_is_403(env):
 def test_a_mutation_with_a_wrong_token_is_403(env):
     app, sessions, *_ = env
     client = sign_in(app, sessions, "alice")
-    bad = client.headers["X-CSRF-Token"][:-1] + "0"
+    real = client.headers["X-CSRF-Token"]
+    bad = real[:-1] + ("1" if real[-1] == "0" else "0")   # always differs from the real token
     for token in (bad, "x", "0" * 64):
         r = client.post("/api/worlds", json={"name": "w"},
                         headers={"X-CSRF-Token": token})
