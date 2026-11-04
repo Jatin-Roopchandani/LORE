@@ -17,6 +17,9 @@ dependencies = [
     "mcp>=2.2",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "sqlalchemy>=2",
+    "alembic>=1.20.1",
+    "psycopg[binary]>=3.3.7",
 ]
 
 [project.scripts]
@@ -41,5 +44,6 @@ artifacts = ["lore/web/static/**"]
 markers = [
     "live: tests that hit real local services (ollama); deselect with -m 'not live'",
     "network: tests allowed to reach non-local hosts (opts out of the socket guard)",
+    "postgres: runs migrations against a throwaway postgres container; needs docker and LORE_TEST_POSTGRES=1",
 ]
 asyncio_mode = "auto"
