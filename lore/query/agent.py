@@ -17,6 +17,7 @@ from lore.inference.gemini import GeminiClient
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
 from lore.query import deep as deep_module
+from lore.query import visible as visible_module
 from lore.query import interpret as interpret_module
 from lore.query import judge as judge_module
 from lore.query import decompose as decompose_module
@@ -412,19 +413,21 @@ def _interleaved(lists: list[list]) -> list:
 
 
 def _scoped_candidates(lance, conn: sqlite3.Connection, part: str,
-                       vector: list[float], book_ids: list[str]
-                       ) -> list[tuple[str, str, int]]:
+                       vector: list[float], book_ids: list[str],
+                       visible=None) -> list[tuple[str, str, int]]:
     """(chunk_id, book_id, chapter_seq) of a part's candidates drawn from the
     books it names: the SCOPED_K nearest story chunks of each, then the
-    SCOPED_K best keyword matches in each. The weak-evidence path only."""
+    SCOPED_K best keyword matches in each. The weak-evidence path only.
+    `visible` (a reading position's books) keeps each book to what is read."""
     out: list[tuple[str, str, int]] = []
     index = KeywordIndex(conn)
+    cap = visible if visible_module.capped(visible) else None
     try:
         for book_id in book_ids:
-            for row in search_chunks(lance, vector, SCOPED_K, book_id=book_id):
+            for row in search_chunks(lance, vector, SCOPED_K, book_id=book_id, book_ids=cap):
                 out.append((str(row["chunk_id"]), book_id,
                             int(row.get("chapter_seq", 0))))
-            out += index.search(part, SCOPED_K, book_id=book_id)
+            out += index.search(part, SCOPED_K, book_id=book_id, book_ids=cap)
     finally:
         index.close()
     return out
@@ -593,7 +596,8 @@ async def _deep(conn, kuzu, lance, question, models, vector, plan, scopes, neare
     return await deep_module.answer_deep(
         conn, kuzu, lance, question, models, scope=scope, titles=ctx.titles, books=books,
         vector=vector, plan=plan, named_ids=ctx.named_in_question, book_names=ctx.book_names,
-        book_ids=frozenset(named) if named else None, on_event=on_event)
+        book_ids=visible_module.restrict(scope.books, named) if named else None,
+        on_event=on_event)
 
 
 async def answer_question(
@@ -607,8 +611,14 @@ async def answer_question(
     on_event: OnEvent | None = None,
     world: int | str | None = None,
     depth: str = "auto",
+    spoilers: bool = False,
 ) -> Answer:
     """Answer `question` from the library.
+
+    A world's switched-on reading position (lore/reading_position.py) limits
+    every step below to what the reader has read, and the answer carries
+    `position_note` saying so; `spoilers=True` ignores it for this question.
+    With no position on, nothing differs and `position_note` stays None.
 
     `world` (an id or a name) confines everything -- seeds, graph evidence,
     vector and keyword candidates, the timeline and the decomposition's book
@@ -625,7 +635,18 @@ async def answer_question(
     """
     if depth not in ("auto", *DEPTHS):
         raise ValueError(f"depth must be auto, deep or focused, not {depth!r}")
-    scopes = resolve_scopes(conn, world)
+    scopes = resolve_scopes(conn, world, spoilers=spoilers)
+    answer = await _answer(conn, kuzu, lance, question, models, scopes=scopes,
+                           baseline=baseline, on_event=on_event, depth=depth)
+    note = visible_module.position_note([s.position for s in scopes if s.position])
+    return replace(answer, position_note=note) if note else answer
+
+
+async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: QueryModels, *,
+                  scopes: list[Scope], baseline: bool, on_event: OnEvent | None,
+                  depth: str) -> Answer:
+    """`answer_question` over scopes already resolved."""
+    seen = union(scopes)  # the one visibility predicate, over every scope
     titles = {book["id"]: book["title"] for book in list_books(conn)}
     # Story position (series, index) per book, for the writer and the check.
     books = book_rows(conn)
@@ -754,6 +775,8 @@ async def answer_question(
                                         vector=part_vector, named=named,
                                         exclude_names=ctx.book_names,
                                         book_ids=ctx.scope.books)
+            named = visible_module.shown_seeds(kuzu, ctx.scope.books, named, books)
+            seeds = visible_module.shown_seeds(kuzu, ctx.scope.books, seeds, books)
             part_books = books_named(part, ctx.titles)
             # A lens about a set of people that names none: drop whoever the
             # question excludes and add the graph's candidates for the part's
@@ -763,7 +786,8 @@ async def answer_question(
                     and judge_module.wants_candidates(seeds, named)):
                 judged = await judge_module.judge_seeds(
                     kuzu, ctx.names, part, question, seeds, named,
-                    part_books or ctx.scope.book_ids(), ctx.book_names, conn=conn)
+                    part_books or ctx.scope.book_ids(), ctx.book_names, conn=conn,
+                    visible=ctx.scope.books)
                 seeds = judged.seeds
             found_in[si] = (seeds, judged, part_books)
         shown = [s for si in running for s in found_in[si][0]]
@@ -781,7 +805,8 @@ async def answer_question(
             scope = contexts[si].scope
             if not seeds:
                 if part_books:
-                    scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
+                    scoped += _scoped_candidates(lance, conn, part, part_vector, part_books,
+                                                 scope.books)
                     scoped_books[index] = _dedupe(scoped_books.get(index, []) + part_books)
                 continue
             seeded = True
@@ -793,15 +818,19 @@ async def answer_question(
                 # A part that names books keeps their beats; a world's part, its own.
                 beat_books = part_books or scope.book_ids()
                 if judged is not None and judged.candidates:
-                    part_beats[index] += timeline_module.judgement_timeline(
+                    got_beats = timeline_module.judgement_timeline(
                         conn, lance, judged.named, judged.candidates, part_vector, books,
-                        beat_books)
+                        beat_books, scope.books)
                 else:
-                    part_beats[index] += timeline_module.part_timeline(
-                        conn, lance, seeds, part_vector, books, beat_books)
+                    got_beats = timeline_module.part_timeline(
+                        conn, lance, seeds, part_vector, books, beat_books, scope.books)
+                part_beats[index] += visible_module.shown_beats(kuzu, scope.books, got_beats, books)
             if codexslice.active():
-                part_codex[index] += codexslice.part_codex(
-                    conn, lance, seeds, part_vector, books, part_books or scope.book_ids())
+                part_codex[index] += visible_module.shown_lines(
+                    kuzu, scope.books,
+                    codexslice.part_codex(conn, lance, seeds, part_vector, books,
+                                          part_books or scope.book_ids(), visible=scope.books),
+                    books)
             if not searched:
                 searched = True
                 emit(on_event, "step", name="search", state="start", part=index, detail=None)
@@ -810,7 +839,8 @@ async def answer_question(
                 chosen_by.append(model)
             if call is None:
                 if part_books:
-                    scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
+                    scoped += _scoped_candidates(lance, conn, part, part_vector, part_books,
+                                                 scope.books)
                     scoped_books[index] = _dedupe(scoped_books.get(index, []) + part_books)
                 continue
             if call.template not in templates:
@@ -818,11 +848,13 @@ async def answer_question(
             called.append(call.template)
             found = run_template(kuzu, call)
             if scope.books is not None:  # an entity's edges in another world's books
-                found = [r for r in found if scope.allows(r.book_id)]
+                found = [r for r in found if scope.sees(r.book_id, r.chapter_seq)]
+                found = visible_module.shown_rows(kuzu, scope.books, found, books)
             rows.extend(found)
             found_rows += found
             if part_books and len({r.chunk_id for r in found}) < WEAK_EVIDENCE:
-                scoped += _scoped_candidates(lance, conn, part, part_vector, part_books)
+                scoped += _scoped_candidates(lance, conn, part, part_vector, part_books,
+                                             scope.books)
                 scoped_books[index] = _dedupe(scoped_books.get(index, []) + part_books)
         if searched and not called:
             emit(on_event, "edges", part=index, template=None, total=0, edges=[])
@@ -885,7 +917,8 @@ async def answer_question(
     evidence = assemble_ranked(conn, rows, extra_chunks=extra,
                                max_chars=models.evidence_chars,
                                score_lists=score_lists,
-                               book_fair=book_fair, part_books=named_books, **timelines)
+                               book_fair=book_fair, part_books=named_books, visible=seen,
+                               **timelines)
     emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in evidence.passages],
          edge_keys=[edge_key(e) for e in evidence.edges])
     emit(on_event, "step", name="rank", state="done", part=None,

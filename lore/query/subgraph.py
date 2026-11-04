@@ -6,6 +6,7 @@ from itertools import zip_longest
 from typing import Iterable, Sequence
 
 from lore.ingest.registry import chunks_by_id
+from lore.query import visible as visible_module
 from lore.query.models import CodexLine, EdgeRow, Evidence, Passage, TemplateCall, TimelineBeat
 from lore.query.retrieval import drop_boilerplate
 from lore.query.templates import MAX_EVIDENCE_CHARS, TEMPLATES
@@ -235,6 +236,7 @@ def assemble_ranked(
     part_books: Sequence[Sequence[str]] = (),
     codexes: Sequence[Sequence[CodexLine]] = (),
     codex_share: float = 0.0,
+    visible=None,
 ) -> Evidence:
     """Evidence from template rows plus vector passages, for one or more parts.
 
@@ -270,10 +272,22 @@ def assemble_ranked(
     second slice, filled after the timeline's, from the passages the timeline
     slice did not already take.
 
+    `visible` (a reading position's books, lore/query/visible.py): the last gate.
+    Whatever the callers passed, no edge, passage, beat or codex line past the
+    position enters the evidence.
+
     Passages are numbered in reading order, and only edges whose passage
     was kept are returned. `shares` gives each part's passage numbers: the
     ones it took, plus the ones it ranked above them that another part took.
     """
+    if visible_module.capped(visible):
+        def seen(item) -> bool:
+            return visible_module.sees(visible, item.book_id, item.chapter_seq)
+
+        rows = [r for r in rows if seen(r)]
+        extra_chunks = [c for c in extra_chunks if visible_module.sees(visible, c[1], c[2])]
+        timelines = [[b for b in beats if seen(b)] for beats in timelines]
+        codexes = [[l for l in lines if seen(l)] for lines in codexes]
     edges = tuple(dict.fromkeys(rows))
     positions: dict[str, tuple[str, int]] = {}
     for row in edges:

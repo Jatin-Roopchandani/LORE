@@ -18,6 +18,7 @@ import sqlite3
 from typing import Iterable, Mapping, Sequence
 
 from lore.codex import store as codex_store
+from lore.query import visible as visible_module
 from lore.query.models import BookInfo, CodexLine, Passage, SeedEntity
 from lore.query.position import order_passages
 from lore.query.timeline import coverage_order
@@ -53,11 +54,14 @@ def _positions(conn: sqlite3.Connection, chunk_ids: Sequence[str]) -> dict[str, 
 
 def lines_for(conn: sqlite3.Connection, entity_ids: Sequence[str], *,
               book_ids: Iterable[str] | None = None,
-              aspects: Mapping[str, set[str]] | None = None) -> list[CodexLine]:
+              aspects: Mapping[str, set[str]] | None = None,
+              visible=None) -> list[CodexLine]:
     """Every codex statement of these entities as a line, entity by entity, in
     saved order. `book_ids` keeps the statements whose passage is in one of
     those books; `aspects` (entity id -> aspect names) keeps only those aspects
-    of that entity. [] when the library has no codex tables yet."""
+    of that entity; `visible` (a reading position's books) keeps only those
+    whose passage the reader has read. [] when the library has no codex tables
+    yet."""
     try:
         entries = codex_store.entries_for(conn, entity_ids)
     except sqlite3.OperationalError:  # a library not migrated to the codex yet
@@ -71,11 +75,16 @@ def lines_for(conn: sqlite3.Connection, entity_ids: Sequence[str], *,
             place = where.get(s.chunk_id)
             if place is None or (books and place[0] not in books):
                 continue
+            if not visible_module.sees(visible, place[0], place[1]):
+                continue
+            if visible_module.capped(book_ids) and not visible_module.sees(
+                    book_ids, place[0], place[1]):
+                continue
             if only is not None and s.aspect not in only:
                 continue
             out.append(CodexLine(chunk_id=s.chunk_id, book_id=place[0],
                                  chapter_seq=place[1], subject=entry.name,
-                                 aspect=s.aspect, text=s.text))
+                                 aspect=s.aspect, text=s.text, entity_id=entry.entity_id))
     return out
 
 
@@ -122,7 +131,7 @@ def select_lines(conn: sqlite3.Connection, lines: Sequence[CodexLine], entity_id
 def part_codex(conn: sqlite3.Connection, lance, seeds: Iterable[SeedEntity],
                part_vector: list[float], books: Mapping[str, BookInfo] | None,
                book_ids: Sequence[str] | None = None,
-               limit: int = ENTITIES_PER_PART) -> list[CodexLine]:
+               limit: int = ENTITIES_PER_PART, visible=None) -> list[CodexLine]:
     """The selected codex lines for one focused part: the entries of its first
     `limit` seeds that have one. [] with DEEP off, no entry, or no seed."""
     if not active():
@@ -135,7 +144,7 @@ def part_codex(conn: sqlite3.Connection, lance, seeds: Iterable[SeedEntity],
     entities = [i for i in ids if i in have][:limit]
     if not entities:
         return []
-    lines = lines_for(conn, entities, book_ids=book_ids or None)
+    lines = lines_for(conn, entities, book_ids=book_ids or None, visible=visible)
     if not lines:
         return []
     return select_lines(conn, lines, entities, part_vector, lance, books)
