@@ -196,9 +196,11 @@ def delete_chat(session: Session, user_id: str, chat_id: str,
 def append_message(session: Session, user_id: str, chat_id: str | None, *,
                    question: str, answer: dict | None, depth: str | None,
                    world: str | None, request_id: str | None,
-                   now: datetime | None = None) -> tuple[Chat, Message]:
+                   now: datetime | None = None,
+                   standalone: str | None = None) -> tuple[Chat, Message]:
     """Add a question and its answer to the user's chat, or to a new chat
-    titled from the question when `chat_id` is None."""
+    titled from the question when `chat_id` is None. `standalone` is the
+    question rewritten to stand alone, for a follow-up that was."""
     now = now or utcnow()
     answer = cap_answer(answer)
     size = stored_size(question, answer)
@@ -212,7 +214,8 @@ def append_message(session: Session, user_id: str, chat_id: str | None, *,
         chat.updated_at = now
     message = Message(chat_id=chat.id, role="assistant", question=question,
                       answer_json=answer, depth=depth, world=world,
-                      request_id=request_id, created_at=now, size=size)
+                      request_id=request_id, created_at=now, size=size,
+                      standalone=standalone or None)
     session.add(message)
     session.flush()
     return chat, message
@@ -267,7 +270,7 @@ def chat_out(chat: Chat, latest: Message | None = None, *, full: bool = False) -
 
 def message_out(message: Message, *, full: bool = True) -> dict:
     out = {"id": message.id, "role": message.role, "question": message.question,
-           "depth": message.depth, "world": message.world,
+           "standalone": message.standalone, "depth": message.depth, "world": message.world,
            "request_id": message.request_id,
            "created_at": message.created_at.isoformat()}
     answer = message.answer_json or {}

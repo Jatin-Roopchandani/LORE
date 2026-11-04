@@ -30,8 +30,12 @@ def sse(event: str, data: dict) -> bytes:
 async def ask_events(config, question: str, lock: asyncio.Lock,
                      search=None, world=None, depth=None,
                      spoilers=False, on_finish=None,
-                     request_id: str | None = None) -> AsyncIterator[bytes]:
-    """`request_id`, when given, is the first event (`request`), so the UI
+                     request_id: str | None = None,
+                     history=None) -> AsyncIterator[bytes]:
+    """`history` (a chat's last turns, loaded by the server) makes the question
+    a follow-up; passed to the search only when there is some.
+
+    `request_id`, when given, is the first event (`request`), so the UI
     can quote it in a report. `on_finish(result, error, events)`, when given, runs once the question
     has ended, before the final event is sent: `result` is the answer (None
     when it failed), `error` the error dict (None on success; code
@@ -76,6 +80,8 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
             scope["depth"] = depth
         if spoilers:  # only when the reader asked to reveal, for this question
             scope["spoilers"] = True
+        if history:
+            scope["history"] = history
         task = asyncio.create_task(search(config, question, on_event=queue.put_nowait,
                                           **scope))
         try:

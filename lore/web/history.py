@@ -174,19 +174,70 @@ def answer_payload(result: dict, events: list[dict]) -> dict:
     return {"result": result, "steps": steps}
 
 
+def standalone_of(events: list[dict]) -> str | None:
+    """The follow-up's rewrite, from the stream's `understood` event; None when
+    the question was answered as typed."""
+    for event in events:
+        if event.get("type") == "understood" and isinstance(event.get("standalone"), str):
+            return event["standalone"] or None
+    return None
+
+
 def record_answer(session: Session, user: str, *, chat_id: str | None, question: str,
                   world, depth: str | None, result: dict, events: list[dict],
                   request_id: str | None, now: datetime) -> tuple[str, int]:
     """Append the finished answer to the user's chat (a new one when `chat_id`
-    is None, or is not theirs any more): (chat id, message id)."""
+    is None, or is not theirs any more): (chat id, message id). A follow-up's
+    rewrite (its `understood` event) is stored with it."""
     world_s = None if world is None else str(world)
     payload = answer_payload(result, events)
+    standalone = standalone_of(events)
     try:
         chat, message = H.append_message(
             session, user, chat_id, question=question, answer=payload, depth=depth,
-            world=world_s, request_id=request_id, now=now)
+            world=world_s, request_id=request_id, now=now, standalone=standalone)
     except H.NotFound:
         chat, message = H.append_message(
             session, user, None, question=question, answer=payload, depth=depth,
-            world=world_s, request_id=request_id, now=now)
+            world=world_s, request_id=request_id, now=now, standalone=standalone)
     return chat.id, message.id
+
+
+def _answer_text(answer: dict | None) -> str:
+    """What a turn of history says the answer was: its short answer, else the
+    answer text (cut later by decompose.clip_history). "" for an answer that
+    was not kept (too large) or has no text."""
+    if not isinstance(answer, dict) or answer.get("truncated"):
+        return ""
+    result = answer.get("result")
+    if not isinstance(result, dict):
+        return ""
+    short = [s.get("text") for s in result.get("short_answer") or []
+             if isinstance(s, dict) and isinstance(s.get("text"), str)]
+    if short:
+        return " ".join(short)
+    text = result.get("answer")
+    return text if isinstance(text, str) else ""
+
+
+def history_turns(messages, *, world) -> list[dict]:
+    """A chat's last turns, as the history a follow-up is asked with: each
+    {question, answer}, the question as it was understood (its standalone
+    rewrite, when it had one) and the answer's short answer or its start.
+
+    Only the user's own stored answers are used, all already limited by their
+    reading position when given, and only those asked in the same world as the
+    follow-up, so no other world's text reaches the prompt. An answer that was
+    not kept, or had no text, is left out. Capped by decompose.clip_history:
+    at most MAX_HISTORY_TURNS turns and MAX_HISTORY_CHARS characters."""
+    from lore.query.decompose import clip_history
+    world_s = None if world is None else str(world)
+    turns = []
+    for message in messages:
+        if message.world != world_s:
+            continue
+        answer = _answer_text(message.answer_json)
+        if answer:
+            turns.append({"question": message.standalone or message.question,
+                          "answer": answer})
+    return [{"question": t.question, "answer": t.answer} for t in clip_history(turns)]

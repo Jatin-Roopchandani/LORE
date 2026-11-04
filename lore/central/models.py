@@ -344,6 +344,9 @@ class Message(Base):
     # history quota adds these up (lore.central.history.MAX_USER_BYTES).
     size: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0,
                                       server_default="0")
+    # A follow-up's question rewritten to stand alone (lore.query.decompose
+    # FOLLOWUPS), when it differed from the question as typed; else None.
+    standalone: Mapped[str | None] = mapped_column(sa.Text)
 
     __table_args__ = (sa.Index("ix_messages_chat", "chat_id", "id"),)
 

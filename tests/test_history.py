@@ -273,12 +273,12 @@ def test_ask_appends_to_a_new_chat_then_to_the_given_one(alice, central, monkeyp
     assert [s["type"] for s in steps] == ["step", "parts"] and all("t" in s for s in steps)
 
 
-def test_ask_with_someone_elses_chat_id_starts_a_new_chat(alice, bob, central, monkeypatch):
+def test_ask_with_someone_elses_chat_id_is_not_found(alice, bob, central, monkeypatch):
     give_key(central, "bob")
     chat_id = alice.post("/api/chats", json={"title": "alice's"}).json()["chat"]["id"]
     monkeypatch.setattr("lore.web.app.tools.lore_search", _fake_search())
-    events, _ = ask(bob, {"question": "q", "chat_id": chat_id})
-    assert dict(events)["answer"]["chat_id"] != chat_id
+    r = bob.post("/api/ask", json={"question": "q", "chat_id": chat_id})
+    assert r.status_code == 404
     assert alice.get(f"/api/chats/{chat_id}").json()["messages"] == []
 
 

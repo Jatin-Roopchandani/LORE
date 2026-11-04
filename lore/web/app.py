@@ -26,7 +26,7 @@ from fastapi.responses import (
     FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import sessionmaker
 
 from lore.auth.csrf import csrf_guard
@@ -58,7 +58,7 @@ from lore.tenancy import (
 from lore.web.ask import ask_events
 from lore.web.limits import BodyLimit
 from lore.web.request_id import RequestId
-from lore.web.history import build_history_router, record_answer
+from lore.web.history import build_history_router, history_turns, record_answer
 from lore.worlds import (
     WorldError, books_in, create_world, delete_world, get_world, list_worlds,
     rename_world,
@@ -112,12 +112,17 @@ def _bypass(spoilers: bool) -> dict:
 
 
 class AskBody(BaseModel):
+    # Nothing else is accepted: above all no history, which only the server
+    # loads, from the chat (`chat_id`) of the user asking.
+    model_config = ConfigDict(extra="forbid")
+
     question: str
     # A world's id or name; none (or "all") searches every world.
     world: int | str | None = None
     # auto lets the decomposer decide; deep or focused overrides it.
     depth: Literal["auto", "deep", "focused"] = "auto"
-    # The chat to append this question and its answer to; none starts a new one.
+    # The chat to append this question and its answer to, and whose last turns
+    # make it a follow-up; none starts a new one. Not the user's: 404.
     chat_id: str | None = Field(None, max_length=64)
 
     @field_validator("question")
@@ -753,6 +758,18 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         cfg = library_of(user)
         lock = locks.setdefault(user.id, asyncio.Lock())
         owner = central_user(request)
+        # A follow-up: the chat's last turns, loaded here from the asker's own
+        # chat, never taken from the request. Someone else's chat, or none, is
+        # 404 before anything is searched.
+        history: list[dict] = []
+        if body.chat_id is not None:
+            with central()() as session:
+                try:
+                    _, earlier = history_store.get_chat(session, owner, body.chat_id)
+                except history_store.NotFound:
+                    return JSONResponse({"error": {"code": "not_found",
+                                                   "message": "no such chat"}}, status_code=404)
+                history = history_turns(earlier, world=body.world)
         # The question's trace, keyed by this request's id (lore.web.request_id):
         # every model call it makes, captured inside the user's key scope so
         # the trace is redacted against their key.
@@ -798,7 +815,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
         return StreamingResponse(
             ask_events(cfg, body.question, lock, search=search,
-                       world=body.world, depth=body.depth, on_finish=save,
+                       world=body.world, depth=body.depth, on_finish=save, history=history,
                        request_id=trace.request_id, **_bypass(spoilers)),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
