@@ -39,6 +39,8 @@ export const DEEP = {
 
 export const STEPS_DEEP = {
   plan: "Planning the sections",
+  // A recap: the story's span gathered in order (its chapters and story beats) before its sections are written.
+  recap: "Gathering the story so far, in order",
   section: (n: number, heading: string | null) => heading ? `Section ${n}: ${heading}` : `Section ${n}`,
   group: (question: string) => question,
   // The steps panel once the answer has landed: one line that opens it.

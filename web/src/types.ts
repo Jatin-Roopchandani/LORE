@@ -1,6 +1,7 @@
 export type StepName = "split" | "seeds" | "search" | "rank" | "write" | "compose" | "check";
-// Rows that exist only in a deep answer: the planner and one per section (see askReducer's deepSteps).
-export type DeepStepName = "plan" | "section";
+// Rows that exist only in a sectioned answer: the planner (or, for a recap, gathering the story's span) and one per
+// section (see askReducer's deepSteps).
+export type DeepStepName = "plan" | "recap" | "section";
 export type Depth = "auto" | "deep" | "focused";
 export const STEP_ORDER: StepName[] = ["split", "seeds", "search", "rank", "write", "compose", "check"];
 export interface Seed { id: string; name: string; kind: string; books: string[]; score: number | null }

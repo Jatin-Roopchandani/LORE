@@ -134,8 +134,8 @@ export function StepList({ state }: { state: AskState }) {
   const list = (
     <ol className="steps" id={panel}>
       {generic.filter((s) => s.name === "split").map(row)}
-      {state.deepSteps.filter((d) => !(lensRun && d.kind === "section")).map((d) => d.kind === "plan"
-        ? <Row key="plan" state={d.state} label={STEPS_DEEP.plan} time={timing(d)} />
+      {state.deepSteps.filter((d) => !(lensRun && d.kind === "section")).map((d) => d.kind !== "section"
+        ? <Row key={d.kind} state={d.state} label={d.kind === "recap" ? STEPS_DEEP.recap : STEPS_DEEP.plan} time={timing(d)} />
         : <Row key={`section-${d.part}`} cls="section-step" state={d.state} label={STEPS_DEEP.section((d.part ?? 0) + 1, heading(d))} time={timing(d)} />)}
       {rest.map(row)}
     </ol>
