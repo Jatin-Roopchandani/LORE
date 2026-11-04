@@ -101,6 +101,10 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     // The world suffix and ring tell same-named entities apart only when the view really
     // shows two or more worlds; with one world they are noise.
     const manyWorlds = new Set(v.nodes.map((n) => n.world?.id).filter((w) => w != null)).size > 1;
+    // In the overview, plain nodes grow with their number of links (7 to 12), so the main cast stands out.
+    const degree = new Map<string, number>();
+    if (v.overview) for (const l of v.links) for (const e of [l.source, l.target]) degree.set(e, (degree.get(e) ?? 0) + 1);
+    const maxDegree = Math.max(1, ...degree.values());
     for (const raw of v.nodes) {
       const n = manyWorlds ? raw : { ...raw, world: undefined };
       const at = pos.get(n.id) ?? { x: 500, y: 350 };
@@ -113,7 +117,7 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       const ringed = seed || !!n.world || marked;
       const ringColor = n.selected ? p.ink : n.onPath ? p.v("--accent") : dim ? p.faint : seed ? p.v(`--part-${n.seedPart! % 4}`)
         : n.world ? p.v(`--world-${worldSlot(n.world.id)}`) : p.faint;
-      const attrs = { x: at.x, y: -at.y, size: seed || marked ? 11 : 7, label: nodeLabel({ ...n, label: n.label.replace(/^Mr\. /, "") }), color,
+      const attrs = { x: at.x, y: -at.y, size: seed || marked ? 11 : 7 + 5 * Math.sqrt((degree.get(n.id) ?? 0) / maxDegree), label: nodeLabel({ ...n, label: n.label.replace(/^Mr\. /, "") }), color,
         ring: seed || marked ? 0.3 : n.world ? 0.28 : 0, gap: ringed ? 0.12 : 0, gapColor: p.panel,
         ringColor, zIndex: marked ? 5 : dim ? 0 : 1 };
       if (g.hasNode(n.id)) g.mergeNodeAttributes(n.id, attrs); else g.addNode(n.id, attrs);
