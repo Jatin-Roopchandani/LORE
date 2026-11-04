@@ -122,6 +122,7 @@ def test_waitlist_and_invites_are_schema_ready(session):
 
 
 @pytest.mark.postgres
+@pytest.mark.postgres
 @pytest.mark.skipif(not os.environ.get("LORE_TEST_POSTGRES")
                     or shutil.which("docker") is None,
                     reason="set LORE_TEST_POSTGRES=1 and have docker to run")

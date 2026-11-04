@@ -18,6 +18,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import (
@@ -616,5 +617,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     api.mount("/", StaticFiles(directory=STATIC, html=True, check_dir=False),
               name="static")
 
-    inner = SessionRefresh(api, auth_ctx.settings) if auth_ctx is not None else api
-    return OriginGuard(inner, allowed_hosts(host, port), allowed_origins(host, port, dev))
+    hosts, origins = allowed_hosts(host, port), allowed_origins(host, port, dev)
+    inner = api
+    if auth_ctx is not None:
+        # The public address (LORE_BASE_URL) is the one more host and origin
+        # this server answers; anything else is still refused.
+        public = urlparse(auth_ctx.settings.origin)
+        hosts, origins = hosts | {public.netloc}, origins | {auth_ctx.settings.origin}
+        inner = SessionRefresh(api, auth_ctx.settings)
+    return OriginGuard(inner, hosts, origins)

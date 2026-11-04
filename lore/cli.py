@@ -1431,8 +1431,13 @@ def ui_command(
         typer.echo(f"lore ui: {exc}", err=True)
         raise typer.Exit(2)
     typer.echo(f"lore ui: http://{host}:{port}", err=True)
-    uvicorn.run(create_app(config, host=host, port=port, dev=dev),
-                host=host, port=port, log_level="warning")
+    from lore.auth.settings import AuthConfigError
+    try:
+        web = create_app(config, host=host, port=port, dev=dev)
+    except AuthConfigError as exc:  # LORE_MULTI_USER=1 without its secrets
+        typer.echo(f"lore ui: {exc}", err=True)
+        raise typer.Exit(2)
+    uvicorn.run(web, host=host, port=port, log_level="warning")
 
 
 @app.command(name="migrate")

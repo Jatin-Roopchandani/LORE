@@ -276,3 +276,18 @@ def test_settings_reject_short_or_equal_secrets():
 def test_the_settings_repr_hides_secrets():
     text = repr(make_settings(resend_api_key="re_supersecret"))
     assert "re_supersecret" not in text and "s" * 40 not in text and "c" * 40 not in text
+
+
+def test_the_public_address_is_answered_and_other_hosts_and_origins_are_not(tmp_path):
+    root = LoreConfig(data_dir=tmp_path / "root")
+    sessions, _ = central_sessions(tmp_path, users=("alice",))
+    settings = make_settings(cookie_secure=True, base_url="https://lore.example.org")
+    app = make_app(root, sessions, auth=settings)
+    public = TestClient(app, base_url="https://lore.example.org")
+    assert public.get("/auth/providers").status_code == 200
+    assert public.get("/auth/providers", headers={"Origin": "https://lore.example.org"}
+                      ).status_code == 200
+    assert public.get("/auth/providers", headers={"Origin": "https://evil.example"}
+                      ).status_code == 403
+    assert TestClient(app, base_url="https://evil.example").get(
+        "/auth/providers").status_code == 403
