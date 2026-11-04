@@ -7,6 +7,10 @@ interface Stream { signal: AbortSignal; push(e: AskEvent): void; end(): void }
 const streams: Stream[] = [];
 const streamAsk = vi.fn();
 
+// The server's history is unreachable here: these tests exercise the browser cache (history.server.test.tsx covers the server).
+vi.mock("./chatsApi", async (importOriginal) => ({ ...(await importOriginal<typeof import("./chatsApi")>()),
+  chatsApi: { list: () => Promise.resolve({ error: { code: "unreachable", message: "" } }), get: vi.fn(), create: vi.fn(), rename: vi.fn(),
+    remove: () => Promise.resolve({ deleted: true }) } }));
 vi.mock("./api", () => ({ streamAsk: (q: string, signal: AbortSignal, world?: string, depth?: string) => streamAsk(q, signal, world, depth) }));
 Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
 

@@ -33,6 +33,8 @@ from lore.auth.current import SessionRefresh
 from lore.auth.routes import build_router as build_auth_router
 from lore.central import queue
 from lore.central.db import database_url, make_engine, make_session_factory
+from lore.central.db import upgrade as upgrade_central
+from lore.central.history import ensure_user
 from lore.central.models import KIND_MOVE, KIND_PROCESS
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
@@ -46,10 +48,11 @@ from lore.orchestrator.pipeline import processing_budget_left
 from lore.query import explore, visible
 from lore.reading_position import ReadingPosition, get_position, set_position
 from lore.tenancy import (
-    CurrentUser, InvalidUserId, config_for, multi_user_enabled,
+    LOCAL_USER_ID, CurrentUser, InvalidUserId, config_for, multi_user_enabled,
     require_session_user, resolve_user as default_resolver, validate_user_id,
 )
 from lore.web.ask import ask_events
+from lore.web.history import build_history_router, record_answer
 from lore.worlds import (
     WorldError, books_in, create_world, delete_world, get_world, list_worlds,
     rename_world,
@@ -108,6 +111,8 @@ class AskBody(BaseModel):
     world: int | str | None = None
     # auto lets the decomposer decide; deep or focused overrides it.
     depth: Literal["auto", "deep", "focused"] = "auto"
+    # The chat to append this question and its answer to; none starts a new one.
+    chat_id: str | None = Field(None, max_length=64)
 
     @field_validator("question")
     @classmethod
@@ -263,6 +268,42 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         return library_of(current_user(request))
 
     sessions: list[sessionmaker | None] = [central_sessions]
+    central_lock = threading.Lock()
+    local_ready: list[bool] = [False]
+
+    def central() -> sessionmaker:
+        """The central database's sessions. Multi mode: the migrated database
+        the auth context opened. Local mode: built on first use, beside the
+        data root unless LORE_DATABASE_URL says otherwise, migrated by the app
+        itself and given the local user's row, so history and traces take the
+        same code path with no sign-in."""
+        if multi:
+            return sessions[0]
+        with central_lock:
+            if not local_ready[0]:
+                if sessions[0] is None:
+                    url = database_url(base)
+                    upgrade_central(url)
+                    sessions[0] = make_session_factory(make_engine(url))
+                with sessions[0]() as session:
+                    ensure_user(session, LOCAL_USER_ID)
+                    session.commit()
+                local_ready[0] = True
+        return sessions[0]
+
+    def central_user(request: Request) -> str:
+        """The user's id in the central database (`local` in local mode)."""
+        user = current_user(request)
+        if user.is_local and not multi:
+            return LOCAL_USER_ID
+        try:
+            return validate_user_id(user.id)
+        except InvalidUserId:
+            raise HTTPException(401, "invalid user") from None
+
+    api.include_router(build_history_router(
+        central, central_user, lambda: datetime.now(timezone.utc)))
+
     if auth_ctx is not None:
         api.state.auth = auth_ctx
         api.include_router(build_auth_router(auth_ctx))
@@ -695,9 +736,25 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         if multi:  # the asker's own Gemini key, bound for this question only
             from lore.web.keys import with_user_key
             search = with_user_key(user.id, key_service, search)
+        owner = central_user(request)
+
+        def save(result: dict | None, error: dict | None, events: list[dict]) -> dict:
+            """The finished question: appended to the user's chat when it
+            was answered. Returns the chat it went to, for the answer event."""
+            if result is None:
+                return {}
+            with central()() as session:
+                chat_id, message_id = record_answer(
+                    session, owner, chat_id=body.chat_id, question=body.question,
+                    world=body.world, depth=body.depth, result=result, events=events,
+                    request_id=None, now=datetime.now(timezone.utc))
+                session.commit()
+            return {"chat_id": chat_id, "message_id": message_id}
+
         return StreamingResponse(
             ask_events(cfg, body.question, lock, search=search,
-                       world=body.world, depth=body.depth, **_bypass(spoilers)),
+                       world=body.world, depth=body.depth, on_finish=save,
+                       **_bypass(spoilers)),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 

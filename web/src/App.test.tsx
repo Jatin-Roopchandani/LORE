@@ -9,6 +9,8 @@ vi.mock("./components/GraphCanvas", () => ({ GraphCanvas: () => <div data-testid
 const library = vi.fn((_world?: string) => Promise.resolve({ books: [], note: null }));
 const worlds = [{ id: 1, name: "Alpha Saga", books: [] }, { id: 2, name: "Beta Realm", books: [] }];
 const asked: (string | undefined)[] = [];
+const chatList = vi.fn(() => Promise.resolve({ error: { code: "unreachable", message: "" } } as object));
+const chatCreate = vi.fn((_b: object) => Promise.resolve({ chat: { id: "x" }, created: true }));
 const me = vi.fn(() => Promise.resolve({ user: { id: "u", email: "me@example.org", name: null, role: "user" } }));
 // The signed-in user's Gemini key (multi-user mode); the key-problem channel is the real one, so tests can fire it.
 const keyStatus = vi.fn(() => Promise.resolve({ present: true, last4: "1234", added_at: null, last_ok_at: null, last_error: null } as object));
@@ -18,6 +20,10 @@ const fireKeyProblem = (p: string) => keyListeners.forEach((l) => l(p));
 let askError = "interrupted";
 let position: Record<string, unknown> = { enabled: false, book_id: null, chapter: 0, read_books: [], books: [] };
 const setPosition = vi.fn((_w: string, body: Record<string, unknown>) => { position = { ...position, ...body }; return Promise.resolve({ world: { id: 1, name: "Alpha Saga" }, ...position }); });
+// The server's history is unreachable here: these tests exercise the browser cache (history.server.test.tsx covers the server).
+vi.mock("./chatsApi", async (importOriginal) => ({ ...(await importOriginal<typeof import("./chatsApi")>()),
+  chatsApi: { list: () => chatList(), get: vi.fn(), create: (b: object) => chatCreate(b), rename: vi.fn(),
+    remove: () => Promise.resolve({ deleted: true }) } }));
 vi.mock("./api", () => ({
   authApi: { me: () => me() },
   keyApi: { get: () => keyStatus(), save: (k: string) => keySave(k), usage: () => Promise.resolve({ error: { code: "x", message: "" } }),
@@ -207,5 +213,19 @@ test("moving the reading position refetches the book list and the graph for that
     expect(overview).toHaveBeenLastCalledWith("1");
   } finally {
     vi.useRealTimers();
+  }
+});
+
+test("browser-only chats are offered for import in a banner; Import posts them and the banner goes", async () => {
+  localStorage.setItem("lore-history-v1", JSON.stringify([{ id: "1", question: "old", askedAt: "2026-10-01T00:00:00Z", events: [] }]));
+  chatList.mockImplementation(() => Promise.resolve({ chats: [], next_offset: null }));
+  try {
+    render(<App />);
+    expect(await screen.findByText("Import your 1 saved chat from this browser")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await waitFor(() => expect(chatCreate).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByText(/Import your 1 saved chat/)).toBeNull());
+  } finally {
+    chatList.mockImplementation(() => Promise.resolve({ error: { code: "unreachable", message: "" } }));
   }
 });

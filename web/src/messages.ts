@@ -264,6 +264,10 @@ export const HISTORY = {
   clearConfirm: (n: number) => `Clear all ${n} saved ${n === 1 ? "question" : "questions"}? This can't be undone.`,
   clearConfirmLabel: "Confirm clearing history", clearYes: "Clear", clearNo: "Keep",
   entries: "Earlier questions",
+  // Server-side history (release step 4): the one-time import of chats saved only in this browser.
+  importOffer: (n: number) => `Import your ${n} saved chat${n === 1 ? "" : "s"} from this browser`,
+  importYes: "Import",
+  importNo: "Not now",
 };
 
 // The Ctrl+K quick switcher: jump back to a past question, or ask a new one.
@@ -306,6 +310,8 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
       return { text: "Add your Gemini API key to ask questions." };
     case "key_invalid":
       return { text: "Gemini refused your API key. Replace it to carry on." };
+    case "too_large":
+      return { text: "This answer was too large to keep in your history." };
     default:
       return { text: error.message || "Something went wrong.", retry: true };
   }
@@ -439,3 +445,4 @@ export const PROFILE = {
   introLabel: "Introduction so far",
   introHint: "Written only from what you have read so far.",
 };
+

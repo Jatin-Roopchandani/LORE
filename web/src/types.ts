@@ -63,8 +63,11 @@ export type AskEvent =
   | { type: "seeds"; t: number; part: number; entities: Seed[] }
   | { type: "edges"; t: number; part: number; template: string | null; total: number; edges: Edge[] }
   | { type: "evidence"; t: number; chunk_ids: string[]; edge_keys: string[] }
-  | { type: "answer"; t: number; result: SearchResult }
-  | { type: "error"; t: number; error: ApiError };
+  // `chat_id`/`message_id`: where the server saved the answer in the user's history (absent if it could not).
+  | { type: "answer"; t: number; result: SearchResult; chat_id?: string; message_id?: number }
+  | { type: "error"; t: number; error: ApiError }
+  // The first event of every question: its id, which a report of the answer quotes (release step 4).
+  | { type: "request"; t: number; request_id: string };
 export interface Book { id: string; title: string; author: string | null; status: string;
   chunk_count: number; entity_count: number | null; world?: string | null }
 // Set on nodes and entities only when several worlds are shown together (the "all worlds" view).
@@ -143,3 +146,16 @@ export interface PositionBook { id: string; title: string; series: string | null
 export interface ReadingPositionData { world: WorldRef; enabled: boolean; book_id: string | null; chapter: number;
   read_books: string[]; books: PositionBook[] }
 export interface ReadingPositionBody { enabled: boolean; book_id: string | null; chapter: number; read_books: string[] }
+
+// Server-side history (release step 4): a chat per question today, each with its messages.
+// `answer` is what the stream showed: the result and its other events, or a marker when it was too large to keep.
+export interface StoredAnswer { result?: SearchResult; steps?: AskEvent[]; truncated?: boolean; bytes?: number }
+export interface ChatMessage { id: number; role: string; question: string; depth: string | null; world: string | null;
+  request_id: string | null; created_at: string; answer?: StoredAnswer;
+  summary?: { answer_style: string | null; mode: string | null; deep: boolean; truncated: boolean } }
+export interface ChatSummary { id: string; title: string; world: string | null; client_id: string | null; created_at: string;
+  updated_at: string; latest?: ChatMessage }
+export interface ChatList { chats: ChatSummary[]; next_offset: number | null }
+export interface ChatDetail { chat: ChatSummary; messages: ChatMessage[] }
+export interface NewChatBody { client_id?: string; title?: string; world?: string; created_at?: string;
+  messages?: { question: string; answer?: StoredAnswer; depth?: string; world?: string }[] }

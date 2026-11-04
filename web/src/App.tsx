@@ -6,6 +6,7 @@ import { GraphPane } from "./components/GraphPane";
 import { HistorySidebar } from "./components/HistorySidebar";
 import { QuickSwitcher } from "./components/QuickSwitcher";
 import { TopBar } from "./components/TopBar";
+import { HISTORY } from "./messages";
 import { isMulti } from "./routing";
 import { applyTheme, loadTheme } from "./theme";
 import type { Book, SubgraphData, World } from "./types";
@@ -111,6 +112,13 @@ function ReadingApp() {
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey}
         worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)} onPositionChange={positionChanged}
         historyOpen={drawerOpen} onToggleHistory={toggleHistory} />
+      {ask.importable > 0 && (
+        <div className="import-offer" role="status">
+          <span>{HISTORY.importOffer(ask.importable)}</span>
+          <button className="tbtn primary" type="button" onClick={() => void ask.importLocal()}>{HISTORY.importYes}</button>
+          <button className="tbtn" type="button" onClick={ask.declineImport}>{HISTORY.importNo}</button>
+        </div>
+      )}
       <div className="panes">
         {drawerOpen && (
           <HistorySidebar items={ask.history} current={ask.current} world={world} worlds={worlds ?? []} onReplay={replay} onDelete={ask.remove}

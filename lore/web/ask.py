@@ -29,12 +29,36 @@ def sse(event: str, data: dict) -> bytes:
 
 async def ask_events(config, question: str, lock: asyncio.Lock,
                      search=None, world=None, depth=None,
-                     spoilers=False) -> AsyncIterator[bytes]:
+                     spoilers=False, on_finish=None) -> AsyncIterator[bytes]:
+    """`on_finish(result, error, events)`, when given, runs once the question
+    has ended, before the final event is sent: `result` is the answer (None
+    when it failed), `error` the error dict (None on success; code
+    `cancelled` when the client went away), `events` every event sent, each
+    with its `type`. What it returns is merged into the final event (the
+    chat the answer was saved to). It must not raise into the stream: a
+    failure there is logged and the answer is still sent."""
     search = search or tools.lore_search
     started = time.monotonic()
+    sent: list[dict] = []
+    finished = False
 
     def stamp(payload: dict) -> dict:
         return {"t": round(time.monotonic() - started, 2), **payload}
+
+    def emit(kind: str, payload: dict) -> bytes:
+        sent.append({"type": kind, **payload})
+        return sse(kind, payload)
+
+    def finish(result, error) -> dict:
+        nonlocal finished
+        finished = True
+        if on_finish is None:
+            return {}
+        try:
+            return on_finish(result, error, list(sent)) or {}
+        except Exception:  # noqa: BLE001 -- saving must never cost the answer
+            log.exception("saving the finished question failed")
+            return {}
 
     if lock.locked():
         yield sse("error", stamp({"error": BUSY}))
@@ -57,27 +81,32 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
                                              return_when=asyncio.FIRST_COMPLETED)
                 if getter in done:
                     event = getter.result()
-                    yield sse(event.pop("type"), stamp(event))
+                    yield emit(event.pop("type"), stamp(event))
                     continue
                 getter.cancel()
                 break
             while not queue.empty():
                 event = queue.get_nowait()
-                yield sse(event.pop("type"), stamp(event))
+                yield emit(event.pop("type"), stamp(event))
             try:
                 result = task.result()
             except Exception:
                 log.exception("lore_search failed")
-                yield sse("error", stamp({"error": {
-                    "code": "internal",
-                    "message": "LORE hit an unexpected error while answering."
-                              " The server log has the details."}}))
+                error = {"code": "internal",
+                         "message": "LORE hit an unexpected error while answering."
+                                    " The server log has the details."}
+                finish(None, error)
+                yield emit("error", stamp({"error": error}))
                 return
             if isinstance(result, dict) and "error" in result:
-                yield sse("error", stamp({"error": result["error"]}))
+                finish(None, result["error"])
+                yield emit("error", stamp({"error": result["error"]}))
             else:
-                yield sse("answer", stamp({"result": result}))
+                extra = finish(result, None)
+                yield emit("answer", stamp({"result": result, **extra}))
         finally:
+            if not finished:  # the client went away mid-answer
+                finish(None, {"code": "cancelled", "message": "the client went away"})
             if getter is not None and not getter.done():
                 getter.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

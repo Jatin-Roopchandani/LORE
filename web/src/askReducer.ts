@@ -30,6 +30,8 @@ export interface AskState {
   liveClaims: Claim[]; livePassages: Passage[];
   // A deep answer's short answer: sent before its sections when interpretive, after them otherwise.
   shortAnswer: ProseSentence[] | null;
+  // The question's request id (its first event): what "Report this answer" quotes.
+  requestId: string | null;
 }
 
 export function initialState(question = ""): AskState {
@@ -37,7 +39,7 @@ export function initialState(question = ""): AskState {
     status: question ? "running" : "idle", question,
     steps: STEP_ORDER.map((name) => ({ name, state: "pending", detail: null, startedAt: null, doneAt: null })),
     subQuestions: [], seeds: [], edges: [], evidence: null, result: null, error: null, elapsed: 0,
-    lensOf: [], planQuestions: [], deepSteps: [], plan: null, sections: [], liveClaims: [], livePassages: [], shortAnswer: null,
+    lensOf: [], planQuestions: [], deepSteps: [], plan: null, sections: [], liveClaims: [], livePassages: [], shortAnswer: null, requestId: null,
   };
 }
 
@@ -156,6 +158,8 @@ export function askReducer(state: AskState, event: AskEvent): AskState {
           : step.state === "pending" ? { ...step, state: "skipped" } : step),
         deepSteps: s.deepSteps.map((d) => d.state === "running" ? { ...d, state: "done", doneAt: event.t } : d),
       };
+    case "request":
+      return { ...s, requestId: event.request_id };
     case "error":
       return {
         ...s, status: event.error.code === "interrupted" ? "interrupted" : "error", error: event.error,

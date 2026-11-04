@@ -400,3 +400,5 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .pos-read legend{font:600 11px var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0 4px}
 .pos-read label{display:flex;gap:8px;align-items:center;font-size:13px}
 .position-note{font-size:12px;color:var(--muted);margin:0;border-left:3px solid var(--accent);padding:2px 10px}
+/* The one-time offer to import the chats saved in this browser (release step 4). */
+.import-offer{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--sunk);font-size:13px}

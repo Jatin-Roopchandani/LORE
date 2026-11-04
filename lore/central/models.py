@@ -284,3 +284,61 @@ class Usage(Base):
     requests: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
 
     __table_args__ = (sa.Index("ix_usage_day", "day"),)
+
+
+class Chat(Base):
+    """One conversation in a user's history (release step 4). The web UI shows
+    one per question today; `/api/ask` with a `chat_id` appends to one.
+
+    `client_id` is the browser's own id for a chat imported from its
+    localStorage: unique per user, so an import sent twice makes one chat.
+    `deleted_at` marks a soft delete: the chat is gone for the user, its
+    traces are deleted at once, and the row itself is purged first when the
+    user reaches MAX_CHATS.
+    """
+
+    __tablename__ = "chats"
+
+    id: Mapped[str] = mapped_column(sa.String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    client_id: Mapped[str | None] = mapped_column(sa.String(64))
+    world: Mapped[str | None] = mapped_column(sa.String(200))
+    title: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "client_id", name="uq_chats_user_client"),
+        sa.Index("ix_chats_user_updated", "user_id", "updated_at"),
+    )
+
+
+class Message(Base):
+    """One question and the answer the UI rendered for it.
+
+    `answer_json` is the final answer payload ({"result": SearchResult,
+    "steps": [stream events]}), so a chat reopens exactly with no model call;
+    past 1 MB it is a marker ({"truncated": true, "bytes": n}) instead.
+    `role` is `assistant` (one row per question and its answer).
+    """
+
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    chat_id: Mapped[str] = mapped_column(
+        sa.String(36), sa.ForeignKey("chats.id", ondelete="CASCADE"), nullable=False)
+    role: Mapped[str] = mapped_column(sa.String(16), nullable=False,
+                                      default="assistant")
+    question: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    answer_json: Mapped[dict | None] = mapped_column(sa.JSON)
+    depth: Mapped[str | None] = mapped_column(sa.String(16))
+    world: Mapped[str | None] = mapped_column(sa.String(200))
+    request_id: Mapped[str | None] = mapped_column(sa.String(36))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+
+    __table_args__ = (sa.Index("ix_messages_chat", "chat_id", "id"),)

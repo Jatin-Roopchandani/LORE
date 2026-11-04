@@ -6,6 +6,10 @@ import { HISTORY, QUICK, UI } from "./messages";
 const overview = vi.fn((_w?: string) => Promise.resolve({ nodes: [{ id: "h", name: "Holmes", kind: "Character", books: [] }], edges: [], truncated: false, depth: 0 }));
 vi.mock("./components/GraphCanvas", () => ({ GraphCanvas: () => <div data-testid="graph" /> }));
 const worlds = [{ id: 1, name: "Alpha Saga", books: [] }, { id: 2, name: "Beta Realm", books: [] }];
+// The server's history is unreachable here: these tests exercise the browser cache (history.server.test.tsx covers the server).
+vi.mock("./chatsApi", async (importOriginal) => ({ ...(await importOriginal<typeof import("./chatsApi")>()),
+  chatsApi: { list: () => Promise.resolve({ error: { code: "unreachable", message: "" } }), get: vi.fn(), create: vi.fn(), rename: vi.fn(),
+    remove: () => Promise.resolve({ deleted: true }) } }));
 vi.mock("./api", () => ({
   api: {
     settings: () => Promise.resolve({ show_internals: true }), library: () => Promise.resolve({ books: [], note: null }), worlds: () => Promise.resolve(worlds),
