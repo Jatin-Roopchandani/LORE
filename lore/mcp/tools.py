@@ -1110,6 +1110,8 @@ async def lore_search(config: LoreConfig, query: str,
             out = to_search_result(answer, titles).model_dump()
             if out.get("position_note") is None:
                 del out["position_note"]  # present only when a position limited it
+            if out.get("coverage") is None:
+                del out["coverage"]  # present only on an answer with prose (write.answer_coverage)
             return out
         except GeminiError as exc:
             return _upstream(exc)
