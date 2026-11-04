@@ -1523,10 +1523,19 @@ def worker_command(
     job requeued once its heartbeat goes stale. Needs `lore migrate` first.
     """
     from lore.central.db import database_url, make_engine, make_session_factory
+    from lore.central.keys import KeyConfigError, KeyService, MasterKeys
     from lore.worker import Worker
 
     config = LoreConfig.load()
-    worker = Worker(config, make_session_factory(make_engine(database_url(config))))
+    try:  # each job runs with its user's own Gemini key, decrypted with this
+        master = MasterKeys.from_env()
+    except KeyConfigError as exc:
+        typer.echo(f"lore worker: {exc}", err=True)
+        raise typer.Exit(2)
+    from lore.auth.redact import install_key_redaction
+    install_key_redaction()  # no API key in any log line, as in the web app
+    sessions = make_session_factory(make_engine(database_url(config)))
+    worker = Worker(config, sessions, keys=KeyService(sessions, master))
     typer.echo(f"lore worker {worker.worker_id}: waiting for jobs", err=True)
     if once:
         worker.run_once()

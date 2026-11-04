@@ -6,6 +6,14 @@ workers), runs each with the existing `run_book` pipeline against that user's
 own library (`config_for(base, user)`), and reports progress where it always
 has: the user's `book_jobs` row. The central row only says who holds the job
 and whether the holder is alive.
+
+Keys (release step 3): each job runs with ITS user's own Gemini key, decrypted
+from the central database and bound for the job (lore.inference.key_scope),
+so every model client the stages build uses that key and that user's budget
+(the ledger in their lore.db, and the central `usage` count). The server's key
+file is never used. A user with no key, or a key Gemini refuses mid-job,
+pauses that user's jobs (central `paused`, book row `waiting_key`) instead of
+failing them; saving a working key queues them again.
 """
 from __future__ import annotations
 
@@ -16,6 +24,7 @@ import threading
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, NamedTuple
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -23,11 +32,17 @@ from lore.central import queue
 from lore.central.models import KIND_MOVE, Job
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
+from lore.inference import key_scope
+from lore.inference.key_scope import KeyRequired, KeyScope
 from lore.orchestrator import jobs, runner
 from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.move import prepare_move
+from lore.orchestrator.pipeline import KeyStop
 from lore.tenancy import config_for
 from lore.worlds import get_world
+
+if TYPE_CHECKING:
+    from lore.central.keys import KeyService
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +54,58 @@ POLL_EVERY = 2.0
 # runner, the allowance not yet reset, nothing to move).
 SKIPPED = "skipped"
 
+# Paused outcomes (the central job waits in `paused`, not failed).
+KEY_REQUIRED = "key_required"   # the user has not saved a key
+KEY_INVALID = "key_invalid"     # Gemini refused it (or it no longer decrypts)
+NO_KEY_REASON = ("Paused: add your Gemini API key in Account settings, then"
+                 " this book continues.")
+REJECTED_REASON = ("Paused: Gemini refused your API key. Replace it in Account"
+                   " settings, then this book continues.")
+
+
+class Outcome(NamedTuple):
+    outcome: str
+    failed: bool = False
+    error: str | None = None
+    paused: bool = False
+
+
+class KeyGuard:
+    """Wraps a stage: a missing or refused user key stops the run as KeyStop
+    (the job pauses), however the stage reported the failure."""
+
+    def __init__(self, stage, scope: KeyScope) -> None:
+        self._stage, self._scope = stage, scope
+        self.name = stage.name
+
+    def __getattr__(self, name):  # report, skipped, ... of the wrapped stage
+        return getattr(self._stage, name)
+
+    def total(self, ctx) -> int:
+        return self._stage.total(ctx)
+
+    def run(self, ctx, job_ctl) -> None:
+        try:
+            self._stage.run(ctx, job_ctl)
+        except KeyStop:
+            raise
+        except Exception as exc:
+            if self._scope.rejected:
+                raise KeyStop(REJECTED_REASON) from exc
+            if _caused_by(exc, KeyRequired):
+                raise KeyStop(NO_KEY_REASON) from exc
+            raise
+
+
+def _caused_by(exc: BaseException, kind: type) -> bool:
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, kind):
+            return True
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return False
+
 
 def default_worker_id() -> str:
     return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
@@ -46,9 +113,12 @@ def default_worker_id() -> str:
 
 class Worker:
     """One worker. `make_stages`, `make_move_stages` and `clock` are the test
-    seams the web app has too."""
+    seams the web app has too. `keys` decrypts each job's user key (`lore
+    worker` always passes one); without it every job runs with an empty key
+    scope, so a stage that needs Gemini pauses rather than use any other key."""
 
     def __init__(self, base: LoreConfig, sessions: sessionmaker[Session], *,
+                 keys: "KeyService | None" = None,
                  worker_id: str | None = None,
                  make_stages: Callable[[LoreConfig], list] = runner.default_stages,
                  make_move_stages: Callable[[LoreConfig, int], list] = runner.move_stages,
@@ -57,6 +127,7 @@ class Worker:
                  heartbeat_every: float = HEARTBEAT_EVERY) -> None:
         self.base = base
         self.sessions = sessions
+        self.keys = keys
         self.worker_id = worker_id or default_worker_id()
         self._make_stages = make_stages
         self._make_move_stages = make_move_stages
@@ -98,17 +169,33 @@ class Worker:
                                 name="lore-worker-heartbeat", daemon=True)
         beat.start()
         try:
-            outcome, failed, error = self._execute(job)
+            result = self._execute(job)
         except Exception as exc:  # noqa: BLE001 - recorded on the central row
             log.exception("job %s failed", job.id)
-            outcome, failed, error = "failed", True, f"{type(exc).__name__}: {exc}"
+            result = Outcome("failed", True, f"{type(exc).__name__}: {exc}")
         finally:
             stop.set()
             beat.join()
+        if result.paused:
+            self._pause(job, result)
+            return
         with self.sessions() as session:
-            if not queue.finish(session, job.id, self.worker_id, outcome=outcome,
-                                failed=failed, error=error, now=self._clock()):
+            if not queue.finish(session, job.id, self.worker_id,
+                                outcome=result.outcome, failed=result.failed,
+                                error=result.error, now=self._clock()):
                 log.warning("job %s: claim was lost before it finished", job.id)
+
+    def _pause(self, job: Job, result: Outcome) -> None:
+        """Park this job and the user's queued ones; a refused key is marked."""
+        with self.sessions() as session:
+            if not queue.pause(session, job.id, self.worker_id,
+                               outcome=result.outcome, error=result.error):
+                log.warning("job %s: claim was lost before it paused", job.id)
+        if result.outcome == KEY_INVALID and self.keys is not None:
+            self.keys.mark_rejected(job.user_id)  # also pauses the queued ones
+        else:
+            with self.sessions() as session:
+                queue.pause_user(session, job.user_id)
 
     def _beat(self, job_id: int, stop: threading.Event) -> None:
         while not stop.wait(self._heartbeat_every):
@@ -119,44 +206,73 @@ class Worker:
             except Exception:  # noqa: BLE001 - the next beat tries again
                 log.exception("heartbeat failed")
 
-    def _execute(self, job: Job) -> tuple[str, bool, str | None]:
+    def _scope(self, user_id: str) -> KeyScope | Outcome:
+        """This user's key, bound for the job; or the pause when there is none."""
+        if self.keys is None:
+            return KeyScope(user_id, None)
+        from lore.central.keys import KeyDecryptError
+        try:
+            key = self.keys.key_for(user_id)
+        except KeyRequired:
+            return Outcome(KEY_REQUIRED, error=NO_KEY_REASON, paused=True)
+        except KeyDecryptError:
+            log.warning("a stored key did not decrypt (user %s)", user_id)
+            return Outcome(KEY_INVALID, error=REJECTED_REASON, paused=True)
+        keys = self.keys
+        return KeyScope(user_id, key,
+                        on_request=lambda model: keys.record_request(user_id, model))
+
+    def _execute(self, job: Job) -> Outcome:
         """Prepare the user's `book_jobs` row, run the stages. Returns the
-        central outcome, whether it failed, and the reason."""
+        central outcome, whether it failed or paused, and the reason."""
         config = config_for(self.base, job.user_id)  # validates the id
+        scope = self._scope(job.user_id)
+        if isinstance(scope, Outcome):
+            return scope  # nothing touched: the book row is as it was
         now = self._clock()
         conn = open_db(config.sqlite_path)
         try:
             jobs.recover_stale(conn, now)  # a crashed worker's row resumes
             if conn.execute("SELECT 1 FROM books WHERE id = ?",
                             (job.book_id,)).fetchone() is None:
-                return "failed", True, f"no book with id {job.book_id!r}"
+                return Outcome("failed", True, f"no book with id {job.book_id!r}")
             move_world: int | None = None
             try:
                 if job.kind == KIND_MOVE:
                     move_world = (job.payload or {}).get("world")
                     if move_world is None or get_world(conn, move_world) is None:
-                        return "failed", True, f"no world {move_world!r}"
+                        return Outcome("failed", True, f"no world {move_world!r}")
                     if not prepare_move(conn, job.book_id, move_world, now=now):
-                        return SKIPPED, False, "nothing to move"
+                        return Outcome(SKIPPED, error="nothing to move")
                 else:
                     ok, why = jobs.can_continue(jobs.get_job(conn, job.book_id), now)
                     if not ok:
-                        return SKIPPED, False, why
+                        return Outcome(SKIPPED, error=why)
                     # An unfinished move continues as a move (see the web app).
                     move_world = jobs.move_target(conn, job.book_id)
                     if move_world is not None and get_world(conn, move_world) is None:
                         move_world = None
                     jobs.claim_job(conn, job.book_id, now=now)
             except JobRefused as exc:
-                return SKIPPED, False, str(exc)
+                return Outcome(SKIPPED, error=str(exc))
         finally:
             conn.close()
-        result = runner.run_claimed(config, job.book_id, move_world, self._clock,
-                                    make_stages=self._make_stages,
-                                    make_move_stages=self._make_move_stages)
+
+        def guarded(stages: list) -> list:
+            return [KeyGuard(stage, scope) for stage in stages]
+
+        with key_scope.bound(scope):  # every client in the stages: this user's key
+            result = runner.run_claimed(
+                config, job.book_id, move_world, self._clock,
+                make_stages=lambda cfg: guarded(self._make_stages(cfg)),
+                make_move_stages=lambda cfg, world: guarded(
+                    self._make_move_stages(cfg, world)))
         if result is None:
-            return SKIPPED, False, "another runner holds this book"
+            return Outcome(SKIPPED, error="another runner holds this book")
+        if result.state == jobs.WAITING_KEY:
+            outcome = KEY_INVALID if scope.rejected else KEY_REQUIRED
+            return Outcome(outcome, error=result.stopped_reason, paused=True)
         if result.state == jobs.FAILED:
-            return "failed", True, result.stopped_reason
+            return Outcome("failed", True, result.stopped_reason)
         # done, or waiting_quota (the user continues after the reset)
-        return result.state, False, result.stopped_reason
+        return Outcome(result.state, error=result.stopped_reason)

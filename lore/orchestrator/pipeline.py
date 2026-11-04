@@ -36,6 +36,15 @@ class QuotaStop(Exception):
     """
 
 
+class KeyStop(Exception):
+    """The user's Gemini key is missing or Gemini refused it (multi mode).
+
+    Raised by the worker's stage guard (lore.worker); the runner parks the
+    job as waiting_key, resumable once a working key is saved. Local mode
+    never raises it.
+    """
+
+
 JobRefused = jobs.JobRefused  # run_book will not start (see jobs.py)
 
 
@@ -192,6 +201,9 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
         try:
             with keep_alive(conn, book_id, clock, keepalive_interval):
                 stage.run(ctx, ctl)
+        except KeyStop as stop:
+            jobs.stop_key(conn, book_id, str(stop), now=clock())
+            return jobs.get_job(conn, book_id)
         except QuotaStop as stop:
             cur = jobs.get_job(conn, book_id)
             jobs.stop_quota(

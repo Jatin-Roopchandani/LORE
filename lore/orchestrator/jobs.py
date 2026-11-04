@@ -22,6 +22,9 @@ class JobRefused(Exception):
 
 RUNNING = "running"
 WAITING_QUOTA = "waiting_quota"
+# Multi mode: the user's Gemini key is missing or was refused. Paused, not
+# failed: Continue resumes it (no reset to wait for) once a key works.
+WAITING_KEY = "waiting_key"
 FAILED = "failed"
 DONE = "done"
 IDLE = "idle"
@@ -31,7 +34,7 @@ IDLE = "idle"
 class BookJob:
     book_id: str
     stage: str
-    state: str  # running, waiting_quota, failed, done or idle
+    state: str  # running, waiting_quota, waiting_key, failed, done or idle
     done_items: int
     total_items: int
     stopped_reason: str | None
@@ -214,6 +217,14 @@ def stop_quota(conn: sqlite3.Connection, book_id: str, reason: str, *,
            "UPDATE book_jobs SET state = 'waiting_quota', stopped_reason = ?,"
            " resumable_at = ?, updated_at = ? WHERE book_id = ?",
            (reason, _iso(next_reset_utc(moment)), _iso(moment), book_id))
+
+
+def stop_key(conn: sqlite3.Connection, book_id: str, reason: str, *,
+             now: datetime | None = None) -> None:
+    _write(conn, book_id,
+           "UPDATE book_jobs SET state = 'waiting_key', stopped_reason = ?,"
+           " resumable_at = NULL, updated_at = ? WHERE book_id = ?",
+           (reason, _iso(_aware(now)), book_id))
 
 
 def fail(conn: sqlite3.Connection, book_id: str, reason: str, *,
