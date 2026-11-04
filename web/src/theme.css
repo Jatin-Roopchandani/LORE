@@ -413,7 +413,8 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .pos-read label{display:flex;gap:8px;align-items:center;font-size:13px}
 .position-note{font-size:12px;color:var(--muted);margin:0;border-left:3px solid var(--accent);padding:2px 10px}
 /* The one-time offer to import the chats saved in this browser (release step 4). */
-.import-offer{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--sunk);font-size:13px}
+/* A floating notice: it must take no row of the .app grid (top bar, panes), or the panes collapse. */
+.import-offer{position:fixed;right:24px;bottom:24px;z-index:35;max-width:min(460px,calc(100vw - 32px));display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:0 10px 30px rgb(0 0 0 / .18);font-size:13px}
 /* "Report this answer" (release step 4) and the admin's trace view. */
 .report{margin-top:6px}
 .report-link{background:none;border:0;padding:0;color:var(--muted);font-size:12px;text-decoration:underline;cursor:pointer}

@@ -55,3 +55,9 @@ test("generated css has a block per theme and the OS-dark default for system", (
   expect(out).toMatch(/@media \(prefers-color-scheme: dark\)\{:root:not\(\[data-theme\]\)\{--bg:#0E141A/);
   expect(out).toContain("color-scheme:dark");
 });
+
+test("the import offer floats: it takes no row of the .app grid (top bar, panes), or the panes collapse", () => {
+  const rule = css.match(/\.import-offer\{([^}]*)\}/)![1];
+  expect(rule).toMatch(/position:fixed/);
+  expect(css.match(/\.app\{[^}]*grid-template-rows:auto 1fr/)).not.toBeNull();
+});
