@@ -76,7 +76,7 @@ async def test_the_parts_event_carries_kinds_lenses_and_the_planned_depth(config
     assert event["kinds"] == ["factual", "interpretive"]
     assert event["lenses"] == [[], ["What did Zed Quill do?", "Why did Zed Quill do it?"]]
     assert event["depth"] == "deep"
-    assert calls["decompose"][0][1] is Decomposition
+    assert issubclass(calls["decompose"][0][1], Decomposition)
 
 
 @pytest.mark.parametrize("asked, expected", [
@@ -111,6 +111,7 @@ async def test_with_both_switches_off_the_event_and_schema_are_as_before(
         config, monkeypatch) -> None:
     monkeypatch.setattr(decompose_module, "INTERPRETIVE", False)
     monkeypatch.setattr(decompose_module, "DEEP", False)
+    monkeypatch.setattr(decompose_module, "RECAP", False)
     event, calls = await parts_event(config, SubQuestions(sub_questions=["Who is Zed Quill?"]),
                                      depth="deep")
     assert set(event) == {"type", "sub_questions"}

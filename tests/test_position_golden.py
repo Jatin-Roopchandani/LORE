@@ -38,7 +38,9 @@ async def capture(config) -> dict:
     return out
 
 
-async def test_with_the_position_off_outputs_are_golden(tmp_path) -> None:
+async def test_with_the_position_off_outputs_are_golden(tmp_path, monkeypatch) -> None:
+    # The golden predates recap answers, whose rule the decomposer prompt carries.
+    monkeypatch.setattr("lore.query.decompose.RECAP", False)
     config = build_position_library(tmp_path)
     got = json.loads(json.dumps(await capture(config), sort_keys=True))
     assert got == json.loads(GOLDEN.read_text())

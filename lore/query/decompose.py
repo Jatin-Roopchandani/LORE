@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Sequence
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from lore.inference.base import ProviderOutputError
 from lore.inference.gemini import GeminiOutputError
@@ -35,10 +35,17 @@ MAX_LENSES = 4
 # prompt and the schema are byte for byte what they were before.
 INTERPRETIVE = True
 DEEP = True
+# RECAP (2026-11-04): the question may ask for a recap -- what happens over a
+# stretch of the story, told in order -- and says which stretch (`Recap`). A
+# recap names no character, so seed-entity retrieval cannot cover it; the
+# agent answers it from the stretch's story beats (lore/query/recap.py). Off,
+# the prompt and the schema are byte for byte what they were before.
+RECAP = True
 
 KINDS = ("factual", "interpretive", "beyond")
 STANCES = ("verdict", "analysis")
 DEPTHS = ("focused", "deep")
+SPANS = ("story", "book", "chapters", "since")
 
 # THEMATIC_PARTS (2026-10-28): asked about a role or theme rather than a
 # named person, the parts found only the most prominent character -- the
@@ -123,6 +130,25 @@ Also return "depth", either "deep" or "focused", for the question as a whole.
   choice or reason.
 When unsure, use "focused".
 """
+# One general rule: what a recap is, by what the question asks for, never by
+# its wording; and the four stretches a recap can name.
+_RECAP_RULE = """
+Also return "recap": whether the question asks for a recap, that is, an account
+of what happens over a stretch of the story, told in order (to summarise,
+retell, recap or catch up on the plot), rather than about a particular person,
+thing, fact or theme. A recap is one "factual" part. "recap" is an object:
+- "span": the stretch the question asks about.
+  - "story": the whole story, or everything so far, when no narrower stretch
+    is named.
+  - "book": one book; put its title, or its number in the series, in "book".
+  - "chapters": a range of chapters; put the first and the last chapter numbers
+    in "from_chapter" and "to_chapter" (the same number for one chapter), and
+    the book in "book" when the question names one.
+  - "since": from an event in the story onward; describe that event in a few
+    words, taken from the question, in "since".
+  - "none": the question is not a recap.
+When unsure, use "none".
+"""
 
 
 class SubQuestions(BaseModel):
@@ -190,6 +216,54 @@ class Decomposition(BaseModel):
         return _text(value)
 
 
+def _chapter(value: Any) -> int | None:
+    """A chapter number from a number or numeric text; None for anything else."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) if value >= 0 else None
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+class RecapSpec(BaseModel):
+    """The stretch a recap asks about, as the model returns it; read tolerantly."""
+
+    span: str = "none"
+    book: str = ""
+    from_chapter: int | None = None
+    to_chapter: int | None = None
+    since: str = ""
+
+    @field_validator("span", "book", "since", mode="before")
+    @classmethod
+    def _as_text(cls, value: Any) -> str:
+        # A book given as its series number may come back as a number.
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return f"{value:g}"
+        return _text(value)
+
+    @field_validator("from_chapter", "to_chapter", mode="before")
+    @classmethod
+    def _as_chapter(cls, value: Any) -> int | None:
+        return _chapter(value)
+
+
+class RecapDecomposition(Decomposition):
+    """The schema with RECAP on: Decomposition plus the recap. Shown to the
+    model under the same name."""
+
+    model_config = ConfigDict(title="Decomposition")
+
+    recap: RecapSpec | None = None
+
+    @field_validator("recap", mode="before")
+    @classmethod
+    def _recap_object(cls, value: Any) -> Any:
+        return value if isinstance(value, (dict, RecapSpec)) else None
+
+
 @dataclass(frozen=True)
 class Part:
     """A part of the question: its text, how it is answered, and (for an
@@ -208,9 +282,25 @@ class Part:
 
 
 @dataclass(frozen=True)
+class Recap:
+    """The stretch of the story a recap question asks about. `span` is one of
+    SPANS; `book` is the book's title or series number as asked ("" when none
+    is named); `first`/`last` are chapter numbers (span "chapters"); `since`
+    describes the event the stretch starts from (span "since")."""
+
+    span: str = "story"
+    book: str = ""
+    first: int | None = None
+    last: int | None = None
+    since: str = ""
+
+
+@dataclass(frozen=True)
 class Plan:
     parts: tuple[Part, ...]
     depth: str = "focused"
+    # Set when the question asks for a recap (RECAP); None otherwise.
+    recap: Recap | None = None
 
     @property
     def questions(self) -> list[str]:
@@ -218,6 +308,8 @@ class Plan:
 
 
 def active_schema() -> type[BaseModel]:
+    if RECAP:
+        return RecapDecomposition
     return Decomposition if INTERPRETIVE or DEEP else SubQuestions
 
 
@@ -227,13 +319,42 @@ def decomposition_prompt(question: str, book_titles: Sequence[str] = ()) -> str:
     books = ("\nBooks in the library (a reference for names only): "
              + "; ".join(book_titles) + "\n" if book_titles else "")
     extras = ((_ITEM_RULE + (_KIND_RULE if INTERPRETIVE else "")
-               + (_DEPTH_RULE if DEEP else "")) if INTERPRETIVE or DEEP else "")
+               + (_DEPTH_RULE if DEEP else "")) if INTERPRETIVE or DEEP or RECAP else "")
+    if RECAP:
+        extras += _RECAP_RULE
     return _PROMPT.format(question=question, books=books, extras=extras,
                           thematic=_THEMATIC_RULE if THEMATIC_PARTS else "")
 
 
 def _clean(text: Any) -> str:
     return " ".join(str(text).split())
+
+
+def _recap(spec: RecapSpec | None) -> Recap | None:
+    """The recap the model gave, or None when it gave none or "none". A span
+    that cannot be used as asked becomes the nearest usable one: chapters
+    without a number recap the book (or the story), "since" without an event
+    recaps the story."""
+    if spec is None:
+        return None
+    span = _clean(spec.span).lower()
+    if span not in SPANS:
+        return None
+    book, since = _clean(spec.book), _clean(spec.since)
+    first, last = spec.from_chapter, spec.to_chapter
+    if span == "chapters":
+        if first is None and last is None:
+            span = "book" if book else "story"
+        else:
+            first, last = first if first is not None else last, last if last is not None else first
+            first, last = min(first, last), max(first, last)
+    if span == "book" and not book:
+        span = "story"
+    if span == "since" and not since:
+        span = "story"
+    return Recap(span, book if span in ("book", "chapters") else "",
+                 first if span == "chapters" else None, last if span == "chapters" else None,
+                 since if span == "since" else "")
 
 
 def _part(spec: PartSpec) -> Part | None:
@@ -274,6 +395,7 @@ async def plan(
                                 active_schema())
     except (ProviderOutputError, GeminiOutputError, ValidationError):
         return None
+    recap = _recap(getattr(result, "recap", None)) if RECAP else None
     if isinstance(result, Decomposition):
         specs = result.sub_questions
         depth = _clean(result.depth).lower() if DEEP else "focused"
@@ -289,7 +411,7 @@ async def plan(
             parts.append(part)
     if not parts:
         return None
-    return Plan(tuple(parts[:MAX_SUB_QUESTIONS]), depth if depth in DEPTHS else "focused")
+    return Plan(tuple(parts[:MAX_SUB_QUESTIONS]), depth if depth in DEPTHS else "focused", recap)
 
 
 def resolve_depth(requested: str | None, planned: str) -> str:
