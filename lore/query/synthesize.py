@@ -953,8 +953,10 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
 
     `length` ("section", "short", "lens" or "recap"): the writer sizes the prose for a deep
     answer's section or its short answer (write.py) instead of the default cap."""
-    try_prose = (write_module.PROSE_ANSWERS and write is not None and check is not None
-                 and len(kept) >= 2)
+    needs_writer = (write_module.PROSE_FACTUAL or length is not None
+                    or (shape is not None and (shape.interpretive or bool(shape.beyond))))
+    try_prose = (write_module.PROSE_ANSWERS and needs_writer and write is not None
+                 and check is not None and len(kept) >= 2)
     sentences, written, prose_note, missing, gaps = None, 0, None, [], []
     if try_prose:
         drafted = await write_answer(question, sub_questions, kept, evidence.passages, write,

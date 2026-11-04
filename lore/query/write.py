@@ -24,6 +24,13 @@ Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
 # On by default (spec 2026-10-12). Off gives today's claim-list answers,
 # byte-identical prompts and calls.
 PROSE_ANSWERS = True
+# PROSE_FACTUAL (2026-11-04): whether a plain factual answer is written as prose.
+# Rounds 6 and 7 (blind, pre-registered bar) found the writer drops facts and
+# lets readings into factual sentences on ordinary factual questions, with no
+# readability gain, so off: those answers show their checked claims. Answers
+# that need the writer keep it: interpretive or beyond parts, deep sections,
+# lens and recap sections, and their short answers (each has its own eval).
+PROSE_FACTUAL = False
 
 # STORY_ORDER (2026-10-28): answers read as a narrative. The writer is shown
 # the facts in story order with their positions, may use order words the

@@ -1437,3 +1437,27 @@ def test_prompt_rules_name_no_character_book_or_genre() -> None:
              r"morstan|lestrade|baker street|mormon|agra|crime|crimes|murder|villain|villains|" \
              r"detective|treasure|darcy|bennet|wizard|dragon|magic|kingdom|elf|elves|quest|sword)\b"
     assert not re.findall(banned, text.lower())
+
+
+# PROSE_FACTUAL off (the shipped default since round 7): a plain factual answer
+# shows its checked claims and never calls the writer; answers that need the
+# writer (an interpretive shape, or a sized section: deep, lens, recap) keep it.
+@pytest.mark.factual_default
+async def test_a_factual_answer_shows_claims_by_default():
+    gen, _ = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])]))
+    a = await synthesize("Habits?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "claims" and wcalls == [] and len(a.claims) == 2
+
+
+@pytest.mark.factual_default
+@pytest.mark.parametrize("length", ["section", "lens", "recap", "short"])
+async def test_a_sized_section_keeps_the_writer_by_default(length):
+    from lore.query.synthesize import _finish, verify_claims
+    gen, _ = _gen(_TWO)
+    result = await gen("", None)
+    kept, _ = verify_claims(result, _EV.passages)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])]))
+    await _finish("Habits?", ["Habits?"], list(kept), _EV, _check(["supported"] * 2, ["supported"]), write, None,
+                  length=length)
+    assert len(wcalls) == 1
