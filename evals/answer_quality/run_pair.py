@@ -130,6 +130,9 @@ async def ask(config, question: str, overrides, trace: list | None):
     # The `deep` arm asks at depth "deep"; any other arm lets the decomposer decide.
     depth = "deep" if overrides.get(("lore.query.decompose", "DEEP")) is True else None
     kw = {"depth": depth} if depth else {}
+    # Evals measure the whole story: a reading position saved in the library
+    # (and moved while a run is going) must not change what an arm can see.
+    kw["spoilers"] = True
     if WORLD is not None:
         kw["world"] = WORLD
     with _Applied(overrides):
