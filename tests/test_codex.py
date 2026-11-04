@@ -680,7 +680,7 @@ def test_identity_is_required_by_the_prompt_and_the_schema() -> None:
     assert set(store.DISPLAY_ORDER) == set(store.ASPECTS)
     prompt = build.render_prompt(MIRA, _evidence([_chunk(BOOK, 1, 0, C0)]))
     assert '"identity" has 1 or 2 items' in prompt and "never none" in prompt
-    assert "EARLIEST passage" in prompt
+    assert "quote the EARLIEST" in prompt
 
 
 def test_identity_statements_go_first_and_are_capped() -> None:
@@ -692,13 +692,20 @@ def test_identity_statements_go_first_and_are_capped() -> None:
     entry = build.verify_entry(raw, MIRA, 1, ev, "h")
     assert [s.aspect for s in entry.statements] == ["identity", "nature", "role"]
     assert entry.statements[0].text == "She is the keeper of the Ledger."
-    # an identity line given among the statements counts too; at most MAX_IDENTITY
+    # an identity line given among the statements counts too; at most MAX_IDENTITY.
+    # The model's identity items come first: being earliest never picks the fact
+    # (spec 2026-11-04), it only orders the lines kept.
     raw = CodexAnswer(summary="s", identity=[
         build.IdentityItem(text="Late.", quote=Q3), build.IdentityItem(text="Mid.", quote=Q2)],
         statements=[_item("identity", Q0, "Early.")])
     entry = build.verify_entry(raw, MIRA, 1, ev, "h")
     assert build.MAX_IDENTITY == 2
-    assert [s.text for s in entry.statements] == ["Early.", "Mid."]  # the earliest two
+    assert [s.text for s in entry.statements] == ["Mid.", "Late."]
+    # with one identity item, a statement filed under identity fills the second slot
+    raw = CodexAnswer(summary="s", identity=[build.IdentityItem(text="Late.", quote=Q3)],
+                      statements=[_item("identity", Q0, "Early.")])
+    entry = build.verify_entry(raw, MIRA, 1, ev, "h")
+    assert [s.text for s in entry.statements] == ["Early.", "Late."]
 
 
 def test_a_quote_found_twice_is_pinned_to_the_earliest_passage() -> None:
@@ -753,3 +760,32 @@ def test_the_prompt_hash_changed_with_identity() -> None:
     # The cached answers and saved entries of the previous prompt go stale.
     assert build.prompt_hash() != "b835b25be00c5af7"  # the hash before identity
     assert "identity" in build.CODEX_PROMPT
+
+
+def test_identity_is_what_the_story_establishes_not_a_first_impression() -> None:
+    """Spec 2026-11-04: a corrected first impression is not identity; earliest
+    only picks the passage among those establishing the same settled fact; two
+    items when the text supports two distinct facts."""
+    prompt = build.render_prompt(MIRA, _evidence([_chunk(BOOK, 1, 0, C0)]))
+    flat = " ".join(prompt.split())
+    assert "what the story ESTABLISHES the subject to be" in flat
+    assert "settled occupation, rank, status or role" in flat
+    assert ("A first impression, a guess, a disguise or a mistaken belief that a later passage"
+            " corrects is not identity") in flat
+    assert "Among the passages that establish the same settled fact, quote the EARLIEST" in flat
+    assert "decides only which passage to quote, never which fact is the identity" in flat
+    assert "Give 2 items when the passages establish two distinct facts" in flat
+    assert "Quote the EARLIEST passage that establishes it" not in flat  # the old rule
+
+
+def test_the_prompt_hash_changed_with_the_settled_identity_rule() -> None:
+    # The rebuild after this change re-asks every entity; the old answers go stale.
+    assert build.prompt_hash() != "d7913555ea303606"  # the hash before this rule
+
+
+def test_a_cached_answer_of_the_previous_prompt_is_stale(tmp_path) -> None:
+    import json
+    path = tmp_path / "e1-h.json"
+    path.write_text(json.dumps({"prompt_hash": "d7913555ea303606", "evidence_hash": "h",
+                                "answer": {"summary": "s", "identity": [], "statements": []}}))
+    assert build.read_cached(path, "h") is None

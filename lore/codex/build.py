@@ -12,9 +12,12 @@ matter) and numbered passages: the earliest chunks that mention the entity in
 each book, the chunks of those beats and the world's chunks that name the
 entity most, in story order. Only passages within the entity's world are used.
 
-Every entry is asked for 1 or 2 identity lines (who or what the entity is),
-quoted from the earliest passage that establishes it, so the line is visible
-from early reading positions. The number of other statements asked for, and
+Every entry is asked for 1 or 2 identity lines: who or what the story
+establishes the entity to be (its settled occupation, status or role, and its
+place among the main figures), never a first impression or a mistaken belief
+the text later corrects. Among passages that establish the same settled fact
+the earliest is quoted, so the line is visible from early reading positions;
+earliest decides only which passage, never which fact (spec 2026-11-04). The number of other statements asked for, and
 the passages shown, scale with how central the entity is (`statement_cap`).
 
 Nothing here names a book, a person or a genre. The entity, its books and the
@@ -78,7 +81,8 @@ Passages, in story order:
 
 Rules:
 - "summary" is one plain sentence of at most 40 words saying what the subject is and what part it plays in the story.
-- "identity" has 1 or 2 items, never none when any passage shows who or what the subject is. Each says plainly who or what the subject is: for a person, their occupation, rank, status or position and how they stand to the main figures of the story; for anything else, what kind of thing, place or group it is and what it is in the story. Quote the EARLIEST passage that establishes it, so that a reader who has only begun the story can see it.
+- "identity" has 1 or 2 items, never none when any passage shows who or what the subject is. Each says plainly what the story ESTABLISHES the subject to be: for a person, their settled occupation, rank, status or role and how they stand to the main figures of the story; for anything else, what kind of thing, place or group it is and what it is in the story. A first impression, a guess, a disguise or a mistaken belief that a later passage corrects is not identity: give what the story settles, even when an earlier passage says otherwise. Give 2 items when the passages establish two distinct facts, such as a person's occupation and their relation to the central figure; give 1 when they establish one.
+- Among the passages that establish the same settled fact, quote the EARLIEST, so that a reader who has only begun the story can see it. Being earliest decides only which passage to quote, never which fact is the identity.
 - "statements" has up to {cap} items; when the passages establish that much, give close to {cap}. Each is one fact that a passage establishes about the subject, under one "aspect": nature (what it is: its look, kind, qualities, status), history (where it came from and what happened to it), abilities (what it can do, or how it works and what its rules are), relationships (how it stands to people, groups, places or things), role (what it does in the events), change (how it differs later from earlier: say what it was and what it became).
 - Cover every aspect the passages give evidence for, and cover the whole span of the passages, not only their opening. A statement that adds something is better than one that repeats another, or an identity item.
 - When several passages establish the same fact, quote the earliest of them.
@@ -304,8 +308,10 @@ def verify_entry(raw: CodexAnswer, entity: CodexEntity, world_id: int,
     enforces the minimum length), in one passage of the pack, the first that
     holds it (the earliest in story order), which is the chunk it is pinned
     to; a repeat of an earlier statement's aspect and quote is dropped. At
-    most MAX_IDENTITY identity statements are kept, the earliest-pinned, and
-    at most `evidence.cap` others. Statements are ordered by aspect (identity
+    most MAX_IDENTITY identity statements are kept: the model's identity items
+    first, in its order, then any statement it filed under "identity" (the
+    prompt asks for what the story establishes, so being earliest never picks
+    the fact); and at most `evidence.cap` others. Statements are ordered by aspect (identity
     first), then story order, then the model's order. The summary is one line
     of at most MAX_SUMMARY_CHARS characters, or the first kept statement when
     the model gave none.
@@ -342,7 +348,10 @@ def verify_entry(raw: CodexAnswer, entity: CodexEntity, world_id: int,
         seen.add(key)
         chosen.append((ASPECTS.index(item.aspect), pinned[si], si, item))
     chosen.sort(key=lambda t: t[:3])
-    identity = [c for c in chosen if c[3].aspect == "identity"][:MAX_IDENTITY]
+    asked = {id(item) for item in offered[:len(raw.identity)]}  # the identity items
+    identity = sorted(sorted((c for c in chosen if c[3].aspect == "identity"),
+                             key=lambda c: (id(c[3]) not in asked, c[2]))[:MAX_IDENTITY],
+                      key=lambda c: c[:3])
     others = [c for c in chosen if c[3].aspect != "identity"][:max(evidence.cap, 0)]
     statements = tuple(
         Statement(aspect=item.aspect, text=" ".join(item.text.split()),
