@@ -39,7 +39,11 @@ def ingest_book(
         # reference it, or silently orphan them.
         return False
     try:
-        conn.execute("BEGIN")
+        # IMMEDIATE: this transaction reads (the world suggestion) and then
+        # writes. Deferred, under WAL, a write committed meanwhile by another
+        # connection (a book being processed) fails it at once with "database
+        # is locked"; immediate waits for the writer instead.
+        conn.execute("BEGIN IMMEDIATE")
         if world_id is None:
             world_id, name = suggest_world(conn, series, title)
             if world_id is None:

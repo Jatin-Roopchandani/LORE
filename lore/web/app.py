@@ -57,6 +57,7 @@ from lore.tenancy import (
 )
 from lore.web.ask import ask_events
 from lore.web.limits import BodyLimit
+from lore.web.upload import UploadDeps, UploadSettings, build_upload_router
 from lore.web.request_id import RequestId
 from lore.web.history import build_history_router, history_turns, record_answer
 from lore.worlds import (
@@ -212,7 +213,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                providers: "dict[str, Provider] | None" = None,
                auth_clock: Callable[[], datetime] | None = None,
                master_keys: "MasterKeys | None" = None,
-               key_checker: "KeyChecker | None" = None):
+               key_checker: "KeyChecker | None" = None,
+               upload_settings: "UploadSettings | None" = None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing.
 
@@ -241,6 +243,9 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     process, one book at a time, as ever. In multi mode they ENQUEUE a job in
     the central database (`central_sessions`, default LORE_DATABASE_URL) for
     `lore worker` to run, and answer 202 at once.
+
+    Books are uploaded through POST /api/books/upload (lore.web.upload), with
+    `upload_settings` (default: from the environment) for its quotas.
     """
     multi = multi_user_enabled() if multi_user is None else multi_user
     auth_ctx = None
@@ -553,6 +558,50 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             conn.close()
             if not handed_off and not multi:
                 runner_slot.release()
+
+    def start_processing(user: CurrentUser, cfg: LoreConfig, book_id: str) -> dict:
+        """A freshly uploaded book's processing: what Continue would do, but
+        never past the user's Gemini budget. Spent: the book waits for the
+        reset (Continue then), as a run stopped by the allowance would."""
+        now = now_utc()
+        conn = open_db(cfg.sqlite_path)
+        try:
+            if processing_budget_left(conn, cfg, today(now)) <= cfg.processing.answer_reserve:
+                jobs.claim_job(conn, book_id, now=now)
+                jobs.stop_quota(conn, book_id, "today's Gemini allowance is used up;"
+                                " processing can start after the reset", now=now)
+                job = jobs.get_job(conn, book_id)
+                return {"state": "waiting",
+                        "resumable_at": job.resumable_at.isoformat()}
+        finally:
+            conn.close()
+        if multi:
+            queued, _ = enqueue(user, book_id, KIND_PROCESS)
+            return {"state": "queued", "job": queued.id}
+        if not runner_slot.acquire(blocking=False):
+            return {"state": "busy"}  # added; Continue once the other book is done
+        handed_off = False
+        try:
+            conn = open_db(cfg.sqlite_path)
+            try:
+                jobs.claim_job(conn, book_id, now=now_utc())
+            except JobRefused:
+                return {"state": "busy"}
+            finally:
+                conn.close()
+            threading.Thread(target=_process, args=(cfg, book_id, None),
+                             daemon=True).start()
+            handed_off = True
+        finally:
+            if not handed_off:
+                runner_slot.release()
+        return {"state": "processing"}
+
+    api.include_router(build_upload_router(UploadDeps(
+        multi=multi, current_user=current_user, library_of=library_of,
+        needs_key=needs_key, central=lambda: sessions[0], start=start_processing,
+        now=auth_ctx.now if auth_ctx is not None else (lambda: datetime.now(timezone.utc)),
+        settings=upload_settings or UploadSettings.from_env())))
 
     @api.get("/api/worlds")
     def worlds(config: LoreConfig = Depends(user_config)):

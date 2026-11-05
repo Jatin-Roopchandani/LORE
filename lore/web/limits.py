@@ -9,8 +9,14 @@ handed on unchanged. Past the limit: 413 `too_large`.
 Limits: IMPORT_BYTES for POST /api/chats (one chat imported from the
 browser: its answer, capped at 1 MB when stored, plus its events), and
 DEFAULT_BYTES for everything else (questions, names, settings, keys: all
-small). Browser upload (release step 5) will need its own, larger route
-limit here.
+small).
+
+Browser upload (release step 5), POST /api/books/upload, has its own limit,
+UPLOAD_BYTES: the 50 MB book plus room for the multipart framing. That body
+is STREAMED, not buffered: the route writes it to a file as it arrives, so
+the middleware only counts. Past the limit `receive` raises TooLarge, which
+the route turns into the same 413 (and a Content-Length over the limit is
+still refused before a byte is read).
 """
 from __future__ import annotations
 
@@ -18,13 +24,23 @@ import json
 
 IMPORT_BYTES = 2_000_000
 DEFAULT_BYTES = 256 * 1024
+UPLOAD_FILE_BYTES = 50 * 1024 * 1024  # the book itself
+UPLOAD_BYTES = UPLOAD_FILE_BYTES + 64 * 1024  # plus the form's framing and world
+UPLOAD_PATH = "/api/books/upload"
 _BODY_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 def limit_for(method: str, path: str) -> int:
     if method == "POST" and path.rstrip("/") == "/api/chats":
         return IMPORT_BYTES
+    if streamed(method, path):
+        return UPLOAD_BYTES
     return DEFAULT_BYTES
+
+
+def streamed(method: str, path: str) -> bool:
+    """The routes whose body is counted as it passes, never held in memory."""
+    return method == "POST" and path.rstrip("/") == UPLOAD_PATH
 
 
 class TooLarge(Exception):
@@ -56,6 +72,8 @@ class BodyLimit:
                         return await _refuse(send, limit)
                 except ValueError:
                     return await _refuse(send, limit)
+        if streamed(scope["method"], scope.get("path", "")):
+            return await self.app(scope, _counting(receive, limit), send)
         chunks: list[bytes] = []
         size = 0
         while True:
@@ -84,3 +102,19 @@ class BodyLimit:
             return await receive()  # after the body: the disconnect, as before
 
         await self.app(scope, replay, send)
+
+
+def _counting(receive, limit: int):
+    """`receive`, raising TooLarge once more than `limit` body bytes came."""
+    seen = 0
+
+    async def counted():
+        nonlocal seen
+        message = await receive()
+        if message["type"] == "http.request":
+            seen += len(message.get("body", b""))
+            if seen > limit:
+                raise TooLarge(limit)
+        return message
+
+    return counted
