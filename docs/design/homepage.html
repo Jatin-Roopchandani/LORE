@@ -135,22 +135,40 @@ h1 span{color:var(--spark)}
 .checked.cut b{color:var(--cut)}
 .checked.cut small{grid-column:2;text-decoration:none;display:inline-block;font:500 12px var(--f-ui);color:var(--cut);margin-top:-2px}
 
-/* ---- the day: features and the beta ---- */
-.day{padding-block:clamp(64px,8vw,120px)}
-.section-title{font:700 clamp(26px,2.6vw,40px)/1.15 var(--f-ui);letter-spacing:-.02em;margin:0 0 8px}
-.section-sub{color:var(--muted);margin:0 0 34px;max-width:60ch;font-size:17px}
-.features{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
-.feature{padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
-.feature .ico{width:34px;height:34px;border-radius:9px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font:700 15px var(--f-mono);margin-bottom:14px}
-.feature h3{margin:0 0 6px;font:600 17px/1.3 var(--f-ui)}
-.feature p{margin:0;color:var(--muted);font-size:15px}
-.beta{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:24px;align-items:stretch}
-.beta .card{padding:28px;box-shadow:none}
-.steps{counter-reset:s;display:grid;gap:18px;margin:0;padding:0}
-.steps li{list-style:none;counter-increment:s;display:grid;grid-template-columns:36px 1fr;gap:12px}
-.steps li::before{content:counter(s);display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font:700 14px/1 var(--f-ui)}
-.steps b{display:block}.steps span{color:var(--muted)}
-.waitlist{display:grid;gap:10px;align-content:start}
+/* ---- the day: two more pinned scenes (features gliding across, then the beta beside its form) ---- */
+.scene{position:relative}
+.scene-view{position:sticky;top:0;height:100svh;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding-top:var(--nav-h)}
+.section-title{font:700 clamp(28px,3vw,46px)/1.12 var(--f-ui);letter-spacing:-.02em;margin:0 0 10px}
+.section-sub{color:var(--muted);margin:0;max-width:60ch;font-size:18px}
+.glide{height:calc(100svh * 3)}
+.glide-head{margin-bottom:clamp(24px,5vh,56px)}
+.glide-rail{overflow:visible}
+.glide-track{display:flex;gap:clamp(16px,2vw,28px);padding-inline:var(--gutter);will-change:transform}
+.feature{flex:0 0 clamp(300px,34vw,560px);min-height:clamp(300px,44vh,440px);padding:clamp(22px,2.2vw,34px);background:var(--panel);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;position:relative}
+.feature .ico{width:44px;height:44px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font:700 19px var(--f-mono);margin-bottom:20px}
+.feature .num{position:absolute;top:clamp(22px,2.2vw,34px);right:clamp(22px,2.2vw,34px);font:600 13px var(--f-mono);color:var(--muted)}
+.feature h3{margin:0 0 10px;font:700 clamp(22px,1.8vw,28px)/1.2 var(--f-ui)}
+.feature p{margin:0;color:var(--muted);font-size:clamp(15px,1.1vw,17px);line-height:1.6}
+.feature .eg{margin-top:auto;padding-top:18px;border-top:1px solid var(--line);font:15px/1.5 var(--f-book);color:var(--ink)}
+.feature .eg small{display:block;font:500 11px var(--f-mono);color:var(--muted);margin-top:4px}
+.feature .eg i{color:var(--glow);font-style:normal;font-family:var(--f-ui);font-size:13px;font-weight:600}
+.glide-bar{margin-top:clamp(24px,5vh,48px)}
+.glide-bar::before{content:"";display:block;height:3px;border-radius:2px;background:var(--line)}
+.glide-bar i{display:block;height:3px;border-radius:2px;background:var(--glow);width:0;margin-top:-3px}
+.beta-scene{height:calc(100svh * 2.4)}
+.beta{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:clamp(24px,5vw,80px);align-items:center;width:100%}
+.beta .card{padding:clamp(22px,2.2vw,34px);box-shadow:0 24px 60px rgb(0 0 0 / .12)}
+.beta-text .section-sub{margin-bottom:clamp(24px,5vh,48px)}
+.steps{counter-reset:s;display:grid;gap:clamp(14px,3vh,28px);margin:0;padding:0 0 0 0;position:relative}
+.steps::before{content:"";position:absolute;left:17px;top:18px;bottom:18px;width:2px;background:var(--line)}
+.steps li{list-style:none;counter-increment:s;display:grid;grid-template-columns:36px 1fr;gap:16px;opacity:.35;transition:opacity .4s;position:relative}
+.steps li::before{content:counter(s);display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--panel);border:2px solid var(--line);color:var(--muted);font:700 14px/1 var(--f-ui);transition:all .4s}
+.steps li.on{opacity:1}
+.steps li.on::before{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.steps b{display:block;font-size:clamp(18px,1.4vw,22px);margin-bottom:4px}.steps span{color:var(--muted);font-size:16px}
+.form-title{margin:0 0 6px;font:700 22px/1.2 var(--f-ui)}
+.waitlist{display:grid;gap:10px;align-content:start;transition:box-shadow .4s,border-color .4s}
+.waitlist.ready{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft),0 24px 60px rgb(0 0 0 / .12)}
 .waitlist label{font:600 13px/1.2 var(--f-ui)}
 .waitlist input[type=email],.waitlist input[type=text]{width:100%;padding:12px 13px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:15px var(--f-ui)}
 .waitlist .consent{display:flex;gap:8px;align-items:flex-start;font:400 13px/1.4 var(--f-ui);color:var(--muted)}
@@ -158,7 +176,6 @@ h1 span{color:var(--spark)}
 footer{border-top:1px solid var(--line);padding-block:24px 40px;display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
 footer a{color:var(--muted)}footer .sp{flex:1}
 
-@media (max-width:1100px){.features{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:900px){
   .hero,.beta{grid-template-columns:1fr}
   .hero{min-height:auto;padding-top:calc(var(--nav-h) + 32px)}
@@ -174,14 +191,17 @@ footer a{color:var(--muted)}footer .sp{flex:1}
   .stage[data-step="2"] .p2,.stage[data-step="3"] .p3,.stage[data-step="4"] .p4{display:flex;flex-direction:column}
   .stage .p2 .mini{flex:1;min-height:160px}
   .progress li{font-size:0;padding-top:7px}.progress li::before{font-size:10px}
-  .features{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .feature{flex-basis:80vw}
+  /* On a phone the steps and the form don't fit one screen: the beta scrolls normally there. */
+  .beta-scene{height:auto}.beta-scene .scene-view{position:static;height:auto;padding-block:calc(var(--nav-h) + 24px) 48px}
+  .steps li{opacity:1}
   .nav .link{display:none}
 }
-@media (max-width:560px){.features{grid-template-columns:1fr}.nav .btn.primary{display:none}}
+@media (max-width:560px){.nav .btn.primary{display:none}}
 @media (prefers-reduced-motion:reduce){
   .constellation .e.hot{animation:none;stroke-dashoffset:0}.constellation .tag{animation:none;opacity:1}
   .constellation .node.lit{animation:none}.hero-answer{animation:none;opacity:1;transform:none}
-  .pin-steps .step{transition:none}.stage .phase{transition:none}.scroll-cue i::after{animation:none}
+  .pin-steps .step{transition:none}.stage .phase{transition:none}.steps li{transition:none}.scroll-cue i::after{animation:none}
 }
 </style>
 </head>
@@ -306,38 +326,48 @@ footer a{color:var(--muted)}footer .sp{flex:1}
 </div>
 
 <main>
-  <section class="band day" aria-labelledby="why-title"><div class="inner">
-    <h2 class="section-title" id="why-title">Not another chatbot that skimmed the summary</h2>
-    <p class="section-sub">LORE only knows what's in the books you give it, and it shows its work.</p>
-    <div class="features">
-      <div class="feature"><div class="ico">✓</div><h3>Checked against the page</h3><p>Every sentence cites the passage it stands on. Anything unsupported is cut.</p></div>
-      <div class="feature"><div class="ico">∴</div><h3>Answers that think</h3><p>Ask why, or how someone changed. You get LORE’s reading and the other side, each labelled.</p></div>
-      <div class="feature"><div class="ico">◎</div><h3>Explore the graph</h3><p>Characters, places and groups. Click any link to read the evidence behind it.</p></div>
-      <div class="feature"><div class="ico">§</div><h3>Spoiler-safe</h3><p>Tell LORE your chapter. Answers, the graph and every profile stop there.</p></div>
-      <div class="feature"><div class="ico">⌂</div><h3>Your private library</h3><p>Your books stay in your own library. Nothing is shared between readers.</p></div>
-    </div>
-  </div></section>
-
-  <section class="band day" id="beta" aria-labelledby="beta-title" style="padding-top:0"><div class="inner">
-    <h2 class="section-title" id="beta-title">How the beta works</h2>
-    <p class="section-sub">Invite-only for now, while we let readers in in small groups.</p>
-    <div class="beta">
-      <div class="card">
-        <ol class="steps">
-          <li><div><b>Request an invite</b><span>Leave your email. We'll send a sign-in link when your spot opens.</span></div></li>
-          <li><div><b>Bring a free Gemini key</b><span>LORE runs on your own Google AI Studio key: free, about 1,000 requests a day. It takes two minutes.</span></div></li>
-          <li><div><b>Add a book you own</b><span>EPUB or PDF, up to 50 MB. LORE reads it once, then you can explore it and ask anything.</span></div></li>
-        </ol>
+  <!-- Pinned scene: the heading holds still while the five cards glide across. -->
+  <section class="scene glide" id="why" aria-labelledby="why-title">
+    <div class="scene-view">
+      <div class="band glide-head">
+        <h2 class="section-title" id="why-title">Not another chatbot that skimmed the summary</h2>
+        <p class="section-sub">LORE only knows what's in the books you give it, and it shows its work.</p>
       </div>
-      <form class="card waitlist" id="waitlist">
-        <label for="email">Email</label><input id="email" type="email" required autocomplete="email" placeholder="you@example.com">
-        <label for="reading">What are you reading? <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="reading" type="text" placeholder="The Wheel of Time, book 4">
-        <input class="hp" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" name="website">
-        <label class="consent"><input type="checkbox" required> Email me when my invite is ready. Nothing else.</label>
-        <button class="btn primary" type="submit">Request an invite</button>
-      </form>
+      <div class="glide-rail"><div class="glide-track" id="track">
+        <article class="feature"><div class="ico">✓</div><span class="num">01</span><h3>Checked against the page</h3><p>Every sentence cites the passage it stands on, and a second pass cuts anything the passage doesn’t say. What you read, you can check.</p><div class="eg">“You have been in Afghanistan, I perceive.” <small>ch. 1 · cited</small></div></article>
+        <article class="feature"><div class="ico">∴</div><span class="num">02</span><h3>Answers that think</h3><p>Ask why, or how someone changed. You get LORE’s reading and the other side, each labelled, and what the books leave open.</p><div class="eg"><b>LORE’s reading</b> · <b>The other side</b> · <b>What the books don’t settle</b></div></article>
+        <article class="feature"><div class="ico">◎</div><span class="num">03</span><h3>Explore the graph</h3><p>Characters, places and groups, and how they connect. Click any link to read the passage behind it.</p><div class="eg">Watson —<i>meets again</i>→ Stamford —<i>introduces</i>→ Holmes</div></article>
+        <article class="feature"><div class="ico">§</div><span class="num">04</span><h3>Spoiler-safe</h3><p>Tell LORE which chapter you’re on. Answers, the graph and every character profile stop there, so nothing ahead leaks out.</p><div class="eg">Reading position: <b>ch. 2</b> · nothing past it</div></article>
+        <article class="feature"><div class="ico">⌂</div><span class="num">05</span><h3>Your private library</h3><p>Your books stay in your own library, read with your own key. Nothing is shared between readers.</p><div class="eg">EPUB or PDF · books you own</div></article>
+      </div></div>
+      <div class="band glide-bar" aria-hidden="true"><i id="glide-fill"></i></div>
     </div>
-  </div></section>
+  </section>
+
+  <!-- Pinned scene: the steps light up one by one beside the form. -->
+  <section class="scene beta-scene" id="beta" aria-labelledby="beta-title">
+    <div class="scene-view band">
+      <div class="beta">
+        <div class="beta-text">
+          <h2 class="section-title" id="beta-title">How the beta works</h2>
+          <p class="section-sub">Invite-only for now, while we let readers in in small groups.</p>
+          <ol class="steps" id="beta-steps">
+            <li data-step="1"><div><b>Request an invite</b><span>Leave your email. We'll send a sign-in link when your spot opens.</span></div></li>
+            <li data-step="2"><div><b>Bring a free Gemini key</b><span>LORE runs on your own Google AI Studio key: free, about 1,000 requests a day. It takes two minutes.</span></div></li>
+            <li data-step="3"><div><b>Add a book you own</b><span>EPUB or PDF, up to 50 MB. LORE reads it once, then you can explore it and ask anything.</span></div></li>
+          </ol>
+        </div>
+        <form class="card waitlist" id="waitlist">
+          <h3 class="form-title">Request an invite</h3>
+          <label for="email">Email</label><input id="email" type="email" required autocomplete="email" placeholder="you@example.com">
+          <label for="reading">What are you reading? <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="reading" type="text" placeholder="The Wheel of Time, book 4">
+          <input class="hp" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" name="website">
+          <label class="consent"><input type="checkbox" required> Email me when my invite is ready. Nothing else.</label>
+          <button class="btn primary" type="submit">Request an invite</button>
+        </form>
+      </div>
+    </div>
+  </section>
 
   <footer class="band"><span>© 2026 LORE</span><span class="sp"></span><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Sign in</a></footer>
 </main>
@@ -370,6 +400,28 @@ dots.forEach((d) => d.addEventListener("click", () => {
   const travel = pin.offsetHeight - innerHeight, n = Number(d.dataset.go);
   scrollTo({ top: pin.offsetTop + travel * ((n - 0.5) / STEPS), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }));
+
+// Two more scenes: how far the page has scrolled through a scene (0 to 1).
+const through = (el) => { const t = el.offsetHeight - innerHeight; return Math.min(1, Math.max(0, -el.getBoundingClientRect().top / Math.max(1, t))); };
+// Features: the track slides left by exactly its overflow, so the last card ends at the right gutter.
+const why = document.getElementById("why"), track = document.getElementById("track"), fill = document.getElementById("glide-fill");
+const glide = () => {
+  const t = through(why), over = Math.max(0, track.scrollWidth - innerWidth);
+  // a little hold at each end, so the first and last cards are seen at rest
+  const k = Math.min(1, Math.max(0, (t - 0.08) / 0.84));
+  track.style.transform = `translate3d(${-k * over}px,0,0)`;
+  fill.style.width = `${k * 100}%`;
+};
+// Beta: the steps light up in turn, and the form is highlighted once the last one is reached.
+const beta = document.getElementById("beta"), betaSteps = [...document.querySelectorAll("#beta-steps li")], form = document.getElementById("waitlist");
+const betaScroll = () => {
+  if (getComputedStyle(beta.querySelector(".scene-view")).position !== "sticky") { betaSteps.forEach((li) => li.classList.add("on")); return; }
+  const n = Math.min(betaSteps.length, 1 + Math.floor(through(beta) * (betaSteps.length + 0.6)));
+  betaSteps.forEach((li, i) => li.classList.toggle("on", i < n));
+  form.classList.toggle("ready", n >= betaSteps.length && through(beta) > 0.75);
+};
+const scenes = () => { glide(); betaScroll(); };
+addEventListener("scroll", scenes, { passive: true }); addEventListener("resize", scenes); scenes();
 
 // Mockup: the form only says thanks.
 document.getElementById("waitlist").addEventListener("submit", (e) => { e.preventDefault(); e.target.querySelector("button").textContent = "You’re on the list ✓"; });
