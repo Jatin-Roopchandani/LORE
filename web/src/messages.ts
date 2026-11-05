@@ -400,9 +400,6 @@ export const THEME = {
 // Sign-in, the waitlist and the public pages (multi-user mode).
 export const AUTH = {
   brand: "LORE",
-  homeTitle: "Ask a book anything. Every sentence checked against it.",
-  homeLead: "LORE builds a private knowledge graph from the books you read and answers questions with passages you can verify.",
-  homeBeta: "LORE is in a private beta. Sign-in is by invitation, and you bring your own free Gemini key.",
   signIn: "Sign in",
   requestInvite: "Request an invite",
   signInTitle: "Sign in to LORE",
@@ -548,4 +545,130 @@ export const REPORT = {
   cancel: "Cancel",
   thanks: "Thanks. Your report was sent.",
   failed: "The report couldn't be sent. Please try again.",
+};
+
+// The public homepage (release step 7): every string from docs/design/homepage.html, word for word. A segment list
+// is a run of text with inline marks: a string is plain text; {cite} a citation chip; {mark} a highlighted quote;
+// {b}, {i}, {em} bold, the glow-coloured relation and an emphasised title.
+export type Seg = string | { cite: string } | { mark: string } | { b: string } | { i: string } | { em: string };
+
+export const HOME = {
+  title: "LORE · Ask your books",
+  brand: "LORE",
+  brandTag: "Reader",
+  brandLabel: "LORE home",
+  navLabel: "Main",
+  navHow: "How it works",
+  navBeta: "The beta",
+  signIn: "Sign in",
+  requestInvite: "Request an invite",
+  openLore: "Open LORE",
+  eyebrow: "Private beta",
+  headline: "Every story is a web.",
+  headlineGlow: "LORE draws it.",
+  lede: "Ask about the books you own. LORE answers from the text, cites every sentence, and lights up the people and links behind the answer.",
+  seeHow: "See how it answers",
+  heroGraphLabel: "A graph of the first two chapters of A Study in Scarlet: Watson meets Stamford at the Criterion Bar, Stamford introduces him to Sherlock Holmes, and the two share rooms at 221B Baker Street.",
+  heroGraph: {
+    watson: "John Watson", stamford: "Stamford", criterion: "Criterion Bar", lab: "the hospital laboratory",
+    afghanistan: "Afghanistan", maiwand: "Battle of Maiwand", murray: "Murray", baker: "221B Baker Street",
+    lestrade: "Lestrade", yard: "Scotland Yard", holmes: "Sherlock Holmes",
+    meetsAgain: "meets again", introduces: "introduces", sharesRooms: "shares rooms with",
+  },
+  youAsked: "You asked",
+  heroQuestion: "What does Holmes do for a living?",
+  heroAnswer: [
+    "He calls himself a consulting detective, “the only one in the world”: when London’s government and private detectives are at fault, they come to him, and he puts them on the right scent. ",
+    { cite: "15" },
+  ] as Seg[],
+  scrollCue: "Scroll to see how it answers",
+
+  howTitle: "How LORE answers a question",
+  howIntro: ["Five steps, the same for every book you add. Here's one question about ", { em: "A Study in Scarlet" }, "."] as Seg[],
+  steps: [
+    { n: "01 · YOU ASK", h: "Ask it like you'd ask a friend who's read the book.", p: "Vague, specific, about one chapter or the whole series. LORE splits it into the parts that need answering." },
+    { n: "02 · IT SEARCHES THE GRAPH", h: "It finds the people, places and links that matter.", p: "Every book becomes a map of who knows whom, where things happen and what happens when. The answer starts there, not with a guess." },
+    { n: "03 · IT READS THE PASSAGES", h: "It goes back to the text.", p: "The exact passages behind those links are pulled from the book, and every fact must quote one." },
+    { n: "04 · IT CHECKS EVERY SENTENCE", h: "A second pass cuts anything the book doesn't say.", p: "Every fact is checked against its passage. What the book doesn't say is cut, and you never see it." },
+    { n: "05 · IT WRITES THE ANSWER", h: "Then it tells you, like a reader would.", p: "The checked facts become a short answer and a few clear paragraphs, every sentence cited. Where it offers its own reading, it says so." },
+  ],
+  stepsLabel: "Steps",
+  stepDot: (n: number) => `Step ${n}`,
+  // Read out when the scene moves to a step (the pinned card changes without a page change).
+  stepNow: (n: number, total: number, heading: string) => `Step ${n} of ${total}: ${heading}`,
+  progressLabel: "Step",
+  progress: ["Ask", "Graph", "Passages", "Checked", "Written"],
+  howQuestion: "How did Watson meet Sherlock Holmes?",
+  graphLabel: "The graph",
+  miniGraphLabel: "Watson met Stamford at the Criterion Bar; Stamford introduced him to Holmes",
+  miniGraph: {
+    watson: "Watson", stamford: "Stamford", holmes: "Sherlock Holmes", criterion: "Criterion Bar",
+    afghanistan: "Afghanistan", baker: "Baker Street", lab: "the laboratory",
+  },
+  fromBook: "From the book",
+  passages: [
+    { text: ["“…I was standing at the ", { mark: "Criterion Bar" }, ", when some one tapped me on the shoulder, and turning round I recognized ", { mark: "young Stamford" }, ", who had been a dresser under me at Barts.”"] as Seg[], where: "A Study in Scarlet · ch. 1" },
+    { text: ["“", { mark: "Dr. Watson, Mr. Sherlock Holmes" }, ",” said Stamford, introducing us."] as Seg[], where: "A Study in Scarlet · ch. 1" },
+  ],
+  checkedLabel: "The answer, checked",
+  checked: [
+    ["Watson runs into Stamford, who had been a dresser under him at Barts, at the Criterion Bar. ", { cite: "1" }] as Seg[],
+    ["Stamford takes him to the hospital laboratory and introduces him to Sherlock Holmes. ", { cite: "2" }] as Seg[],
+  ],
+  cutClaim: "Holmes had already heard of Watson’s service.",
+  cutWhy: "Cut: no passage says so",
+  tick: "✓",
+  cross: "✕",
+  writtenLabel: "The written answer",
+  shortAnswerLabel: "Short answer",
+  shortAnswer: ["Through Stamford: an old dresser of Watson’s from Barts, met by chance at the Criterion Bar, who knew a man at the hospital laboratory looking for someone to share rooms. ", { cite: "1" }, { cite: "3" }] as Seg[],
+  written: [
+    ["Back in London and short of money, Watson was standing at the Criterion Bar when someone tapped him on the shoulder: young Stamford, who had been a dresser under him at Barts. ", { cite: "1" }, " When Watson said he was looking for cheap lodgings, “That’s a strange thing,” Stamford remarked: he was the second man that day to say so. The first was a fellow at the chemical laboratory up at the hospital, who couldn’t find anyone to go halves with him on some rooms. ", { cite: "3" }] as Seg[],
+    ["Stamford took him there. “Dr. Watson, Mr. Sherlock Holmes,” he said, introducing them, and Holmes, gripping his hand, told him at once that he had been in Afghanistan. ", { cite: "2" }] as Seg[],
+  ],
+  readingKind: "LORE’s reading",
+  reading: "The first thing Holmes ever does in the book is read Watson at a glance. Watson’s astonishment is the reader’s introduction to his method.",
+
+  whyTitle: "Not another chatbot that skimmed the summary",
+  whySub: "LORE only knows what's in the books you give it, and it shows its work.",
+  features: [
+    { num: "01", title: "Checked against the page", body: "Every sentence cites the passage it stands on, and a second pass cuts anything the passage doesn’t say. What you read, you can check.",
+      eg: ["“You have been in Afghanistan, I perceive.” "] as Seg[], egNote: "ch. 1 · cited" },
+    { num: "02", title: "Answers that think", body: "Ask why, or how someone changed. You get LORE’s reading and the other side, each labelled, and what the books leave open.",
+      eg: [{ b: "LORE’s reading" }, " · ", { b: "The other side" }, " · ", { b: "What the books don’t settle" }] as Seg[] },
+    { num: "03", title: "Explore the graph", body: "Characters, places and groups, and how they connect. Click any link to read the passage behind it.",
+      eg: ["Watson —", { i: "meets again" }, "→ Stamford —", { i: "introduces" }, "→ Holmes"] as Seg[] },
+    { num: "04", title: "Spoiler-safe", body: "Tell LORE which chapter you’re on. Answers, the graph and every character profile stop there, so nothing ahead leaks out.",
+      eg: ["Reading position: ", { b: "ch. 2" }, " · nothing past it"] as Seg[] },
+    { num: "05", title: "Your private library", body: "Your books stay in your own library, read with your own key. Nothing is shared between readers.",
+      eg: ["EPUB or PDF · books you own"] as Seg[] },
+  ] as { num: string; title: string; body: string; eg: Seg[]; egNote?: string }[],
+
+  betaTitle: "How the beta works",
+  betaSub: "Invite-only for now, while we let readers in in small groups.",
+  betaSteps: [
+    { b: "Request an invite", span: "Leave your email. We'll send a sign-in link when your spot opens." },
+    { b: "Bring your own AI key", span: "Connect a key from your AI provider, so your questions run on your own account. Gemini works today, including its free tier; Claude and OpenAI are coming soon." },
+    { b: "Add a book you own", span: "EPUB or PDF, up to 50 MB. LORE reads it once, then you can explore it and ask anything." },
+  ],
+  formTitle: "Request an invite",
+  emailLabel: "Email",
+  emailPlaceholder: "you@example.com",
+  readingLabel: "What are you reading?",
+  optional: "(optional)",
+  readingPlaceholder: "The Wheel of Time, book 4",
+  consent: "Email me when my invite is ready. Nothing else.",
+  submit: "Request an invite",
+  sending: "Sending…",
+  done: "You’re on the list ✓",
+  // The form's own messages (the mockup's form only said thanks).
+  invalidEmail: "That doesn't look like an email address. Check it and try again.",
+  needConsent: "Tick the box so we can email you when your invite is ready.",
+  rateLimited: "Too many requests from here just now. Please try again in a little while.",
+  offline: "We couldn't reach LORE. Check your connection and try again.",
+  failed: "Something went wrong sending that. Please try again.",
+
+  copyright: "© 2026 LORE",
+  privacy: "Privacy",
+  terms: "Terms",
 };

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Router from "../Router";
-import { ADMIN, AUTH } from "../messages";
+import { ADMIN, AUTH, HOME } from "../messages";
 import { Admin } from "./Admin";
 import { SignIn } from "./SignIn";
 import { Waitlist } from "./Waitlist";
@@ -211,12 +211,11 @@ describe("Admin", () => {
 });
 
 describe("Router", () => {
-  test("multi mode draws the page for the address; the homepage links to sign in and the waitlist", () => {
-    serve(() => ({ body: PROVIDERS }));
+  test("multi mode draws the page for the address; the homepage links to sign in and the waitlist form", async () => {
     render(<Router pathname="/" multi />);
-    expect(screen.getByRole("heading", { name: AUTH.homeTitle })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: AUTH.signIn })).toHaveAttribute("href", "/signin");
-    expect(screen.getByRole("link", { name: AUTH.requestInvite })).toHaveAttribute("href", "/waitlist");
+    const nav = await screen.findByRole("navigation", { name: HOME.navLabel });
+    expect(within(nav).getByRole("link", { name: HOME.signIn })).toHaveAttribute("href", "/signin");
+    expect(within(nav).getByRole("link", { name: HOME.requestInvite })).toHaveAttribute("href", "#beta");
   });
 
   test("privacy and terms are placeholders that exist", () => {
