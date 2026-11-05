@@ -549,3 +549,27 @@ export const REPORT = {
   thanks: "Thanks. Your report was sent.",
   failed: "The report couldn't be sent. Please try again.",
 };
+
+// Release step 6: the mailed sign-in link opens this page; only its button spends the link (mail scanners open links too).
+export const SIGNIN_LINK = {
+  title: "Continue signing in",
+  lead: "Press the button to finish signing in to LORE. The link works once.",
+  button: "Continue signing in",
+  missing: "This sign-in link is incomplete. Ask for a new one.",
+  again: "Ask for a new link",
+};
+
+// Release step 6: deleting one's own account (account menu) and the admin's user controls.
+export const ACCOUNT_DELETE = {
+  open: "Delete my account",
+  title: "Delete your account",
+  lead: "This deletes your library (books, graph and history), your saved Gemini key and your sign-ins. It can't be undone.",
+  confirmLabel: (email: string) => `Type ${email} to confirm`,
+  confirm: "Delete my account for good",
+  deleting: "Deleting…",
+  cancel: "Cancel",
+  failed: "The account couldn't be deleted. Please try again.",
+};
+
+// A friendly server error carries a reference the user can quote.
+export const reference = (id?: string) => (id ? ` Reference: ${id}` : "");

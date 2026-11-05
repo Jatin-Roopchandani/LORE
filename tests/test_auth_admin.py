@@ -304,6 +304,7 @@ def test_an_admin_granted_before_first_sign_in_gets_the_admin_account(env):
         db.commit()
     c = anon(app)
     c.post("/auth/email", json={"email": "boss@example.org"})  # no invite needed
-    c.get(mailer.links()[-1][len(BASE_URL):])
+    from tests.auth_fixtures import open_magic_link
+    open_magic_link(c, mailer.links()[-1])
     assert c.get("/api/me").json()["user"]["role"] == "admin"
     assert c.get("/api/admin/users").status_code == 200

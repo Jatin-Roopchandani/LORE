@@ -11,7 +11,7 @@ from datetime import timedelta
 
 import sqlalchemy as sa
 from authlib.common.security import generate_token
-from fastapi import APIRouter, BackgroundTasks, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from pydantic import BaseModel
@@ -219,8 +219,20 @@ def build_signin_router(ctx: AuthContext) -> APIRouter:
             db.commit()
         return {"sent": True}
 
-    @router.get("/auth/email/verify")
-    def verify(request: Request, token: str = Query("", max_length=512)):
+    # GET /auth/email/verify (the mailed link) only draws a "Continue signing
+    # in" page (lore.web.app): a mail scanner that prefetches the link spends
+    # nothing. That page's button POSTs the token here, and only this spends it.
+    # CSRF-exempt like POST /auth/email (the token is the proof; the Origin
+    # guard refuses a cross-site form).
+    @router.post("/auth/email/verify")
+    async def verify(request: Request):
+        try:
+            form = await request.form(max_files=0, max_fields=4, max_part_size=4096)
+            token = form.get("token")
+        except Exception:  # noqa: BLE001 -- not a form: no token
+            token = None
+        if not isinstance(token, str) or len(token) > 512:
+            token = ""
         try:
             raw = magic.loads(token, max_age=MAGIC_MAX_AGE)
         except BadSignature:  # tampered, or older than 15 minutes

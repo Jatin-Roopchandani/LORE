@@ -15,6 +15,7 @@ from lore.central.models import AuthSession, Identity, Invite, LoginToken, RateH
 from lore.config import LoreConfig
 from tests.auth_fixtures import (
     BASE_URL, NOW, Clock, FakeMailer, FakeProvider, make_app, make_settings,
+    open_magic_link,
 )
 from tests.central_fixtures import central_sessions
 
@@ -58,7 +59,7 @@ def test_a_link_signs_an_existing_user_in(env):
     assert r.status_code == 202 and r.json() == {"sent": True}
     (mail,) = mailer.sent
     assert mail["to"] == "alice@example.org" and "15 minutes" in mail["text"]
-    r = client.get(link_path(mailer))
+    r = open_magic_link(client, link_path(mailer))
     assert r.status_code == 303 and r.headers["location"] == "/app"
     assert r.headers["cache-control"] == "no-store"
     assert client.get("/api/me").json()["user"]["id"] == "alice"
@@ -71,18 +72,45 @@ def test_a_link_works_once(env):
     client, sessions, mailer, *_ = env
     ask_link(client, "alice@example.org")
     path = link_path(mailer)
-    assert client.get(path).headers["location"] == "/app"
+    assert open_magic_link(client, path).headers["location"] == "/app"
     other = TestClient(client.app, base_url=BASE_URL, follow_redirects=False)
-    assert other.get(path).headers["location"] == "/signin?error=link_invalid"
+    assert open_magic_link(other, path).headers["location"] == "/signin?error=link_invalid"
     assert other.get("/api/me").status_code == 401
     assert count(sessions, AuthSession) == 1
+
+
+def test_opening_the_link_spends_nothing_only_the_button_does(env):
+    client, sessions, mailer, *_ = env
+    ask_link(client, "alice@example.org")
+    path = link_path(mailer)
+    scanner = TestClient(client.app, base_url=BASE_URL, follow_redirects=False)
+    for _ in range(3):  # a mail scanner prefetching the link, again and again
+        page = scanner.get(path)
+        assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+        assert page.headers["referrer-policy"] == "no-referrer"
+        assert page.headers["cache-control"] == "no-store"
+    assert scanner.get("/api/me").status_code == 401  # no session from a GET
+    with sessions() as db:
+        assert db.scalars(sa.select(LoginToken)).one().used_at is None
+    assert open_magic_link(client, path).headers["location"] == "/app"
+
+
+def test_the_button_needs_no_csrf_token_but_a_foreign_origin_is_refused(env):
+    client, sessions, mailer, *_ = env
+    ask_link(client, "alice@example.org")
+    token = parse_qs(urlparse(link_path(mailer)).query)["token"][0]
+    r = client.post("/auth/email/verify", data={"token": token},
+                    headers={"Origin": "https://evil.example"})
+    assert r.status_code == 403
+    r = client.post("/auth/email/verify", data={"token": token})
+    assert r.headers["location"] == "/app"
 
 
 def test_a_link_expires_after_fifteen_minutes(env):
     client, _, mailer, clock, _ = env
     ask_link(client, "alice@example.org")
     clock.now = NOW + timedelta(minutes=15, seconds=1)
-    r = client.get(link_path(mailer))
+    r = open_magic_link(client, link_path(mailer))
     assert r.headers["location"] == "/signin?error=link_invalid"
     assert client.get("/api/me").status_code == 401
 
@@ -95,14 +123,14 @@ def test_the_signature_also_carries_the_age(env, monkeypatch):
     real = TimestampSigner.get_timestamp
     monkeypatch.setattr(TimestampSigner, "get_timestamp",
                         lambda self: real(self) + 16 * 60)
-    assert client.get(path).headers["location"] == "/signin?error=link_invalid"
+    assert open_magic_link(client, path).headers["location"] == "/signin?error=link_invalid"
 
 
 def test_a_just_valid_link_still_works(env):
     client, _, mailer, clock, _ = env
     ask_link(client, "alice@example.org")
     clock.now = NOW + timedelta(minutes=14, seconds=59)
-    assert client.get(link_path(mailer)).headers["location"] == "/app"
+    assert open_magic_link(client, link_path(mailer)).headers["location"] == "/app"
 
 
 @pytest.mark.parametrize("mangle", [
@@ -112,22 +140,22 @@ def test_a_tampered_or_garbage_token_is_refused(env, mangle):
     client, sessions, mailer, *_ = env
     ask_link(client, "alice@example.org")
     token = parse_qs(urlparse(link_path(mailer)).query)["token"][0]
-    r = client.get("/auth/email/verify", params={"token": mangle(token)})
+    r = client.post("/auth/email/verify", data={"token": mangle(token)})
     assert r.headers["location"] == "/signin?error=link_invalid"
     assert count(sessions, AuthSession) == 0
 
 
 def test_the_missing_token_and_a_huge_one_are_refused(env):
     client, *_ = env
-    assert client.get("/auth/email/verify").status_code in (303, 422)
-    assert client.get("/auth/email/verify", params={"token": "a" * 5000}).status_code in (303, 422)
+    assert client.post("/auth/email/verify").status_code in (303, 422)
+    assert client.post("/auth/email/verify", data={"token": "a" * 5000}).status_code in (303, 422)
 
 
 def test_a_token_signed_with_another_secret_is_refused(env):
     from itsdangerous import URLSafeTimedSerializer
     client, sessions, mailer, *_ = env
     forged = URLSafeTimedSerializer("z" * 40, salt="lore.magic-link").dumps("whatever")
-    r = client.get("/auth/email/verify", params={"token": forged})
+    r = client.post("/auth/email/verify", data={"token": forged})
     assert r.headers["location"] == "/signin?error=link_invalid"
 
 
@@ -182,7 +210,7 @@ def test_a_new_address_with_an_invite_gets_a_link_and_an_account(env):
     code = make_invite(sessions)
     assert ask_link(client, "new@example.org", invite=code).status_code == 202
     assert [m["to"] for m in mailer.sent] == ["new@example.org"]
-    assert client.get(link_path(mailer)).headers["location"] == "/app"
+    assert open_magic_link(client, link_path(mailer)).headers["location"] == "/app"
     me = client.get("/api/me").json()["user"]
     assert me["email"] == "new@example.org" and me["role"] == "user"
     with sessions() as db:
@@ -205,11 +233,11 @@ def test_the_invite_can_be_spent_before_the_link_is_opened(env):
     with sessions() as db:  # someone else used it in the meantime
         db.get(Invite, hash_token(code)).used_by = "alice"
         db.commit()
-    r = client.get(link_path(mailer))
+    r = open_magic_link(client, link_path(mailer))
     assert r.headers["location"] == "/waitlist"
     assert count(sessions, User) == 1 and count(sessions, AuthSession) == 0
     # The link is spent either way.
-    assert client.get(link_path(mailer)).headers["location"] == "/signin?error=link_invalid"
+    assert open_magic_link(client, link_path(mailer)).headers["location"] == "/signin?error=link_invalid"
 
 
 def test_a_bad_invite_gets_no_mail(env):
@@ -226,14 +254,14 @@ def test_when_the_beta_is_open_anyone_may_sign_up(tmp_path):
     app = make_app(root, sessions, mailer=mailer, auth=make_settings(invite_only=False))
     client = TestClient(app, base_url=BASE_URL, follow_redirects=False)
     ask_link(client, "open@example.org")
-    assert client.get(link_path(mailer)).headers["location"] == "/app"
+    assert open_magic_link(client, link_path(mailer)).headers["location"] == "/app"
 
 
 def test_an_existing_user_needs_no_invite_and_wastes_none(env):
     client, sessions, mailer, *_ = env
     code = make_invite(sessions)
     ask_link(client, "alice@example.org", invite=code)
-    client.get(link_path(mailer))
+    open_magic_link(client, link_path(mailer))
     with sessions() as db:
         assert db.get(Invite, hash_token(code)).used_by is None
 
@@ -241,14 +269,17 @@ def test_an_existing_user_needs_no_invite_and_wastes_none(env):
 def test_the_same_email_by_link_and_by_oauth_is_one_user(env):
     client, sessions, mailer, *_ = env
     from lore.auth.providers import Profile
-    provider = client.app.app.app.state.auth.providers["google"]
+    api = client.app  # through the ASGI wrappers to the FastAPI app
+    while not hasattr(api, "state"):
+        api = api.app
+    provider = api.state.auth.providers["google"]
     provider.profile = Profile("g-alice", "alice@example.org", True, "Alice")
     r = client.get("/auth/google/start")
     state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
     client.get("/auth/google/callback", params={"code": "c", "state": state})
     other = TestClient(client.app, base_url=BASE_URL, follow_redirects=False)
     ask_link(other, "alice@example.org")
-    other.get(link_path(mailer))
+    open_magic_link(other, link_path(mailer))
     assert other.get("/api/me").json()["user"]["id"] == "alice"
     assert count(sessions, User) == 1 and count(sessions, Identity) == 2
 
@@ -320,7 +351,7 @@ def test_old_rate_rows_and_spent_tokens_are_purged_at_sign_in(env):
     ask_link(client, "alice@example.org")
     clock.now = NOW + timedelta(days=2)
     ask_link(client, "alice@example.org")
-    client.get(link_path(mailer))  # sign-in housekeeping runs
+    open_magic_link(client, link_path(mailer))  # sign-in housekeeping runs
     with sessions() as db:
         hits = db.scalars(sa.select(RateHit)).all()
     assert hits and all(r.at > NOW + timedelta(days=1) for r in hits)

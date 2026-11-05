@@ -93,6 +93,18 @@ def sign_in(app, sessions, user_id: str, *, now: datetime = NOW,
     return client
 
 
+def open_magic_link(client, link: str):
+    """What a browser does with a mailed sign-in link (release step 6): the
+    GET only draws the "Continue signing in" page and spends nothing; its
+    button then POSTs the token. Returns the POST's response."""
+    from urllib.parse import parse_qs, urlparse
+    path = link[len(BASE_URL):] if link.startswith(BASE_URL) else link
+    page = client.get(path)
+    assert page.status_code == 200, page.text
+    token = parse_qs(urlparse(path).query).get("token", [""])[0]
+    return client.post("/auth/email/verify", data={"token": token})
+
+
 # --- a bridge for tests written as "act as this user" -----------------------
 
 ACT_AS = "X-Test-User"  # a header only these tests' client understands

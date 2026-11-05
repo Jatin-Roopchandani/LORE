@@ -19,7 +19,9 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # Public endpoints with no session to forge: a visitor has no ambient
 # authority for a cross-site page to borrow. Each has its own abuse limits
 # (rate limit, honeypot) and the Origin check in front of it.
-EXEMPT_PATHS = frozenset({"/api/waitlist", "/auth/email"})
+# POST /auth/email/verify: the magic-link token in the body is itself the
+# proof, and a cross-site form is refused by the Origin guard (login CSRF).
+EXEMPT_PATHS = frozenset({"/api/waitlist", "/auth/email", "/auth/email/verify"})
 HEADER = "x-csrf-token"
 
 
