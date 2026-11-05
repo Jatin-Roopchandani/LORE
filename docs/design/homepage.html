@@ -30,7 +30,7 @@
 html{scroll-behavior:smooth;scroll-padding-top:calc(var(--nav-h) + 12px)}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font:16px/1.55 var(--f-ui);overflow-x:hidden}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 var(--f-ui);overflow-x:clip}
 a{color:var(--accent)}
 .band{padding-inline:var(--gutter)}
 .inner{width:100%}
@@ -83,33 +83,43 @@ h1 span{color:var(--spark)}
 .scroll-cue i::after{content:"";position:absolute;left:50%;top:6px;width:3px;height:6px;margin-left:-1.5px;border-radius:2px;background:var(--night-muted);animation:cue 1.6s ease-in-out infinite}
 @keyframes cue{0%{opacity:0;transform:translateY(-2px)}40%{opacity:1}100%{opacity:0;transform:translateY(8px)}}
 
-/* ---- sticky scroll: the visual stays put while the four steps go past ---- */
-.story{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(24px,5vw,80px);padding-block:40px 120px}
-.story h2{font:700 clamp(28px,3vw,44px)/1.1 var(--f-ui);letter-spacing:-.02em;margin:0 0 10px}
-.story .intro{color:var(--night-muted);max-width:38ch;margin:0}
-.steps-col{padding-top:10px}
-.step{min-height:78vh;display:flex;flex-direction:column;justify-content:center;opacity:.35;transition:opacity .35s}
+/* ---- sticky scroll: a fixed-size card pinned under the nav while the four steps go past. Every part keeps its
+   place in the card from the start and lights up at its step, so nothing jumps and the pinning is plain to see. ---- */
+.story-head{padding-top:clamp(56px,7vw,110px);padding-bottom:clamp(24px,3vw,48px);max-width:60ch;margin-inline:auto;text-align:center}
+.story-head h2{font:700 clamp(28px,3vw,46px)/1.1 var(--f-ui);letter-spacing:-.02em;margin:0 0 10px}
+.story-head .intro{color:var(--night-muted);font-size:18px;margin:0}
+.story{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(24px,5vw,80px);padding-bottom:12vh}
+.steps-col{padding-bottom:20vh}
+.step{min-height:82vh;display:flex;flex-direction:column;justify-content:center;opacity:.3;transition:opacity .35s}
 .step.on{opacity:1}
 .step .n{font:600 12px/1 var(--f-mono);color:var(--spark);letter-spacing:.08em;margin-bottom:12px}
-.step h3{font:700 clamp(22px,2vw,30px)/1.2 var(--f-ui);margin:0 0 10px}
+.step h3{font:700 clamp(22px,2vw,32px)/1.2 var(--f-ui);margin:0 0 10px}
 .step p{color:var(--night-muted);font-size:17px;max-width:40ch;margin:0}
 .stage-col{position:relative}
-.stage{position:sticky;top:calc(var(--nav-h) + 28px);height:calc(100svh - var(--nav-h) - 56px);min-height:460px;display:flex;align-items:center}
-.stage .card{width:100%;padding:22px 24px;display:grid;gap:14px;max-height:100%;overflow:hidden}
-.stage .phase{transition:opacity .45s,transform .45s,max-height .45s;opacity:0;transform:translateY(10px);max-height:0;overflow:hidden}
+.stage{position:sticky;top:calc(var(--nav-h) + 20px);height:calc(100svh - var(--nav-h) - 40px);padding-top:0}
+.stage .card{height:100%;padding:clamp(16px,1.6vw,24px);display:grid;grid-template-rows:auto auto minmax(0,1.1fr) auto auto;gap:clamp(8px,1.2vh,14px);overflow:hidden}
+.progress{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0;padding:0;list-style:none;counter-reset:p}
+.progress li{counter-increment:p;font:600 11px/1 var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:9px;border-top:3px solid var(--line);transition:border-color .35s,color .35s}
+.progress li::before{content:"0" counter(p) " ";font-family:var(--f-mono)}
+.stage[data-step="1"] .progress li:nth-child(-n+1),.stage[data-step="2"] .progress li:nth-child(-n+2),
+.stage[data-step="3"] .progress li:nth-child(-n+3),.stage[data-step="4"] .progress li{border-top-color:var(--glow);color:var(--ink)}
+.stage .phase{transition:opacity .45s,filter .45s;opacity:.18;filter:grayscale(1);min-height:0}
+.stage .p2{display:flex;flex-direction:column;min-height:0}
+.stage .p2 .mini{flex:1;min-height:0;width:100%;height:100%}
 .stage[data-step="1"] .p1,.stage[data-step="2"] .p1,.stage[data-step="3"] .p1,.stage[data-step="4"] .p1,
 .stage[data-step="2"] .p2,.stage[data-step="3"] .p2,.stage[data-step="4"] .p2,
 .stage[data-step="3"] .p3,.stage[data-step="4"] .p3,
-.stage[data-step="4"] .p4{opacity:1;transform:none;max-height:420px}
+.stage[data-step="4"] .p4{opacity:1;filter:none}
+.stage[data-step="1"] .p1,.stage[data-step="2"] .p2,.stage[data-step="3"] .p3,.stage[data-step="4"] .p4{opacity:1}
 .label{font:600 11px/1 var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
 .mini{width:100%;height:auto;display:block;background:var(--sunk);border-radius:10px}
 .mini .e{stroke:var(--line);stroke-width:1.5;transition:stroke .5s,stroke-width .5s}
 .mini text{font:500 12px var(--f-ui);fill:var(--ink)}
 .stage[data-step="2"] .mini .path,.stage[data-step="3"] .mini .path,.stage[data-step="4"] .mini .path{stroke:var(--glow);stroke-width:3}
-.src{font:italic 15px/1.55 var(--f-book);padding:8px 12px;border-left:3px solid var(--accent);background:var(--sunk);border-radius:0 8px 8px 0;margin-bottom:8px}
+.src{font:italic clamp(13px,1.05vw,15px)/1.5 var(--f-book);padding:7px 12px;border-left:3px solid var(--accent);background:var(--sunk);border-radius:0 8px 8px 0;margin-bottom:8px}
 .src mark{background:var(--glow-soft);color:inherit;padding:0 2px;border-radius:3px}
 .src small{display:block;font:500 11px var(--f-mono);font-style:normal;color:var(--muted);margin-top:4px}
-.checked{font:16px/1.55 var(--f-book);display:grid;grid-template-columns:22px 1fr;gap:6px;margin-bottom:6px}
+.checked{font:clamp(14px,1.1vw,16px)/1.5 var(--f-book);display:grid;grid-template-columns:22px 1fr;gap:6px;margin-bottom:6px}
 .checked b{font:700 13px/1.6 var(--f-ui);color:var(--ok)}
 .checked.cut{color:var(--muted)}
 .checked.cut > span{text-decoration:line-through;text-decoration-color:var(--cut)}
@@ -144,11 +154,10 @@ footer a{color:var(--muted)}footer .sp{flex:1}
   .hero,.beta{grid-template-columns:1fr}
   .hero{min-height:auto;padding-top:calc(var(--nav-h) + 32px)}
   .hero-answer{margin:12px 0 0}
-  .story{grid-template-columns:1fr;padding-bottom:60px}
-  .stage-col{order:-1;position:sticky;top:var(--nav-h);z-index:5}
-  .stage{position:relative;top:auto;height:auto;min-height:0;padding-block:8px}
-  .stage .card{max-height:52svh;overflow:auto}
-  .step{min-height:60vh}
+  .story{grid-template-columns:1fr;padding-bottom:40px}
+  .stage-col{order:-1;position:sticky;top:var(--nav-h);z-index:5;padding-block:8px;background:var(--night)}
+  .stage{position:relative;top:auto;height:56svh}
+  .step{min-height:70vh}
   .features{grid-template-columns:repeat(2,minmax(0,1fr))}
   .nav .link{display:none}
 }
@@ -220,10 +229,13 @@ footer a{color:var(--muted)}footer .sp{flex:1}
   </div></header>
   <div class="scroll-cue" aria-hidden="true"><i></i> Scroll to see how it answers</div>
 
-  <section class="band" id="how" aria-labelledby="how-title"><div class="inner story">
-    <div class="steps-col">
+  <section class="band" id="how" aria-labelledby="how-title"><div class="inner">
+    <div class="story-head">
       <h2 id="how-title">How LORE answers a question</h2>
       <p class="intro">Four steps, the same for every book you add. Here's one question about <em>A Study in Scarlet</em>.</p>
+    </div>
+    <div class="story">
+    <div class="steps-col">
       <div class="step" data-step="1"><div class="n">01 · YOU ASK</div><h3>Ask it like you'd ask a friend who's read the book.</h3><p>Vague, specific, about one chapter or the whole series. LORE splits it into the parts that need answering.</p></div>
       <div class="step" data-step="2"><div class="n">02 · IT SEARCHES THE GRAPH</div><h3>It finds the people, places and links that matter.</h3><p>Every book becomes a map of who knows whom, where things happen and what happens when. The answer starts there, not with a guess.</p></div>
       <div class="step" data-step="3"><div class="n">03 · IT READS THE PASSAGES</div><h3>It goes back to the text.</h3><p>The exact passages behind those links are pulled from the book, and every fact must quote one.</p></div>
@@ -232,12 +244,13 @@ footer a{color:var(--muted)}footer .sp{flex:1}
     <div class="stage-col">
       <div class="stage" id="stage" data-step="1">
         <div class="card" aria-live="polite">
+          <ol class="progress" aria-label="Step"><li>Ask</li><li>Graph</li><li>Passages</li><li>Checked</li></ol>
           <div class="phase p1">
             <div class="q" style="margin:0">You asked <span>How did Watson meet Sherlock Holmes?</span></div>
           </div>
           <div class="phase p2">
             <div class="label">The graph</div>
-            <svg class="mini" viewBox="0 0 560 190" role="img" aria-label="Watson met Stamford at the Criterion Bar; Stamford introduced him to Holmes">
+            <svg class="mini" viewBox="0 0 560 190" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Watson met Stamford at the Criterion Bar; Stamford introduced him to Holmes">
               <line class="e path" x1="90" y1="110" x2="250" y2="60"/><line class="e path" x1="250" y1="60" x2="420" y2="110"/>
               <line class="e path" x1="90" y1="110" x2="200" y2="160"/>
               <line class="e" x1="90" y1="110" x2="40" y2="40"/><line class="e" x1="420" y1="110" x2="520" y2="160"/><line class="e" x1="420" y1="110" x2="500" y2="40"/>
@@ -260,6 +273,7 @@ footer a{color:var(--muted)}footer .sp{flex:1}
           </div>
         </div>
       </div>
+    </div>
     </div>
   </div></section>
 </div>
