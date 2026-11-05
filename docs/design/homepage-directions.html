@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LORE homepage directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Mockups only: three directions for lore.jrvn.site's public front door. Same tokens as the app's Light/Dark themes. */
+:root{
+  --bg:#ECEFF2;--panel:#F8FAFB;--sunk:#E3E8EC;--ink:#17212B;--muted:#5A6774;--line:#D3DAE0;
+  --accent:#1E5AA0;--accent-soft:#DCE7F4;--glow:#B97808;--glow-soft:#F6E7C8;--ok:#2E7D4F;
+  --k1:#2F6DB5;--k2:#3D8B6E;--k3:#8A4FA3;--k4:#B0662A;--edge:#798A9A;
+  --f-ui:"Public Sans",system-ui,sans-serif;--f-book:"Newsreader",Georgia,serif;--f-mono:"JetBrains Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --bg:#0E141A;--panel:#151D25;--sunk:#1B252F;--ink:#E3E9EF;--muted:#8C99A6;--line:#26323D;
+  --accent:#78AEEA;--accent-soft:#1D3047;--glow:#EBAA3C;--glow-soft:#3A2D14;--ok:#6CC596;
+  --k1:#6FA4E4;--k2:#6CC1A0;--k3:#BC8AD3;--k4:#E19A5C;--edge:#5E6C79;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E141A;--panel:#151D25;--sunk:#1B252F;--ink:#E3E9EF;--muted:#8C99A6;--line:#26323D;
+  --accent:#78AEEA;--accent-soft:#1D3047;--glow:#EBAA3C;--glow-soft:#3A2D14;--ok:#6CC596;
+  --k1:#6FA4E4;--k2:#6CC1A0;--k3:#BC8AD3;--k4:#E19A5C;--edge:#5E6C79;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 var(--f-ui)}
+a{color:var(--accent)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+
+/* the mockup switcher (not part of any design) */
+.switcher{position:sticky;top:0;z-index:50;background:#111;color:#eee;font:13px/1 var(--f-ui);display:flex;gap:8px;align-items:center;padding:8px 14px;flex-wrap:wrap}
+.switcher b{margin-right:6px}
+.switcher button{background:#2a2a2a;color:#eee;border:1px solid #444;border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+.switcher button[aria-pressed="true"]{background:#eee;color:#111}
+.switcher .sp{flex:1}
+.dir{display:none}.dir.on{display:block}
+
+/* shared pieces */
+.nav{display:flex;align-items:center;gap:14px;padding:18px 0}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink)}
+.brand b{font:600 22px/1 var(--f-book);letter-spacing:.06em}
+.brand small{font:600 10px/1 var(--f-ui);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.nav .sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:9px;padding:10px 16px;font:600 15px/1 var(--f-ui);text-decoration:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.ghost{background:transparent}
+.btn:hover{border-color:var(--accent)}
+.chip{display:inline-block;font:500 11px/1 var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:5px;padding:3px 5px;vertical-align:2px;margin-left:2px}
+.pill{display:inline-block;font:600 11px/1 var(--f-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--glow);background:var(--glow-soft);border-radius:999px;padding:5px 10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 50px rgb(0 0 0 / .08)}
+.muted{color:var(--muted)}
+.feature h3{margin:0 0 6px;font:600 17px/1.3 var(--f-ui)}
+.feature p{margin:0;color:var(--muted);font-size:15px}
+.steps{counter-reset:s;display:grid;gap:14px}
+.steps li{list-style:none;counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start}
+.steps li::before{content:counter(s);display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font:700 14px/1 var(--f-ui)}
+.steps b{display:block}
+.waitlist{display:grid;gap:10px}
+.waitlist label{font:600 13px/1.2 var(--f-ui)}
+.waitlist input[type=email],.waitlist input[type=text]{width:100%;padding:11px 12px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:15px var(--f-ui)}
+.waitlist .consent{display:flex;gap:8px;align-items:flex-start;font:400 13px/1.4 var(--f-ui);color:var(--muted)}
+.foot{border-top:1px solid var(--line);margin-top:64px;padding:22px 0 40px;display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+.foot a{color:var(--muted)}
+.foot .sp{flex:1}
+
+/* a sample answer, as LORE shows it */
+.answer{font:17px/1.65 var(--f-book)}
+.answer .q{font:600 14px/1.3 var(--f-ui);color:var(--muted);display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.answer .q span{background:var(--accent-soft);color:var(--ink);border-radius:8px;padding:6px 10px;font-weight:500}
+.answer h4{font:600 12px/1 var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:14px 0 6px}
+.answer p{margin:0 0 10px}
+.answer .reading{border-left:3px solid var(--glow);padding-left:12px;color:var(--ink)}
+.answer .reading em{font:600 11px/1 var(--f-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--glow);font-style:normal;display:block;margin-bottom:4px}
+.quote{font:italic 16px/1.55 var(--f-book);border-left:3px solid var(--accent);padding:8px 12px;background:var(--sunk);border-radius:0 8px 8px 0;margin:8px 0 0}
+.quote small{display:block;font:500 11px/1 var(--f-mono);font-style:normal;color:var(--muted);margin-top:6px}
+
+/* ---------- A: Reading room (editorial) ---------- */
+#a .hero{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;padding:40px 0 30px}
+#a h1{font:600 clamp(36px,5.2vw,58px)/1.06 var(--f-book);letter-spacing:-.01em;margin:16px 0 18px}
+#a h1 i{color:var(--accent);font-weight:400}
+#a .lede{font:19px/1.55 var(--f-book);color:var(--muted);max-width:34ch;margin:0 0 26px}
+#a .ctas{display:flex;gap:10px;flex-wrap:wrap}
+#a .demo{padding:22px 24px}
+#a .rule{display:flex;align-items:center;gap:14px;margin:56px 0 26px;font:600 12px/1 var(--f-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+#a .rule::after{content:"";flex:1;height:1px;background:var(--line)}
+#a .features{display:grid;grid-template-columns:repeat(3,1fr);gap:28px 36px}
+#a .features .feature{padding-top:14px;border-top:2px solid var(--ink)}
+#a .beta{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start}
+#a .beta .card{padding:22px}
+
+/* ---------- B: Constellation (graph-first, dark hero) ---------- */
+#b .hero{position:relative;overflow:hidden;background:#0B1117;color:#E3E9EF;border-radius:0 0 28px 28px}
+#b .hero .nav{color:#E3E9EF}#b .hero .brand{color:#E3E9EF}#b .hero .brand small{color:#8C99A6}
+#b .hero .btn{background:#151D25;border-color:#26323D;color:#E3E9EF}
+#b .hero .btn.primary{background:#78AEEA;border-color:#78AEEA;color:#0B1117}
+#b .hero-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:20px;align-items:center;padding:30px 0 64px;position:relative}
+#b h1{font:700 clamp(34px,4.8vw,54px)/1.08 var(--f-ui);letter-spacing:-.02em;margin:0 0 16px}
+#b h1 span{color:#EBAA3C}
+#b .lede{font-size:18px;color:#A9B5C1;max-width:40ch;margin:0 0 26px}
+#b .ctas{display:flex;gap:10px;flex-wrap:wrap}
+#b svg.constellation{width:100%;height:auto;display:block}
+#b .constellation .e{stroke:#3A4856;stroke-width:1.3}
+#b .constellation .e.hot{stroke:#EBAA3C;stroke-width:2.4;stroke-dasharray:240;stroke-dashoffset:240;animation:draw 2.6s ease forwards}
+#b .constellation .e.hot.d2{animation-delay:.7s}#b .constellation .e.hot.d3{animation-delay:1.4s}
+#b .constellation text{font:500 12px var(--f-ui);fill:#C9D3DC}
+#b .constellation .tag{font:500 10px var(--f-ui);fill:#EBAA3C;opacity:0;animation:fade .6s ease forwards}
+#b .constellation .tag.d1{animation-delay:1.6s}#b .constellation .tag.d2{animation-delay:2.3s}#b .constellation .tag.d3{animation-delay:3s}
+@keyframes draw{to{stroke-dashoffset:0}}@keyframes fade{to{opacity:1}}
+@media (prefers-reduced-motion:reduce){#b .constellation .e.hot{animation:none;stroke-dashoffset:0}#b .constellation .tag{animation:none;opacity:1}}
+#b .floating{color:var(--ink);margin:6px 0 0 auto;width:min(440px,100%);padding:16px 18px}
+#b .features{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-top:40px}
+#b .features .feature{padding:18px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+#b .features .ico{width:30px;height:30px;border-radius:8px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font:700 14px var(--f-mono);margin-bottom:10px}
+#b .beta{display:grid;grid-template-columns:1.2fr .8fr;gap:24px;margin-top:40px}
+#b .beta .card{padding:24px}
+
+/* ---------- C: Proof (sentence by sentence) ---------- */
+#c .hero{text-align:center;padding:52px 0 26px}
+#c h1{font:600 clamp(34px,5vw,56px)/1.08 var(--f-book);margin:14px auto 14px;max-width:18ch}
+#c .lede{font-size:18px;color:var(--muted);max-width:52ch;margin:0 auto 24px}
+#c .ctas{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+#c .proof{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:40px;overflow:hidden}
+#c .proof > div{padding:22px 24px}
+#c .proof .left{border-right:1px solid var(--line)}
+#c .proof .label{font:600 11px/1 var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+#c .sent{font:17px/1.6 var(--f-book);padding:6px 8px;border-radius:7px;cursor:default;transition:background .2s}
+#c .sent:hover,#c .sent.on{background:var(--accent-soft)}
+#c .src{font:italic 15.5px/1.55 var(--f-book);padding:10px 12px;border-left:3px solid var(--line);margin-bottom:10px;color:var(--muted);transition:all .2s}
+#c .src small{display:block;font:500 11px var(--f-mono);font-style:normal;margin-top:4px}
+#c .src.on{border-left-color:var(--accent);color:var(--ink);background:var(--sunk)}
+#c .src mark{background:var(--glow-soft);color:inherit;padding:0 2px;border-radius:3px}
+#c .verdict{display:inline-flex;gap:6px;align-items:center;font:600 12px var(--f-ui);color:var(--ok);margin-top:8px}
+#c .features{display:grid;grid-template-columns:repeat(5,1fr);gap:0;margin-top:52px;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+#c .features .feature{padding:20px;border-right:1px solid var(--line);background:var(--panel)}
+#c .features .feature:last-child{border-right:0}
+#c .beta{max-width:720px;margin:56px auto 0;text-align:left}
+#c .beta .card{padding:24px;display:grid;grid-template-columns:1fr 1fr;gap:28px}
+
+@media (max-width:900px){
+  #a .hero,#a .beta,#b .hero-grid,#b .beta,#c .proof,#c .beta .card{grid-template-columns:1fr}
+  #a .features{grid-template-columns:1fr 1fr}
+  #b .features,#c .features{grid-template-columns:1fr 1fr}
+  #c .features .feature{border-right:0;border-bottom:1px solid var(--line)}
+  #c .proof .left{border-right:0;border-bottom:1px solid var(--line)}
+  #b .floating{width:100%;margin-top:18px}
+}
+@media (max-width:560px){#a .features,#b .features,#c .features{grid-template-columns:1fr}.nav .hide-sm{display:none}}
+</style>
+</head>
+<body>
+
+<div class="switcher" role="toolbar" aria-label="Mockup controls">
+  <b>LORE homepage</b>
+  <button type="button" data-dir="a" aria-pressed="true">A · Reading room</button>
+  <button type="button" data-dir="b" aria-pressed="false">B · Constellation</button>
+  <button type="button" data-dir="c" aria-pressed="false">C · Proof</button>
+  <span class="sp"></span>
+  <button type="button" id="theme" aria-pressed="false">Dark</button>
+</div>
+
+<template id="logo"><svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true"><path d="M32 56 C24 51 14 50 6 52 V30 C14 28 24 29 32 34 C40 29 50 28 58 30 V52 C50 50 40 51 32 56 Z" fill="none" stroke="var(--logo-a,var(--accent))" stroke-width="3.4" stroke-linejoin="round"/><path d="M32 34 V56" stroke="var(--logo-a,var(--accent))" stroke-width="3.4"/><path d="M32 30 L16 14 M32 30 L32 8 M32 30 L48 14 M16 14 L32 8 L48 14" fill="none" stroke="var(--logo-a,var(--accent))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="32" cy="30" r="3.2" fill="var(--logo-a,var(--accent))"/><circle cx="16" cy="14" r="3.4" fill="var(--logo-a,var(--accent))"/><circle cx="32" cy="8" r="3.8" fill="var(--logo-g,var(--glow))"/><circle cx="48" cy="14" r="3.4" fill="var(--logo-a,var(--accent))"/></svg></template>
+
+<!-- ======================= A: Reading room ======================= -->
+<section class="dir on" id="a" aria-label="Direction A: Reading room">
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="#"><span class="logo"></span><b>LORE</b><small>Reader</small></a>
+      <span class="sp"></span>
+      <a class="hide-sm muted" href="#beta-a" style="text-decoration:none;font-size:15px">How the beta works</a>
+      <a class="btn ghost" href="#">Sign in</a>
+    </nav>
+
+    <div class="hero">
+      <div>
+        <span class="pill">Private beta</span>
+        <h1>Ask your books anything.<br><i>Every answer checked against the page.</i></h1>
+        <p class="lede">LORE reads the books you own and builds a map of their people, places and events. Ask it anything; every sentence comes back with the passage it stands on.</p>
+        <div class="ctas"><a class="btn primary" href="#beta-a">Request an invite</a><a class="btn" href="#">Sign in</a></div>
+      </div>
+      <div class="card demo answer" aria-label="A real LORE answer">
+        <div class="q">You asked <span>Summarise chapters 1 and 2</span></div>
+        <h4>Short answer</h4>
+        <p>Back from the war and short of money, Watson meets Sherlock Holmes through Stamford, and the two take rooms together at Baker Street. <span class="chip">4</span><span class="chip">8</span></p>
+        <h4>Chapter 2 · The Science of Deduction</h4>
+        <p>Holmes explains that he works as a consulting detective, helping official investigators when they are stuck. <span class="chip">15</span></p>
+        <div class="quote">“I have a trade of my own. I suppose I am the only one in the world. I’m a consulting detective…”<small>A Study in Scarlet · ch. 2 · passage 15</small></div>
+      </div>
+    </div>
+
+    <div class="rule">Why it is different</div>
+    <div class="features">
+      <div class="feature"><h3>Checked, sentence by sentence</h3><p>Every sentence cites a passage, and a second pass throws out anything the passage doesn’t say.</p></div>
+      <div class="feature"><h3>Deep, analytical answers</h3><p>Ask “why” and “how did they change”. LORE gives its reading, the other side, and what the books leave open, each one labelled.</p></div>
+      <div class="feature"><h3>A graph you can explore</h3><p>Characters, places and groups, and how they connect, with the evidence for every link one click away.</p></div>
+      <div class="feature"><h3>Spoiler-safe reading</h3><p>Tell LORE where you are in the book. Answers, the graph and every profile stop at your chapter.</p></div>
+      <div class="feature"><h3>Your library, private</h3><p>Your books stay in your own library. Nothing is shared between readers.</p></div>
+      <div class="feature"><h3>Recaps on demand</h3><p>“What happened so far?” gives you a chapter-by-chapter story, in order, with every event cited.</p></div>
+    </div>
+
+    <div class="rule" id="beta-a">How the beta works</div>
+    <div class="beta">
+      <ol class="steps" style="margin:0;padding:0">
+        <li><div><b>Request an invite</b><span class="muted">We let readers in in small groups.</span></div></li>
+        <li><div><b>Bring a free Gemini key</b><span class="muted">LORE runs on your own Google AI Studio key: free, about 1,000 requests a day. Takes two minutes.</span></div></li>
+        <li><div><b>Add a book you own</b><span class="muted">EPUB or PDF, up to 50 MB. LORE reads it once, then you can ask it anything.</span></div></li>
+      </ol>
+      <form class="card waitlist" onsubmit="event.preventDefault();this.querySelector('button').textContent='You’re on the list ✓'">
+        <label for="ea">Email</label><input id="ea" type="email" required placeholder="you@example.com">
+        <label for="ra">What are you reading? <span class="muted" style="font-weight:400">(optional)</span></label><input id="ra" type="text" placeholder="The Wheel of Time, book 4">
+        <label class="consent"><input type="checkbox" required> Email me when my invite is ready. Nothing else.</label>
+        <button class="btn primary" type="submit">Request an invite</button>
+      </form>
+    </div>
+
+    <footer class="foot"><span>© 2026 LORE</span><span class="sp"></span><a href="#">Privacy</a><a href="#">Terms</a><a href="#">Sign in</a></footer>
+  </div>
+</section>
+
+<!-- ======================= B: Constellation ======================= -->
+<section class="dir" id="b" aria-label="Direction B: Constellation" style="--logo-a:#78AEEA;--logo-g:#EBAA3C">
+  <div class="hero">
+    <div class="wrap">
+      <nav class="nav">
+        <a class="brand" href="#"><span class="logo"></span><b>LORE</b><small>Reader</small></a>
+        <span class="sp"></span>
+        <a class="btn" href="#">Sign in</a><a class="btn primary hide-sm" href="#beta-b">Request an invite</a>
+      </nav>
+      <div class="hero-grid">
+        <div>
+          <h1>Every story is a web.<br><span>LORE draws it.</span></h1>
+          <p class="lede">Ask about the books you own. LORE answers from the text, cites every sentence, and lights up the people and links behind the answer.</p>
+          <div class="ctas"><a class="btn primary" href="#beta-b">Request an invite</a><a class="btn" href="#">Sign in</a></div>
+        </div>
+        <div>
+          <svg class="constellation" viewBox="0 0 560 360" role="img" aria-label="A graph of A Study in Scarlet: Holmes, Watson, Stamford, Lestrade, Gregson, Jefferson Hope, Drebber, Lucy Ferrier">
+            <line class="e" x1="140" y1="210" x2="230" y2="120"/><line class="e" x1="230" y1="120" x2="330" y2="90"/>
+            <line class="e" x1="330" y1="90" x2="420" y2="140"/><line class="e" x1="230" y1="120" x2="300" y2="210"/>
+            <line class="e" x1="420" y1="140" x2="480" y2="240"/><line class="e" x1="300" y1="210" x2="480" y2="240"/>
+            <line class="e" x1="140" y1="210" x2="90" y2="300"/><line class="e" x1="300" y1="210" x2="380" y2="300"/>
+            <line class="e hot" x1="140" y1="210" x2="300" y2="210"/>
+            <line class="e hot d2" x1="300" y1="210" x2="420" y2="140"/>
+            <line class="e hot d3" x1="420" y1="140" x2="480" y2="240"/>
+            <g fill="#6FA4E4"><circle cx="140" cy="210" r="9"/><circle cx="230" cy="120" r="7"/><circle cx="330" cy="90" r="6"/><circle cx="90" cy="300" r="6"/></g>
+            <g fill="#EBAA3C"><circle cx="300" cy="210" r="12"/></g>
+            <g fill="#BC8AD3"><circle cx="420" cy="140" r="8"/></g>
+            <g fill="#6CC1A0"><circle cx="480" cy="240" r="7"/><circle cx="380" cy="300" r="6"/></g>
+            <text x="112" y="236">Watson</text><text x="244" y="116">Stamford</text><text x="342" y="86">Lestrade</text><text x="102" y="304">Afghanistan</text>
+            <text x="316" y="228">Sherlock Holmes</text><text x="432" y="136">Jefferson Hope</text><text x="492" y="244">Drebber</text><text x="392" y="304">Baker Street</text>
+            <text class="tag d1" x="178" y="202">shares rooms with</text><text class="tag d2" x="330" y="168">arrests</text><text class="tag d3" x="458" y="184">kills</text>
+          </svg>
+          <div class="card floating answer"><div class="q">You asked <span>How did Holmes catch the killer?</span></div><p style="font-size:15.5px;margin:0">Holmes sends for a cabman and, when Jefferson Hope bends to help with a trunk, snaps handcuffs on his wrists. <span class="chip">61</span></p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="features">
+      <div class="feature"><div class="ico">✓</div><h3>Checked against the page</h3><p>Every sentence cites its passage.</p></div>
+      <div class="feature"><div class="ico">∴</div><h3>Answers that think</h3><p>Readings, counter-cases and limits, labelled.</p></div>
+      <div class="feature"><div class="ico">◎</div><h3>Explore the graph</h3><p>Click any link to read its evidence.</p></div>
+      <div class="feature"><div class="ico">§</div><h3>Spoiler-safe</h3><p>Everything stops at your chapter.</p></div>
+      <div class="feature"><div class="ico">⌂</div><h3>Private library</h3><p>Your books, only yours.</p></div>
+    </div>
+    <div class="beta" id="beta-b">
+      <div class="card"><h2 style="margin:0 0 14px;font:700 24px/1.2 var(--f-ui)">How the beta works</h2>
+        <ol class="steps" style="margin:0;padding:0">
+          <li><div><b>Request an invite</b><span class="muted">Small groups, invite-only for now.</span></div></li>
+          <li><div><b>Add your free Gemini key</b><span class="muted">From Google AI Studio, about 1,000 free requests a day.</span></div></li>
+          <li><div><b>Upload a book you own</b><span class="muted">EPUB or PDF. LORE reads it once, then you can explore and ask.</span></div></li>
+        </ol></div>
+      <form class="card waitlist" onsubmit="event.preventDefault();this.querySelector('button').textContent='You’re on the list ✓'">
+        <label for="eb">Email</label><input id="eb" type="email" required placeholder="you@example.com">
+        <label for="rb">What are you reading? <span class="muted" style="font-weight:400">(optional)</span></label><input id="rb" type="text">
+        <label class="consent"><input type="checkbox" required> Email me when my invite is ready.</label>
+        <button class="btn primary" type="submit">Request an invite</button>
+      </form>
+    </div>
+    <footer class="foot"><span>© 2026 LORE</span><span class="sp"></span><a href="#">Privacy</a><a href="#">Terms</a></footer>
+  </div>
+</section>
+
+<!-- ======================= C: Proof ======================= -->
+<section class="dir" id="c" aria-label="Direction C: Proof">
+  <div class="wrap">
+    <nav class="nav">
+      <a class="brand" href="#"><span class="logo"></span><b>LORE</b><small>Reader</small></a>
+      <span class="sp"></span><a class="btn ghost" href="#">Sign in</a><a class="btn primary hide-sm" href="#beta-c">Request an invite</a>
+    </nav>
+    <div class="hero">
+      <span class="pill">Private beta</span>
+      <h1>Answers you can check against the book.</h1>
+      <p class="lede">Most AI answers about books are confident guesses. LORE answers from the text itself and shows you the passage behind every sentence. Hover one and see.</p>
+      <div class="ctas"><a class="btn primary" href="#beta-c">Request an invite</a><a class="btn" href="#">Sign in</a></div>
+    </div>
+
+    <div class="card proof">
+      <div class="left">
+        <div class="label">LORE’s answer · “Who is Holmes, at first?”</div>
+        <div class="sent on" data-s="1">Stamford introduces Watson to Holmes in the chemical laboratory at the hospital. <span class="chip">5</span></div>
+        <div class="sent" data-s="2">Holmes tells Watson at once that he has been in Afghanistan. <span class="chip">6</span></div>
+        <div class="sent" data-s="3">He later explains that he is a consulting detective, the only one in the world. <span class="chip">15</span></div>
+        <div class="verdict">✓ 3 of 3 sentences supported by the text</div>
+      </div>
+      <div>
+        <div class="label">From the book</div>
+        <div class="src on" data-s="1">“…<mark>Dr. Watson, Mr. Sherlock Holmes</mark>,” said Stamford, introducing us.<small>A Study in Scarlet · ch. 1</small></div>
+        <div class="src" data-s="2">“How are you?” he said cordially… “<mark>You have been in Afghanistan, I perceive.</mark>”<small>A Study in Scarlet · ch. 1</small></div>
+        <div class="src" data-s="3">“Well, I have a trade of my own. I suppose <mark>I am the only one in the world. I’m a consulting detective</mark>…”<small>A Study in Scarlet · ch. 2</small></div>
+      </div>
+    </div>
+
+    <div class="features">
+      <div class="feature"><h3>Checked</h3><p>Unsupported sentences are cut, not shown.</p></div>
+      <div class="feature"><h3>Deep</h3><p>Readings and counter-cases, always labelled as such.</p></div>
+      <div class="feature"><h3>Mapped</h3><p>An explorable graph of who, where and how.</p></div>
+      <div class="feature"><h3>Spoiler-safe</h3><p>Stops at the chapter you’re on.</p></div>
+      <div class="feature"><h3>Private</h3><p>Your books, your library, no one else’s.</p></div>
+    </div>
+
+    <div class="beta" id="beta-c">
+      <h2 style="font:600 30px/1.2 var(--f-book);margin:0 0 16px;text-align:center">How the beta works</h2>
+      <div class="card">
+        <ol class="steps" style="margin:0;padding:0">
+          <li><div><b>Request an invite</b><span class="muted">Small groups, invite-only.</span></div></li>
+          <li><div><b>Bring a free Gemini key</b><span class="muted">About 1,000 free requests a day, from Google AI Studio.</span></div></li>
+          <li><div><b>Add a book you own</b><span class="muted">EPUB or PDF, up to 50 MB.</span></div></li>
+        </ol>
+        <form class="waitlist" onsubmit="event.preventDefault();this.querySelector('button').textContent='You’re on the list ✓'">
+          <label for="ec">Email</label><input id="ec" type="email" required placeholder="you@example.com">
+          <label for="rc">What are you reading? <span class="muted" style="font-weight:400">(optional)</span></label><input id="rc" type="text">
+          <label class="consent"><input type="checkbox" required> Email me when my invite is ready.</label>
+          <button class="btn primary" type="submit">Request an invite</button>
+        </form>
+      </div>
+    </div>
+    <footer class="foot"><span>© 2026 LORE</span><span class="sp"></span><a href="#">Privacy</a><a href="#">Terms</a></footer>
+  </div>
+</section>
+
+<script>
+// Logo into every brand slot.
+const logo = document.getElementById("logo").content;
+document.querySelectorAll(".logo").forEach((el) => el.appendChild(logo.cloneNode(true)));
+// Direction switcher.
+document.querySelectorAll("[data-dir]").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-dir]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  document.querySelectorAll(".dir").forEach((d) => d.classList.toggle("on", d.id === b.dataset.dir));
+  window.scrollTo(0, 0);
+}));
+// Light / dark.
+const root = document.documentElement, tb = document.getElementById("theme");
+const isDark = () => root.dataset.theme === "dark" || (!root.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+const label = () => { tb.textContent = isDark() ? "Light" : "Dark"; tb.setAttribute("aria-pressed", String(isDark())); };
+tb.addEventListener("click", () => { root.dataset.theme = isDark() ? "light" : "dark"; label(); });
+label();
+// C: hovering a sentence lights its passage.
+document.querySelectorAll("#c .sent").forEach((s) => s.addEventListener("mouseenter", () => {
+  document.querySelectorAll("#c .sent, #c .src").forEach((x) => x.classList.toggle("on", x.dataset.s === s.dataset.s));
+}));
+</script>
+</body>
+</html>
