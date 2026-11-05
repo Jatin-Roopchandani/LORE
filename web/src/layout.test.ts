@@ -65,7 +65,7 @@ test("an overview of 40 entities spreads out, most-connected nearest the centre,
   expect(inner).toBeLessThan(outer);
 });
 
-test("only the overview uses the spiral; a seedless answer graph hangs nodes off their neighbours", () => {
+test("only the overview uses the spiral start; a seedless answer graph hangs nodes off their neighbours", () => {
   const v: GraphView = { nodes: [node("a"), node("b"), node("c")], links: [link("a", "b"), link("a", "c")], shownEdges: 2, totalEdges: 2 };
   const spiral = place(new Map(), v, null, true);
   const plain = place(new Map(), v);
@@ -83,4 +83,25 @@ test("overview nodes on nearly the same row are kept a label's width apart", () 
   for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++)
     if (Math.abs(pts[i].x - pts[j].x) < 140 && Math.abs(pts[i].y - pts[j].y) < 20) clashes++;
   expect(clashes).toBe(0);
+});
+
+test("the overview puts linked entities near each other: two clusters stay apart and edges rarely cross", () => {
+  const a = Array.from({ length: 10 }, (_, i) => `a${i}`), b = Array.from({ length: 10 }, (_, i) => `b${i}`);
+  // Interleave the two clusters in view order, so the spiral alone would mix them.
+  const ids = a.flatMap((x, i) => [x, b[i]]);
+  const links = [...a.slice(1).map((x) => link(a[0], x)), ...b.slice(1).map((x) => link(b[0], x)), link(a[1], a[2]), link(b[1], b[2])];
+  const p = place(new Map(), { nodes: ids.map((id) => node(id)), links, shownEdges: 0, totalEdges: 0 }, null, true);
+  const centre = (g: string[]) => ({ x: g.reduce((s, id) => s + p.get(id)!.x, 0) / g.length, y: g.reduce((s, id) => s + p.get(id)!.y, 0) / g.length });
+  const spread = (g: string[]) => { const c = centre(g); return g.reduce((s, id) => s + Math.hypot(p.get(id)!.x - c.x, p.get(id)!.y - c.y), 0) / g.length; };
+  const ca = centre(a), cb = centre(b);
+  expect(Math.hypot(ca.x - cb.x, ca.y - cb.y)).toBeGreaterThan(spread(a) + spread(b) * 0.5);
+  const seg = links.map((l) => [p.get(l.source)!, p.get(l.target)!, l.source, l.target] as const);
+  const o = (p1: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) => Math.sign((q.x - p1.x) * (r.y - p1.y) - (q.y - p1.y) * (r.x - p1.x));
+  let crossings = 0;
+  for (let i = 0; i < seg.length; i++) for (let j = i + 1; j < seg.length; j++) {
+    const [p1, q1, s1, t1] = seg[i], [p2, q2, s2, t2] = seg[j];
+    if (new Set([s1, t1, s2, t2]).size < 4) continue;
+    if (o(p1, q1, p2) * o(p1, q1, q2) < 0 && o(p2, q2, p1) * o(p2, q2, q1) < 0) crossings++;
+  }
+  expect(crossings).toBeLessThanOrEqual(2);
 });

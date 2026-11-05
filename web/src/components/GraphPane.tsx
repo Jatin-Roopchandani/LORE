@@ -42,9 +42,11 @@ function pathData(r: PathResult): SubgraphData {
 // undefined = still loading; null = unavailable or empty.
 // `world`: the selected world (an id as a string, or "all"), passed to every graph call.
 // `onAsk`: sends a question through the ordinary ask path (the panel's one-click questions).
-export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = [], overview, world, onAsk = () => {} }:
+// `positionVersion`: bumped when the reading position changed. The expansions and the path were fetched under the old
+// position, so they are dropped; the open panel refetches under the new one.
+export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = [], overview, world, positionVersion = 0, onAsk = () => {} }:
   { state: AskState; hiddenBooks: Set<string>; hoverChunks: string[]; noBooks: boolean; books?: Book[];
-    overview?: SubgraphData | null; world?: string; onAsk?: (question: string, depth?: Depth) => void }) {
+    overview?: SubgraphData | null; world?: string; positionVersion?: number; onAsk?: (question: string, depth?: Depth) => void }) {
   const idle = state.status === "idle" && !state.question;
   // The person's choice of view; with none, an answer shows its graph and nothing shows the library.
   const [chosen, setChosen] = useState<Mode | null>(null);
@@ -72,6 +74,15 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
     setExpansions({ answer: [], library: [] });
     positions.current = { answer: new Map(), library: new Map() };
   }, [world]);
+
+  const lastPosition = useRef(positionVersion);
+  useEffect(() => {
+    if (lastPosition.current === positionVersion) return;
+    lastPosition.current = positionVersion;
+    setConnection(null);
+    setExpansions({ answer: [], library: [] });
+    positions.current = { answer: new Map(), library: new Map() };
+  }, [positionVersion]);
 
   const libraryOverview = overview?.nodes.length ? overview : null;
   const shownOverview = mode === "library" ? libraryOverview : null;
@@ -184,10 +195,10 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
             pinned={expansions[mode].length > 0 || !!pathSub} fitRequest={fitRequest} focusId={focus.id} focusRequest={focus.n} />}
         {(panel || connection) && (
           <div className="gside">
-            {panel?.type === "entity" && <EntityPanel key={panel.id} id={panel.id} world={world} bookTitles={bookTitles} seed={seedIds.has(panel.id)}
+            {panel?.type === "entity" && <EntityPanel key={panel.id} id={panel.id} world={world} positionVersion={positionVersion} bookTitles={bookTitles} seed={seedIds.has(panel.id)}
               busy={busy} onClose={() => setPanel(null)} onSelect={(id) => openEntity(id)} onExpand={expand(panel.id)} onOpenEdge={openEdge}
               onAsk={onAsk} onConnect={connect} />}
-            {panel?.type === "edge" && <EdgeView key={`${panel.a}|${panel.b}`} a={panel.a} b={panel.b} world={world} bookTitles={bookTitles} busy={busy}
+            {panel?.type === "edge" && <EdgeView key={`${panel.a}|${panel.b}`} a={panel.a} b={panel.b} world={world} positionVersion={positionVersion} bookTitles={bookTitles} busy={busy}
               onClose={() => setPanel(null)} onSelect={(id) => openEntity(id)} onAsk={onAsk} />}
             {connection && <ConnectionView connection={connection} world={world} bookTitles={bookTitles} onSelect={(id) => openEntity(id)} onClear={clearPath} />}
           </div>

@@ -15,7 +15,13 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
-ASPECTS = ("nature", "history", "abilities", "relationships", "role", "change")
+# "identity" (who or what the entity is: occupation, status or position, its
+# tie to the main cast, what it is in the story) is first in stored order.
+ASPECTS = ("identity", "nature", "history", "abilities", "relationships", "role",
+           "change")
+# The order a profile shows the aspects in: who it is, what it does, then the rest.
+DISPLAY_ORDER = ("identity", "role", "nature", "abilities", "relationships",
+                 "history", "change")
 
 
 @dataclass(frozen=True)

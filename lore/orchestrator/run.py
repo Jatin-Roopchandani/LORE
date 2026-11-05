@@ -48,6 +48,23 @@ def unit_state(conn: sqlite3.Connection, unit_id: str) -> str | None:
     return row[0] if row else None
 
 
+def book_units(conn: sqlite3.Connection, book_id: str, size: int) -> list[WorkUnit]:
+    """The book's extraction units: its story chunks packed `size` at a time.
+
+    A book extracted before its sections were classified keeps the packing
+    its units were made with (every chunk), so a resume never orphans units
+    already paid for; the loader drops what front and back matter produced.
+    """
+    story = chunks_for_book(conn, book_id)
+    everything = chunks_for_book(conn, book_id, story_only=False)
+    if len(story) == len(everything):
+        return pack_units(book_id, everything, size)
+    legacy = pack_units(book_id, everything, size)
+    if any(unit_state(conn, u.unit_id) is not None for u in legacy):
+        return legacy
+    return pack_units(book_id, story, size)
+
+
 def set_unit_state(
     conn: sqlite3.Connection, book_id: str, unit_id: str, state: str, error: str = ""
 ) -> None:
@@ -205,11 +222,9 @@ def run_extraction(
     environment or ~/.config/lore/gemini.env. Without one this raises
     ValueError before any unit is queued. `gemini_tier_factory` is for tests.
     """
-    chunks = chunks_for_book(conn, book_id)
-    if not chunks:
+    units = book_units(conn, book_id, config.extraction.work_unit_size)
+    if not units:
         raise ValueError(f"no chunks registered for book {book_id}")
-
-    units = pack_units(book_id, chunks, config.extraction.work_unit_size)
     report = RunReport(book_id=book_id, units_total=len(units))
 
     pending = [

@@ -6,7 +6,9 @@ For every synthesis call: claims proposed, cut by MAX_CLAIMS, dropped by
 the quote check (and why), then for the answer: lost to the near-duplicate
 collapse and to the faithfulness check. Replays the real verify_claims on
 the passages the call was shown (parsed from its prompt), so the numbers
-are what the pipeline did, not an estimate.
+are what the pipeline did, not an estimate. For a prose answer, `coverage` is
+the share of its kept claims the shown prose cites (write.answer_coverage, as
+the answer recorded it); "-" for an answer shown as its claim list.
 """
 from __future__ import annotations
 
@@ -43,6 +45,7 @@ def main() -> None:
     total = Counter()
     reasons = Counter()
     rows = []
+    coverages: dict[str, float] = {}
     for t in traces:
         a = answers[t["id"]]
         passages = {p["n"]: Passage(n=p["n"], chunk_id=p["chunk_id"], book_id=p.get("book_id", ""),
@@ -68,6 +71,8 @@ def main() -> None:
                 reasons[why] += 1
             q["quote_dropped"] += len(dropped)
         q["final"] = len(a.get("claims", []))
+        if a.get("coverage") is not None:
+            coverages[t["id"]] = a["coverage"]
         q["collapsed"] = max(0, q["verified"] - q["check_dropped"] - q["final"])
         total.update(q)
         rows.append((t["id"], q))
@@ -80,10 +85,15 @@ def main() -> None:
     print(f"  faithfulness check dropped {total['check_dropped']}")
     print(f"  final claims {total['final']}  ({total['final'] / max(1, len(rows)):.1f} per answer)")
     print(f"  synthesis calls answering can_answer=false: {total['said_cannot']}")
-    print("\n id    calls proposed quote-drop verified collapsed check-drop final")
+    if coverages:
+        full = sum(v >= 1.0 for v in coverages.values())
+        print(f"  prose coverage: mean {sum(coverages.values()) / len(coverages):.3f} over"
+              f" {len(coverages)} prose answers, {full} fully covered")
+    print("\n id    calls proposed quote-drop verified collapsed check-drop final coverage")
     for i, q in rows:
+        cov = f"{coverages[i]:.2f}" if i in coverages else "-"
         print(f" {i:5s} {q['calls']:5d} {q['proposed']:8d} {q['quote_dropped']:10d} {q['verified']:8d}"
-              f" {q['collapsed']:9d} {q['check_dropped']:10d} {q['final']:5d}")
+              f" {q['collapsed']:9d} {q['check_dropped']:10d} {q['final']:5d} {cov:>8s}")
 
 
 if __name__ == "__main__":

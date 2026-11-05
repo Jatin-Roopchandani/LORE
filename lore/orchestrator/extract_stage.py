@@ -11,11 +11,10 @@ import asyncio
 from collections.abc import Callable
 
 from lore.config import LoreConfig
-from lore.ingest.registry import chunks_for_book
 from lore.orchestrator.local import make_gemini_tier, parts_done
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
-from lore.orchestrator.run import RunReport, _run_unit_here, _UnitHalted, unit_state
-from lore.orchestrator.workunit import WorkUnit, pack_units
+from lore.orchestrator.run import RunReport, _run_unit_here, _UnitHalted, book_units, unit_state
+from lore.orchestrator.workunit import WorkUnit
 
 
 class ExtractStage:
@@ -35,13 +34,14 @@ class ExtractStage:
         self.report: RunReport | None = None
 
     def _units(self, ctx: StageContext) -> list[WorkUnit]:
-        chunks = chunks_for_book(ctx.conn, ctx.book_id)
-        if not chunks:
+        units = book_units(ctx.conn, ctx.book_id, ctx.config.extraction.work_unit_size)
+        if not units:
             raise ValueError(f"no chunks registered for book {ctx.book_id}")
-        return pack_units(ctx.book_id, chunks, ctx.config.extraction.work_unit_size)
+        return units
 
     def total(self, ctx: StageContext) -> int:
-        return len(chunks_for_book(ctx.conn, ctx.book_id))
+        return sum(len(u.chunks) for u in book_units(
+            ctx.conn, ctx.book_id, ctx.config.extraction.work_unit_size))
 
     def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
         config = ctx.config

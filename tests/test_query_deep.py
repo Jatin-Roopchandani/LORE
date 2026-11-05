@@ -756,6 +756,9 @@ async def test_with_deep_off_everything_is_what_it_was(tmp_path, monkeypatch, na
     asked for, are byte-identical to the code before deep answers (pinned from
     6d931a7)."""
     monkeypatch.setattr(decompose_module, "DEEP", False)
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "COVERAGE", False)  # pinned before coverage existed
+    monkeypatch.setattr(write_module, "FACT_FIDELITY", False)
     config = build_deep_library(tmp_path)
     scripted = Scripted(plan)
     answer, events = await run_scenario(config, scripted, depth="deep")
@@ -793,7 +796,8 @@ async def test_the_deep_arm_asks_every_question_at_depth_deep(tmp_path, monkeypa
     await run_pair.ask(None, "q", run_pair.parse_arm("deep=true"), None)
     await run_pair.ask(None, "q", run_pair.parse_arm("deep=false"), None)
     await run_pair.ask(None, "q", run_pair.parse_arm("control"), None)
-    assert seen == [{"depth": "deep"}, {}, {}]
+    # Every arm ignores a saved reading position (evals measure the whole story).
+    assert seen == [{"depth": "deep", "spoilers": True}, {"spoilers": True}, {"spoilers": True}]
 
 
 def test_the_deep_code_and_prompts_name_no_character_book_or_genre():

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 
@@ -8,8 +8,12 @@ vi.mock("./components/GraphCanvas", () => ({ GraphCanvas: () => <div data-testid
 const library = vi.fn((_world?: string) => Promise.resolve({ books: [], note: null }));
 const worlds = [{ id: 1, name: "Alpha Saga", books: [] }, { id: 2, name: "Beta Realm", books: [] }];
 const asked: (string | undefined)[] = [];
+let position: Record<string, unknown> = { enabled: false, book_id: null, chapter: 0, read_books: [], books: [] };
+const setPosition = vi.fn((_w: string, body: Record<string, unknown>) => { position = { ...position, ...body }; return Promise.resolve({ world: { id: 1, name: "Alpha Saga" }, ...position }); });
 vi.mock("./api", () => ({
   api: {
+    readingPosition: (w: string) => Promise.resolve({ world: { id: Number(w), name: "w" }, ...position }),
+    setReadingPosition: (w: string, body: Record<string, unknown>) => setPosition(w, body),
     settings: () => Promise.resolve({ show_internals: true }),
     library: (w?: string) => library(w),
     worlds: () => Promise.resolve(worlds),
@@ -27,7 +31,10 @@ vi.mock("./api", () => ({
 }));
 Object.defineProperty(window, "matchMedia", { value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) });
 
-beforeEach(() => { localStorage.clear(); asked.length = 0; });
+beforeEach(() => {
+  localStorage.clear(); asked.length = 0; setPosition.mockClear();
+  position = { enabled: false, book_id: null, chapter: 0, read_books: [], books: [] };
+});
 
 test("renders the top bar, the ask box and the graph pane", async () => {
   render(<App />);
@@ -95,4 +102,31 @@ test("replaying a question asked in another world switches the selector to it", 
   await waitFor(() => expect(screen.getByRole("combobox", { name: "World" })).toHaveValue("2"));
   expect(localStorage.getItem("lore-world-v1")).toBe("2");
   await waitFor(() => expect(overview).toHaveBeenLastCalledWith("2"));
+});
+
+test("moving the reading position refetches the book list and the graph for that world, once", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    position = { enabled: true, book_id: "b1", chapter: 2, read_books: [],
+      books: [{ id: "b1", title: "Hollow Gate", series: null, series_index: null, chapters: 9, order: "current" }] };
+    localStorage.setItem("lore-world-v1", "1");
+    overview.mockClear(); library.mockClear();
+    render(<App />);
+    await waitFor(() => expect(overview).toHaveBeenCalledWith("1"));
+    expect(await screen.findByText("Up to Hollow Gate ch. 2")).toBeInTheDocument();
+    const before = { overview: overview.mock.calls.length, library: library.mock.calls.length };
+    fireEvent.click(screen.getByRole("button", { name: /Reading position/ }));
+    const slider = await screen.findByRole("slider");
+    fireEvent.change(slider, { target: { value: "4" } });
+    fireEvent.change(slider, { target: { value: "5" } });
+    expect(overview.mock.calls.length).toBe(before.overview);  // nothing until the slider settles
+    act(() => { vi.advanceTimersByTime(500); });
+    await waitFor(() => expect(overview.mock.calls.length).toBe(before.overview + 1));
+    expect(library.mock.calls.length).toBe(before.library + 1);
+    expect(setPosition).toHaveBeenCalledTimes(1);
+    expect(setPosition).toHaveBeenCalledWith("1", { enabled: true, book_id: "b1", chapter: 5, read_books: [] });
+    expect(overview).toHaveBeenLastCalledWith("1");
+  } finally {
+    vi.useRealTimers();
+  }
 });

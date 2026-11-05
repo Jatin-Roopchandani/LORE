@@ -6,10 +6,10 @@ import { QuoteChip } from "./QuoteChip";
 import { useLoad } from "./useLoad";
 
 /** Everything stored about how two entities are related: each predicate, with its evidence in story order. */
-export function EdgeView({ a, b, world, bookTitles, busy = false, onClose, onSelect, onAsk }:
-  { a: string; b: string; world?: string; bookTitles?: Map<string, string>; busy?: boolean; onClose: () => void;
+export function EdgeView({ a, b, world, positionVersion = 0, bookTitles, busy = false, onClose, onSelect, onAsk }:
+  { a: string; b: string; world?: string; positionVersion?: number; bookTitles?: Map<string, string>; busy?: boolean; onClose: () => void;
     onSelect: (id: string) => void; onAsk: (question: string, depth?: Depth) => void }) {
-  const e = useLoad<EdgeDetail>(() => api.edge(a, b, world), [a, b, world]);
+  const e = useLoad<EdgeDetail>(() => api.edge(a, b, world), [a, b, world, positionVersion]);
   return (
     <aside className="side-card" aria-label={EXPLORE.edgeLabel} onKeyDown={(ev) => { if (ev.key === "Escape") onClose(); }}>
       <button className="close" type="button" aria-label={EXPLORE.close} onClick={onClose}>×</button>

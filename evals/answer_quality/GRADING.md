@@ -217,3 +217,48 @@ per round, a ~10% gain cannot reach per-set significance at this set size. Error
 (the full prompt fails on 3.5-flash-lite for it), D1 and D23 in round 5.
 
 Future rounds compare against this new default.
+
+**2026-11-04: prose for plain factual answers switched off (`write.PROSE_FACTUAL = False`).**
+
+Round 6 (prose on vs off, at 12e9dbc) and round 7 (all ten new behaviours on vs all off,
+at 2e9f5e0, asked in the Sherlock Holmes world) were both graded blind and answer-only.
+Both failed the pre-registered prose bar.
+
+| Round | Set | Key facts (on → off) | False (on / off) | Duplicates (on / off) | Preferred (on / off / tie) | p (facts) |
+|---|---|---|---|---|---|---|
+| 6 | dev | see grade6 | 3 / 1 | 6 / 30 | 21 / 21 | — |
+| 6 | held-out | 53 → 63 / 86 | — | — | 8 / 7 | — |
+| 7 | dev, 55 | 131 → 140 / 251 | 9 / 4 | 10 / 22 | 24 / 25 / 6 | 0.38 |
+| 7 | held-out, 16 | 52 → 58 / 86 | 0 / 2 | 7 / 14 | 8 / 8 / 0 | 0.34 |
+
+- 7 of round 7's 9 "on" false claims were readings stated as plain fact, for example
+  "withheld assistance", "self-appointed justice" and "came only to confront".
+- Both rounds point at the writer as the common factor.
+- H1 was dropped from both arms after three upstream 503s.
+- Fallback rate with prose on: 23% on dev, 15% on held-out.
+
+Plain factual answers now show their checked claims. Interpretive, beyond, deep, lens and
+recap answers keep the writer, because each has its own eval still pending. The fix is
+specified in `docs/superpowers/specs/2026-11-04-writer-fidelity-design.md`. It is
+re-tested on a fresh factual set before `PROSE_FACTUAL` comes back on.
+
+Round 8 measures the other nine behaviours: the new defaults with PROSE_FACTUAL off, against
+all of them off.
+
+**2026-11-04: the writer-fidelity set (`factual2.json`, 24 questions) and its bar, fixed before the run.**
+
+The fix in `docs/superpowers/specs/2026-11-04-writer-fidelity-design.md` (COVERAGE,
+FACT_FIDELITY) is tested on a fresh factual set: 24 questions over both novels, written from
+the book text and checked against every earlier set (dev, held-out, arc, interpretive, deep,
+recap) for repeated questions, topics and key facts (`tests/test_eval_factual2.py`). 3 ask for
+a single fact, 14 for several, 7 compare the two books.
+
+Arms: `prose_factual=true` (with the fix) against `prose_factual=false`, paired, graded blind
+and answer-only:
+
+    run_pair.py --set factual2 --world <Holmes world> --trace \
+        --arm prose_factual=true --arm prose_factual=false
+
+Bar: false claims no higher than control; key facts no worse than -2 in total; readability
+preferred with a sign test p < 0.05; prose fallback at most 25% (`trace_report.py` also prints
+each prose answer's `coverage`). If it passes, `PROSE_FACTUAL` goes back on.

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Awaitable, Callable, Collection, Iterable, Protocol, Sequence
 
 from lore.extract.embed import QUERY_PREFIX
+from lore.query import visible
 from lore.query.models import SeedEntity
 from lore.query.retrieval import search_chunks
 from lore.resolve.normalize import normalize_name
@@ -177,9 +178,15 @@ def _entities(kuzu: _Kuzu, entity_ids: list[str], best: dict[str, float],
     from a book's own title ("A Study in Scarlet", Object) is a junk seed:
     the title is mentioned in prose, but it is no character or object a
     traversal can learn anything from. With `book_ids`, an entity none of
-    whose books is among them is skipped too."""
+    whose books is among them is skipped too; and when they carry a reading
+    position, so is one with no mention the reader has read."""
     if not entity_ids:
         return []
+    if visible.capped(book_ids):
+        met = visible.met(kuzu, book_ids, entity_ids)
+        entity_ids = [i for i in entity_ids if i in met]
+        if not entity_ids:
+            return []
     rows = {
         row[0]: row
         for row in kuzu.execute(

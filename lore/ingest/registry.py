@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from lore.ingest.matter import STORY, Classified
 from lore.ingest.models import Chunk
 from lore.query.models import BookInfo
 from lore.worlds import suggest_world
@@ -20,9 +21,12 @@ def ingest_book(
     series: str | None = None,
     series_index: float | None = None,
     world_id: int | None = None,
+    sections: list[Classified] | None = None,
 ) -> bool:
     """Register a book. Every book gets a world: `world_id`, else the
-    suggested one for its series/title (created when it does not exist)."""
+    suggested one for its series/title (created when it does not exist).
+    `sections` is the book's front/story/back classification
+    (lore/ingest/matter.py), stored with it."""
     row = conn.execute(
         "SELECT status FROM books WHERE id = ?", (book_id,)
     ).fetchone()
@@ -53,6 +57,7 @@ def ingest_book(
                 for c in chunks
             ],
         )
+        _write_sections(conn, book_id, sections or [])
         conn.commit()
     except Exception:
         conn.rollback()
@@ -94,6 +99,7 @@ def forget_book(conn: sqlite3.Connection, book_id: str) -> bool:
     try:
         conn.execute("BEGIN")
         conn.execute("DELETE FROM chunks WHERE book_id = ?", (book_id,))
+        conn.execute("DELETE FROM sections WHERE book_id = ?", (book_id,))
         conn.execute("DELETE FROM jobs WHERE book_id = ?", (book_id,))
         conn.execute("DELETE FROM books WHERE id = ?", (book_id,))
         conn.commit()
@@ -150,19 +156,106 @@ def book_rows(conn: sqlite3.Connection) -> dict[str, BookInfo]:
     return {r[0]: BookInfo(title=r[1], series=r[2], series_index=r[3]) for r in rows}
 
 
-def chunks_for_book(conn: sqlite3.Connection, book_id: str) -> list[Chunk]:
+def chunks_for_book(conn: sqlite3.Connection, book_id: str, *,
+                    story_only: bool = True) -> list[Chunk]:
+    """The book's chunks in reading order; by default only those of its story
+    sections (front and back matter are never extracted, beaten or loaded).
+    A book with no classification is all story."""
     rows = conn.execute(
         "SELECT id, book_id, chapter_seq, scene_seq, seq, text FROM chunks"
         " WHERE book_id = ? ORDER BY chapter_seq, seq",
         (book_id,),
     ).fetchall()
+    hidden = non_story_chapters(conn, book_id).get(book_id, set()) if story_only else set()
     return [
         Chunk(
             id=r[0], book_id=r[1], chapter_seq=r[2],
             scene_seq=r[3], seq=r[4], text=r[5],
         )
         for r in rows
+        if r[2] not in hidden
     ]
+
+
+# --- sections: front matter, story, back matter (lore/ingest/matter.py) -------------
+
+
+def _write_sections(conn: sqlite3.Connection, book_id: str,
+                    sections: list[Classified]) -> None:
+    """Replace the book's classification, inside the caller's transaction."""
+    conn.execute("DELETE FROM sections WHERE book_id = ?", (book_id,))
+    conn.executemany(
+        "INSERT INTO sections (book_id, chapter_seq, matter, reason, heading)"
+        " VALUES (?, ?, ?, ?, ?)",
+        [(book_id, s.seq, s.matter, s.reason, s.heading) for s in sections])
+
+
+def save_sections(conn: sqlite3.Connection, book_id: str,
+                  sections: list[Classified]) -> None:
+    """Store (replacing) a book's classification."""
+    try:
+        conn.execute("BEGIN")
+        _write_sections(conn, book_id, sections)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def section_rows(conn: sqlite3.Connection, book_id: str) -> list[Classified]:
+    """The book's stored classification in order; [] when it has none (or the
+    library predates it)."""
+    try:
+        rows = conn.execute(
+            "SELECT chapter_seq, matter, reason, heading FROM sections"
+            " WHERE book_id = ? ORDER BY chapter_seq", (book_id,)).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [Classified(r[0], r[1], r[2] or "", r[3]) for r in rows]
+
+
+def non_story_chapters(conn: sqlite3.Connection,
+                       book_id: str | None = None) -> dict[str, set[int]]:
+    """book id -> the chapter_seqs that are front or back matter (one book's,
+    or every book's); {} when nothing is classified."""
+    sql = "SELECT book_id, chapter_seq FROM sections WHERE matter <> ?"
+    params: tuple = (STORY,)
+    if book_id is not None:
+        sql += " AND book_id = ?"
+        params += (book_id,)
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out: dict[str, set[int]] = {}
+    for b, seq in rows:
+        out.setdefault(b, set()).add(int(seq))
+    return out
+
+
+def story_chapters(conn: sqlite3.Connection, book_id: str) -> list[dict]:
+    """The book's story chapters in order: `{seq, number, heading}`, numbered
+    from 1. `seq` is the chapter_seq a reading position stores. A book with
+    no classification counts every chapter that has chunks, unnamed."""
+    rows = section_rows(conn, book_id)
+    if rows:
+        story = [(r.seq, r.heading) for r in rows if r.matter == STORY]
+    else:
+        story = [(r[0], None) for r in conn.execute(
+            "SELECT DISTINCT chapter_seq FROM chunks WHERE book_id = ?"
+            " ORDER BY chapter_seq", (book_id,))]
+    return [{"seq": seq, "number": i, "heading": heading}
+            for i, (seq, heading) in enumerate(story, start=1)]
+
+
+def story_place(chapters: list[dict], chapter_seq: int) -> dict | None:
+    """The last story chapter at or before `chapter_seq` (what a stored
+    position means), or None before the first."""
+    found = None
+    for c in chapters:
+        if c["seq"] <= chapter_seq:
+            found = c
+    return found
 
 
 def chunks_by_id(conn: sqlite3.Connection, ids: list[str]) -> dict[str, str]:

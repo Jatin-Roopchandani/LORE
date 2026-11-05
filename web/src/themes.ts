@@ -49,6 +49,18 @@ function withLuminance(color: string, target: number): string {
   }
   return fromHsl(h, s, (lo + hi) / 2);
 }
+// The colour itself if it already contrasts `min` with bg; otherwise the same hue moved away from bg until it does.
+export function atLeast(color: string, bg: string, min: number): string {
+  if (contrast(color, bg) >= min) return color;
+  const lb = luminance(bg), darkBg = lb < 0.18, aim = min * 1.02;   // a little over, so rounding to hex stays above min
+  const target = darkBg ? aim * (lb + 0.05) - 0.05 : (lb + 0.05) / aim - 0.05;
+  return withLuminance(color, Math.max(0, Math.min(1, target)));
+}
+// Graph lines are thin, so they need more contrast than a filled area: the overview draws every edge faint.
+export const EDGE_MIN = 3, EDGE_FAINT_MIN = 1.8;
+const edgeFloor = (t: Tokens): Tokens => ({
+  ...t, "--edge": atLeast(t["--edge"], t["--bg"], EDGE_MIN), "--edge-faint": atLeast(t["--edge-faint"], t["--bg"], EDGE_FAINT_MIN),
+});
 
 // ---- derivation ----------------------------------------------------------------------------------------------
 interface Spec {
@@ -84,7 +96,7 @@ function derive(group: Group, s: Spec): Tokens {
     "--world-0": s.orange, "--world-1": s.cyan, "--world-2": s.purple, "--world-3": s.green, "--world-4": s.pink, "--world-5": s.blue,
   };
 }
-const scheme = (id: string, name: string, group: Group, s: Spec): Theme => ({ id, name, group, tokens: derive(group, s) });
+const scheme = (id: string, name: string, group: Group, s: Spec): Theme => ({ id, name, group, tokens: edgeFloor(derive(group, s)) });
 
 // Today's two themes, kept literally except the six kind colours: those are re-tuned (same hues) so kinds differ in
 // luminance by at least 0.05, which the old palettes did not guarantee.
@@ -109,7 +121,7 @@ const retuned = (t: Tokens, group: Group): Tokens => ({
   ...t,
   ...kindColours(group, t["--bg"], { character: t["--k-character"], place: t["--k-place"], faction: t["--k-faction"], object: t["--k-object"], concept: t["--k-concept"], event: t["--k-event"] }),
 });
-const LIGHT = retuned(LIGHT0, "light"), DARK = retuned(DARK0, "dark");
+const LIGHT = edgeFloor(retuned(LIGHT0, "light")), DARK = edgeFloor(retuned(DARK0, "dark"));
 
 export const THEMES: Theme[] = [
   { id: "light", name: "Light", group: "light", tokens: LIGHT },

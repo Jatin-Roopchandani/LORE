@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import Graph from "graphology";
 import Sigma from "sigma";
 import { nearestEdge, nodeAt, type PickNode } from "../edgePick";
+import { EDGE_LABEL_PX, frame, makeDrawEdgeLabel } from "../edgeLabel";
 import { createNodeBorderProgram } from "@sigma/node-border";
 import { nodeLabel, type GraphView } from "../graphView";
 import { worldSlot } from "../worlds";
@@ -81,6 +82,13 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     pinned?: boolean; fitRequest?: number; focusId?: string | null; focusRequest?: number }) {
   const box = useRef<HTMLDivElement>(null);
   const sigma = useRef<Sigma | null>(null);
+  // The pill behind edge labels: the theme's panel colour, kept current by each render.
+  const pillColor = useRef("#ffffff");
+  const pillBorder = useRef("#cccccc");
+  // The nodes whose edges always show their labels: the open entity, and the one under the pointer.
+  const focusNodes = useRef(new Set<string>());
+  const hoverNode = useRef<string | null>(null);
+  const hotEdge = useRef<string | null>(null);
   const graph = useRef(new Graph({ multi: false, type: "directed" }));
   const click = useRef(onNodeClick);
   click.current = onNodeClick;
@@ -101,6 +109,10 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     // The world suffix and ring tell same-named entities apart only when the view really
     // shows two or more worlds; with one world they are noise.
     const manyWorlds = new Set(v.nodes.map((n) => n.world?.id).filter((w) => w != null)).size > 1;
+    // In the overview, plain nodes grow with their number of links (7 to 12), so the main cast stands out.
+    const degree = new Map<string, number>();
+    if (v.overview) for (const l of v.links) for (const e of [l.source, l.target]) degree.set(e, (degree.get(e) ?? 0) + 1);
+    const maxDegree = Math.max(1, ...degree.values());
     for (const raw of v.nodes) {
       const n = manyWorlds ? raw : { ...raw, world: undefined };
       const at = pos.get(n.id) ?? { x: 500, y: 350 };
@@ -113,7 +125,7 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       const ringed = seed || !!n.world || marked;
       const ringColor = n.selected ? p.ink : n.onPath ? p.v("--accent") : dim ? p.faint : seed ? p.v(`--part-${n.seedPart! % 4}`)
         : n.world ? p.v(`--world-${worldSlot(n.world.id)}`) : p.faint;
-      const attrs = { x: at.x, y: -at.y, size: seed || marked ? 11 : 7, label: nodeLabel({ ...n, label: n.label.replace(/^Mr\. /, "") }), color,
+      const attrs = { x: at.x, y: -at.y, size: seed || marked ? 11 : 7 + 5 * Math.sqrt((degree.get(n.id) ?? 0) / maxDegree), label: nodeLabel({ ...n, label: n.label.replace(/^Mr\. /, "") }), color,
         ring: seed || marked ? 0.3 : n.world ? 0.28 : 0, gap: ringed ? 0.12 : 0, gapColor: p.panel,
         ringColor, zIndex: marked ? 5 : dim ? 0 : 1 };
       if (g.hasNode(n.id)) g.mergeNodeAttributes(n.id, attrs); else g.addNode(n.id, attrs);
@@ -125,25 +137,35 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       const lit = !!l.onPath || !!l.picked;
       const color = l.onPath ? p.v("--accent") : l.picked || l.hot || l.state === "cited" ? p.glow
         : l.state === "shown" ? (l.part !== null ? p.v(`--part-${l.part % 4}`) : p.edge) : p.faint;
-      const attrs = { type: l.both ? "line" : "arrow", label: !lit && (l.state === "faint" || l.state === "cut") ? "" : l.label, color,
+      const quiet = !lit && (l.state === "faint" || l.state === "cut");
+      const attrs = { type: l.both ? "line" : "arrow", label: l.label, quiet, color,
         size: lit ? 4.5 : l.hot ? 4 : l.state === "cited" ? 2.6 : v.overview && l.state === "faint" ? 1 : 1.4,
         zIndex: lit ? 4 : l.hot ? 3 : l.state === "cited" ? 2 : l.state === "shown" ? 1 : 0 };
       if (g.hasEdge(l.id)) g.mergeEdgeAttributes(l.id, attrs);
       else if (!g.hasDirectedEdge(l.source, l.target)) g.addEdgeWithKey(l.id, l.source, l.target, attrs);
     }
-    // Sigma's label grid hides labels that share a cell; the overview names every node, so it lifts the cap.
-    sigma.current?.setSetting("labelDensity", v.overview ? 100 : 1);
-    sigma.current?.setSetting("labelGridCellSize", v.overview ? 30 : 100);
+    // Sigma's label grid hides labels that share a cell, and Sigma labels an edge only when both its ends
+    // are labelled, so a hidden name also hid relationships: every view names every node.
+    sigma.current?.setSetting("labelDensity", 100);
+    sigma.current?.setSetting("labelGridCellSize", 30);
     sigma.current?.setSetting("labelColor", { color: p.ink });
-    sigma.current?.setSetting("edgeLabelColor", { color: p.muted });
+    sigma.current?.setSetting("edgeLabelColor", { color: p.ink });
+    pillColor.current = p.panel;
+    pillBorder.current = p.v("--line");
+    focusNodes.current = new Set(v.nodes.filter((n) => n.selected).map((n) => n.id));
     sigma.current?.refresh();
   };
 
   useEffect(() => {
     const p = palette();
     sigma.current = new Sigma(graph.current, box.current!, {
-      renderEdgeLabels: true, defaultEdgeType: "arrow", defaultNodeType: "ringed", nodeProgramClasses: { ringed: RingedNode }, labelFont: "Public Sans", labelSize: 12, edgeLabelSize: 10,
-      labelRenderedSizeThreshold: 0, labelColor: { color: p.ink }, edgeLabelColor: { color: p.muted }, zIndex: true,
+      renderEdgeLabels: true, defaultEdgeType: "arrow", defaultNodeType: "ringed", nodeProgramClasses: { ringed: RingedNode }, labelFont: "Public Sans", labelSize: 12, edgeLabelSize: EDGE_LABEL_PX,
+      edgeLabelFont: "Public Sans", edgeLabelWeight: "500", defaultDrawEdgeLabel: makeDrawEdgeLabel({
+        pill: () => pillColor.current, border: () => pillBorder.current,
+        zoom: () => sigma.current?.getCamera().ratio ?? 1,
+        focus: (node) => focusNodes.current.has(node) || hoverNode.current === node,
+        hot: (edge) => hotEdge.current === edge }),
+      labelRenderedSizeThreshold: 0, labelColor: { color: p.ink }, edgeLabelColor: { color: p.ink }, zIndex: true,
       allowInvalidContainer: true, defaultDrawNodeHover: drawThemedHover, enableEdgeEvents: true,
     });
     sigma.current.on("clickNode", ({ node }) => click.current(node));
@@ -153,6 +175,25 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     });
     // Near-miss clicks and hovers on nodes: the dot plus a margin, or its drawn label.
     const measure = document.createElement("canvas").getContext("2d");
+    // Before each frame, the edge labels' obstacles: every node's dot and its name.
+    sigma.current.on("beforeRender", () => {
+      const s = sigma.current;
+      frame.obstacles = [];
+      if (!s) return;
+      graph.current.forEachNode((id, attrs) => {
+        if (attrs.hidden) return;
+        const d = s.getNodeDisplayData(id);
+        if (!d) return;
+        const at = s.framedGraphToViewport({ x: d.x, y: d.y });
+        const r = s.scaleSize(d.size);
+        frame.obstacles.push({ x0: at.x - r - 3, y0: at.y - r - 3, x1: at.x + r + 3, y1: at.y + r + 3 });
+        if (measure && attrs.label) {
+          measure.font = "12px Public Sans";
+          const w = measure.measureText(String(attrs.label)).width;
+          frame.obstacles.push({ x0: at.x + r, y0: at.y - 9, x1: at.x + r + 10 + w * 1.08, y1: at.y + 9 });
+        }
+      });
+    });
     const nearNode = (x: number, y: number): string | null => {
       const s = sigma.current;
       if (!s) return null;
@@ -190,6 +231,7 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       if (hovered === edge) return;
       if (hovered && g.hasEdge(hovered)) g.setEdgeAttribute(hovered, "size", hoveredSize);
       hovered = edge && g.hasEdge(edge) ? edge : null;
+      hotEdge.current = hovered;
       if (hovered) { hoveredSize = g.getEdgeAttribute(hovered, "size") ?? 1.4; g.setEdgeAttribute(hovered, "size", hoveredSize + 2.5); }
       if (box.current) box.current.style.cursor = hovered ? "pointer" : "";
     };
@@ -204,6 +246,8 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       if (nearNode(event.x, event.y)) { setHover(null); if (box.current) box.current.style.cursor = "pointer"; return; }
       setHover(near(event.x, event.y));
     });
+    sigma.current.on("enterNode", ({ node }) => { hoverNode.current = node; sigma.current?.refresh(); });
+    sigma.current.on("leaveNode", () => { hoverNode.current = null; sigma.current?.refresh(); });
     sigma.current.on("enterNode", () => { setHover(null); if (box.current) box.current.style.cursor = "pointer"; });
     sigma.current.on("leaveNode", () => { if (box.current) box.current.style.cursor = ""; });
     paint();

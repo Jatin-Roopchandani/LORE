@@ -234,6 +234,66 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             "CREATE INDEX idx_codex_entries_world ON codex_entries(world_id)",
         ],
     ),
+    # Reading position (2026-11-04): where a reader is in a world, so every
+    # read stays within what they have read. `chapter` is the last chapter
+    # finished in `book_id`; `read_books` (JSON list of book ids) are the
+    # books of unknown order the reader says they have read. Off by default.
+    (
+        13,
+        [
+            """
+            CREATE TABLE reading_positions (
+                world_id   INTEGER PRIMARY KEY REFERENCES worlds(id) ON DELETE CASCADE,
+                book_id    TEXT REFERENCES books(id) ON DELETE SET NULL,
+                chapter    INTEGER NOT NULL DEFAULT 0,
+                read_books TEXT NOT NULL DEFAULT '[]',
+                enabled    INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+        ],
+    ),
+    # Story matter (2026-11-04): each raw section of a book (`chapter_seq`)
+    # classified at ingest (lore/ingest/matter.py) as front matter, story or
+    # back matter, with the heading's short name. Extraction and beats read
+    # only story sections; the reading position numbers only those. A book
+    # with no rows here (ingested before this) is all story until
+    # `lore repair matter` classifies it.
+    (
+        14,
+        [
+            """
+            CREATE TABLE sections (
+                book_id     TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                chapter_seq INTEGER NOT NULL,
+                matter      TEXT NOT NULL,             -- front, story, back
+                reason      TEXT NOT NULL DEFAULT '',  -- why it is not story
+                heading     TEXT,
+                PRIMARY KEY (book_id, chapter_seq)
+            )
+            """,
+        ],
+    ),
+    # Entity intros (2026-11-04): the short, spoiler-safe introduction a
+    # profile shows under a reading position (lore/codex/intro.py), cached per
+    # (entity, world, hash of what the model was shown, prompt hash).
+    (
+        15,
+        [
+            """
+            CREATE TABLE entity_intros (
+                entity_id   TEXT NOT NULL,
+                world_id    INTEGER NOT NULL,
+                scope_hash  TEXT NOT NULL,
+                prompt_hash TEXT NOT NULL,
+                intro       TEXT NOT NULL,
+                model       TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (entity_id, world_id, scope_hash, prompt_hash)
+            )
+            """,
+        ],
+    ),
 ]
 
 

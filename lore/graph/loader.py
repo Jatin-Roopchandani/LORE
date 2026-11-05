@@ -823,6 +823,14 @@ async def load_book(
     embeddings = {row["chunk_id"]: list(row["vector"]) for row in embedding_rows}
     chunks = chunks_for_book(conn, book_id)
     chapter_of = {chunk.id: chunk.chapter_seq for chunk in chunks}
+    # Front and back matter (lore/ingest/matter.py) is no story: what its
+    # chunks produced, in an extraction made before it was classified, never
+    # reaches the graph. Its chunks are left out above, so no Chunk node or
+    # vector is written for them either.
+    matter = {c.id for c in chunks_for_book(conn, book_id, story_only=False)} - set(chapter_of)
+    if matter:
+        triplets = [row for row in triplets
+                    if str(row.get("chunk_id") or "") not in matter]
 
     # Task 1i defect 2. Gutenberg's header, table of contents and licence
     # are ingested as ordinary chapters, and their boilerplate minted

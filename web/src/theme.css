@@ -4,7 +4,7 @@
   --accent:#1E5AA0; --accent-soft:#DCE7F4; --glow:#B97808; --glow-soft:#F6E7C8; --ok:#2E7D4F; --warn:#9A5B00; --danger:#B3261E;
   --part-0:#1E5AA0; --part-1:#8A4FA3; --part-2:#2E7D4F; --part-3:#B0662A;
   --k-character:#3070B9; --k-place:#4CAC89; --k-faction:#4C2B5A; --k-object:#CF7934; --k-concept:#585B19; --k-event:#C35E80; --k-other:#6C7A87;
-  --edge:#9AA7B3; --edge-faint:#CBD3DA;
+  --edge:#798A9A; --edge-faint:#A6B3C0;
   --world-0:#C2410C; --world-1:#0E7490; --world-2:#7C3AED; --world-3:#4D7C0F; --world-4:#BE185D; --world-5:#1D4ED8;
   --f-ui:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-book:"Newsreader",Georgia,serif;
@@ -347,3 +347,21 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .quick li[aria-selected="true"]{background:var(--accent-soft);outline:1px solid var(--accent)}
 .quick li.ask{color:var(--accent);font-weight:600}
 .quick .hint{padding:10px 14px;margin:0}
+
+/* Reading position: the header control (the button shows the position when on) and the note under an answer's short answer. */
+.pos-btn{position:relative;overflow:hidden}
+.pos-icon{flex:none;color:var(--muted)}
+.pos-btn.on{background:var(--accent-soft);border-color:var(--accent)}
+.pos-btn.on .pos-icon{color:var(--accent)}
+.pos-btn.on::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:var(--pos-done,0%);background:var(--accent);transition:width .3s}
+.pos-title{font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.pos-ch{color:var(--muted);font-variant-numeric:tabular-nums}
+.pos-menu{display:flex;flex-direction:column;gap:8px;min-width:260px;max-width:340px}
+.pos-menu select{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px}
+.pos-menu input[type="range"]{width:100%;accent-color:var(--accent)}
+.pos-switch{display:flex;gap:8px;align-items:center;font-weight:600;cursor:pointer}
+.pos-field{font:600 11px var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.pos-read{border:1px solid var(--line);border-radius:8px;padding:6px 10px;display:flex;flex-direction:column;gap:4px}
+.pos-read legend{font:600 11px var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0 4px}
+.pos-read label{display:flex;gap:8px;align-items:center;font-size:13px}
+.position-note{font-size:12px;color:var(--muted);margin:0;border-left:3px solid var(--accent);padding:2px 10px}

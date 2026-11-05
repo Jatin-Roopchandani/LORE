@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Sequence
 
 from lore.beats.store import beats_for_entities
+from lore.query import visible as visible_module
 from lore.query.models import SeedEntity
 from lore.query.seed import NameIndex, canonical_ids, named_entity_ids, named_seeds
 from lore.resolve.normalize import normalize_name
@@ -95,21 +96,23 @@ _CANDIDATES = (
     "ORDER BY chapters DESC, mentions DESC, e.name LIMIT $limit")
 
 
-def beat_variety(conn, entity_id: str) -> tuple[int, int]:
+def beat_variety(conn, entity_id: str, visible=None) -> tuple[int, int]:
     """(distinct beat kinds, distinct (book, chapter) places) over the entity's
-    beats: a character with an arc has many of both."""
-    beats = beats_for_entities(conn, [entity_id])
+    beats: a character with an arc has many of both. Only the beats `visible`
+    (a reading position's books) allows, when given."""
+    beats = [b for b in beats_for_entities(conn, [entity_id])
+             if visible_module.sees(visible, b.book_id, b.chapter_seq)]
     return (len({b.kind for b in beats}), len({(b.book_id, b.chapter_seq) for b in beats}))
 
 
-def rank_by_variety(conn, seeds: Sequence[SeedEntity]) -> list[SeedEntity]:
+def rank_by_variety(conn, seeds: Sequence[SeedEntity], visible=None) -> list[SeedEntity]:
     """The seeds with the most varied beats first (kinds, then chapters); ties
     keep their given order. Without beats, or with no usable `conn`, the given
     order: this is a refinement, never a reason to fail the question."""
     if conn is None or len(seeds) < 2:
         return list(seeds)
     try:
-        scores = {s.id: beat_variety(conn, s.id) for s in seeds}
+        scores = {s.id: beat_variety(conn, s.id, visible) for s in seeds}
     except sqlite3.Error:
         return list(seeds)
     return sorted(seeds, key=lambda s: scores[s.id], reverse=True)
@@ -117,20 +120,24 @@ def rank_by_variety(conn, seeds: Sequence[SeedEntity]) -> list[SeedEntity]:
 
 async def candidate_seeds(kuzu, book_ids: Sequence[str], phrases: Sequence[str],
                           exclude_names: frozenset[str], *,
-                          limit: int = JUDGE_CANDIDATES, conn=None) -> list[SeedEntity]:
+                          limit: int = JUDGE_CANDIDATES, conn=None,
+                          visible=None) -> list[SeedEntity]:
     """The `limit` Character entities that span the most of the story, most
     first: distinct (book, chapter) places whose chunks mention them, then
     the number of mentions. With `conn`, the top `limit` x VARIETY_POOL by that
     are re-ranked by beat variety (`rank_by_variety`) and the best `limit` kept.
     Restricted to `book_ids` when given. Anyone the question excludes
     (`phrases`, matched on name and aliases) and any node named like a book
-    title is skipped. A graph that cannot answer gives []: this is an extra,
-    never a reason to fail the question."""
-    params: dict = {"limit": max(limit, 1) + _OVERFETCH}
+    title is skipped. `visible` (a reading position's books) limits the
+    mentions counted, and the beats that re-rank, to what the reader has read.
+    A graph that cannot answer gives []: this is an extra, never a reason to
+    fail the question."""
+    params: dict = {"limit": max(limit, 1) + _OVERFETCH, **visible_module.cap_params(visible)}
     if book_ids:
         params["books"] = list(book_ids)
     try:
-        rows = list(kuzu.execute(_CANDIDATES.format(books=_BOOKS_CLAUSE if book_ids else ""), params))
+        clause = (_BOOKS_CLAUSE if book_ids else "") + visible_module.cap_clause(visible, "c")
+        rows = list(kuzu.execute(_CANDIDATES.format(books=clause), params))
         ids = [str(r[0]) for r in rows
                if normalize_name(str(r[1] or "")) not in exclude_names
                and not is_excluded(str(r[1] or ""), r[2] or (), phrases)]
@@ -138,7 +145,7 @@ async def candidate_seeds(kuzu, book_ids: Sequence[str], phrases: Sequence[str],
     except Exception:  # noqa: BLE001 -- see the docstring
         return []
     if conn is not None:
-        return rank_by_variety(conn, seeds[:max(limit, 1) * VARIETY_POOL])[:limit]
+        return rank_by_variety(conn, seeds[:max(limit, 1) * VARIETY_POOL], visible)[:limit]
     return seeds[:limit]
 
 
@@ -165,7 +172,8 @@ class JudgeSeeds:
 async def judge_seeds(kuzu, names: NameIndex, part: str, question: str,
                       seeds: Sequence[SeedEntity], named: Sequence[SeedEntity],
                       book_ids: Sequence[str], exclude_names: frozenset[str], *,
-                      limit: int = JUDGE_CANDIDATES, conn=None) -> JudgeSeeds:
+                      limit: int = JUDGE_CANDIDATES, conn=None,
+                      visible=None) -> JudgeSeeds:
     """The seeds of a lens about a set of people: whoever the question (or the
     lens, if it was rewritten) excludes is removed; with fewer than FEW_NAMED
     named characters left, the top candidates of the part's books are added
@@ -182,7 +190,8 @@ async def judge_seeds(kuzu, names: NameIndex, part: str, question: str,
     others = [s for s in seeds if kept(s) and s.id not in {n.id for n in named_left}]
     candidates: list[SeedEntity] = []
     if sum(s.kind == "Character" for s in named_left) < FEW_NAMED:
-        candidates = [s for s in await candidate_seeds(kuzu, book_ids, phrases, exclude_names, limit=limit, conn=conn)
+        candidates = [s for s in await candidate_seeds(kuzu, book_ids, phrases, exclude_names, limit=limit,
+                                                conn=conn, visible=visible)
                       if s.id not in {n.id for n in named_left}]
     ordered = list(dict.fromkeys(s.id for s in [*named_left, *candidates, *others]))
     by_id = {s.id: s for s in [*others, *candidates, *named_left]}

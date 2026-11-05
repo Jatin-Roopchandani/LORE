@@ -126,6 +126,9 @@ class CodexLine:
     subject: str
     aspect: str
     text: str
+    # The entity the line is about ("" where unknown); a reading position uses it
+    # to show the subject under the name the reader has met.
+    entity_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -256,3 +259,6 @@ class Answer:
     # Sections of a sectioned answer that could not be written (failed or found
     # nothing); they are left out of `sections`, and this counts them.
     unwritten: int = 0
+    # Set only when a reading position limited the answer: "Answered from what
+    # you've read: up to chapter 9 of <book>". None otherwise.
+    position_note: str | None = None

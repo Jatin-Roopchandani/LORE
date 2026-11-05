@@ -1,5 +1,5 @@
-import type { ApiError, AskEvent, Depth, Book, EdgeDetail, EntityCardData, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult,
-  PassageText, PathResult, Quota, Relations, SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
+import type { ApiError, AskEvent, Depth, Book, EdgeDetail, EntityCardData, EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult,
+  PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations, SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
   const events: AskEvent[] = [];
@@ -108,6 +108,8 @@ export const api = {
   worlds: () => getJson<World[]>("/api/worlds"),
   // The graph explorer's reads: stored data only, no model calls.
   profile: (id: string, world?: string) => getJson<EntityProfile>(withWorld(`/api/entity/${encodeURIComponent(id)}/profile`, world)),
+  // The one explorer read that may spend a request: the spoiler-safe intro under a reading position (cached).
+  intro: (id: string, world?: string) => getJson<EntityIntro>(withWorld(`/api/entity/${encodeURIComponent(id)}/intro`, world)),
   timeline: (id: string, world?: string) => getJson<Timeline>(withWorld(`/api/entity/${encodeURIComponent(id)}/timeline`, world)),
   relations: (id: string, world?: string) => getJson<Relations>(withWorld(`/api/entity/${encodeURIComponent(id)}/relations`, world)),
   edge: (a: string, b: string, world?: string) =>
@@ -123,6 +125,10 @@ export const api = {
   createWorld: (name: string) => sendJson<WorldRef>("POST", "/api/worlds", { name }),
   renameWorld: (id: number, name: string) => sendJson<WorldRef>("PATCH", `/api/worlds/${id}`, { name }),
   deleteWorld: (id: number) => sendJson<{ deleted: true }>("DELETE", `/api/worlds/${id}`),
+  // The world's reading position (stored on the server); every read above and every question applies it by default.
+  readingPosition: (world: string) => getJson<ReadingPositionData>(withWorld("/api/reading-position", world)),
+  setReadingPosition: (world: string, body: ReadingPositionBody) =>
+    sendJson<ReadingPositionData>("PUT", withWorld("/api/reading-position", world), body),
   quota: () => getJson<Quota>("/api/quota"),
   mcp: () => getJson<McpInfo>("/api/mcp"),
   settings: () => getJson<{ show_internals: boolean }>("/api/settings"),

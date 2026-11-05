@@ -1,6 +1,6 @@
 // @ts-expect-error -- node built-ins have no types in this project
 import { readFileSync } from "node:fs";
-import { THEMES, contrast, luminance, themeCss } from "./themes";
+import { EDGE_FAINT_MIN, EDGE_MIN, THEMES, contrast, luminance, themeCss } from "./themes";
 
 const css: string = readFileSync("src/theme.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");   // vitest runs from web/
 const rootBlock = css.match(/:root\s*\{([^}]*)\}/)![1];
@@ -38,6 +38,10 @@ describe.each(THEMES.map((t) => [t.name, t] as const))("%s", (_name, theme) => {
   });
   test("accent on bg at least 3", () => {
     expect(contrast(theme.tokens["--accent"], theme.tokens["--bg"])).toBeGreaterThanOrEqual(3);
+  });
+  test("graph edges show on bg, the faint overview edges included", () => {
+    expect(contrast(theme.tokens["--edge"], theme.tokens["--bg"])).toBeGreaterThanOrEqual(EDGE_MIN);
+    expect(contrast(theme.tokens["--edge-faint"], theme.tokens["--bg"])).toBeGreaterThanOrEqual(EDGE_FAINT_MIN);
   });
   test("the six kind colours differ in luminance by at least 0.05 pairwise", () => {
     const l = KINDS.map((k) => luminance(theme.tokens[k])).sort((a, b) => a - b);

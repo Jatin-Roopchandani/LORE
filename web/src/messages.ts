@@ -39,6 +39,8 @@ export const DEEP = {
 
 export const STEPS_DEEP = {
   plan: "Planning the sections",
+  // A recap: the story's span gathered in order (its chapters and story beats) before its sections are written.
+  recap: "Gathering the story so far, in order",
   section: (n: number, heading: string | null) => heading ? `Section ${n}: ${heading}` : `Section ${n}`,
   group: (question: string) => question,
   // The steps panel once the answer has landed: one line that opens it.
@@ -55,6 +57,32 @@ export const STEPS_DEEP = {
   lensDetail: (entities: number, relationships: number) =>
     `${entities} ${entities === 1 ? "entity" : "entities"} \u00b7 ${relationships} relationships`,
   partsLabel: "Parts of the question",
+};
+
+// The reading position: the header control, its badge and the note an answer carries.
+export const POSITION = {
+  label: "Reading position",
+  switchLabel: "Limit everything to what I have read",
+  bookLabel: "The book you are reading",
+  chapterLabel: "Last chapter you finished",
+  chapterValue: (n: number, max: number, heading?: string | null) =>
+    n === 0 ? `Not started (${max} chapters)` : `Ch. ${n} of ${max}${heading ? ` \u00b7 ${heading}` : ""}`,
+  bookOption: (title: string, index: number | null) => (index == null ? title : `${title} (book ${index})`),
+  readHeading: "Books of unknown order",
+  readHint: "LORE never guesses the order of books that are not in one series. Mark the ones you have read.",
+  readLabel: (title: string) => `I have read ${title}`,
+  badge: (title: string, chapter: number) => `Up to ${title} ch. ${chapter}`,
+  chapterShort: (n: number) => (n === 0 ? "start" : `ch. ${n}`),
+  noteLabel: "Reading position note",
+  summaryHidden: "The summary covers the whole story, so it is hidden while a reading position is on. These are the statements from what you have read.",
+  badgeLabel: (title: string, chapter: number, heading?: string | null) =>
+    `Reading position on: up to ${title}, chapter ${chapter}${heading ? ` (${heading})` : ""}`,
+  chooseWorld: "Choose a world to set a reading position. Positions already set still apply.",
+  off: "Everything is shown, spoilers included.",
+  on: "The graph, entity panels and answers stay within what you have read.",
+  loading: "Loading\u2026",
+  failed: "The reading position could not be saved.",
+  noBooks: "This world has no books yet.",
 };
 
 export const WORLDS = {
@@ -285,4 +313,10 @@ export const THEME = {
   system: "System",
   systemHint: "Follows your device",
   groups: { dark: "Dark", light: "Light" },
+};
+
+// The entity profile's introduction under a reading position (written only from what has been read).
+export const PROFILE = {
+  introLabel: "Introduction so far",
+  introHint: "Written only from what you have read so far.",
 };

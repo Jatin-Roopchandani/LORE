@@ -584,7 +584,7 @@ def test_an_entity_that_keeps_failing_is_cached_as_failed_after_two_attempts(env
     assert _asked(second, "Mira Voss") == 1  # the second and last try
     marked = [json.loads(f.read_text()) for f in config.codex_dir.glob("*.json")
               if json.loads(f.read_text()).get("failed")]
-    assert len(marked) == 1 and marked[0]["answer"] == {"summary": "", "statements": []}
+    assert len(marked) == 1 and marked[0]["answer"] == {"summary": "", "identity": [], "statements": []}
     # From now on a Continue does not ask again, and the entity is counted done.
     third = _Stubborn(ANSWERS, bad_for=["Mira Voss"])
     stage3, _ = _stage(env, third)
@@ -667,3 +667,125 @@ def test_evidence_pack_uses_beats_first_and_caps_them(env, monkeypatch) -> None:
     ghost = CodexEntity(id="nobody", name="Nobody", kind="Character")
     assert build.evidence_pack(conn, k, ghost, [BOOK], None).passages == ()
     k.close()
+
+
+# --- identity, earliest anchors and the centrality cap ---------------------------
+
+
+def test_identity_is_required_by_the_prompt_and_the_schema() -> None:
+    schema = CodexAnswer.model_json_schema()
+    assert "identity" in schema["required"]
+    assert "identity" in store.ASPECTS and store.ASPECTS[0] == "identity"
+    assert store.DISPLAY_ORDER[0] == "identity"
+    assert set(store.DISPLAY_ORDER) == set(store.ASPECTS)
+    prompt = build.render_prompt(MIRA, _evidence([_chunk(BOOK, 1, 0, C0)]))
+    assert '"identity" has 1 or 2 items' in prompt and "never none" in prompt
+    assert "quote the EARLIEST" in prompt
+
+
+def test_identity_statements_go_first_and_are_capped() -> None:
+    ev = _evidence([_chunk(BOOK, 1, 0, C0), _chunk(BOOK, 2, 0, C2),
+                    _chunk(BOOK, 3, 0, C3)])
+    raw = CodexAnswer(summary="s", identity=[
+        build.IdentityItem(text="She is the keeper of the Ledger.", quote=Q0)],
+        statements=[_item("nature", Q2, "Firm."), _item("role", Q3, "Burns it.")])
+    entry = build.verify_entry(raw, MIRA, 1, ev, "h")
+    assert [s.aspect for s in entry.statements] == ["identity", "nature", "role"]
+    assert entry.statements[0].text == "She is the keeper of the Ledger."
+    # an identity line given among the statements counts too; at most MAX_IDENTITY.
+    # The model's identity items come first: being earliest never picks the fact
+    # (spec 2026-11-04), it only orders the lines kept.
+    raw = CodexAnswer(summary="s", identity=[
+        build.IdentityItem(text="Late.", quote=Q3), build.IdentityItem(text="Mid.", quote=Q2)],
+        statements=[_item("identity", Q0, "Early.")])
+    entry = build.verify_entry(raw, MIRA, 1, ev, "h")
+    assert build.MAX_IDENTITY == 2
+    assert [s.text for s in entry.statements] == ["Mid.", "Late."]
+    # with one identity item, a statement filed under identity fills the second slot
+    raw = CodexAnswer(summary="s", identity=[build.IdentityItem(text="Late.", quote=Q3)],
+                      statements=[_item("identity", Q0, "Early.")])
+    entry = build.verify_entry(raw, MIRA, 1, ev, "h")
+    assert [s.text for s in entry.statements] == ["Early.", "Late."]
+
+
+def test_a_quote_found_twice_is_pinned_to_the_earliest_passage() -> None:
+    late = C3 + " She " + Q0 + "."
+    ev = _evidence([_chunk(BOOK, 1, 0, C0), _chunk(BOOK, 3, 0, late)])
+    raw = CodexAnswer(summary="s", identity=[build.IdentityItem(text="Keeper.", quote=Q0)],
+                      statements=[])
+    entry = build.verify_entry(raw, MIRA, 1, ev, "h")
+    assert entry.statements[0].chunk_id == f"{BOOK}:1:0"
+
+
+def test_the_statement_cap_scales_with_centrality() -> None:
+    minor, mid, lead = (build.statement_cap(b, m) for b, m in [(0, 4), (15, 30), (184, 900)])
+    assert build.MIN_STATEMENTS <= minor < mid < lead <= build.MAX_STATEMENTS
+    assert minor <= 10 and lead >= 3 * minor  # a protagonist gets substantially more
+    assert build.statement_cap(10_000, 10_000) == build.MAX_STATEMENTS
+    assert build.passage_cap(minor) == build.MAX_PASSAGES
+    assert build.MAX_PASSAGES < build.passage_cap(lead) <= build.MAX_PASSAGES_CENTRAL
+    # the prompt asks for the entity's own cap, and verification holds to it
+    ev = _evidence([_chunk(BOOK, 1, 0, C0), _chunk(BOOK, 2, 0, C2), _chunk(BOOK, 3, 0, C3)])
+    ev = build.Evidence(beats=(), passages=ev.passages, labels=ev.labels, cap=2)
+    assert "up to 2 items" in build.render_prompt(MIRA, ev)
+    raw = CodexAnswer(summary="s", identity=[build.IdentityItem(text="Keeper.", quote=Q0)],
+                      statements=[_item("nature", Q0), _item("role", Q2), _item("change", Q3)])
+    entry = build.verify_entry(raw, MIRA, 1, ev, "h")
+    assert [s.aspect for s in entry.statements] == ["identity", "nature", "role"]
+    # the cap is part of what the prompt shows, so of the evidence hash
+    wider = build.Evidence(beats=(), passages=ev.passages, labels=ev.labels, cap=3)
+    assert build.evidence_hash(MIRA, ev) != build.evidence_hash(MIRA, wider)
+
+
+def test_the_evidence_pack_keeps_the_earliest_mentions_and_sets_the_cap(env, monkeypatch) -> None:
+    config, conn, tmp_path, _w = env
+    beat = Beat(id=beat_id(BOOK, 3, ("Mira Voss",), "q"), book_id=BOOK, chapter_seq=3,
+                chunk_id=f"{BOOK}:3:0", entities=("Mira Voss",), kind="action",
+                text="late moment", quote="q")
+    save_beats(conn, BOOK, 3, 0, [beat])
+    k = KuzuStore(config.kuzu_dir / "graph", read_only=True)
+    relink_beats(conn, k)
+    monkeypatch.setattr(build, "MAX_PASSAGES", 2)
+    monkeypatch.setattr(build, "MAX_PASSAGES_CENTRAL", 2)
+    monkeypatch.setattr(build, "EARLY_PER_BOOK", 1)
+    ev = build.evidence_pack(conn, k, MIRA, [BOOK], None)
+    # the first passage naming her is kept even though a beat and heavier
+    # mentions would otherwise fill the pack
+    assert [p.chunk_id for p in ev.passages] == [f"{BOOK}:1:0", f"{BOOK}:3:0"]
+    assert ev.cap == build.statement_cap(1, 4)  # one beat, four chunks naming her
+    k.close()
+
+
+def test_the_prompt_hash_changed_with_identity() -> None:
+    # The cached answers and saved entries of the previous prompt go stale.
+    assert build.prompt_hash() != "b835b25be00c5af7"  # the hash before identity
+    assert "identity" in build.CODEX_PROMPT
+
+
+def test_identity_is_what_the_story_establishes_not_a_first_impression() -> None:
+    """Spec 2026-11-04: a corrected first impression is not identity; earliest
+    only picks the passage among those establishing the same settled fact; two
+    items when the text supports two distinct facts."""
+    prompt = build.render_prompt(MIRA, _evidence([_chunk(BOOK, 1, 0, C0)]))
+    flat = " ".join(prompt.split())
+    assert "what the story ESTABLISHES the subject to be" in flat
+    assert "settled occupation, rank, status or role" in flat
+    assert ("A first impression, a guess, a disguise or a mistaken belief that a later passage"
+            " corrects is not identity") in flat
+    assert "Among the passages that establish the same settled fact, quote the EARLIEST" in flat
+    assert "decides only which passage to quote, never which fact is the identity" in flat
+    assert "Give 2 items when the passages establish two distinct facts" in flat
+    assert "Quote the EARLIEST passage that establishes it" not in flat  # the old rule
+
+
+def test_the_prompt_hash_changed_with_the_settled_identity_rule() -> None:
+    # The rebuild after this change re-asks every entity; the old answers go stale.
+    assert build.prompt_hash() != "d7913555ea303606"  # the hash before this rule
+
+
+def test_a_cached_answer_of_the_previous_prompt_is_stale(tmp_path) -> None:
+    import json
+    path = tmp_path / "e1-h.json"
+    path.write_text(json.dumps({"prompt_hash": "d7913555ea303606", "evidence_hash": "h",
+                                "answer": {"summary": "s", "identity": [], "statements": []}}))
+    assert build.read_cached(path, "h") is None

@@ -19,6 +19,8 @@ import re
 import sqlite3
 from typing import Collection
 
+from lore.ingest.registry import non_story_chapters
+from lore.query import visible
 from lore.resolve.entityhood import is_boilerplate_chunk
 
 # Words too common to say anything about a passage; FTS5 itself has no
@@ -51,17 +53,22 @@ class KeywordIndex:
         self._db.execute(
             "CREATE VIRTUAL TABLE c USING fts5(id UNINDEXED, book_id UNINDEXED,"
             " chapter_seq UNINDEXED, text)")
+        # Front and back matter (a contents page, a licence) is no story.
+        matter = non_story_chapters(conn)
         self._db.executemany(
             "INSERT INTO c VALUES (?, ?, ?, ?)",
             (row for row in conn.execute(
                 "SELECT id, book_id, chapter_seq, text FROM chunks")
-             if not is_boilerplate_chunk(row[3])))
+             if not is_boilerplate_chunk(row[3])
+             and row[2] not in matter.get(row[1], ())))
 
     def search(self, text: str, limit: int, book_id: str | None = None,
                book_ids: Collection[str] | None = None) -> list[tuple[str, str, int]]:
         """(chunk_id, book_id, chapter_seq) of the best BM25 matches for any
         of `text`'s content words, best first, within one book or within
-        `book_ids` (a world's) when given. No content words, no hits."""
+        `book_ids` (a world's) when given. No content words, no hits.
+        `book_ids` may be a reading position's `VisibleBooks`: a book read only
+        up to a chapter then yields nothing past it (also with `book_id`)."""
         terms = query_terms(text)
         if not terms or limit <= 0:
             return []
@@ -72,6 +79,10 @@ class KeywordIndex:
             where, args = f" AND book_id IN ({marks})", sorted(book_ids)
         else:
             where, args = (" AND book_id = ?", [book_id]) if book_id else ("", [])
+        if visible.capped(book_ids):
+            for cap_book, cap_chapter in sorted(book_ids.caps.items()):
+                where += " AND NOT (book_id = ? AND CAST(chapter_seq AS INTEGER) > ?)"
+                args = [*args, cap_book, cap_chapter]
         # Each term quoted, so a word FTS5 treats as syntax (AND, NEAR) is
         # searched as a word.
         match = " OR ".join(f'"{t}"' for t in terms)

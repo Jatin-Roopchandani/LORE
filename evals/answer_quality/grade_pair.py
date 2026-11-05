@@ -26,7 +26,8 @@ from math import comb
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SETS = {"dev": HERE / "questions.json", "heldout": HERE / "heldout.json"}
+SETS = {"dev": HERE / "questions.json", "heldout": HERE / "heldout.json",
+        "factual2": HERE / "factual2.json"}
 
 
 def _answers(path: Path) -> dict[str, dict]:

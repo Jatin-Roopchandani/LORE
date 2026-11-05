@@ -174,3 +174,28 @@ test("the split list is collapsible inside the steps, and the choice is remember
   expect(localStorage.getItem(SPLIT_KEY)).toBe("closed");
   expect(container.querySelector("ol.steps")).not.toBeNull();       // the rest of the steps are still there
 });
+
+// ---- recap answers: the span is gathered in its own row, then one row per section ---------------------------
+
+test("a recap names its gathering step and its sections, and the split row is settled by it", () => {
+  const events: AskEvent[] = [
+    step("split", "start"),
+    { type: "parts", t: 0, sub_questions: ["Summarise the story so far."] },
+    step("split", "done", null, "1 part"),
+    step("recap", "start"),
+    step("recap", "done", null, "6 chapters · 47 beats"),
+    { type: "plan", t: 1, scope: "", candidates: 47, sections: [
+      { index: 0, heading: "Chapters 1–4", title: "What happens in chapters 1–4 of Alpha", entities: [] },
+      { index: 1, heading: "Chapters 5–7", title: "What happens in chapters 5–7 of Alpha", entities: [] }] },
+    { type: "parts", t: 1, sub_questions: ["Chapters 1–4", "Chapters 5–7"] },
+    step("section", "start", 0),
+  ];
+  const s = stateOf(events);
+  expect(s.deepSteps.map((d) => [d.kind, d.part, d.state])).toEqual([["recap", null, "done"], ["section", 0, "running"]]);
+  expect(s.steps.find((x) => x.name === "split")!.state).toBe("done");
+  render(<StepList state={s} />);
+  expect(screen.getByText(STEPS_DEEP.recap)).toBeInTheDocument();
+  expect(screen.queryByText(STEPS_DEEP.plan)).toBeNull();
+  expect(screen.getByText(/^6 chapters · 47 beats/)).toBeInTheDocument();
+  expect(screen.getByText(STEPS_DEEP.section(1, "Chapters 1–4"))).toBeInTheDocument();
+});

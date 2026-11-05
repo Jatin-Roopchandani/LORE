@@ -1,5 +1,5 @@
 import type { useAsk } from "../useAsk";
-import { errorMessage, UI } from "../messages";
+import { errorMessage, POSITION, UI } from "../messages";
 import { Claims } from "./Claims";
 import { Prose } from "./Prose";
 import { HowPanel } from "./HowPanel";
@@ -56,6 +56,7 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
             )}
             {r && r.claims.length === 0 && <p className="note">{UI.refusal}</p>}
             <ShortAnswer state={state} onHoverChunks={onHoverChunks} />
+            {r?.position_note && <p className="position-note" role="note" aria-label={POSITION.noteLabel}>{r.position_note}</p>}
             {sectioned && <Sections key={ask.run} state={state} onHoverChunks={onHoverChunks} />}
             {!sectioned && r && r.claims.length > 0 && r.answer_style === "prose" && (r.prose?.length ?? 0) > 0 ? (
               <>

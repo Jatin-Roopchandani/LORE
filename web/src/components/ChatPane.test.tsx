@@ -3,7 +3,7 @@ import single from "../fixtures/single-part.json";
 import { budget } from "../fixtures/synthetic";
 import { askReducer, initialState } from "../askReducer";
 import { ChatPane } from "./ChatPane";
-import { UI } from "../messages";
+import { POSITION, UI } from "../messages";
 import type { AskEvent } from "../types";
 
 const askWith = (events: AskEvent[], extra = {}) => ({
@@ -93,4 +93,14 @@ test("a prose fallback shows the note", () => {
     note: "the written answer did not pass verification; showing the checked facts" } } : e);
   render(<ChatPane ask={askWith(events as AskEvent[])} showInternals onHoverChunks={() => {}} />);
   expect(screen.getByText(/didn't pass verification/)).toBeInTheDocument();
+});
+
+test("the reading position note shows under the short answer, only when the answer carries one", () => {
+  const withNote = (single as AskEvent[]).map((e) => e.type === "answer"
+    ? { ...e, result: { ...e.result, position_note: "Answered from what you've read: up to chapter 9 of Hollow Gate" } } : e) as AskEvent[];
+  const { rerender } = render(<ChatPane ask={askWith(withNote)} showInternals onHoverChunks={() => {}} />);
+  const note = screen.getByRole("note", { name: POSITION.noteLabel });
+  expect(note).toHaveTextContent("Answered from what you've read: up to chapter 9 of Hollow Gate");
+  rerender(<ChatPane ask={askWith(single as AskEvent[])} showInternals onHoverChunks={() => {}} />);
+  expect(screen.queryByRole("note", { name: POSITION.noteLabel })).toBeNull();
 });

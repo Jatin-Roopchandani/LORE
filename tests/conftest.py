@@ -35,3 +35,14 @@ def _block_remote_sockets(request, monkeypatch):
 
     monkeypatch.setattr(socket.socket, "connect", guarded)
     monkeypatch.setattr(socket.socket, "connect_ex", guarded_ex)
+
+
+@pytest.fixture(autouse=True)
+def _prose_for_factual_answers(request, monkeypatch):
+    """The writer's tests ask factual questions, so they run with prose for
+    factual answers on (write.PROSE_FACTUAL, off by default since round 7).
+    Mark a test `factual_default` to run with the shipped default instead."""
+    if request.node.get_closest_marker("factual_default"):
+        return
+    from lore.query import write
+    monkeypatch.setattr(write, "PROSE_FACTUAL", True)
