@@ -368,9 +368,11 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
     case "interrupted":
       return { text: "The connection dropped before the answer finished.", retry: true };
     case "unreachable":
-      return { text: "LORE isn't reachable. Check that `lore ui` is still running.", retry: true };
+      return { text: i ? "LORE isn't reachable. Check that `lore ui` is still running." : "LORE isn't reachable right now. Check your connection and try again.", retry: true };
     case "forbidden":
-      return { text: "This page isn't allowed to talk to LORE. Open it from the address lore ui printed." };
+      return { text: i ? "This page isn't allowed to talk to LORE. Open it from the address lore ui printed." : "That isn't allowed. Reload the page and try again." };
+    case "rate_limited":
+      return { text: error.message || "Too many requests. Please wait a moment and try again.", retry: true };
     case "no_graph":
       return { text: error.message || "There's no graph yet. Process a book first." };
     case "bad_request":
@@ -383,8 +385,11 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
       return { text: "This answer was too large to keep in your history." };
     case "chat_not_found":
       return { text: "This chat is no longer in your history. Start a new chat to ask again." };
-    default:
-      return { text: error.message || "Something went wrong.", retry: true };
+    default: {
+      // A friendly server error quotes its reference already; otherwise add it when there is one.
+      const text = error.message || "Something went wrong.";
+      return { text: text.includes("Reference:") ? text : text + reference(error.request_id), retry: true };
+    }
   }
 }
 
@@ -510,7 +515,7 @@ export const ADMIN = {
   copy: "Copy",
   copied: "Copied",
   users: "Users",
-  userColumns: { email: "Email", name: "Name", role: "Role", status: "Status", joined: "Joined", key: "Gemini key", today: "Requests today" },
+  userColumns: { email: "Email", name: "Name", role: "Role", status: "Status", joined: "Joined", key: "Gemini key", today: "Requests today", actions: "" },
   reports: "Reported answers",
   noReports: "No reports yet.",
   reportColumns: { when: "When", email: "Email", question: "Question", note: "Note", status: "Status", actions: "" },
@@ -573,3 +578,16 @@ export const ACCOUNT_DELETE = {
 
 // A friendly server error carries a reference the user can quote.
 export const reference = (id?: string) => (id ? ` Reference: ${id}` : "");
+
+// Release step 6: the admin page's user controls and its log of admin actions.
+export const ADMIN_USERS = {
+  disable: "Disable", enable: "Enable", revoke: "Sign out everywhere", remove: "Delete",
+  confirmRemove: (email: string) => `Delete ${email} and all their data? This can't be undone.`,
+  yes: "Yes, delete", cancel: "Cancel",
+  disabled: (email: string) => `${email} is disabled and signed out.`,
+  enabled: (email: string) => `${email} can sign in again.`,
+  revoked: (email: string) => `${email} is signed out everywhere.`,
+  removed: (email: string) => `${email} was deleted.`,
+  events: "Admin log", noEvents: "No admin actions yet.",
+  eventColumns: { when: "When", admin: "Admin", action: "Action", target: "User" },
+};

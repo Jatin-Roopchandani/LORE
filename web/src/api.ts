@@ -1,4 +1,4 @@
-import type { AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
+import type { AdminEvent, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
   EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
   SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
@@ -47,12 +47,18 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
     if (signedOut(response)) { yield errorEvent("unauthorized", ""); return; }
     let message = "";
     let code = response.status === 403 ? "forbidden" : "bad_request";
+    let requestId: string | undefined;
     try {
       const body = await response.json();
       message = body.detail ?? "";
+      requestId = body.error?.request_id;
       if (response.status === 404 && body.error?.code === "not_found") code = "chat_not_found";  // the chat followed up is gone
+      // A limit (429: rate_limited, or busy while another question runs) says so in its own words.
+      else if (response.status === 429 && body.error?.code) { code = body.error.code; message = body.error.message ?? ""; }
     } catch { /* not JSON */ }
-    yield errorEvent(code, String(message));
+    const event = errorEvent(code, String(message));
+    if (requestId && event.type === "error") event.error.request_id = requestId;
+    yield event;
     return;
   }
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -189,6 +195,8 @@ export const authApi = {
   // Always 202. `website` is the honeypot: the form leaves it empty.
   joinWaitlist: (email: string, reading: string, consent: boolean, website = "") =>
     sendJson<{ ok: true }>("POST", "/api/waitlist", { email, reading, consent, website }, true),
+  // Deletes the account and everything in it; `confirm` is the user's own email, typed.
+  deleteMe: (confirm: string) => sendJson<{ deleted: true }>("POST", "/api/me/delete", { confirm }, true),
 };
 
 // The signed-in user's own Gemini key (multi-user mode). The server never sends the key back, only its last four characters.
@@ -208,4 +216,9 @@ export const adminApi = {
   reports: () => getJson<{ reports: AdminReport[] }>("/api/admin/reports", true),
   resolveReport: (id: number) => sendJson<{ report: AdminReport }>("POST", `/api/admin/reports/${id}/resolve`, {}, true),
   trace: (requestId: string) => getJson<TraceRecord>(`/api/admin/traces/${encodeURIComponent(requestId)}`, true),
+  disable: (id: string) => sendJson<{ user: { status: string } }>("POST", `/api/admin/users/${encodeURIComponent(id)}/disable`, {}, true),
+  enable: (id: string) => sendJson<{ user: { status: string } }>("POST", `/api/admin/users/${encodeURIComponent(id)}/enable`, {}, true),
+  revokeSessions: (id: string) => sendJson<{ revoked: number }>("POST", `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`, {}, true),
+  deleteUser: (id: string) => sendJson<{ deleted: true }>("DELETE", `/api/admin/users/${encodeURIComponent(id)}`, undefined, true),
+  events: () => getJson<{ events: AdminEvent[] }>("/api/admin/events", true),
 };

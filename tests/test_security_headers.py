@@ -167,3 +167,23 @@ def test_sign_in_rotates_the_session_id(tmp_path):
     assert new and new != old
     from lore.auth.tokens import hash_token
     assert hash_token(old) not in {row.token_hash for row in rows(sessions)}
+
+
+def test_the_built_page_has_nothing_the_csp_would_refuse():
+    """The built index.html (after `npm run build`): no inline script, no
+    inline <style>, no style="" attribute and no inline event handler; every
+    script and stylesheet comes from this origin."""
+    built = Path(__file__).resolve().parents[1] / "lore" / "web" / "static" / "index.html"
+    if not built.exists():
+        pytest.skip("the web app is not built")
+    html = built.read_text()
+    for attrs, body in re.findall(r"<script\b([^>]*)>(.*?)</script>", html, re.S):
+        assert not body.strip(), "inline script in the built page"
+        src = re.search(r'src="([^"]+)"', attrs)
+        assert src and src.group(1).startswith("/"), attrs
+    assert "<style" not in html
+    assert not re.search(r"\sstyle=", html)
+    assert not re.search(r"\son[a-z]+=", html)
+    for href in re.findall(r'<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"', html):
+        assert href.startswith("/"), href
+    assert 'id="lore-themes"' in html  # the themes, as a stylesheet file

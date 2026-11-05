@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminApi, isError } from "../api";
-import { ADMIN } from "../messages";
-import type { AdminReport, AdminUser, NewInvite, TraceRecord, WaitlistEntry } from "../types";
+import { ADMIN, ADMIN_USERS } from "../messages";
+import type { AdminEvent, AdminReport, AdminUser, NewInvite, TraceRecord, WaitlistEntry } from "../types";
 import { PageShell } from "./PageShell";
 
 const day = (iso: string) => iso.slice(0, 10);
@@ -50,6 +50,13 @@ export function Admin() {
   const [busy, setBusy] = useState<number | null>(null);
   const [reports, setReports] = useState<AdminReport[]>([]);
   const [trace, setTrace] = useState<TraceRecord | null>(null);
+  const [events, setEvents] = useState<AdminEvent[]>([]);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const loadEvents = useCallback(async () => {
+    const r = await adminApi.events();
+    setEvents(!isError(r) && Array.isArray(r.events) ? r.events : []);
+  }, []);
+  useEffect(() => { void loadEvents(); }, [loadEvents]);
   const loadReports = useCallback(async () => {
     const r = await adminApi.reports();
     setReports(!isError(r) && Array.isArray(r.reports) ? r.reports : []);
@@ -84,6 +91,16 @@ export function Admin() {
     if (isError(r)) { setNotice(ADMIN.actionFailed); return; }
     setNotice(kind === "approve" ? ADMIN.approved(entry.email) : ADMIN.declined(entry.email));
     load();
+  };
+  // Disable (signs them out, refuses sign-in, pauses their jobs), enable, sign out everywhere, or delete.
+  const control = async (u: AdminUser, kind: "disable" | "enable" | "revoke" | "remove") => {
+    setNotice(""); setRemoving(null);
+    const r = await (kind === "disable" ? adminApi.disable(u.id) : kind === "enable" ? adminApi.enable(u.id)
+      : kind === "revoke" ? adminApi.revokeSessions(u.id) : adminApi.deleteUser(u.id));
+    if (isError(r)) { setNotice(ADMIN.actionFailed); return; }
+    setNotice(kind === "disable" ? ADMIN_USERS.disabled(u.email) : kind === "enable" ? ADMIN_USERS.enabled(u.email)
+      : kind === "revoke" ? ADMIN_USERS.revoked(u.email) : ADMIN_USERS.removed(u.email));
+    void load(); void loadEvents();
   };
   const create = async () => {
     setNotice("");
@@ -140,8 +157,28 @@ export function Admin() {
         <thead><tr>{Object.values(ADMIN.userColumns).map((c) => <th key={c}>{c}</th>)}</tr></thead>
         <tbody>{(users ?? []).map((u) => (
           <tr key={u.id}><td>{u.email}</td><td>{u.name}</td><td>{u.role}</td><td>{u.status}</td><td>{day(u.created_at)}</td>
-            <td>{u.has_key ? ADMIN.hasKey : ADMIN.noKey}</td><td>{u.requests_today ?? 0}</td></tr>))}</tbody>
+            <td>{u.has_key ? ADMIN.hasKey : ADMIN.noKey}</td><td>{u.requests_today ?? 0}</td>
+            <td className="actions">
+              {removing === u.id ? (<>
+                <span>{ADMIN_USERS.confirmRemove(u.email)}</span>
+                <button className="tbtn primary" type="button" onClick={() => void control(u, "remove")}>{ADMIN_USERS.yes}</button>
+                <button className="tbtn" type="button" onClick={() => setRemoving(null)}>{ADMIN_USERS.cancel}</button>
+              </>) : (<>
+                {u.status === "active" && <button className="tbtn" type="button" onClick={() => void control(u, "disable")}>{ADMIN_USERS.disable}</button>}
+                {u.status === "disabled" && <button className="tbtn" type="button" onClick={() => void control(u, "enable")}>{ADMIN_USERS.enable}</button>}
+                <button className="tbtn" type="button" onClick={() => void control(u, "revoke")}>{ADMIN_USERS.revoke}</button>
+                <button className="tbtn" type="button" onClick={() => setRemoving(u.id)}>{ADMIN_USERS.remove}</button>
+              </>)}
+            </td></tr>))}</tbody>
       </table></div>
+      <h2>{ADMIN_USERS.events}</h2>
+      {events.length === 0 ? <p>{ADMIN_USERS.noEvents}</p> : (
+        <div className="admin-scroll"><table className="admin-table" aria-label={ADMIN_USERS.events}>
+          <thead><tr>{Object.values(ADMIN_USERS.eventColumns).map((c) => <th key={c}>{c}</th>)}</tr></thead>
+          <tbody>{events.map((e) => (
+            <tr key={e.id}><td>{e.at.slice(0, 16).replace("T", " ")}</td><td>{e.admin ?? ""}</td><td>{e.action}</td><td>{e.target_user_id ?? ""}</td></tr>))}</tbody>
+        </table></div>
+      )}
     </PageShell>
   );
 }

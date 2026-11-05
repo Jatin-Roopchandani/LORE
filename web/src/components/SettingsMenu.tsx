@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, authApi, isError, keyApi, nav, reportKeyProblem } from "../api";
-import { AUTH, KEYS, UI } from "../messages";
+import { ACCOUNT_DELETE, AUTH, KEYS, UI } from "../messages";
 import { isMulti } from "../routing";
 import type { KeyStatus, McpInfo, Me, UsageToday } from "../types";
 import { KeyForm } from "./KeyOnboarding";
@@ -41,6 +41,34 @@ function KeySettings() {
       </div>
     </>)}
   </>);
+}
+
+// "Delete my account", behind a typed confirmation: the user's own email address (the server checks it too).
+function DeleteAccount({ email }: { email: string }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [state, setState] = useState<"idle" | "deleting" | "failed">("idle");
+  const matches = typed.trim().toLowerCase() === email.toLowerCase();
+  const submit = async () => {
+    setState("deleting");
+    const r = await authApi.deleteMe(typed.trim());
+    if (isError(r)) { setState("failed"); return; }
+    nav.to("/");
+  };
+  if (!open) return <button className="tbtn" type="button" onClick={() => setOpen(true)}>{ACCOUNT_DELETE.open}</button>;
+  return (<div className="delete-account">
+    <h4>{ACCOUNT_DELETE.title}</h4>
+    <p className="hint">{ACCOUNT_DELETE.lead}</p>
+    <label>{ACCOUNT_DELETE.confirmLabel(email)}
+      <input type="text" autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} />
+    </label>
+    {state === "failed" && <div className="notice error" role="alert">{ACCOUNT_DELETE.failed}</div>}
+    <div className="key-actions">
+      <button className="tbtn" type="button" disabled={!matches || state === "deleting"} onClick={submit}>
+        {state === "deleting" ? ACCOUNT_DELETE.deleting : ACCOUNT_DELETE.confirm}</button>
+      <button className="tbtn" type="button" onClick={() => { setOpen(false); setTyped(""); setState("idle"); }}>{ACCOUNT_DELETE.cancel}</button>
+    </div>
+  </div>);
 }
 
 function Snip({ text }: { text: string }) {
@@ -85,6 +113,7 @@ export function SettingsMenu({ showInternals }: { showInternals: boolean }) {
             {me.role === "admin" && <a className="tbtn" href="/admin">{AUTH.admin}</a>}
             <button className="tbtn" type="button" onClick={signOut}>{AUTH.signOut}</button>
             <KeySettings />
+            <DeleteAccount email={me.email} />
           </>)}
           {showInternals && (<>
             <h4>Connect an MCP client</h4>

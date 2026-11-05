@@ -50,7 +50,8 @@ export interface SectionEvent { type: "section"; t: number; index: number; kind:
   style?: "prose" | "claims" | "empty" | "failed"; text?: string; prose?: ProseSentence[]; claims?: Claim[];
   claims_range?: [number, number] | null; passages?: Passage[]; note?: string | null;
   reason?: "budget" | "reserve"; group?: string; group_title?: string; title?: string }
-export interface ApiError { code: string; message: string }
+// `request_id` (multi-user mode): the reference a friendly server error quotes; `retry_after`: seconds, on a 429.
+export interface ApiError { code: string; message: string; request_id?: string; retry_after?: number }
 export type AskEvent =
   | { type: "step"; t: number; name: StepName | DeepStepName; state: "start" | "done"; part: number | null; detail: string | null }
   // `lens_of` (per part: the plan part it is a lens of, or null) and `plan_questions` come only when lenses exist.
@@ -179,3 +180,6 @@ export type UploadProcessing =
 export interface UploadResult { book_id: string; title: string; world: WorldRef | null; filename: string; processing: UploadProcessing }
 // An upload refusal; `book_id` comes with already_added (the book that is already in the library).
 export interface UploadError { error: ApiError; book_id?: string }
+
+// One admin action (release step 6): who did what to whom.
+export interface AdminEvent { id: number; at: string; admin_id: string | null; admin: string | null; action: string; target_user_id: string | null; detail: Record<string, unknown> | null }
