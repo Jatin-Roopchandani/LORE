@@ -3,10 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <script>
-      // Set the saved theme before first paint (no flash). The theme blocks are injected into this head at build time.
-      try { var t = localStorage.getItem("lore-theme-v2") || localStorage.getItem("lore-theme"); if (t && t !== "system") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
-    </script>
+    <!-- Sets the saved theme before first paint; a file, so the CSP allows no inline script. -->
+    <script src="/theme-boot.js"></script>
     <title>LORE Reader</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>

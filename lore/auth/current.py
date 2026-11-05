@@ -52,6 +52,7 @@ def session_user(request: Request) -> CurrentUser | None:
             user = CurrentUser(found.user_id)
             if found.refreshed:
                 request.state.session_refresh = token
+                request.state.session_max_age = found.max_age
     request.state.auth_user = user
     return user
 
@@ -74,11 +75,12 @@ class SessionRefresh:
                 token = scope["state"].get("session_refresh")
                 if token:
                     csrf = csrf_token(self.settings.csrf_secret, token)
+                    max_age = scope["state"].get("session_max_age",
+                                                 int(LIFETIME.total_seconds()))
                     message = dict(message)
                     message["headers"] = [*message.get("headers", []),
                                           *session_headers(
-                                              self.settings, token, csrf,
-                                              int(LIFETIME.total_seconds()))]
+                                              self.settings, token, csrf, max_age)]
             await send(message)
 
         await self.app(scope, receive, send_with_cookies)

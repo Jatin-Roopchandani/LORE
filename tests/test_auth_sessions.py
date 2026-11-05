@@ -61,19 +61,19 @@ def test_an_expired_session_is_401(env):
     assert client.get("/api/books").status_code == 401
 
 
-def test_the_expiry_slides_on_use_but_is_written_at_most_daily(env):
+def test_the_expiry_slides_on_use_but_is_written_at_most_hourly(env):
     app, sessions, clock, _ = env
     client = sign_in(app, sessions, "alice")
     first = rows(sessions)[0].expires_at
-    clock.now = NOW + timedelta(hours=3)  # within a day: no write
+    clock.now = NOW + timedelta(minutes=30)  # within the hour: no write
     client.get("/api/books")
     assert rows(sessions)[0].expires_at == first
-    clock.now = NOW + timedelta(days=2)   # past a day: rewritten
+    clock.now = NOW + timedelta(days=2)   # past it: rewritten
     r = client.get("/api/books")
-    assert rows(sessions)[0].expires_at == clock.now + auth_sessions.LIFETIME
+    assert rows(sessions)[0].expires_at == clock.now + auth_sessions.IDLE
     # ...and the cookies are re-sent with the new lifetime.
     assert any("lore_session=" in c for c in r.headers.get_list("set-cookie"))
-    clock.now = NOW + timedelta(days=2, hours=1)
+    clock.now = NOW + timedelta(days=2, minutes=30)
     r = client.get("/api/books")
     assert "set-cookie" not in r.headers
 
@@ -237,7 +237,9 @@ def test_every_mutating_route_of_the_app_is_covered_by_the_guard(env):
     """The guard is app-wide, so a route added later is covered too: assert
     it is installed as a dependency of the application itself."""
     app, *_ = env
-    api = app.app.app  # OriginGuard -> SessionRefresh -> FastAPI
+    api = app  # SecurityHeaders -> OriginGuard -> SessionRefresh -> FastAPI
+    while not hasattr(api, "router"):
+        api = api.app
     from lore.auth.csrf import csrf_guard
     assert any(d.dependency is csrf_guard for d in api.router.dependencies)
 

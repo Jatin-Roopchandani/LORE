@@ -57,6 +57,7 @@ from lore.tenancy import (
 )
 from lore.web import friendly
 from lore.web.ask import ask_events
+from lore.web.headers import SecurityHeaders
 from lore.web.throttle import RateSettings, Throttle
 from lore.web.limits import BodyLimit
 from lore.web.upload import UploadDeps, UploadSettings, build_upload_router
@@ -972,9 +973,9 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             return HTMLResponse(_NOT_BUILT)
         html = index.read_text(encoding="utf-8").replace(
             "</head>", '<meta name="lore-multi" content="1"></head>', 1)
-        return HTMLResponse(html, headers={
-            "Cache-Control": "no-store", "X-Frame-Options": "DENY",
-            "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff"})
+        # The security headers (CSP and the rest) are added to every
+        # response by lore.web.headers.SecurityHeaders.
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
     if multi:
         from lore.auth.current import session_user
@@ -1019,4 +1020,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         public = urlparse(auth_ctx.settings.origin)
         hosts, origins = hosts | {public.netloc}, origins | {auth_ctx.settings.origin}
         inner = SessionRefresh(api, auth_ctx.settings)
+        # CSP, Referrer-Policy, nosniff, Permissions-Policy, frame refusal
+        # and HSTS behind https, on every response (lore.web.headers).
+        return SecurityHeaders(OriginGuard(inner, hosts, origins),
+                               hsts=auth_ctx.settings.origin.startswith("https://"))
     return OriginGuard(inner, hosts, origins)
