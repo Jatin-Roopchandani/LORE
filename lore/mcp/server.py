@@ -10,6 +10,9 @@ Tenancy: MCP is LOCAL-MODE ONLY for the beta (release spec §6). It serves the
 one `LoreConfig` it is given, i.e. the local user's library, and has no notion
 of a request's user: never expose it from a multi-user deployment. A per-user
 token (resolving to `lore.tenancy.config_for(base, user)`) can come later.
+Release step 6 enforces it: `build_server` (so `lore mcp`, stdio and HTTP)
+refuses to start while LORE_MULTI_USER is set (`MultiUserRefused`), and the
+web app's /api/mcp panel is 404 in multi mode.
 
 Operational note: an engine crash takes the whole process down. Kuzu 0.11.3
 segfaults on `CALL read_csv_serial('<path>')`; the cypher guard rejects that
@@ -34,7 +37,20 @@ def _bypass(ignore_reading_position: bool) -> dict:
     return {"spoilers": True} if ignore_reading_position else {}
 
 
+class MultiUserRefused(RuntimeError):
+    """MCP is local-only: it has no notion of which user is asking."""
+
+
+def refuse_multi_user() -> None:
+    from lore.tenancy import multi_user_enabled
+    if multi_user_enabled():
+        raise MultiUserRefused(
+            "the MCP server is local-only and does not run with LORE_MULTI_USER=1:"
+            " it would serve one library to anyone who can reach it")
+
+
 def build_server(config: LoreConfig) -> MCPServer:
+    refuse_multi_user()
     mcp = MCPServer("lore")
 
     @mcp.tool()

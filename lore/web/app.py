@@ -55,6 +55,7 @@ from lore.tenancy import (
     LOCAL_USER_ID, CurrentUser, InvalidUserId, config_for, multi_user_enabled,
     require_session_user, resolve_user as default_resolver, validate_user_id,
 )
+from lore.web import friendly
 from lore.web.ask import ask_events
 from lore.web.limits import BodyLimit
 from lore.web.upload import UploadDeps, UploadSettings, build_upload_router
@@ -249,7 +250,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     """
     multi = multi_user_enabled() if multi_user is None else multi_user
     auth_ctx = None
-    if multi:
+    if multi:  # no configured model name reaches a user (lore.web.friendly)
+        friendly.known_models(friendly.config_models(config))
         from lore.auth.setup import build_context
         auth_ctx = build_context(
             config, auth=auth, mailer=mailer, providers=providers,
@@ -776,10 +778,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     @api.get("/api/quota")
     def quota(config: LoreConfig = Depends(user_config)):
-        return _quota(config)
+        out = _quota(config)
+        if multi:  # per-model counts name the models: internals
+            out["models"] = []
+        return out
 
     @api.get("/api/mcp")
     def mcp(config: LoreConfig = Depends(user_config)):
+        if multi:  # MCP is local-only (lore.mcp.server refuses multi mode)
+            return _api_error(404, "not_found", "MCP is not available here")
         return {
             "stdio_command": f"claude mcp add lore -- {shlex.quote(_lore_executable())} mcp",
             "http_command": f"lore mcp --http --port {MCP_PORT}",
@@ -789,7 +796,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     @api.get("/api/settings")
     def settings(config: LoreConfig = Depends(user_config)):
-        return {"show_internals": config.web.show_internals}
+        # Multi mode: never. No model names, prompts or provider errors.
+        return {"show_internals": False if multi else config.web.show_internals}
 
     # One question at a time PER USER: one user's long answer must not make
     # another's `busy`. Locks only; no store handle is held across requests.
@@ -862,7 +870,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                     try:
                         chat_id, message_id = record_answer(
                             session, owner, chat_id=body.chat_id, question=body.question,
-                            world=body.world, depth=body.depth, result=result,
+                            world=body.world, depth=body.depth,
+                            result=friendly.public_result(result) if multi else result,
                             events=events, request_id=trace.request_id, now=now)
                         out = {"chat_id": chat_id, "message_id": message_id}
                     except history_store.HistoryFull:
@@ -882,7 +891,9 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         return StreamingResponse(
             ask_events(cfg, body.question, lock, search=search,
                        world=body.world, depth=body.depth, on_finish=save, history=history,
-                       request_id=trace.request_id, **_bypass(spoilers)),
+                       request_id=trace.request_id,
+                       public=friendly.public_event if multi else None,
+                       **_bypass(spoilers)),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
@@ -940,6 +951,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     # Every request gets an id, on its log lines and in X-Request-Id; /api/ask
     # keys its trace by it. Request bodies are capped (lore.web.limits).
     api.add_middleware(BodyLimit)
+    if multi:  # friendly errors with the request id, never a traceback
+        api.add_middleware(friendly.PublicErrors)
     api.add_middleware(RequestId)
 
     hosts, origins = allowed_hosts(host, port), allowed_origins(host, port, dev)

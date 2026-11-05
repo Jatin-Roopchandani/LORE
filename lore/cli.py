@@ -1470,8 +1470,16 @@ def mcp_command(
     open and close per request, so `lore graph load` keeps working while
     this is running. --http binds loopback only: there is no authentication.
     """
-    from lore.mcp.server import NonLoopbackHost, _check_loopback, run_http, run_stdio
+    from lore.mcp.server import (
+        MultiUserRefused, NonLoopbackHost, _check_loopback, refuse_multi_user, run_http,
+        run_stdio,
+    )
 
+    try:  # local-only: build_server refuses too, this is the clean message
+        refuse_multi_user()
+    except MultiUserRefused as exc:
+        typer.echo(f"lore mcp: {exc}", err=True)
+        raise typer.Exit(2)
     config = LoreConfig.load()
     if http:
         # run_http checks this too (so nothing can bypass it); checking here

@@ -31,7 +31,7 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
                      search=None, world=None, depth=None,
                      spoilers=False, on_finish=None,
                      request_id: str | None = None,
-                     history=None) -> AsyncIterator[bytes]:
+                     history=None, public=None) -> AsyncIterator[bytes]:
     """`history` (a chat's last turns, loaded by the server) makes the question
     a follow-up; passed to the search only when there is some.
 
@@ -42,7 +42,12 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
     `cancelled` when the client went away), `events` every event sent, each
     with its `type`. What it returns is merged into the final event (the
     chat the answer was saved to). It must not raise into the stream: a
-    failure there is logged and the answer is still sent."""
+    failure there is logged and the answer is still sent.
+
+    `public(kind, payload)`, when given (multi mode: lore.web.friendly), is
+    what the client sees of each event: no model names, no raw errors. The
+    events handed to `on_finish` are those public ones too (they become the
+    chat's replay); `result` and `error` stay raw for the trace."""
     search = search or tools.lore_search
     started = time.monotonic()
     sent: list[dict] = []
@@ -52,6 +57,8 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
         return {"t": round(time.monotonic() - started, 2), **payload}
 
     def emit(kind: str, payload: dict) -> bytes:
+        if public is not None:
+            payload = public(kind, payload)
         sent.append({"type": kind, **payload})
         return sse(kind, payload)
 
@@ -67,7 +74,8 @@ async def ask_events(config, question: str, lock: asyncio.Lock,
             return {}
 
     if lock.locked():
-        yield sse("error", stamp({"error": BUSY}))
+        busy = stamp({"error": BUSY})
+        yield sse("error", public("error", busy) if public is not None else busy)
         return
     async with lock:
         if request_id is not None:
