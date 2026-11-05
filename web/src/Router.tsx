@@ -1,6 +1,5 @@
 import { lazy, Suspense } from "react";
 import { Admin } from "./pages/Admin";
-import { Legal } from "./pages/Legal";
 import { PageShell } from "./pages/PageShell";
 import { SignIn } from "./pages/SignIn";
 import { Waitlist } from "./pages/Waitlist";
@@ -9,8 +8,9 @@ import { isMulti, pageFor } from "./routing";
 
 // The reading app (and its graph library) is loaded only for /app, so the sign-in and public pages stay small.
 const App = lazy(() => import("./App"));
-// The homepage is a chunk of its own too, with its CSS and the two extra font weights.
+// The homepage, privacy and terms share a chunk of their own, with their CSS and the two extra font weights.
 const Home = lazy(() => import("./pages/home/Home"));
+const Legal = lazy(() => import("./pages/home/Legal"));
 
 export default function Router({ pathname = window.location.pathname, multi = isMulti() }: { pathname?: string; multi?: boolean }) {
   switch (pageFor(pathname, multi)) {
@@ -19,8 +19,8 @@ export default function Router({ pathname = window.location.pathname, multi = is
     case "signin": return <SignIn />;
     case "waitlist": return <Waitlist />;
     case "admin": return <Admin />;
-    case "privacy": return <Legal kind="privacy" />;
-    case "terms": return <Legal kind="terms" />;
+    case "privacy": return <Suspense fallback={null}><Legal kind="privacy" /></Suspense>;
+    case "terms": return <Suspense fallback={null}><Legal kind="terms" /></Suspense>;
     default: return <PageShell><p>{AUTH.notFound}</p><a href="/">{AUTH.back}</a></PageShell>;
   }
 }

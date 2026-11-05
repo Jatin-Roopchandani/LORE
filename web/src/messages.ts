@@ -437,13 +437,6 @@ export const AUTH = {
   back: "Back",
   privacy: "Privacy",
   terms: "Terms",
-  privacyTitle: "Privacy",
-  // TODO(release step 7): the full privacy page. It must keep saying what is traced and who can read it.
-  privacyBody: "This page is a placeholder while the beta starts. The full privacy note arrives before anyone is invited."
-    + " Each question you ask keeps a trace for 30 days (your question, the book passages LORE read, and the model's"
-    + " replies) so a reported answer can be looked into; only LORE's administrators can read traces.",
-  termsTitle: "Terms",
-  termsBody: "This page is a placeholder while the beta starts. The full terms arrive before anyone is invited.",
   notFound: "There's nothing at this address.",
 };
 
@@ -671,4 +664,78 @@ export const HOME = {
   copyright: "© 2026 LORE",
   privacy: "Privacy",
   terms: "Terms",
+};
+
+// Privacy and terms (release step 7): short, plain and accurate to how LORE works. A section is a heading and its
+// paragraphs; a paragraph given as a list of strings is a bulleted list.
+export interface LegalSection { h: string; body: (string | string[])[] }
+export const LEGAL = {
+  updatedLabel: "Last updated",
+  updated: "5 November 2026",
+  // TODO(user): confirm this address exists and is read before the beta opens.
+  contact: "privacy@jrvn.site",
+  privacy: {
+    title: "Privacy",
+    docTitle: "Privacy · LORE",
+    lede: "What LORE keeps about you, where it goes, and how to delete it, in plain English.",
+    sections: [
+      { h: "What we store", body: [[
+        "Your account: your email address and your name.",
+        "How you sign in: the Google or GitHub account, or the email address, linked to your account.",
+        "Your books, in your own library, and everything LORE makes from them: the text, the graph of people, places and events, and the search index. Nothing is shared between readers.",
+        "Your chats: the questions you ask and LORE’s answers.",
+        "A trace of each question, for 30 days: your question, the book passages LORE read and the AI model’s replies, so that an answer you report can be looked into. Only LORE’s administrators can read traces.",
+        "Reports you send with “Report this answer”, and your note.",
+        "Usage counts: how many AI requests you make each day.",
+        "Your AI key, encrypted. After you add it, LORE only ever shows its last four characters.",
+        "Waitlist requests: your email and, if you tell us, what you’re reading.",
+      ]] },
+      { h: "Where it goes", body: [
+        "Your books and questions go to your own AI provider, under your own key. Today that is Gemini, from Google. To build a book’s graph, LORE sends the book’s text; when you ask, it sends your question and the passages it found. Your provider’s terms cover what it receives: on Gemini’s free tier, Google may use it to improve its products.",
+        "The search index (the embeddings) is made on our own server, not by an outside service.",
+        "Sign-in and invite emails are sent through Resend, an email delivery service, which receives your email address to deliver them. If you sign in with Google or GitHub, they tell us your email address and name.",
+        "Our server keeps logs of requests, including your IP address, to keep LORE running and safe.",
+        "Nothing is sold or shared. There are no ads and no third-party analytics.",
+      ] },
+      { h: "Cookies", body: [
+        "Two cookies, both needed to sign you in: a session cookie that keeps you signed in, and a CSRF cookie that stops other sites from making requests as you. While you sign in with Google or GitHub, one more cookie holds that sign-in for up to 10 minutes. There are no tracking cookies.",
+        "Your browser also keeps a few display choices, such as your theme, on your own device.",
+      ] },
+      { h: "Keeping and deleting", body: [
+        "Traces are deleted after 30 days.",
+        "You can remove your AI key at any time from the account menu.",
+        "Deleting a chat hides it at once and deletes its traces. Its text is removed for good when your history needs the room, or when you delete your account.",
+        "“Delete my account”, in the account menu, removes everything: your library and books, chats, traces, reports, usage counts, your key and your sign-ins. A waitlist request under your email is anonymised.",
+      ] },
+      { h: "Contact", body: ["Questions about your data, or a request to see or delete it: write to privacy@jrvn.site."] },
+    ] as LegalSection[],
+  },
+  terms: {
+    title: "Terms",
+    docTitle: "Terms · LORE",
+    lede: "The few rules of LORE’s beta, in plain English.",
+    sections: [
+      { h: "The beta", body: [
+        "LORE is in a private, invite-only beta. It is provided as is: it may have bugs or get things wrong, and it may change or stop at any time.",
+        "Answers are written by an AI model from your books. LORE cites the passages behind every sentence, so check anything that matters against them.",
+        "If these terms change, the date at the top changes too.",
+      ] },
+      { h: "Your books", body: [
+        "Upload only books you own, for your own personal use. Your books stay yours: LORE uses them only to answer your questions.",
+      ] },
+      { h: "Your AI key", body: [
+        "You are responsible for your AI key and its usage, including any limits or charges from your provider. LORE uses it only for your own books and questions.",
+      ] },
+      { h: "Fair use", body: [
+        "Use LORE as a reader would. No abuse and no scraping: no automated or bulk requests, no attempts to reach other readers’ data, and nothing that overloads or attacks the service.",
+      ] },
+      { h: "Accounts", body: [
+        "We can disable an account that misuses the service. You can delete yours at any time with “Delete my account”.",
+      ] },
+      // TODO(user): who provides LORE (name or company), the governing law and where disputes are heard.
+      { h: "The legal details", body: [
+        "Who provides LORE, and the law that governs these terms, will be set out here before invitations go out. Questions meanwhile: privacy@jrvn.site.",
+      ] },
+    ] as LegalSection[],
+  },
 };

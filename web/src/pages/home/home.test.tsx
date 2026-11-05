@@ -1,8 +1,9 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Router from "../../Router";
-import { HOME } from "../../messages";
+import { HOME, LEGAL } from "../../messages";
 import Home from "./Home";
+import Legal from "./Legal";
 
 type Call = { url: string; method: string; body: any };
 function serve(answer: (url: string) => { status?: number; body?: unknown } | "offline") {
@@ -220,6 +221,37 @@ describe("the waitlist form", () => {
     render(<Home signedIn={false} />);
     await fill("reader@example.org");
     expect(await screen.findByRole("alert")).toHaveTextContent(HOME.invalidEmail);
+  });
+});
+
+describe("privacy and terms", () => {
+  test("privacy says what is stored, where it goes, the cookies, deletion and whom to ask", () => {
+    render(<Legal kind="privacy" signedIn={false} />);
+    expect(screen.getByRole("heading", { level: 1, name: LEGAL.privacy.title })).toBeInTheDocument();
+    for (const s of LEGAL.privacy.sections) expect(screen.getByRole("heading", { level: 2, name: s.h })).toBeInTheDocument();
+    expect(screen.getByText(`${LEGAL.updatedLabel}`, { exact: false })).toHaveTextContent(LEGAL.updated);
+    expect(screen.getByText(/30 days: your question/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: LEGAL.contact })).toHaveAttribute("href", `mailto:${LEGAL.contact}`);
+    expect(document.title).toBe(LEGAL.privacy.docTitle);
+    // The homepage's nav and footer, leading back to its sections.
+    const nav = screen.getByRole("navigation", { name: HOME.navLabel });
+    expect(within(nav).getByRole("link", { name: HOME.brandLabel })).toHaveAttribute("href", "/");
+    expect(within(nav).getByRole("link", { name: HOME.requestInvite })).toHaveAttribute("href", "/#beta");
+    expect(within(screen.getByRole("contentinfo")).getByRole("link", { name: HOME.terms })).toHaveAttribute("href", "/terms");
+  });
+
+  test("terms cover the beta, your books, your key, fair use and accounts", () => {
+    render(<Legal kind="terms" signedIn />);
+    expect(screen.getByRole("heading", { level: 1, name: LEGAL.terms.title })).toBeInTheDocument();
+    for (const s of LEGAL.terms.sections) expect(screen.getByRole("heading", { level: 2, name: s.h })).toBeInTheDocument();
+    expect(screen.getByText(/Upload only books you own, for your own personal use/)).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation")).getByRole("link", { name: HOME.openLore })).toHaveAttribute("href", "/app");
+    expect(document.title).toBe(LEGAL.terms.docTitle);
+  });
+
+  test("the router draws them (and the homepage) in multi mode, from their own chunk", async () => {
+    render(<Router pathname="/privacy" multi />);
+    expect(await screen.findByRole("heading", { level: 1, name: LEGAL.privacy.title })).toBeInTheDocument();
   });
 });
 

@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Router from "../Router";
-import { ADMIN, AUTH, HOME } from "../messages";
+import { ADMIN, AUTH, HOME, LEGAL } from "../messages";
 import { Admin } from "./Admin";
 import { SignIn } from "./SignIn";
 import { Waitlist } from "./Waitlist";
@@ -218,11 +218,11 @@ describe("Router", () => {
     expect(within(nav).getByRole("link", { name: HOME.requestInvite })).toHaveAttribute("href", "#beta");
   });
 
-  test("privacy and terms are placeholders that exist", () => {
+  test("privacy and terms exist", async () => {
     render(<Router pathname="/privacy" multi />);
-    expect(screen.getByRole("heading", { name: AUTH.privacyTitle })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: LEGAL.privacy.title })).toBeInTheDocument();
     render(<Router pathname="/terms" multi />);
-    expect(screen.getByRole("heading", { name: AUTH.termsTitle })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: LEGAL.terms.title })).toBeInTheDocument();
   });
 
   test("an unknown address says there is nothing there", () => {
