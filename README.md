@@ -196,6 +196,10 @@ list.
 A long-lived `--http` server should run under a supervisor, because an engine
 crash takes the whole process down.
 
+MCP is local-only. It serves one library and has no notion of which user is
+asking, so `lore mcp` refuses to start while `LORE_MULTI_USER=1` is set, and
+the web app's MCP panel (`/api/mcp`) is off in multi-user mode.
+
 ## How it works: from book to answer
 
 LORE turns a book into a knowledge graph in three commands, then answers
