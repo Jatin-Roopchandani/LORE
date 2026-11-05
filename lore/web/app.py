@@ -55,6 +55,7 @@ from lore.tenancy import (
     LOCAL_USER_ID, CurrentUser, InvalidUserId, config_for, multi_user_enabled,
     require_session_user, resolve_user as default_resolver, validate_user_id,
 )
+from lore.web import public_pages
 from lore.web.ask import ask_events
 from lore.web.limits import BodyLimit
 from lore.web.upload import UploadDeps, UploadSettings, build_upload_router
@@ -889,22 +890,29 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     # Decided per request, not once here: building the frontend while the
     # server runs and reloading must serve it, as the not-built page says.
     @api.get("/", include_in_schema=False)
-    def root():
+    def root(request: Request):
         index = STATIC / "index.html"
-        if multi:  # the public homepage (a placeholder until step 7)
-            return _spa_page()
+        if multi:  # the public homepage
+            return _spa_page(public=request)
         if index.exists():
             return FileResponse(index, headers={"Cache-Control": "no-cache"})
         return HTMLResponse(_NOT_BUILT)
 
-    def _spa_page() -> HTMLResponse:
+    def _spa_page(public: Request | None = None) -> HTMLResponse:
         """The web app's one HTML page, marked as multi-user so the script
-        knows which page to draw for the address (see web/src/routing.ts)."""
+        knows which page to draw for the address (see web/src/routing.ts).
+        `public` (the request for /, /privacy or /terms) gives the page its
+        own title and link-preview tags, and marks a signed-in visitor."""
         index = STATIC / "index.html"
         if not index.exists():
             return HTMLResponse(_NOT_BUILT)
         html = index.read_text(encoding="utf-8").replace(
             "</head>", '<meta name="lore-multi" content="1"></head>', 1)
+        if public is not None and auth_ctx is not None:
+            from lore.auth.current import session_user
+            html = public_pages.with_head(
+                html, public.url.path.rstrip("/") or "/", auth_ctx.settings.origin,
+                signed_in=session_user(public) is not None)
         return HTMLResponse(html, headers={
             "Cache-Control": "no-store", "X-Frame-Options": "DENY",
             "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff"})
@@ -918,10 +926,13 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
         # Public pages: anyone. The page draws itself from the address.
         @api.get("/waitlist", include_in_schema=False)
+        def waitlist_page():
+            return _spa_page()
+
         @api.get("/privacy", include_in_schema=False)
         @api.get("/terms", include_in_schema=False)
-        def public_page():
-            return _spa_page()
+        def legal_page(request: Request):
+            return _spa_page(public=request)
 
         @api.get("/signin", include_in_schema=False)
         def signin_page(request: Request):

@@ -95,8 +95,65 @@ def test_local_mode_serves_the_app_at_the_root_as_before(tmp_path, static, monke
     r = client.get("/")
     assert r.status_code == 200 and "lore-multi" not in r.text and "<div id=root>" in r.text
     assert r.headers["cache-control"] == "no-cache"
+    assert r.text == INDEX  # the file as built: no title, meta or marker added
     for path in ("/signin", "/admin", "/app", "/waitlist", "/auth/providers", "/api/me"):
         assert client.get(path).status_code == 404, path
+
+
+# --- the public pages' head: title, description, Open Graph (release step 7) ---
+
+SIGNED_IN = '<meta name="lore-signed-in" content="1">'
+TITLES = {"/": "LORE · Ask your books", "/privacy": "Privacy · LORE", "/terms": "Terms · LORE"}
+
+
+@pytest.mark.parametrize("path", ["/", "/privacy", "/terms"])
+def test_the_public_pages_carry_their_title_description_and_open_graph_tags(env, path):
+    _, _, anon, *_ = env
+    html = anon.get(path).text
+    title = TITLES[path]
+    assert f"<title>{title}</title>" in html and html.count("<title>") == 1
+    assert '<meta name="description" content="' in html
+    assert f'<meta property="og:title" content="{title}">' in html
+    assert '<meta property="og:description" content="' in html
+    assert '<meta property="og:type" content="website">' in html
+    assert f'<meta property="og:url" content="{BASE_URL}{path}">' in html
+    assert f'<meta property="og:image" content="{BASE_URL}/og.png">' in html
+    assert '<meta name="twitter:card" content="summary_large_image">' in html
+    assert MARK in html and "<div id=root>" in html
+    assert "<script" not in html  # nothing a strict CSP (no inline scripts) would refuse
+
+
+def test_the_homepage_description_is_the_pitch(env):
+    _, _, anon, *_ = env
+    html = anon.get("/").text
+    assert ('<meta name="description" content="Ask about the books you own. LORE answers from the text, '
+            'cites every sentence, and lights up the people and links behind the answer.">') in html
+
+
+@pytest.mark.parametrize("path", ["/", "/privacy", "/terms"])
+def test_a_signed_in_visitor_is_marked_so_the_page_offers_to_open_lore(env, path):
+    app, sessions, anon, *_ = env
+    assert SIGNED_IN not in anon.get(path).text
+    signed = sign_in(app, sessions, "alice")
+    signed.follow_redirects = False
+    r = signed.get(path)
+    assert r.status_code == 200 and SIGNED_IN in r.text
+
+
+@pytest.mark.parametrize("path", ["/waitlist", "/signin"])
+def test_the_other_public_pages_keep_the_shell_title(env, path):
+    _, _, anon, *_ = env
+    html = anon.get(path).text
+    assert "<title>LORE</title>" in html and "og:title" not in html and SIGNED_IN not in html
+
+
+def test_the_og_image_ships_with_the_web_app():
+    from pathlib import Path
+    png = Path(__file__).parent.parent / "web" / "public" / "og.png"
+    data = png.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert int.from_bytes(data[16:20], "big") == 1200 and int.from_bytes(data[20:24], "big") == 630
+    assert len(data) < 300_000
 
 
 # --- every id the hook returns has a users row ---
