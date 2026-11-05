@@ -80,7 +80,7 @@ h1 span{color:var(--spark)}
 
 /* ---- pinned section: the whole view (heading, step text and card) holds still while the page scrolls through
    it; the scroll distance inside .pin only advances the step, then the page carries on. ---- */
-.pin{position:relative;height:calc(100svh * 4)}
+.pin{position:relative;height:calc(100svh * 5)}
 .pin-view{position:sticky;top:0;height:100svh;display:flex;align-items:center;padding-top:var(--nav-h);overflow:hidden}
 .pin-grid{width:100%;height:calc(100svh - var(--nav-h) - 48px);display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(24px,5vw,80px);align-items:stretch}
 .pin-text{display:flex;flex-direction:column;justify-content:center;min-height:0}
@@ -97,11 +97,11 @@ h1 span{color:var(--spark)}
 .pin-dots button.on{background:var(--spark)}
 .stage{height:100%;min-height:0}
 .stage .card{height:100%;padding:clamp(16px,1.6vw,24px);display:grid;grid-template-rows:auto auto minmax(0,1.1fr) auto auto;gap:clamp(8px,1.2vh,14px);overflow:hidden}
-.progress{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0;padding:0;list-style:none;counter-reset:p}
+.progress{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:0;padding:0;list-style:none;counter-reset:p}
 .progress li{counter-increment:p;font:600 11px/1 var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:9px;border-top:3px solid var(--line);transition:border-color .35s,color .35s}
 .progress li::before{content:"0" counter(p) " ";font-family:var(--f-mono)}
 .stage[data-step="1"] .progress li:nth-child(-n+1),.stage[data-step="2"] .progress li:nth-child(-n+2),
-.stage[data-step="3"] .progress li:nth-child(-n+3),.stage[data-step="4"] .progress li{border-top-color:var(--glow);color:var(--ink)}
+.stage[data-step="3"] .progress li:nth-child(-n+3),.stage[data-step="4"] .progress li:nth-child(-n+4),.stage[data-step="5"] .progress li{border-top-color:var(--glow);color:var(--ink)}
 .stage .phase{transition:opacity .45s,filter .45s;opacity:.18;filter:grayscale(1);min-height:0}
 .stage .p2{display:flex;flex-direction:column;min-height:0}
 .stage .p2 .mini{flex:1;min-height:0;width:100%;height:100%}
@@ -109,6 +109,17 @@ h1 span{color:var(--spark)}
 .stage[data-step="2"] .p2,.stage[data-step="3"] .p2,.stage[data-step="4"] .p2,
 .stage[data-step="3"] .p3,.stage[data-step="4"] .p3,
 .stage[data-step="4"] .p4{opacity:1;filter:none}
+.stage[data-step="4"] .p4 .checked:not(.cut) b{animation:tick .5s ease both}
+@keyframes tick{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+/* Step 5: the working parts make way for the finished answer, shown as the app shows it. */
+.stage .card{position:relative}
+.written{position:absolute;inset:calc(clamp(16px,1.6vw,24px) + 36px) clamp(16px,1.6vw,24px) clamp(16px,1.6vw,24px);overflow:auto;opacity:0;transform:translateY(12px);transition:opacity .5s,transform .5s;pointer-events:none;font:clamp(15px,1.15vw,17.5px)/1.65 var(--f-book)}
+.written p{margin:0 0 12px}
+.written .short{font-size:1.06em;padding:10px 14px;background:var(--accent-soft);border-radius:10px}
+.written .reading{border-left:3px solid var(--glow);padding:2px 0 2px 14px;margin-top:4px}
+.written .reading em{display:block;font:600 11px/1 var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--glow);font-style:normal;margin-bottom:6px}
+.stage[data-step="5"] .written{opacity:1;transform:none;pointer-events:auto}
+.stage[data-step="5"] .phase{opacity:0!important;transition:opacity .35s}
 .label{font:600 11px/1 var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
 .mini{width:100%;height:auto;display:block;background:var(--sunk);border-radius:10px}
 .mini .e{stroke:var(--line);stroke-width:1.5;transition:stroke .5s,stroke-width .5s}
@@ -162,6 +173,7 @@ footer a{color:var(--muted)}footer .sp{flex:1}
   .stage .phase:not(.p1){display:none}
   .stage[data-step="2"] .p2,.stage[data-step="3"] .p3,.stage[data-step="4"] .p4{display:flex;flex-direction:column}
   .stage .p2 .mini{flex:1;min-height:160px}
+  .progress li{font-size:0;padding-top:7px}.progress li::before{font-size:10px}
   .features{grid-template-columns:repeat(2,minmax(0,1fr))}
   .nav .link{display:none}
 }
@@ -236,20 +248,21 @@ footer a{color:var(--muted)}footer .sp{flex:1}
       <div class="pin-grid">
         <div class="pin-text">
           <h2 id="how-title">How LORE answers a question</h2>
-          <p class="intro">Four steps, the same for every book you add. Here's one question about <em>A Study in Scarlet</em>.</p>
+          <p class="intro">Five steps, the same for every book you add. Here's one question about <em>A Study in Scarlet</em>.</p>
           <div class="pin-steps">
             <div class="step on" data-step="1"><div class="n">01 · YOU ASK</div><h3>Ask it like you'd ask a friend who's read the book.</h3><p>Vague, specific, about one chapter or the whole series. LORE splits it into the parts that need answering.</p></div>
             <div class="step" data-step="2"><div class="n">02 · IT SEARCHES THE GRAPH</div><h3>It finds the people, places and links that matter.</h3><p>Every book becomes a map of who knows whom, where things happen and what happens when. The answer starts there, not with a guess.</p></div>
             <div class="step" data-step="3"><div class="n">03 · IT READS THE PASSAGES</div><h3>It goes back to the text.</h3><p>The exact passages behind those links are pulled from the book, and every fact must quote one.</p></div>
-            <div class="step" data-step="4"><div class="n">04 · IT CHECKS EVERY SENTENCE</div><h3>A second pass cuts anything the book doesn't say.</h3><p>What survives is written up with its citations. What doesn't is cut, and you never see it.</p></div>
+            <div class="step" data-step="4"><div class="n">04 · IT CHECKS EVERY SENTENCE</div><h3>A second pass cuts anything the book doesn't say.</h3><p>Every fact is checked against its passage. What the book doesn't say is cut, and you never see it.</p></div>
+            <div class="step" data-step="5"><div class="n">05 · IT WRITES THE ANSWER</div><h3>Then it tells you, like a reader would.</h3><p>The checked facts become a short answer and a few clear paragraphs, every sentence cited. Where it offers its own reading, it says so.</p></div>
           </div>
           <div class="pin-dots" role="tablist" aria-label="Steps">
-            <button type="button" data-go="1" aria-label="Step 1"></button><button type="button" data-go="2" aria-label="Step 2"></button><button type="button" data-go="3" aria-label="Step 3"></button><button type="button" data-go="4" aria-label="Step 4"></button>
+            <button type="button" data-go="1" aria-label="Step 1"></button><button type="button" data-go="2" aria-label="Step 2"></button><button type="button" data-go="3" aria-label="Step 3"></button><button type="button" data-go="4" aria-label="Step 4"></button><button type="button" data-go="5" aria-label="Step 5"></button>
           </div>
         </div>
         <div class="stage" id="stage" data-step="1">
         <div class="card" aria-live="polite">
-          <ol class="progress" aria-label="Step"><li>Ask</li><li>Graph</li><li>Passages</li><li>Checked</li></ol>
+          <ol class="progress" aria-label="Step"><li>Ask</li><li>Graph</li><li>Passages</li><li>Checked</li><li>Written</li></ol>
           <div class="phase p1">
             <div class="q" style="margin:0">You asked <span>How did Watson meet Sherlock Holmes?</span></div>
           </div>
@@ -275,6 +288,14 @@ footer a{color:var(--muted)}footer .sp{flex:1}
             <div class="checked"><b>✓</b><span>Watson runs into Stamford, who had been a dresser under him at Barts, at the Criterion Bar. <span class="chip">1</span></span></div>
             <div class="checked"><b>✓</b><span>Stamford takes him to the hospital laboratory and introduces him to Sherlock Holmes. <span class="chip">2</span></span></div>
             <div class="checked cut"><b>✕</b><span>Holmes had already heard of Watson’s service.</span><small>Cut: no passage says so</small></div>
+          </div>
+          <div class="written" aria-label="The written answer">
+            <div class="q" style="margin:0 0 4px">You asked <span>How did Watson meet Sherlock Holmes?</span></div>
+            <div class="label">Short answer</div>
+            <p class="short">Through Stamford: an old dresser of Watson’s from Barts, met by chance at the Criterion Bar, who knew a man at the hospital laboratory looking for someone to share rooms. <span class="chip">1</span><span class="chip">3</span></p>
+            <p>Back in London and short of money, Watson was standing at the Criterion Bar when someone tapped him on the shoulder: young Stamford, who had been a dresser under him at Barts. <span class="chip">1</span> When Watson said he was looking for cheap lodgings, “That’s a strange thing,” Stamford remarked: he was the second man that day to say so. The first was a fellow at the chemical laboratory up at the hospital, who couldn’t find anyone to go halves with him on some rooms. <span class="chip">3</span></p>
+            <p>Stamford took him there. “Dr. Watson, Mr. Sherlock Holmes,” he said, introducing them, and Holmes, gripping his hand, told him at once that he had been in Afghanistan. <span class="chip">2</span></p>
+            <div class="reading"><em>LORE’s reading</em>The first thing Holmes ever does in the book is read Watson at a glance. Watson’s astonishment is the reader’s introduction to his method.</div>
           </div>
         </div>
         </div>
@@ -329,6 +350,7 @@ addEventListener("scroll", solid, { passive: true }); solid();
 // Pinned section: how far the page has scrolled through #how (its extra height) picks the step.
 const pin = document.getElementById("how"), stage = document.getElementById("stage");
 const stepEls = [...pin.querySelectorAll(".step")], dots = [...pin.querySelectorAll(".pin-dots button")];
+const STEPS = stepEls.length;
 let shown = 0;
 const show = (n) => {
   if (n === shown) return; shown = n;
@@ -339,13 +361,13 @@ const show = (n) => {
 const onScroll = () => {
   const r = pin.getBoundingClientRect(), travel = pin.offsetHeight - innerHeight;
   const t = Math.min(1, Math.max(0, -r.top / Math.max(1, travel)));
-  show(Math.min(4, 1 + Math.floor(t * 4)));
+  show(Math.min(STEPS, 1 + Math.floor(t * STEPS)));
 };
 addEventListener("scroll", onScroll, { passive: true }); addEventListener("resize", onScroll); onScroll();
 // A dot jumps to its step's stretch of the scroll.
 dots.forEach((d) => d.addEventListener("click", () => {
   const travel = pin.offsetHeight - innerHeight, n = Number(d.dataset.go);
-  scrollTo({ top: pin.offsetTop + travel * ((n - 0.5) / 4), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  scrollTo({ top: pin.offsetTop + travel * ((n - 0.5) / STEPS), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }));
 
 // Mockup: the form only says thanks.
