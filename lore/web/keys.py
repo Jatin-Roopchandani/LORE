@@ -147,16 +147,24 @@ def with_user_key(user: str, keys: K.KeyService,
 
 
 @contextlib.contextmanager
-def user_key_bound(user: str, keys: K.KeyService) -> Iterator[KeyScope]:
+def user_key_bound(user: str, keys: K.KeyService,
+                   spent: list[str] | None = None) -> Iterator[KeyScope]:
     """Bind `user`'s own key (an empty scope when they have none, or it no
     longer decrypts, so nothing can fall back to the server's key) around a
     synchronous model call, such as the entity intro. A refused key is marked,
-    exactly as on the ask path."""
+    exactly as on the ask path. Each request's model is appended to `spent`
+    when given (the intro's rate limit counts them)."""
     try:
         key = keys.key_for(user)
     except (KeyRequired, K.KeyDecryptError):
         key = None
-    scope = KeyScope(user, key, on_request=lambda model: keys.record_request(user, model))
+
+    def on_request(model: str) -> None:
+        if spent is not None:
+            spent.append(model)
+        keys.record_request(user, model)
+
+    scope = KeyScope(user, key, on_request=on_request)
     del key
     with key_scope.bound(scope):
         yield scope

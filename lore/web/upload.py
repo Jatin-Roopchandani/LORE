@@ -345,6 +345,9 @@ class UploadDeps:
     start: Callable[[CurrentUser, LoreConfig, str], dict]
     now: Callable[[], datetime]
     settings: UploadSettings
+    # Multi mode: at most N uploads parsed at once, across every user and web
+    # process (lore.web.throttle); None: no cap.
+    throttle: object | None = None
 
 
 def _book_count(cfg: LoreConfig) -> int:
@@ -459,6 +462,11 @@ def build_upload_router(deps: UploadDeps) -> APIRouter:
             if form.size == 0:
                 return _error(400, "not_a_book", "the file is empty")
             book_id = form.hash.hexdigest()[:16]
+            parse_slot = None
+            if deps.throttle is not None:
+                parse_slot = await asyncio.to_thread(deps.throttle.start_parse)
+                if isinstance(parse_slot, JSONResponse):
+                    return parse_slot
             try:
                 done = await asyncio.to_thread(
                     _register, cfg, part, display, kind, book_id, form.world,
@@ -469,6 +477,9 @@ def build_upload_router(deps: UploadDeps) -> APIRouter:
             except Refused as exc:
                 status = 400
                 return _error(status, exc.code, exc.message)
+            finally:
+                if parse_slot is not None:
+                    await asyncio.to_thread(deps.throttle.end_parse, parse_slot)
             keep = True  # _register moved it to its stored name
             if deps.multi:
                 await asyncio.to_thread(_record_added, deps, user)

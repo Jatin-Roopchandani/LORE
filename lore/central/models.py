@@ -163,6 +163,9 @@ class Invite(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
                                                  default=utcnow)
     expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # Release step 6: an invite made by approving a waitlist entry works only
+    # for that (normalized) email; NULL is a hand-out code anyone may use once.
+    email: Mapped[str | None] = mapped_column(sa.String(320))
 
 
 class Identity(Base):
@@ -413,3 +416,42 @@ class Report(Base):
         sa.CheckConstraint("status IN ('open', 'resolved')", name="ck_reports_status"),
         sa.Index("ix_reports_created", "created_at"),
     )
+
+
+class AdminEvent(Base):
+    """Every admin action (release step 6): who did what to whom, and when.
+
+    `target_user_id` is a plain id, not a foreign key: the log outlives an
+    account deleted by that very action. `detail` holds no secrets and no
+    email addresses.
+    """
+
+    __tablename__ = "admin_events"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False, default=utcnow)
+    admin_id: Mapped[str | None] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="SET NULL"))
+    action: Mapped[str] = mapped_column(sa.String(32), nullable=False)
+    target_user_id: Mapped[str | None] = mapped_column(sa.String(64))
+    detail: Mapped[dict | None] = mapped_column(sa.JSON)
+
+    __table_args__ = (sa.Index("ix_admin_events_at", "at"),)
+
+
+class InflightSlot(Base):
+    """One unit of work in flight (release step 6): a question being answered,
+    an upload being parsed. A limit of N for `kind` is N possible rows
+    (`slot` 0..N-1); the primary key makes taking a slot atomic on every
+    database and across web processes. `expires_at` is a lease, so a process
+    that died frees its slots (lore.web.throttle)."""
+
+    __tablename__ = "inflight_slots"
+
+    kind: Mapped[str] = mapped_column(sa.String(80), primary_key=True)
+    slot: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    holder: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    user_id: Mapped[str | None] = mapped_column(sa.String(64))
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+
+    __table_args__ = (sa.Index("ix_inflight_expires", "expires_at"),)

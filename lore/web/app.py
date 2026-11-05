@@ -57,6 +57,7 @@ from lore.tenancy import (
 )
 from lore.web import friendly
 from lore.web.ask import ask_events
+from lore.web.throttle import RateSettings, Throttle
 from lore.web.limits import BodyLimit
 from lore.web.upload import UploadDeps, UploadSettings, build_upload_router
 from lore.web.request_id import RequestId
@@ -196,6 +197,39 @@ def _gemini_use(conn: sqlite3.Connection, config: LoreConfig, now: datetime) -> 
             "answer_reserve": config.processing.answer_reserve}
 
 
+class _Releasing:
+    """The answer stream, giving the question's in-flight slots back when it
+    ends however it ends: finished, failed, the client gone, or never started
+    (a response dropped before its first chunk is only garbage collected)."""
+
+    def __init__(self, inner, grant) -> None:
+        self._inner, self._grant = inner, grant
+
+    def _done(self) -> None:
+        grant, self._grant = self._grant, None
+        if grant is not None:
+            grant.release()
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return await self._inner.__anext__()
+        except BaseException:  # StopAsyncIteration included
+            self._done()
+            raise
+
+    async def aclose(self) -> None:
+        try:
+            await self._inner.aclose()
+        finally:
+            self._done()
+
+    def __del__(self) -> None:
+        self._done()
+
+
 def _api_error(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse({"error": {"code": code, "message": message}},
                         status_code=status)
@@ -215,7 +249,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                auth_clock: Callable[[], datetime] | None = None,
                master_keys: "MasterKeys | None" = None,
                key_checker: "KeyChecker | None" = None,
-               upload_settings: "UploadSettings | None" = None):
+               upload_settings: "UploadSettings | None" = None,
+               rate_settings: "RateSettings | None" = None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing.
 
@@ -247,6 +282,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     Books are uploaded through POST /api/books/upload (lore.web.upload), with
     `upload_settings` (default: from the environment) for its quotas.
+
+    Multi mode limits questions, entity intros, reports and parses per user
+    and overall (lore.web.throttle), with `rate_settings` (default: from the
+    environment).
     """
     multi = multi_user_enabled() if multi_user is None else multi_user
     auth_ctx = None
@@ -322,6 +361,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     if multi:
         purge_traces()
+    throttle = (Throttle(lambda: sessions[0], rate_settings or RateSettings.from_env(),
+                         auth_ctx.now) if multi else None)
 
     def central_user(request: Request) -> str:
         """The user's id in the central database (`local` in local mode)."""
@@ -334,7 +375,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             raise HTTPException(401, "invalid user") from None
 
     api.include_router(build_history_router(
-        central, central_user, lambda: datetime.now(timezone.utc)))
+        central, central_user, lambda: datetime.now(timezone.utc),
+        report_limit=throttle.report if throttle is not None else None))
 
     if auth_ctx is not None:
         api.state.auth = auth_ctx
@@ -603,7 +645,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         multi=multi, current_user=current_user, library_of=library_of,
         needs_key=needs_key, central=lambda: sessions[0], start=start_processing,
         now=auth_ctx.now if auth_ctx is not None else (lambda: datetime.now(timezone.utc)),
-        settings=upload_settings or UploadSettings.from_env())))
+        settings=upload_settings or UploadSettings.from_env(), throttle=throttle)))
 
     @api.get("/api/worlds")
     def worlds(config: LoreConfig = Depends(user_config)):
@@ -730,8 +772,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         if not multi:
             return explore.intro(config, entity_id, world=world, **_bypass(spoilers))
         from lore.web.keys import user_key_bound
-        with user_key_bound(current_user(request).id, key_service):
-            return explore.intro(config, entity_id, world=world, **_bypass(spoilers))
+        uid = current_user(request).id
+        if (refused := throttle.intro_wait(uid)) is not None:
+            return refused
+        spent: list[str] = []
+        try:
+            with user_key_bound(uid, key_service, spent):
+                return explore.intro(config, entity_id, world=world, **_bypass(spoilers))
+        finally:  # the model calls it made count against the hourly limit
+            throttle.intro_spent(uid, len(spent))
 
     @api.get("/api/entity/{entity_id}/timeline")
     def entity_timeline(entity_id: str, world: str | None = None, spoilers: bool = False,
@@ -829,7 +878,9 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             raise HTTPException(400, str(exc)) from None
         user = current_user(request)
         cfg = library_of(user)
-        lock = locks.setdefault(user.id, asyncio.Lock())
+        # Multi mode: the central in-flight slots decide (lore.web.throttle),
+        # across every web process; local mode: one question at a time.
+        lock = asyncio.Lock() if multi else locks.setdefault(user.id, asyncio.Lock())
         owner = central_user(request)
         # A follow-up: the chat's last turns, loaded here from the asker's own
         # chat, never taken from the request. Someone else's chat, or none, is
@@ -888,12 +939,17 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 session.commit()
             return out
 
+        grant = None
+        if throttle is not None:  # per user and overall; 429 past a limit
+            grant = throttle.start_question(user.id)
+            if isinstance(grant, JSONResponse):
+                return grant
         return StreamingResponse(
-            ask_events(cfg, body.question, lock, search=search,
+            _Releasing(ask_events(cfg, body.question, lock, search=search,
                        world=body.world, depth=body.depth, on_finish=save, history=history,
                        request_id=trace.request_id,
                        public=friendly.public_event if multi else None,
-                       **_bypass(spoilers)),
+                       **_bypass(spoilers)), grant),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 

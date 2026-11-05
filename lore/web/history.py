@@ -74,7 +74,11 @@ def _no_store(body: dict, status: int = 200) -> JSONResponse:
 
 def build_history_router(central: Callable[[], sessionmaker[Session]],
                          user_id: Callable[[Request], str],
-                         now: Callable[[], datetime]) -> APIRouter:
+                         now: Callable[[], datetime],
+                         report_limit: Callable[[Session, str], JSONResponse | None]
+                         | None = None) -> APIRouter:
+    """`report_limit(session, user)` (multi mode: lore.web.throttle) counts a
+    report and returns None, or returns the 429 to send instead."""
     router = APIRouter()
 
     @router.get("/api/chats")
@@ -152,6 +156,9 @@ def build_history_router(central: Callable[[], sessionmaker[Session]],
             if not traces.owned_by(session, body.request_id, uid):
                 return JSONResponse({"error": {"code": "not_found",
                                                "message": "no such answer"}}, status_code=404)
+            if report_limit is not None and (refused := report_limit(session, uid)) is not None:
+                session.commit()
+                return refused
             row = Report(user_id=uid, request_id=body.request_id,
                          note=(body.note or "").strip() or None, created_at=now(),
                          status="open")
