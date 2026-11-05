@@ -587,3 +587,28 @@ def test_a_lying_content_length_on_the_upload_route_is_still_counted():
     finally:
         limits.UPLOAD_BYTES = old
     assert got == [600, "too large"]  # passed through as it came, then stopped
+
+
+def test_partial_uploads_left_by_a_crash_are_swept(local, tmp_path):
+    client, cfg, _ = local
+    cfg.inbox_dir.mkdir(parents=True)
+    old, fresh = cfg.inbox_dir / ".upload-old.part", cfg.inbox_dir / ".upload-new.part"
+    old.write_bytes(b"x")
+    fresh.write_bytes(b"x")
+    hours_ago = time.time() - 2 * 3600
+    os.utime(old, (hours_ago, hours_ago))
+    send(client, b"junk", "x.epub")
+    assert not old.exists() and fresh.exists()
+
+
+def test_the_worker_then_processes_the_uploaded_book_in_its_users_library(multi, tmp_path):
+    from lore.worker import Worker
+    base, sessions, _, build = multi
+    alice = sign_in(build(), sessions, "alice")
+    book = send(alice, epub_bytes(tmp_path)).json()["book_id"]
+    ran: list = []
+    Worker(base, sessions, worker_id="w1", make_stages=lambda cfg: [FakeStage(ran)],
+           clock=lambda: NOW).run_once()
+    assert ran == [(str(config_for(base, "alice").data_dir), book)]
+    (shown,) = alice.get("/api/books").json()["books"]
+    assert shown["job"]["state"] == "done"

@@ -32,6 +32,7 @@ import hashlib
 import os
 import sqlite3
 import threading
+import time
 import unicodedata
 import uuid
 from collections.abc import Callable
@@ -384,6 +385,20 @@ def _record_added(deps: UploadDeps, user: CurrentUser) -> None:
         db.commit()
 
 
+STALE_PART = timedelta(hours=1)
+
+
+def _sweep(inbox: Path) -> None:
+    """Partial uploads a crash left behind (older than an hour) go."""
+    cutoff = time.time() - STALE_PART.total_seconds()  # file times are wall-clock
+    for stale in inbox.glob(".upload-*.part"):
+        try:
+            if stale.is_file() and not stale.is_symlink() and stale.stat().st_mtime < cutoff:
+                stale.unlink()
+        except OSError:
+            pass
+
+
 def build_upload_router(deps: UploadDeps) -> APIRouter:
     router = APIRouter()
     locks: dict[str, threading.Lock] = {}
@@ -418,6 +433,7 @@ def build_upload_router(deps: UploadDeps) -> APIRouter:
         inbox.mkdir(parents=True, exist_ok=True)
         if not inbox.resolve().is_relative_to(cfg.data_dir.resolve()):
             return _error(500, "server_error", "the library's inbox is misplaced")
+        _sweep(inbox)
         part = inbox / f".upload-{uuid.uuid4().hex}.part"
         form = _Form(boundary, part, deps.settings.max_file_bytes)
         keep = False
