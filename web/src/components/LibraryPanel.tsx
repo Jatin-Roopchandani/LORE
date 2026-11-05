@@ -9,7 +9,9 @@ const START_CYCLES = 10; // polls forced after Continue, in case the first GET p
 
 const clock = (d: Date) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
-function Row({ book, now, busy, error, onGo, onMove, children }: { book: LibraryBook; now: number; busy: boolean; error?: string; onGo: () => void; onMove: () => void; children?: React.ReactNode }) {
+function Row({ book, now, busy, error, focus = false, onGo, onMove, children }: { book: LibraryBook; now: number; busy: boolean; error?: string; focus?: boolean; onGo: () => void; onMove: () => void; children?: React.ReactNode }) {
+  const ref = useRef<HTMLLIElement>(null);
+  useEffect(() => { if (focus) ref.current?.scrollIntoView?.({ block: "nearest" }); }, [focus]);
   const job = book.job;
   const meta = [book.author, book.series && (book.series_index != null ? `${book.series} #${book.series_index}` : book.series)].filter(Boolean).join(" · ");
   const btn = (verb: string, disabled = false) => (
@@ -47,7 +49,7 @@ function Row({ book, now, busy, error, onGo, onMove, children }: { book: Library
     body = (<><span className="lib-state">{LIBRARY.unprocessed}</span>{btn(LIBRARY.process)}</>);
   }
   return (
-    <li className="lib-row">
+    <li ref={ref} className={`lib-row${focus ? " focus" : ""}`} aria-current={focus ? "true" : undefined}>
       <div className="lib-title"><strong>{book.title}</strong>{meta && <span className="meta">{meta}</span>}</div>
       <div className="lib-body">
         {body}
@@ -142,8 +144,10 @@ function WorldHeader({ group, error, onRename, onDelete }:
 }
 
 // `onChange`: called once a world was renamed or deleted, and when a move has run its course, so the page
-// can refetch the worlds and the graph.
-export function LibraryPanel({ open, onClose, showInternals, onChange }: { open: boolean; onClose: () => void; showInternals: boolean; onChange?: () => void }) {
+// can refetch the worlds and the graph. `focusBook`: a book just added; the panel opens at it and polls until its
+// processing shows (a queued book's row may take a moment to appear).
+export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook = null }:
+  { open: boolean; onClose: () => void; showInternals: boolean; onChange?: () => void; focusBook?: string | null }) {
   const [data, setData] = useState<LibraryStatus | null>(null);
   const [worlds, setWorlds] = useState<World[]>([]);
   const [moving, setMoving] = useState<string | null>(null);
@@ -170,6 +174,9 @@ export function LibraryPanel({ open, onClose, showInternals, onChange }: { open:
     load();
     return () => { opener.current?.focus(); };
   }, [open, load]);
+  useEffect(() => {
+    if (open && focusBook) { setStarted((cur) => ({ ...cur, [focusBook]: { left: START_CYCLES, seen: false } })); dirty.current = true; }
+  }, [open, focusBook]);
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -261,7 +268,7 @@ export function LibraryPanel({ open, onClose, showInternals, onChange }: { open:
             {g.books.length ? (
               <ul className="lib-list">
                 {g.books.map((b) => (
-                  <Row key={b.id} book={b} now={now} busy={busy.has(b.id)} error={errors[b.id]} onGo={() => go(b.id)}
+                  <Row key={b.id} book={b} now={now} busy={busy.has(b.id)} error={errors[b.id]} focus={b.id === focusBook} onGo={() => go(b.id)}
                     onMove={() => setMoving(moving === b.id ? null : b.id)}>
                     {moving === b.id && <MovePicker book={b} worlds={worlds} onCancel={() => setMoving(null)} onConfirm={(w, create) => move(b, w, create)} />}
                   </Row>

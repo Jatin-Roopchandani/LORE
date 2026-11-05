@@ -24,17 +24,8 @@ import { csrfHeaders } from "./csrf";
 
 const errorEvent = (code: string, message: string): AskEvent => ({ type: "error", t: 0, error: { code, message } });
 
-// Multi-user mode: the server answers `key_required` (no Gemini key saved yet) or `key_invalid` (Gemini refused it) to an ask
-// or a Continue. Whoever listens (the app) sends the user to the key screen; the call still returns its error as usual.
-export type KeyProblem = "key_required" | "key_invalid";
-const keyListeners = new Set<(problem: KeyProblem) => void>();
-export function onKeyProblem(listener: (problem: KeyProblem) => void): () => void {
-  keyListeners.add(listener);
-  return () => { keyListeners.delete(listener); };
-}
-export function reportKeyProblem(code: string | undefined): void {
-  if (code === "key_required" || code === "key_invalid") keyListeners.forEach((l) => l(code));
-}
+export { onKeyProblem, reportKeyProblem, type KeyProblem } from "./keyProblem";
+import { reportKeyProblem } from "./keyProblem";
 
 // `world`: a world id as a string, or "all" (the same value the graph calls take).
 // `depth`: auto, deep or focused; left out of the body when not given.

@@ -1,11 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TopBar } from "./TopBar";
 import { applyTheme } from "../theme";
 
 vi.mock("../api", () => ({
   api: { quota: () => Promise.resolve({ error: { code: "x", message: "x" } }), mcp: () => Promise.resolve({ error: { code: "x", message: "x" } }),
-    readingPosition: () => Promise.resolve({ error: { code: "x", message: "x" } }) },
+    readingPosition: () => Promise.resolve({ error: { code: "x", message: "x" } }),
+    books: () => Promise.resolve({ error: { code: "x", message: "x" } }), worlds: () => Promise.resolve({ error: { code: "x", message: "x" } }) },
   isError: () => true,
 }));
 
@@ -92,4 +93,26 @@ test("add dialog: choosing another world changes the command", async () => {
   await addFile("Gamma_Isles.epub");
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "World for this book" }), "Beta Realm");
   expect(screen.getByText("lore ingest 'Gamma_Isles.epub' --world 'Beta Realm'")).toBeInTheDocument();
+});
+
+test("after an upload the page refetches, and the success link opens the Library", async () => {
+  const sent: { onload?: () => void; status?: number; responseText?: string }[] = [];
+  vi.stubGlobal("XMLHttpRequest", class {
+    upload = { onprogress: null }; status = 0; responseText = ""; onload: (() => void) | null = null;
+    constructor() { sent.push(this as never); }
+    open() {} setRequestHeader() {} send() {} abort() {}
+  });
+  const onLibraryChange = vi.fn();
+  await addFile("Gamma_Isles.epub", { onLibraryChange });
+  await userEvent.click(screen.getByRole("button", { name: "Upload" }));
+  const xhr = sent[0];
+  xhr.status = 202;
+  xhr.responseText = JSON.stringify({ book_id: "b9", title: "Gamma", world: { id: 3, name: "Gamma Isles" }, filename: "Gamma_Isles.epub",
+    processing: { state: "processing" } });
+  await act(async () => xhr.onload!());
+  expect(onLibraryChange).toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Open it in the Library" }));
+  expect(screen.getByRole("dialog", { name: "Library" })).toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Add a book" })).toBeNull();
+  vi.unstubAllGlobals();
 });

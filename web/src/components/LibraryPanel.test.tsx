@@ -288,3 +288,21 @@ test("paused for the Gemini key: the reason shows and Continue is enabled at onc
   expect(screen.getByText(/Gemini refused your API key/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Continue Book a" })).toBeEnabled();
 });
+
+test("opened at a book just uploaded: that row is marked and the panel keeps polling until it runs", async () => {
+  status = { gemini, books: [book("a", null, "graphed"), book("new1", null, "chunked")] };
+  render(<LibraryPanel open onClose={() => {}} showInternals={false} focusBook="new1" />);
+  await act(async () => {});
+  const rows = screen.getAllByRole("listitem");
+  const marked = rows.filter((r) => r.getAttribute("aria-current") === "true");
+  expect(marked).toHaveLength(1);
+  expect(within(marked[0]).getByText("Book new1")).toBeInTheDocument();
+  const gets = () => (fetch as unknown as { mock: { calls: [string, { method?: string }?][] } }).mock.calls
+    .filter(([url, init]) => url === "/api/books" && !init?.method).length;
+  const before = gets();
+  status = { gemini, books: [book("a", null, "graphed"), book("new1", job({ stage: "chunk", done: 0, total: 1 }), "chunked")] };
+  await tick(3000);
+  expect(gets()).toBeGreaterThan(before);
+  expect(screen.getByText("Splitting into passages")).toBeInTheDocument();
+  vi.clearAllTimers();
+});

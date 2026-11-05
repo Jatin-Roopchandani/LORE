@@ -170,3 +170,12 @@ export interface TraceCall { stage: string; model: string | null; prompt: string
 export interface TraceRecord { request_id: string; user_id: string; created_at: string; question: string; world: string | null; depth: string | null;
   decomposition: Record<string, unknown> | null; steps: unknown; calls: TraceCall[] | { truncated: true; bytes: number } | null;
   answer: { answer?: string } | null; error: string | null; timings: Record<string, unknown> | null; model_usage: Record<string, unknown> | null }
+
+// POST /api/books/upload (lore/web/upload.py). `processing` says what happened next: running in this process (local
+// mode), queued for the worker (multi mode), waiting for the Gemini allowance to reset, or added while another book runs.
+export type UploadProcessing =
+  | { state: "processing" } | { state: "queued"; job: number } | { state: "busy" }
+  | { state: "waiting"; resumable_at: string };
+export interface UploadResult { book_id: string; title: string; world: WorldRef | null; filename: string; processing: UploadProcessing }
+// An upload refusal; `book_id` comes with already_added (the book that is already in the library).
+export interface UploadError { error: ApiError; book_id?: string }

@@ -10,6 +10,7 @@ import { ReadingPosition } from "./ReadingPosition";
 import { WorldSelector } from "./WorldSelector";
 import { SettingsMenu } from "./SettingsMenu";
 import { ThemeMenu } from "./ThemeMenu";
+import { isMulti } from "../routing";
 
 export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange, onPositionChange, historyOpen = false, onToggleHistory }:
   { books: Book[]; hiddenBooks: Set<string>; onBooksChange: (s: Set<string>) => void; showInternals: boolean; refreshKey: number;
@@ -17,6 +18,8 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
     historyOpen?: boolean; onToggleHistory?: () => void }) {
   const [adding, setAdding] = useState(false);
   const [library, setLibrary] = useState(false);
+  // The book the Library opens at (just uploaded): it is scrolled to and watched until its processing shows.
+  const [focusBook, setFocusBook] = useState<string | null>(null);
   const [quota, setQuota] = useState<Quota | null>(null);
   useEffect(() => { api.quota().then((q) => { if (!isError(q)) setQuota(q); }); }, [refreshKey]);
   return (
@@ -30,14 +33,16 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
         <WorldSelector worlds={worlds} world={world} onChange={onWorldChange} />
         <ReadingPosition world={world} onChange={onPositionChange} />
         <BooksDropdown books={books} hiddenBooks={hiddenBooks} onChange={onBooksChange} onOpenLibrary={() => setLibrary(true)} />
-        <button className="tbtn" type="button" onClick={() => setLibrary(true)}>{LIBRARY.open}</button>
+        <button className="tbtn" type="button" onClick={() => { setFocusBook(null); setLibrary(true); }}>{LIBRARY.open}</button>
         <button className="tbtn primary" type="button" onClick={() => setAdding(true)}>+ Add book</button>
         <QuotaChip quota={quota} showInternals={showInternals} />
         <ThemeMenu />
         <SettingsMenu showInternals={showInternals} />
       </div>
-      <LibraryPanel open={library} onClose={() => setLibrary(false)} showInternals={showInternals} onChange={onLibraryChange} />
-      <AddBookDialog open={adding} onClose={() => setAdding(false)} worlds={worlds} />
+      <LibraryPanel open={library} onClose={() => { setLibrary(false); setFocusBook(null); }} showInternals={showInternals} onChange={onLibraryChange} focusBook={focusBook} />
+      <AddBookDialog open={adding} onClose={() => setAdding(false)} worlds={worlds} multi={isMulti()}
+        onUploaded={() => onLibraryChange?.()}
+        onOpenBook={(id) => { setAdding(false); setFocusBook(id); setLibrary(true); }} />
     </header>
   );
 }

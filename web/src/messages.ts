@@ -159,12 +159,68 @@ export const UI = {
   legendCited: "Cited",
   fitGraph: "Fit to view",
   answeredIn: (seconds: number) => `Answered in ${seconds.toFixed(1)}s · cited relationships glow`,
-  ingestHint: "Adding books from the browser comes next. For now, run this in a terminal:",
+  ingestHint: "Run this in a terminal on the machine running LORE:",
   ingestWorldNote: "The command asks you to confirm before it creates a new world.",
   mcpNotRunning: "HTTP server not running",
   mcpRunning: "HTTP server running",
   wrongFileType: (name: string) => `${name} is not an EPUB or PDF. Choose a .epub or .pdf file.`,
 };
+
+// Adding a book in the browser (AddBookDialog, web/src/upload.ts).
+export const UPLOAD = {
+  title: "Add a book",
+  drop: "Drop an EPUB or PDF here", dropOr: "or click to choose a file",
+  limits: "EPUB or PDF, up to 50 MB. Add only books you own.",
+  chosen: (name: string, bytes: number) => `${name} \u00b7 ${formatSize(bytes)}`,
+  upload: "Upload", uploading: "Uploading\u2026", checking: "Checking the book\u2026",
+  cancel: "Cancel", close: "Close", another: "Add another book",
+  progressLabel: "Upload progress",
+  progress: (loaded: number, total: number) => `${formatSize(loaded)} of ${formatSize(total)}`,
+  intro: "LORE splits the book into passages, then extracts characters, places and relationships.",
+  started: "Processing started",
+  waitingTitle: "Book added",
+  next: {
+    processing: "LORE is reading the book now. Its progress shows in the Library.",
+    queued: "The book is in the queue and starts shortly. Its progress shows in the Library.",
+    busy: "Another book is being processed. When it is done, press Continue on this one in the Library.",
+    waiting: (time: string) => `Today's allowance is used up, so the book waits. Press Continue in the Library after ${time} (your time).`,
+  },
+  addedTo: (title: string, world: string | null) => world ? `\u201c${title}\u201d is in the world \u201c${world}\u201d.` : `\u201c${title}\u201d is in your library.`,
+  openLibrary: "Open it in the Library",
+  terminal: "Or add it from the terminal",
+  tooBig: (name: string) => `${name} is larger than 50 MB.`,
+};
+
+const UPLOAD_ERRORS: Record<string, string> = {
+  too_large: "That file is larger than 50 MB.",
+  not_a_book: "That file isn't a readable EPUB or PDF. A scanned PDF with no text can't be read either.",
+  unsafe_file: "That file's structure looks unsafe, so it was refused. Try a fresh copy of the book.",
+  encrypted: "That book is locked (DRM or a password). Add a copy without protection.",
+  too_many_pages: "That PDF has too many pages to process.",
+  too_many_books: "Your library is full. Remove a book before adding another.",
+  daily_limit: "You've added as many books as you can today. Try again tomorrow.",
+  rate_limited: "Too many uploads in a short time. Wait an hour and try again.",
+  already_added: "That book is already in your library.",
+  busy: "Another upload is still in progress. Wait for it to finish.",
+  key_required: "Add your Gemini API key before adding books.",
+  key_invalid: "Gemini refused your API key. Replace it to carry on.",
+  bad_upload: "The upload didn't arrive whole. Try again.",
+  unknown_world: "That world no longer exists. Choose another.",
+  invalid_world: "That world name can't be used. Choose another.",
+  unreachable: "LORE isn't reachable. Check your connection and try again.",
+  forbidden: "This page isn't allowed to upload. Reload it and try again.",
+  unauthorized: "Your session has ended. Sign in again.",
+  aborted: "The upload was cancelled.",
+};
+
+export function uploadError(error: ApiError): string {
+  return UPLOAD_ERRORS[error.code] ?? "The upload didn't go through. Try again.";
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // Example questions for the empty chat, filled with the library's most-connected entities (see examples.ts).
 export const EXAMPLES = {
