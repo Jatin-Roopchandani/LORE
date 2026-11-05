@@ -57,7 +57,7 @@ a{color:var(--accent)}
 
 /* ---- the night: hero + story band share one sky ---- */
 .night{background:radial-gradient(1200px 600px at 78% 30%,rgb(120 174 234 / .10),transparent 60%),radial-gradient(900px 500px at 10% 90%,rgb(235 170 60 / .07),transparent 60%),var(--night);color:var(--night-ink);margin-top:calc(-1 * var(--nav-h))}
-.hero{min-height:100svh;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:clamp(20px,4vw,64px);align-items:center;padding-top:calc(var(--nav-h) + 24px);padding-bottom:56px}
+.hero{min-height:100svh;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);grid-template-rows:1fr auto;gap:clamp(12px,2vw,32px) clamp(20px,4vw,64px);align-items:center;padding-top:calc(var(--nav-h) + 24px);padding-bottom:24px}
 .eyebrow{display:inline-block;font:600 11px/1 var(--f-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--spark);border:1px solid rgb(235 170 60 / .4);border-radius:999px;padding:6px 11px;margin-bottom:22px}
 h1{font:700 clamp(40px,5.4vw,84px)/1.03 var(--f-ui);letter-spacing:-.025em;margin:0 0 22px}
 h1 span{color:var(--spark)}
@@ -78,25 +78,29 @@ h1 span{color:var(--spark)}
 .q{font:600 13px/1.3 var(--f-ui);color:var(--muted);display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
 .q span{background:var(--accent-soft);color:var(--ink);border-radius:8px;padding:6px 10px;font-weight:500}
 .prose{font:16.5px/1.6 var(--f-book);margin:0}
-.scroll-cue{display:flex;justify-content:center;padding-bottom:28px;color:var(--night-muted);font-size:13px;gap:8px;align-items:center}
+.scroll-cue{grid-column:1/-1;align-self:end;display:flex;justify-content:center;text-decoration:none;color:var(--night-muted);font-size:13px;gap:8px;align-items:center}
 .scroll-cue i{width:18px;height:28px;border:1.5px solid var(--night-muted);border-radius:10px;position:relative}
 .scroll-cue i::after{content:"";position:absolute;left:50%;top:6px;width:3px;height:6px;margin-left:-1.5px;border-radius:2px;background:var(--night-muted);animation:cue 1.6s ease-in-out infinite}
 @keyframes cue{0%{opacity:0;transform:translateY(-2px)}40%{opacity:1}100%{opacity:0;transform:translateY(8px)}}
 
-/* ---- sticky scroll: a fixed-size card pinned under the nav while the four steps go past. Every part keeps its
-   place in the card from the start and lights up at its step, so nothing jumps and the pinning is plain to see. ---- */
-.story-head{padding-top:clamp(56px,7vw,110px);padding-bottom:clamp(24px,3vw,48px);max-width:60ch;margin-inline:auto;text-align:center}
-.story-head h2{font:700 clamp(28px,3vw,46px)/1.1 var(--f-ui);letter-spacing:-.02em;margin:0 0 10px}
-.story-head .intro{color:var(--night-muted);font-size:18px;margin:0}
-.story{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(24px,5vw,80px);padding-bottom:12vh}
-.steps-col{padding-bottom:20vh}
-.step{min-height:82vh;display:flex;flex-direction:column;justify-content:center;opacity:.3;transition:opacity .35s}
-.step.on{opacity:1}
+/* ---- pinned section: the whole view (heading, step text and card) holds still while the page scrolls through
+   it; the scroll distance inside .pin only advances the step, then the page carries on. ---- */
+.pin{position:relative;height:calc(100svh * 4)}
+.pin-view{position:sticky;top:0;height:100svh;display:flex;align-items:center;padding-top:var(--nav-h);overflow:hidden}
+.pin-grid{width:100%;height:calc(100svh - var(--nav-h) - 48px);display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(24px,5vw,80px);align-items:stretch}
+.pin-text{display:flex;flex-direction:column;justify-content:center;min-height:0}
+.pin-text h2{font:700 clamp(28px,2.8vw,44px)/1.1 var(--f-ui);letter-spacing:-.02em;margin:0 0 10px}
+.pin-text .intro{color:var(--night-muted);font-size:17px;margin:0 0 clamp(24px,5vh,56px);max-width:42ch}
+.pin-steps{display:grid}
+.pin-steps .step{grid-area:1/1;opacity:0;transform:translateY(14px);transition:opacity .45s,transform .45s;pointer-events:none}
+.pin-steps .step.on{opacity:1;transform:none;pointer-events:auto}
 .step .n{font:600 12px/1 var(--f-mono);color:var(--spark);letter-spacing:.08em;margin-bottom:12px}
 .step h3{font:700 clamp(22px,2vw,32px)/1.2 var(--f-ui);margin:0 0 10px}
 .step p{color:var(--night-muted);font-size:17px;max-width:40ch;margin:0}
-.stage-col{position:relative}
-.stage{position:sticky;top:calc(var(--nav-h) + 20px);height:calc(100svh - var(--nav-h) - 40px);padding-top:0}
+.pin-dots{display:flex;gap:8px;margin-top:clamp(20px,4vh,40px)}
+.pin-dots button{width:34px;height:4px;border:0;border-radius:2px;background:var(--night-line);cursor:pointer;padding:0;transition:background .35s}
+.pin-dots button.on{background:var(--spark)}
+.stage{height:100%;min-height:0}
 .stage .card{height:100%;padding:clamp(16px,1.6vw,24px);display:grid;grid-template-rows:auto auto minmax(0,1.1fr) auto auto;gap:clamp(8px,1.2vh,14px);overflow:hidden}
 .progress{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0;padding:0;list-style:none;counter-reset:p}
 .progress li{counter-increment:p;font:600 11px/1 var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:9px;border-top:3px solid var(--line);transition:border-color .35s,color .35s}
@@ -110,7 +114,6 @@ h1 span{color:var(--spark)}
 .stage[data-step="2"] .p2,.stage[data-step="3"] .p2,.stage[data-step="4"] .p2,
 .stage[data-step="3"] .p3,.stage[data-step="4"] .p3,
 .stage[data-step="4"] .p4{opacity:1;filter:none}
-.stage[data-step="1"] .p1,.stage[data-step="2"] .p2,.stage[data-step="3"] .p3,.stage[data-step="4"] .p4{opacity:1}
 .label{font:600 11px/1 var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
 .mini{width:100%;height:auto;display:block;background:var(--sunk);border-radius:10px}
 .mini .e{stroke:var(--line);stroke-width:1.5;transition:stroke .5s,stroke-width .5s}
@@ -154,10 +157,16 @@ footer a{color:var(--muted)}footer .sp{flex:1}
   .hero,.beta{grid-template-columns:1fr}
   .hero{min-height:auto;padding-top:calc(var(--nav-h) + 32px)}
   .hero-answer{margin:12px 0 0}
-  .story{grid-template-columns:1fr;padding-bottom:40px}
-  .stage-col{order:-1;position:sticky;top:var(--nav-h);z-index:5;padding-block:8px;background:var(--night)}
-  .stage{position:relative;top:auto;height:56svh}
-  .step{min-height:70vh}
+  .pin-grid{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);gap:14px;height:calc(100svh - var(--nav-h) - 24px)}
+  .pin-text .intro{display:none}
+  .pin-text h2{font-size:22px;margin-bottom:12px}
+  .step h3{font-size:19px}.step p{font-size:15px}
+  .pin-dots{margin-top:12px}
+  /* A phone's card holds the question and only the current step's part, so each one gets the room. */
+  .stage .card{grid-template-rows:auto auto minmax(0,1fr)}
+  .stage .phase:not(.p1){display:none}
+  .stage[data-step="2"] .p2,.stage[data-step="3"] .p3,.stage[data-step="4"] .p4{display:flex;flex-direction:column}
+  .stage .p2 .mini{flex:1;min-height:160px}
   .features{grid-template-columns:repeat(2,minmax(0,1fr))}
   .nav .link{display:none}
 }
@@ -165,7 +174,7 @@ footer a{color:var(--muted)}footer .sp{flex:1}
 @media (prefers-reduced-motion:reduce){
   .constellation .e.hot{animation:none;stroke-dashoffset:0}.constellation .tag{animation:none;opacity:1}
   .constellation .node.lit{animation:none}.hero-answer{animation:none;opacity:1;transform:none}
-  .step{opacity:1}.stage .phase{transition:none}.scroll-cue i::after{animation:none}
+  .pin-steps .step{transition:none}.stage .phase{transition:none}.scroll-cue i::after{animation:none}
 }
 </style>
 </head>
@@ -226,23 +235,25 @@ footer a{color:var(--muted)}footer .sp{flex:1}
         <p class="prose">Holmes sends for a cabman, and when Jefferson Hope comes up to help with a trunk, Holmes snaps a pair of steel handcuffs on him. <span class="chip">61</span></p>
       </div>
     </div>
+    <a class="scroll-cue" href="#how" aria-label="See how LORE answers"><i></i> Scroll to see how it answers</a>
   </div></header>
-  <div class="scroll-cue" aria-hidden="true"><i></i> Scroll to see how it answers</div>
-
-  <section class="band" id="how" aria-labelledby="how-title"><div class="inner">
-    <div class="story-head">
-      <h2 id="how-title">How LORE answers a question</h2>
-      <p class="intro">Four steps, the same for every book you add. Here's one question about <em>A Study in Scarlet</em>.</p>
-    </div>
-    <div class="story">
-    <div class="steps-col">
-      <div class="step" data-step="1"><div class="n">01 · YOU ASK</div><h3>Ask it like you'd ask a friend who's read the book.</h3><p>Vague, specific, about one chapter or the whole series. LORE splits it into the parts that need answering.</p></div>
-      <div class="step" data-step="2"><div class="n">02 · IT SEARCHES THE GRAPH</div><h3>It finds the people, places and links that matter.</h3><p>Every book becomes a map of who knows whom, where things happen and what happens when. The answer starts there, not with a guess.</p></div>
-      <div class="step" data-step="3"><div class="n">03 · IT READS THE PASSAGES</div><h3>It goes back to the text.</h3><p>The exact passages behind those links are pulled from the book, and every fact must quote one.</p></div>
-      <div class="step" data-step="4"><div class="n">04 · IT CHECKS EVERY SENTENCE</div><h3>A second pass cuts anything the book doesn't say.</h3><p>What survives is written up with its citations. What doesn't is cut, and you never see it.</p></div>
-    </div>
-    <div class="stage-col">
-      <div class="stage" id="stage" data-step="1">
+  <section id="how" class="pin" aria-labelledby="how-title">
+    <div class="pin-view band">
+      <div class="pin-grid">
+        <div class="pin-text">
+          <h2 id="how-title">How LORE answers a question</h2>
+          <p class="intro">Four steps, the same for every book you add. Here's one question about <em>A Study in Scarlet</em>.</p>
+          <div class="pin-steps">
+            <div class="step on" data-step="1"><div class="n">01 · YOU ASK</div><h3>Ask it like you'd ask a friend who's read the book.</h3><p>Vague, specific, about one chapter or the whole series. LORE splits it into the parts that need answering.</p></div>
+            <div class="step" data-step="2"><div class="n">02 · IT SEARCHES THE GRAPH</div><h3>It finds the people, places and links that matter.</h3><p>Every book becomes a map of who knows whom, where things happen and what happens when. The answer starts there, not with a guess.</p></div>
+            <div class="step" data-step="3"><div class="n">03 · IT READS THE PASSAGES</div><h3>It goes back to the text.</h3><p>The exact passages behind those links are pulled from the book, and every fact must quote one.</p></div>
+            <div class="step" data-step="4"><div class="n">04 · IT CHECKS EVERY SENTENCE</div><h3>A second pass cuts anything the book doesn't say.</h3><p>What survives is written up with its citations. What doesn't is cut, and you never see it.</p></div>
+          </div>
+          <div class="pin-dots" role="tablist" aria-label="Steps">
+            <button type="button" data-go="1" aria-label="Step 1"></button><button type="button" data-go="2" aria-label="Step 2"></button><button type="button" data-go="3" aria-label="Step 3"></button><button type="button" data-go="4" aria-label="Step 4"></button>
+          </div>
+        </div>
+        <div class="stage" id="stage" data-step="1">
         <div class="card" aria-live="polite">
           <ol class="progress" aria-label="Step"><li>Ask</li><li>Graph</li><li>Passages</li><li>Checked</li></ol>
           <div class="phase p1">
@@ -272,10 +283,10 @@ footer a{color:var(--muted)}footer .sp{flex:1}
             <div class="checked cut"><b>✕</b><span>Holmes had already heard of Watson’s service.</span><small>Cut: no passage says so</small></div>
           </div>
         </div>
+        </div>
       </div>
     </div>
-    </div>
-  </div></section>
+  </section>
 </div>
 
 <main>
@@ -321,16 +332,27 @@ const nav = document.getElementById("nav");
 const solid = () => nav.classList.toggle("solid", window.scrollY > 8);
 addEventListener("scroll", solid, { passive: true }); solid();
 
-// Sticky scroll: the step nearest the middle of the screen sets what the pinned card shows.
-const stage = document.getElementById("stage");
-const steps = [...document.querySelectorAll(".step")];
-const io = new IntersectionObserver((entries) => {
-  for (const e of entries) if (e.isIntersecting) {
-    steps.forEach((s) => s.classList.toggle("on", s === e.target));
-    stage.dataset.step = e.target.dataset.step;
-  }
-}, { rootMargin: "-45% 0px -45% 0px" });
-steps.forEach((s) => io.observe(s));
+// Pinned section: how far the page has scrolled through #how (its extra height) picks the step.
+const pin = document.getElementById("how"), stage = document.getElementById("stage");
+const stepEls = [...pin.querySelectorAll(".step")], dots = [...pin.querySelectorAll(".pin-dots button")];
+let shown = 0;
+const show = (n) => {
+  if (n === shown) return; shown = n;
+  stage.dataset.step = String(n);
+  stepEls.forEach((el) => el.classList.toggle("on", el.dataset.step === String(n)));
+  dots.forEach((d) => { const on = d.dataset.go === String(n); d.classList.toggle("on", on); d.setAttribute("aria-selected", String(on)); });
+};
+const onScroll = () => {
+  const r = pin.getBoundingClientRect(), travel = pin.offsetHeight - innerHeight;
+  const t = Math.min(1, Math.max(0, -r.top / Math.max(1, travel)));
+  show(Math.min(4, 1 + Math.floor(t * 4)));
+};
+addEventListener("scroll", onScroll, { passive: true }); addEventListener("resize", onScroll); onScroll();
+// A dot jumps to its step's stretch of the scroll.
+dots.forEach((d) => d.addEventListener("click", () => {
+  const travel = pin.offsetHeight - innerHeight, n = Number(d.dataset.go);
+  scrollTo({ top: pin.offsetTop + travel * ((n - 0.5) / 4), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+}));
 
 // Light / dark for the day sections (the night sections stay dark).
 const root = document.documentElement, tb = document.getElementById("theme");
