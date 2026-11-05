@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 /* Direction B, "Constellation": the chosen homepage mockup. The hero and the story band are always dark (the
-   brand's night sky); the rest follows the reader's light or dark theme, with the app's own tokens. */
+   brand's night sky); the rest follows the visitor's system light or dark setting, with the app's own tokens. */
 :root{
   --bg:#ECEFF2;--panel:#F8FAFB;--sunk:#E3E8EC;--ink:#17212B;--muted:#5A6774;--line:#D3DAE0;
   --accent:#1E5AA0;--accent-soft:#DCE7F4;--glow:#B97808;--glow-soft:#F6E7C8;--ok:#2E7D4F;--cut:#B3261E;
@@ -19,11 +19,7 @@
   --gutter:clamp(20px,5vw,88px);--nav-h:68px;
   color-scheme:light;
 }
-:root[data-theme="dark"]{
-  --bg:#0E141A;--panel:#151D25;--sunk:#1B252F;--ink:#E3E9EF;--muted:#8C99A6;--line:#26323D;
-  --accent:#78AEEA;--accent-soft:#1D3047;--glow:#EBAA3C;--glow-soft:#3A2D14;--ok:#6CC596;--cut:#F2867E;color-scheme:dark;
-}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+@media (prefers-color-scheme:dark){:root{
   --bg:#0E141A;--panel:#151D25;--sunk:#1B252F;--ink:#E3E9EF;--muted:#8C99A6;--line:#26323D;
   --accent:#78AEEA;--accent-soft:#1D3047;--glow:#EBAA3C;--glow-soft:#3A2D14;--ok:#6CC596;--cut:#F2867E;color-scheme:dark}}
 *{box-sizing:border-box}
@@ -45,7 +41,6 @@ a{color:var(--accent)}
 .nav .sp{flex:1}
 .nav .link{color:var(--night-muted);text-decoration:none;font-size:15px}
 .nav .link:hover{color:var(--night-ink)}
-.icon-btn{width:38px;height:38px;border-radius:9px;border:1px solid var(--night-line);background:var(--night-2);color:var(--night-ink);display:grid;place-items:center;cursor:pointer;font-size:16px}
 .btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:11px 18px;font:600 15px/1 var(--f-ui);text-decoration:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
 .btn:hover{border-color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
@@ -188,7 +183,6 @@ footer a{color:var(--muted)}footer .sp{flex:1}
   <span class="sp"></span>
   <a class="link" href="#how">How it works</a>
   <a class="link" href="#beta">The beta</a>
-  <button class="icon-btn" id="theme" type="button" aria-label="Switch to dark theme"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg></button>
   <a class="btn" href="#">Sign in</a>
   <a class="btn primary" href="#beta">Request an invite</a>
 </nav>
@@ -353,13 +347,6 @@ dots.forEach((d) => d.addEventListener("click", () => {
   const travel = pin.offsetHeight - innerHeight, n = Number(d.dataset.go);
   scrollTo({ top: pin.offsetTop + travel * ((n - 0.5) / 4), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }));
-
-// Light / dark for the day sections (the night sections stay dark).
-const root = document.documentElement, tb = document.getElementById("theme");
-const isDark = () => root.dataset.theme === "dark" || (!root.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
-const label = () => tb.setAttribute("aria-label", isDark() ? "Switch to light theme" : "Switch to dark theme");
-tb.addEventListener("click", () => { root.dataset.theme = isDark() ? "light" : "dark"; label(); });
-label();
 
 // Mockup: the form only says thanks.
 document.getElementById("waitlist").addEventListener("submit", (e) => { e.preventDefault(); e.target.querySelector("button").textContent = "You’re on the list ✓"; });
