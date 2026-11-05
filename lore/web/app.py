@@ -362,6 +362,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     if multi:
         purge_traces()
+        trace_store.per_user_limit()  # a bad LORE_TRACES_PER_USER stops start-up
     throttle = (Throttle(lambda: sessions[0], rate_settings or RateSettings.from_env(),
                          auth_ctx.now) if multi else None)
 

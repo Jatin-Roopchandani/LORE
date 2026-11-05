@@ -19,6 +19,37 @@ from lore.tracing import Trace, clean
 
 RETENTION = timedelta(days=30)
 MAX_JSON_BYTES = 1_000_000
+# Release step 6: on top of the 30 days, each user keeps at most this many
+# traces; past it the oldest go first (LORE_TRACES_PER_USER).
+ENV_PER_USER = "LORE_TRACES_PER_USER"
+PER_USER = 2000
+
+
+def per_user_limit(env=None) -> int:
+    import os
+    raw = ((os.environ if env is None else env).get(ENV_PER_USER) or "").strip()
+    if not raw:
+        return PER_USER
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{ENV_PER_USER} must be a whole number") from None
+    if value < 1:
+        raise ValueError(f"{ENV_PER_USER} must be at least 1")
+    return value
+
+
+def enforce_quota(session: Session, user_id: str, keep: int | None = None) -> int:
+    """Delete this user's oldest traces beyond `keep`; returns how many went."""
+    keep = per_user_limit() if keep is None else keep
+    extra = sa.select(TraceRow.request_id).where(TraceRow.user_id == user_id).order_by(
+        TraceRow.created_at.desc(), TraceRow.request_id.desc()).offset(keep)
+    ids = list(session.scalars(extra))
+    if not ids:
+        return 0
+    session.execute(sa.delete(TraceRow).where(TraceRow.request_id.in_(ids))
+                    .execution_options(synchronize_session=False))
+    return len(ids)
 
 
 def _capped(value, limit: int = MAX_JSON_BYTES):
@@ -31,7 +62,8 @@ def _capped(value, limit: int = MAX_JSON_BYTES):
 
 def save(session: Session, trace: Trace, *, user_id: str, question: str,
          world=None, depth: str | None = None, chat_id: str | None = None,
-         message_id: int | None = None, now: datetime | None = None) -> TraceRow:
+         message_id: int | None = None, now: datetime | None = None,
+         keep: int | None = None) -> TraceRow:
     row = TraceRow(
         request_id=trace.request_id, user_id=user_id, chat_id=chat_id,
         message_id=message_id, created_at=now or utcnow(),
@@ -42,6 +74,7 @@ def save(session: Session, trace: Trace, *, user_id: str, question: str,
         timings_json=trace.timings(), model_usage_json=trace.model_usage())
     session.merge(row)
     session.flush()
+    enforce_quota(session, user_id, keep)
     return row
 
 
