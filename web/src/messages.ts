@@ -196,6 +196,7 @@ const UPLOAD_ERRORS: Record<string, string> = {
   not_a_book: "That file isn't a readable EPUB or PDF. A scanned PDF with no text can't be read either.",
   unsafe_file: "That file's structure looks unsafe, so it was refused. Try a fresh copy of the book.",
   encrypted: "That book is locked (DRM or a password). Add a copy without protection.",
+  too_complex: "That book is too large or complex to read safely. Try a different copy.",
   too_many_pages: "That PDF has too many pages to process.",
   too_many_books: "Your library is full. Remove a book before adding another.",
   daily_limit: "You've added as many books as you can today. Try again tomorrow.",

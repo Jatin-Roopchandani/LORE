@@ -15,7 +15,9 @@ The body is untrusted, so the order matters:
    counts the whole body too, and refuses a Content-Length over the limit.
 3. The name must end .epub or .pdf AND the magic bytes must say the same
    type (400 not_a_book); then lore.ingest.upload_check (zip structure and
-   bombs, traversal, symlinks, DRM, encrypted PDFs, page count).
+   bombs, traversal, symlinks, DRM, encrypted PDFs, page count), run with
+   the parse itself in a CPU-, memory- and time-limited subprocess
+   (lore.ingest.sandbox; out of time or memory: 400 too_complex).
 4. The content hash is the book id (as `lore ingest`): a book already in
    this library is 409 already_added with its id.
 5. Parse, chunk and register with `ingest_book`, then start processing
@@ -48,7 +50,8 @@ from starlette.requests import ClientDisconnect
 
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
-from lore.ingest.upload_check import Limits, Refused, check_book, sniff
+from lore.ingest.sandbox import SandboxLimits
+from lore.ingest.upload_check import Limits, Refused, sniff
 from lore.tenancy import CurrentUser
 from lore.web.limits import UPLOAD_FILE_BYTES, UPLOAD_PATH, TooLarge
 
@@ -89,13 +92,16 @@ class UploadSettings:
     per_hour: int = PER_HOUR
     max_books: int = MAX_BOOKS
     checks: Limits = field(default_factory=Limits)
+    # The parsing subprocess's CPU, memory and time (lore.ingest.sandbox).
+    sandbox: SandboxLimits = field(default_factory=SandboxLimits)
 
     @classmethod
     def from_env(cls, env=None) -> "UploadSettings":
         env = os.environ if env is None else env
         return cls(per_day=_env_int(env, ENV_PER_DAY, PER_DAY),
                    per_hour=_env_int(env, ENV_PER_HOUR, PER_HOUR),
-                   max_books=_env_int(env, ENV_MAX_BOOKS, MAX_BOOKS))
+                   max_books=_env_int(env, ENV_MAX_BOOKS, MAX_BOOKS),
+                   sandbox=SandboxLimits.from_env(env))
 
 
 def _error(status: int, code: str, message: str, **extra) -> JSONResponse:
@@ -258,15 +264,12 @@ class Registered:
 
 
 def _register(cfg: LoreConfig, part: Path, display: str, kind: str, book_id: str,
-              world_ref: str | None, limits: Limits) -> Registered:
+              world_ref: str | None, limits: Limits,
+              sandbox: "SandboxLimits | None" = None) -> Registered:
     """Check, parse, chunk and register the book; the file ends at
     `inbox/<random>.<kind>`. Raises Refused or _Duplicate (nothing kept)."""
-    from lore.ingest.chunker import chunk_book
-    from lore.ingest.epub import parse_epub
-    from lore.ingest.matter import classify_book
-    from lore.ingest.models import IngestError
-    from lore.ingest.pdf import parse_pdf
     from lore.ingest.registry import ingest_book
+    from lore.ingest.sandbox import parse_untrusted
     from lore.worlds import WorldError, create_world, delete_world, get_world
 
     conn = open_db(cfg.sqlite_path)
@@ -275,22 +278,18 @@ def _register(cfg: LoreConfig, part: Path, display: str, kind: str, book_id: str
             raise _Duplicate(book_id)
     finally:
         conn.close()
-    check_book(part, kind, limits)
     stored = part.with_name(f"{uuid.uuid4().hex}.{kind}")
     part.rename(stored)
     try:
-        parse = parse_epub if kind == "epub" else parse_pdf
+        # Checked, parsed, chunked and classified in a limited subprocess
+        # (lore.ingest.sandbox): this process never opens the untrusted file.
         try:
-            parsed = parse(stored)
-            if parsed.title == stored.stem:  # no title in the file: its own name
-                parsed = replace(parsed, title=display.rsplit(".", 1)[0] or display)
-            chunks = chunk_book(parsed, book_id)
-            sections = classify_book(parsed)
-        except IngestError as exc:
-            why = str(exc).replace(stored.name, display)
-            raise Refused("not_a_book", why) from None
-        except Exception:  # noqa: BLE001 -- a parser crash on a hostile file
-            raise Refused("not_a_book", "this book could not be read") from None
+            parsed = parse_untrusted(stored, kind, book_id, limits, sandbox)
+        except Refused as exc:
+            raise Refused(exc.code, exc.message.replace(stored.name, display)) from None
+        if parsed.title == stored.stem:  # no title in the file: its own name
+            parsed = replace(parsed, title=display.rsplit(".", 1)[0] or display)
+        chunks, sections = parsed.chunks, parsed.sections
         if not chunks:
             raise Refused("not_a_book", "this book has no text LORE can read")
         conn = open_db(cfg.sqlite_path)
@@ -470,7 +469,7 @@ def build_upload_router(deps: UploadDeps) -> APIRouter:
             try:
                 done = await asyncio.to_thread(
                     _register, cfg, part, display, kind, book_id, form.world,
-                    deps.settings.checks)
+                    deps.settings.checks, deps.settings.sandbox)
             except _Duplicate as dup:
                 return _error(409, "already_added", "this book is already in your library",
                               book_id=dup.book_id)
