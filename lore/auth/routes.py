@@ -2,6 +2,8 @@
 the same router by the OAuth and magic-link modules."""
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
@@ -29,6 +31,35 @@ def build_router(ctx: AuthContext) -> APIRouter:
             delete_session(db, request.cookies.get(SESSION_COOKIE))
             db.commit()
         response = JSONResponse({"ok": True}, headers={"Cache-Control": "no-store"})
+        for name, value in cleared_headers(settings):
+            response.headers.append(name.decode(), value.decode())
+        return response
+
+    @router.post("/api/me/delete")
+    async def delete_me(request: Request):
+        """Delete my account and everything in it (lore.central.erase), once
+        the body's `confirm` is my own email address, typed. CSRF-protected
+        like every POST. Safe to repeat."""
+        from lore.auth.accounts import normalize_email
+        from lore.central.erase import erase_user
+        user = session_user(request)
+        if user is None:
+            return JSONResponse({"error": {"code": "unauthorized",
+                                           "message": "sign in required"}}, status_code=401)
+        try:
+            body = json.loads(await request.body())
+        except (ValueError, UnicodeDecodeError):
+            body = None
+        typed = body.get("confirm") if isinstance(body, dict) else None
+        with ctx.sessions() as db:
+            row = db.get(User, user.id)
+        if row is None or normalize_email(typed) != row.email:
+            return JSONResponse({"error": {"code": "confirm_mismatch",
+                                           "message": "type your email address to confirm"}},
+                                status_code=400)
+        done = erase_user(ctx.sessions, ctx.data_root, user.id, now=ctx.now())
+        response = JSONResponse({"deleted": True, "library_removed": done.library_removed},
+                                headers={"Cache-Control": "no-store"})
         for name, value in cleared_headers(settings):
             response.headers.append(name.decode(), value.decode())
         return response

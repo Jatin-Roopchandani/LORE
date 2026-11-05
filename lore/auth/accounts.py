@@ -61,29 +61,36 @@ def clean_invite(code: object) -> str | None:
 
 
 def create_invite(db: Session, created_by: str | None, now: datetime,
-                  lifetime: timedelta = INVITE_LIFETIME) -> str:
-    """A new single-use invite; returns the code, which is not stored."""
+                  lifetime: timedelta = INVITE_LIFETIME, *, email: str | None = None) -> str:
+    """A new single-use invite; returns the code, which is not stored. With
+    `email` (normalized) only a sign-in proving that address can spend it."""
     code = new_token()
     db.add(Invite(code_hash=hash_token(code), created_by=created_by,
-                  created_at=now, expires_at=now + lifetime))
+                  created_at=now, expires_at=now + lifetime, email=email))
     db.flush()
     return code
 
 
-def invite_usable(db: Session, invite_hash: str | None, now: datetime) -> bool:
+def invite_usable(db: Session, invite_hash: str | None, now: datetime,
+                  email: str | None = None) -> bool:
+    """Unspent, unexpired, and (if it is bound to an address) for `email`."""
     if not invite_hash:
         return False
     row = db.get(Invite, invite_hash)
     return (row is not None and row.used_by is None
-            and (row.expires_at is None or row.expires_at > now))
+            and (row.expires_at is None or row.expires_at > now)
+            and (row.email is None or row.email == email))
 
 
-def _claim_invite(db: Session, invite_hash: str, user_id: str, now: datetime) -> bool:
-    """Atomic: of two sign-ins racing for one invite, exactly one wins."""
+def _claim_invite(db: Session, invite_hash: str, user_id: str, now: datetime,
+                  email: str) -> bool:
+    """Atomic: of two sign-ins racing for one invite, exactly one wins. A
+    bound invite (an approved waitlist entry's) only for its own address."""
     result = db.execute(
         sa.update(Invite)
         .where(Invite.code_hash == invite_hash, Invite.used_by.is_(None),
-               sa.or_(Invite.expires_at.is_(None), Invite.expires_at > now))
+               sa.or_(Invite.expires_at.is_(None), Invite.expires_at > now),
+               sa.or_(Invite.email.is_(None), Invite.email == email))
         .values(used_by=user_id))
     return result.rowcount == 1
 
@@ -98,7 +105,7 @@ def can_sign_in(db: Session, email: str, invite_hash: str | None, now: datetime,
     user = user_by_email(db, email)
     if user is not None:
         return user.status == "active"
-    return (not invite_only) or invite_usable(db, invite_hash, now)
+    return (not invite_only) or invite_usable(db, invite_hash, now, email)
 
 
 def sign_in_with_identity(db: Session, provider: str, subject: str, email: str,
@@ -130,7 +137,8 @@ def sign_in_with_identity(db: Session, provider: str, subject: str, email: str,
                 role="user", status="active", created_at=now)
     db.add(user)
     db.flush()  # the invite's used_by points at this row
-    if invite_only and not (invite_hash and _claim_invite(db, invite_hash, user.id, now)):
+    if invite_only and not (invite_hash and _claim_invite(db, invite_hash, user.id, now,
+                                                          email)):
         db.delete(user)
         db.flush()
         return SignIn(Outcome.NEEDS_INVITE)

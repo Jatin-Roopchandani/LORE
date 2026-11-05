@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import Request
@@ -29,6 +30,8 @@ class AuthContext:
     mailer: Mailer
     providers: dict[str, Provider]
     now: Callable[[], datetime]
+    # The data root (`<root>/users/<id>` are the libraries): account deletion.
+    data_root: Path | None = None
 
 
 def session_user(request: Request) -> CurrentUser | None:

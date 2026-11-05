@@ -327,7 +327,7 @@ def test_the_session_cookies_set_at_sign_in(env):
     cookies = r.headers.get_list("set-cookie")
     session = next(c for c in cookies if c.startswith("lore_session="))
     csrf = next(c for c in cookies if c.startswith("lore_csrf="))
-    assert "HttpOnly" in session and "SameSite=Lax" in session and "Max-Age=2592000" in session
+    assert "HttpOnly" in session and "SameSite=Lax" in session and "Max-Age=604800" in session  # the 7-day idle cap (release step 6)
     assert "HttpOnly" not in csrf
     assert r.headers["cache-control"] == "no-store" and r.headers["referrer-policy"] == "no-referrer"
     # The CSRF cookie the browser now holds works for a mutation.

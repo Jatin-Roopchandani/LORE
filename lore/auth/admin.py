@@ -3,6 +3,11 @@
 Admins are `users.role = 'admin'`, granted from the server's shell with
 `lore admin grant <email>`: there is no web path to become one. Every admin
 route is behind `require_admin` and, being a POST, behind the CSRF guard.
+
+Release step 6: admins disable and re-enable users, revoke a user's
+sessions and delete an account (lore.central.erase), and every admin action
+is written to `admin_events` (who, what, to whom; never an email address or
+a secret). GET /api/admin/events lists them.
 """
 from __future__ import annotations
 
@@ -18,7 +23,7 @@ from lore.auth import accounts, ratelimit
 from lore.auth.current import AuthContext, session_user
 from lore.auth.mailer import MailError, invite_message
 from lore.auth.signin import client_ip
-from lore.central.models import User, Waitlist
+from lore.central.models import AdminEvent, User, Waitlist
 
 log = logging.getLogger("lore.auth")
 
@@ -37,6 +42,16 @@ class WaitlistBody(BaseModel):
 
 class InviteBody(BaseModel):
     days: int = Field(default=14, ge=1, le=90)
+    # Bind the code to one address (the sign-in must prove it); none: anyone.
+    email: str | None = Field(default=None, max_length=320)
+
+
+def log_event(db, admin: str | None, action: str, target: str | None = None,
+              detail: dict | None = None, *, now=None) -> None:
+    """One admin action, in the caller's transaction."""
+    from lore.central.models import utcnow
+    db.add(AdminEvent(at=now or utcnow(), admin_id=admin, action=action,
+                      target_user_id=target, detail=detail))
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
@@ -110,8 +125,10 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
                 return _error(404, "not_found", "no such request")
             if row.status == INVITED:
                 return _error(409, "already_invited", "this person was already invited")
-            code = accounts.create_invite(db, admin, now)
+            # The code works only for the address that asked (release step 6).
+            code = accounts.create_invite(db, admin, now, email=row.email)
             row.status, row.invited_at = INVITED, now
+            log_event(db, admin, "approve", detail={"waitlist_id": row.id}, now=now)
             subject, text, html = invite_message(f"{settings.origin}/signin?invite={code}")
             try:  # send before committing: no mail, no invite
                 ctx.mailer.send(to=row.email, subject=subject, text=text, html=html)
@@ -132,6 +149,7 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
             if row.status == INVITED:
                 return _error(409, "already_invited", "this person was already invited")
             row.status = DECLINED
+            log_event(db, _admin, "decline", detail={"waitlist_id": row.id}, now=ctx.now())
             db.commit()
             return {"declined": True, "entry": _entry(row)}
 
@@ -141,9 +159,17 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
         """A code to hand out directly. It is shown once, here: only its hash
         is stored."""
         now = ctx.now()
-        days = (body or InviteBody()).days
+        body = body or InviteBody()
+        days = body.days
+        email = None
+        if body.email:
+            email = accounts.normalize_email(body.email)
+            if email is None:
+                return _error(400, "invalid_email", "that does not look like an email address")
         with ctx.sessions() as db:
-            code = accounts.create_invite(db, admin, now, timedelta(days=days))
+            code = accounts.create_invite(db, admin, now, timedelta(days=days), email=email)
+            log_event(db, admin, "create_invite",
+                      detail={"days": days, "bound": email is not None}, now=now)
             db.commit()
         return {"code": code, "link": f"{settings.origin}/signin?invite={code}",
                 "expires_at": (now + timedelta(days=days)).isoformat()}
@@ -192,6 +218,8 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
             if row is None:
                 return _error(404, "not_found", "no such report")
             row.status = "resolved"
+            log_event(db, _admin, "resolve_report", row.user_id, {"report_id": row.id},
+                      now=ctx.now())
             db.commit()
             return {"report": report_out(row)}
 
@@ -202,6 +230,107 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
             row = traces.get(db, request_id)
             if row is None:
                 return _error(404, "not_found", "no such trace (kept 30 days)")
-            return JSONResponse(traces.trace_out(row), headers={"Cache-Control": "no-store"})
+            out = traces.trace_out(row)
+            # Reading someone's trace is an admin action too.
+            log_event(db, _admin, "view_trace", row.user_id, {"request_id": request_id},
+                      now=ctx.now())
+            db.commit()
+            return JSONResponse(out, headers={"Cache-Control": "no-store"})
+
+    # --- user controls (release step 6) --------------------------------
+
+    def _target(db, user_id: str, admin: str):
+        row = db.get(User, user_id)
+        if row is None:
+            return None, _error(404, "not_found", "no such user")
+        if row.id == admin:
+            return None, _error(409, "self_action",
+                                "use another admin account to change your own")
+        return row, None
+
+    def _user_out(row: User) -> dict:
+        return {"id": row.id, "status": row.status, "role": row.role}
+
+    @router.post("/api/admin/users/{user_id}/disable")
+    def disable_user(user_id: str, admin: str = Depends(require_admin)):
+        """Refuse sign-in, end every session at once, pause queued jobs."""
+        from lore.auth.sessions import delete_user_sessions
+        from lore.central import queue
+        with ctx.sessions() as db:
+            row, refused = _target(db, user_id, admin)
+            if refused is not None:
+                return refused
+            if row.status == "deleting":
+                return _error(409, "busy", "this account is being deleted")
+            row.status = "disabled"
+            delete_user_sessions(db, user_id)
+            log_event(db, admin, "disable", user_id, now=ctx.now())
+            db.commit()
+            queue.pause_user(db, user_id, outcome="user_disabled")  # commits
+            return {"user": _user_out(db.get(User, user_id))}
+
+    @router.post("/api/admin/users/{user_id}/enable")
+    def enable_user(user_id: str, admin: str = Depends(require_admin)):
+        from lore.central import queue
+        with ctx.sessions() as db:
+            row, refused = _target(db, user_id, admin)
+            if refused is not None:
+                return refused
+            if row.status == "deleting":
+                return _error(409, "busy", "this account is being deleted")
+            row.status = "active"
+            log_event(db, admin, "enable", user_id, now=ctx.now())
+            db.commit()
+            queue.resume_user(db, user_id)  # commits
+            return {"user": _user_out(db.get(User, user_id))}
+
+    @router.post("/api/admin/users/{user_id}/revoke-sessions")
+    def revoke_sessions(user_id: str, admin: str = Depends(require_admin)):
+        from lore.auth.sessions import delete_user_sessions
+        from lore.central.models import AuthSession
+        with ctx.sessions() as db:
+            row, refused = _target(db, user_id, admin)
+            if refused is not None:
+                return refused
+            count = db.scalar(sa.select(sa.func.count()).select_from(AuthSession)
+                              .where(AuthSession.user_id == user_id))
+            delete_user_sessions(db, user_id)
+            log_event(db, admin, "revoke_sessions", user_id, {"sessions": count},
+                      now=ctx.now())
+            db.commit()
+            return {"revoked": count}
+
+    @router.delete("/api/admin/users/{user_id}")
+    def delete_user(user_id: str, admin: str = Depends(require_admin)):
+        """Delete the account and all its data (lore.central.erase). Safe to
+        repeat: an unfinished deletion carries on."""
+        from lore.central.erase import erase_user
+        from lore.tenancy import InvalidUserId, validate_user_id
+        try:
+            validate_user_id(user_id)
+        except InvalidUserId:
+            return _error(404, "not_found", "no such user")
+        with ctx.sessions() as db:
+            row, refused = _target(db, user_id, admin)
+            if refused is not None:
+                return refused
+        done = erase_user(ctx.sessions, ctx.data_root, user_id, now=ctx.now())
+        with ctx.sessions() as db:
+            log_event(db, admin, "delete_user", user_id,
+                      {"library_removed": done.library_removed}, now=ctx.now())
+            db.commit()
+        return {"deleted": True, "library_removed": done.library_removed}
+
+    @router.get("/api/admin/events")
+    def list_events(_admin: str = Depends(require_admin)):
+        with ctx.sessions() as db:
+            rows = db.execute(
+                sa.select(AdminEvent, User.email)
+                .outerjoin(User, User.id == AdminEvent.admin_id)
+                .order_by(AdminEvent.at.desc(), AdminEvent.id.desc()).limit(200)).all()
+        return JSONResponse({"events": [
+            {"id": e.id, "at": e.at.isoformat(), "admin_id": e.admin_id, "admin": email,
+             "action": e.action, "target_user_id": e.target_user_id, "detail": e.detail}
+            for e, email in rows]}, headers={"Cache-Control": "no-store"})
 
     return router

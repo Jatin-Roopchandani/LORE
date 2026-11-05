@@ -30,4 +30,4 @@ def build_context(base: LoreConfig, *, auth: AuthSettings | None = None,
     install_log_redaction()
     return AuthContext(
         settings=settings, sessions=sessions, mailer=mailer, providers=providers,
-        now=clock or (lambda: datetime.now(timezone.utc)))
+        now=clock or (lambda: datetime.now(timezone.utc)), data_root=base.data_dir)

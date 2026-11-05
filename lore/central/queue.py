@@ -81,7 +81,9 @@ def enqueue(session: Session, user_id: str, book_id: str, kind: str,
 def _candidate(session: Session) -> Job | None:
     holder = aliased(Job)
     busy = sa.exists().where(holder.user_id == Job.user_id, holder.state == CLAIMED)
-    stmt = (sa.select(Job).where(Job.state == QUEUED, ~busy)
+    # Only an active user's jobs run: a disabled or deleting account's wait.
+    active = sa.select(User.id).where(User.status == "active")
+    stmt = (sa.select(Job).where(Job.state == QUEUED, ~busy, Job.user_id.in_(active))
             .order_by(Job.id).limit(1)
             .with_for_update(skip_locked=True))  # ignored by SQLite
     return session.scalars(stmt).first()
@@ -189,15 +191,16 @@ def pause(session: Session, job_id: int, worker_id: str, *, outcome: str,
     return res.rowcount == 1
 
 
-def pause_user(session: Session, user_id: str) -> list[int]:
+def pause_user(session: Session, user_id: str, outcome: str = "key_invalid") -> list[int]:
     """Every queued job of this user becomes paused (a claimed one finishes
-    on its own and parks itself). Commits; returns the ids."""
+    on its own and parks itself). Commits; returns the ids. `outcome` says
+    why: key_invalid (the default) or user_disabled (release step 6)."""
     ids = list(session.scalars(sa.select(Job.id).where(
         Job.user_id == user_id, Job.state == QUEUED)))
     if ids:
         session.execute(
             sa.update(Job).where(Job.id.in_(ids), Job.state == QUEUED)
-            .values(state=PAUSED, outcome="key_invalid")
+            .values(state=PAUSED, outcome=outcome)
             .execution_options(synchronize_session=False))
     session.commit()
     session.expire_all()  # loaded Job objects see the new state

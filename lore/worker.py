@@ -198,14 +198,27 @@ class Worker:
         finally:
             stop.set()
             beat.join()
-        if result.paused:
-            self._pause(job, result)
-            return
-        with self.sessions() as session:
-            if not queue.finish(session, job.id, self.worker_id,
-                                outcome=result.outcome, failed=result.failed,
-                                error=result.error, now=self._clock()):
-                log.warning("job %s: claim was lost before it finished", job.id)
+        try:
+            if result.paused:
+                self._pause(job, result)
+                return
+            with self.sessions() as session:
+                if not queue.finish(session, job.id, self.worker_id,
+                                    outcome=result.outcome, failed=result.failed,
+                                    error=result.error, now=self._clock()):
+                    log.warning("job %s: claim was lost before it finished", job.id)
+        finally:
+            self._finish_deletion(job.user_id)
+
+    def _finish_deletion(self, user_id: str) -> None:
+        """An account deleted while this job ran left its library for us
+        (lore.central.erase): remove it now that nothing holds it open."""
+        try:
+            from lore.central import erase
+            if erase.finish_pending(self.sessions, self.base.data_dir, user_id):
+                log.info("removed the library of deleted account %s", user_id)
+        except Exception:  # noqa: BLE001 - logged; the next job's end tries again
+            log.exception("finishing an account deletion failed")
 
     def _pause(self, job: Job, result: Outcome) -> None:
         """Park this job and the user's queued ones; a refused key is marked."""
