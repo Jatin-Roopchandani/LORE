@@ -406,9 +406,6 @@ export const THEME = {
 // Sign-in, the waitlist and the public pages (multi-user mode).
 export const AUTH = {
   brand: "LORE",
-  homeTitle: "Ask a book anything. Every sentence checked against it.",
-  homeLead: "LORE builds a private knowledge graph from the books you read and answers questions with passages you can verify.",
-  homeBeta: "LORE is in a private beta. Sign-in is by invitation, and you bring your own free Gemini key.",
   signIn: "Sign in",
   requestInvite: "Request an invite",
   signInTitle: "Sign in to LORE",
@@ -446,13 +443,6 @@ export const AUTH = {
   back: "Back",
   privacy: "Privacy",
   terms: "Terms",
-  privacyTitle: "Privacy",
-  // TODO(release step 7): the full privacy page. It must keep saying what is traced and who can read it.
-  privacyBody: "This page is a placeholder while the beta starts. The full privacy note arrives before anyone is invited."
-    + " Each question you ask keeps a trace for 30 days (your question, the book passages LORE read, and the model's"
-    + " replies) so a reported answer can be looked into; only LORE's administrators can read traces.",
-  termsTitle: "Terms",
-  termsBody: "This page is a placeholder while the beta starts. The full terms arrive before anyone is invited.",
   notFound: "There's nothing at this address.",
 };
 
@@ -591,4 +581,204 @@ export const ADMIN_USERS = {
   removed: (email: string) => `${email} was deleted.`,
   events: "Admin log", noEvents: "No admin actions yet.",
   eventColumns: { when: "When", admin: "Admin", action: "Action", target: "User" },
+};
+
+// The public homepage (release step 7): every string from docs/design/homepage.html, word for word. A segment list
+// is a run of text with inline marks: a string is plain text; {cite} a citation chip; {mark} a highlighted quote;
+// {b}, {i}, {em} bold, the glow-coloured relation and an emphasised title.
+export type Seg = string | { cite: string } | { mark: string } | { b: string } | { i: string } | { em: string };
+
+export const HOME = {
+  title: "LORE · Ask your books",
+  brand: "LORE",
+  brandTag: "Reader",
+  brandLabel: "LORE home",
+  navLabel: "Main",
+  navHow: "How it works",
+  navBeta: "The beta",
+  signIn: "Sign in",
+  requestInvite: "Request an invite",
+  openLore: "Open LORE",
+  eyebrow: "Private beta",
+  headline: "Every story is a web.",
+  headlineGlow: "LORE draws it.",
+  lede: "Ask about the books you own. LORE answers from the text, cites every sentence, and lights up the people and links behind the answer.",
+  seeHow: "See how it answers",
+  heroGraphLabel: "A graph of the first two chapters of A Study in Scarlet: Watson meets Stamford at the Criterion Bar, Stamford introduces him to Sherlock Holmes, and the two share rooms at 221B Baker Street.",
+  heroGraph: {
+    watson: "John Watson", stamford: "Stamford", criterion: "Criterion Bar", lab: "the hospital laboratory",
+    afghanistan: "Afghanistan", maiwand: "Battle of Maiwand", murray: "Murray", baker: "221B Baker Street",
+    lestrade: "Lestrade", yard: "Scotland Yard", holmes: "Sherlock Holmes",
+    meetsAgain: "meets again", introduces: "introduces", sharesRooms: "shares rooms with",
+  },
+  youAsked: "You asked",
+  heroQuestion: "What does Holmes do for a living?",
+  heroAnswer: [
+    "He calls himself a consulting detective, “the only one in the world”: when London’s government and private detectives are at fault, they come to him, and he puts them on the right scent. ",
+    { cite: "15" },
+  ] as Seg[],
+  scrollCue: "Scroll to see how it answers",
+
+  howTitle: "How LORE answers a question",
+  howIntro: ["Five steps, the same for every book you add. Here's one question about ", { em: "A Study in Scarlet" }, "."] as Seg[],
+  steps: [
+    { n: "01 · YOU ASK", h: "Ask it like you'd ask a friend who's read the book.", p: "Vague, specific, about one chapter or the whole series. LORE splits it into the parts that need answering." },
+    { n: "02 · IT SEARCHES THE GRAPH", h: "It finds the people, places and links that matter.", p: "Every book becomes a map of who knows whom, where things happen and what happens when. The answer starts there, not with a guess." },
+    { n: "03 · IT READS THE PASSAGES", h: "It goes back to the text.", p: "The exact passages behind those links are pulled from the book, and every fact must quote one." },
+    { n: "04 · IT CHECKS EVERY SENTENCE", h: "A second pass cuts anything the book doesn't say.", p: "Every fact is checked against its passage. What the book doesn't say is cut, and you never see it." },
+    { n: "05 · IT WRITES THE ANSWER", h: "Then it tells you, like a reader would.", p: "The checked facts become a short answer and a few clear paragraphs, every sentence cited. Where it offers its own reading, it says so." },
+  ],
+  stepsLabel: "Steps",
+  stepDot: (n: number) => `Step ${n}`,
+  // Read out when the scene moves to a step (the pinned card changes without a page change).
+  stepNow: (n: number, total: number, heading: string) => `Step ${n} of ${total}: ${heading}`,
+  progressLabel: "Step",
+  progress: ["Ask", "Graph", "Passages", "Checked", "Written"],
+  howQuestion: "How did Watson meet Sherlock Holmes?",
+  graphLabel: "The graph",
+  miniGraphLabel: "Watson met Stamford at the Criterion Bar; Stamford introduced him to Holmes",
+  miniGraph: {
+    watson: "Watson", stamford: "Stamford", holmes: "Sherlock Holmes", criterion: "Criterion Bar",
+    afghanistan: "Afghanistan", baker: "Baker Street", lab: "the laboratory",
+  },
+  fromBook: "From the book",
+  passages: [
+    { text: ["“…I was standing at the ", { mark: "Criterion Bar" }, ", when some one tapped me on the shoulder, and turning round I recognized ", { mark: "young Stamford" }, ", who had been a dresser under me at Barts.”"] as Seg[], where: "A Study in Scarlet · ch. 1" },
+    { text: ["“", { mark: "Dr. Watson, Mr. Sherlock Holmes" }, ",” said Stamford, introducing us."] as Seg[], where: "A Study in Scarlet · ch. 1" },
+  ],
+  checkedLabel: "The answer, checked",
+  checked: [
+    ["Watson runs into Stamford, who had been a dresser under him at Barts, at the Criterion Bar. ", { cite: "1" }] as Seg[],
+    ["Stamford takes him to the hospital laboratory and introduces him to Sherlock Holmes. ", { cite: "2" }] as Seg[],
+  ],
+  cutClaim: "Holmes had already heard of Watson’s service.",
+  cutWhy: "Cut: no passage says so",
+  tick: "✓",
+  cross: "✕",
+  writtenLabel: "The written answer",
+  shortAnswerLabel: "Short answer",
+  shortAnswer: ["Through Stamford: an old dresser of Watson’s from Barts, met by chance at the Criterion Bar, who knew a man at the hospital laboratory looking for someone to share rooms. ", { cite: "1" }, { cite: "3" }] as Seg[],
+  written: [
+    ["Back in London and short of money, Watson was standing at the Criterion Bar when someone tapped him on the shoulder: young Stamford, who had been a dresser under him at Barts. ", { cite: "1" }, " When Watson said he was looking for cheap lodgings, “That’s a strange thing,” Stamford remarked: he was the second man that day to say so. The first was a fellow at the chemical laboratory up at the hospital, who couldn’t find anyone to go halves with him on some rooms. ", { cite: "3" }] as Seg[],
+    ["Stamford took him there. “Dr. Watson, Mr. Sherlock Holmes,” he said, introducing them, and Holmes, gripping his hand, told him at once that he had been in Afghanistan. ", { cite: "2" }] as Seg[],
+  ],
+  readingKind: "LORE’s reading",
+  reading: "The first thing Holmes ever does in the book is read Watson at a glance. Watson’s astonishment is the reader’s introduction to his method.",
+
+  whyTitle: "Not another chatbot that skimmed the summary",
+  whySub: "LORE only knows what's in the books you give it, and it shows its work.",
+  features: [
+    { num: "01", title: "Checked against the page", body: "Every sentence cites the passage it stands on, and a second pass cuts anything the passage doesn’t say. What you read, you can check.",
+      eg: ["“You have been in Afghanistan, I perceive.” "] as Seg[], egNote: "ch. 1 · cited" },
+    { num: "02", title: "Answers that think", body: "Ask why, or how someone changed. You get LORE’s reading and the other side, each labelled, and what the books leave open.",
+      eg: [{ b: "LORE’s reading" }, " · ", { b: "The other side" }, " · ", { b: "What the books don’t settle" }] as Seg[] },
+    { num: "03", title: "Explore the graph", body: "Characters, places and groups, and how they connect. Click any link to read the passage behind it.",
+      eg: ["Watson —", { i: "meets again" }, "→ Stamford —", { i: "introduces" }, "→ Holmes"] as Seg[] },
+    { num: "04", title: "Spoiler-safe", body: "Tell LORE which chapter you’re on. Answers, the graph and every character profile stop there, so nothing ahead leaks out.",
+      eg: ["Reading position: ", { b: "ch. 2" }, " · nothing past it"] as Seg[] },
+    { num: "05", title: "Your private library", body: "Your books stay in your own library, read with your own key. Nothing is shared between readers.",
+      eg: ["EPUB or PDF · books you own"] as Seg[] },
+  ] as { num: string; title: string; body: string; eg: Seg[]; egNote?: string }[],
+
+  betaTitle: "How the beta works",
+  betaSub: "Invite-only for now, while we let readers in in small groups.",
+  betaSteps: [
+    { b: "Request an invite", span: "Leave your email. We'll send a sign-in link when your spot opens." },
+    { b: "Bring your own AI key", span: "Connect a key from your AI provider, so your questions run on your own account. Gemini works today, including its free tier; Claude and OpenAI are coming soon." },
+    { b: "Add a book you own", span: "EPUB or PDF, up to 50 MB. LORE reads it once, then you can explore it and ask anything." },
+  ],
+  formTitle: "Request an invite",
+  emailLabel: "Email",
+  emailPlaceholder: "you@example.com",
+  readingLabel: "What are you reading?",
+  optional: "(optional)",
+  readingPlaceholder: "The Wheel of Time, book 4",
+  consent: "Email me when my invite is ready. Nothing else.",
+  submit: "Request an invite",
+  sending: "Sending…",
+  done: "You’re on the list ✓",
+  // The form's own messages (the mockup's form only said thanks).
+  invalidEmail: "That doesn't look like an email address. Check it and try again.",
+  needConsent: "Tick the box so we can email you when your invite is ready.",
+  rateLimited: "Too many requests from here just now. Please try again in a little while.",
+  offline: "We couldn't reach LORE. Check your connection and try again.",
+  failed: "Something went wrong sending that. Please try again.",
+
+  copyright: "© 2026 LORE",
+  privacy: "Privacy",
+  terms: "Terms",
+};
+
+// Privacy and terms (release step 7): short, plain and accurate to how LORE works. A section is a heading and its
+// paragraphs; a paragraph given as a list of strings is a bulleted list.
+export interface LegalSection { h: string; body: (string | string[])[] }
+export const LEGAL = {
+  updatedLabel: "Last updated",
+  updated: "5 November 2026",
+  // TODO(user): confirm this address exists and is read before the beta opens.
+  contact: "privacy@jrvn.site",
+  privacy: {
+    title: "Privacy",
+    docTitle: "Privacy · LORE",
+    lede: "What LORE keeps about you, where it goes, and how to delete it, in plain English.",
+    sections: [
+      { h: "What we store", body: [[
+        "Your account: your email address and your name.",
+        "How you sign in: the Google or GitHub account, or the email address, linked to your account.",
+        "Your books, in your own library, and everything LORE makes from them: the text, the graph of people, places and events, and the search index. Nothing is shared between readers.",
+        "Your chats: the questions you ask and LORE’s answers.",
+        "A trace of each question, for 30 days: your question, the book passages LORE read and the AI model’s replies, so that an answer you report can be looked into. Only LORE’s administrators can read traces.",
+        "Reports you send with “Report this answer”, and your note.",
+        "Usage counts: how many AI requests you make each day.",
+        "Your AI key, encrypted. After you add it, LORE only ever shows its last four characters.",
+        "Waitlist requests: your email and, if you tell us, what you’re reading.",
+      ]] },
+      { h: "Where it goes", body: [
+        "Your books and questions go to your own AI provider, under your own key. Today that is Gemini, from Google. To build a book’s graph, LORE sends the book’s text; when you ask, it sends your question and the passages it found. Your provider’s terms cover what it receives: on Gemini’s free tier, Google may use it to improve its products.",
+        "The search index (the embeddings) is made on our own server, not by an outside service.",
+        "Sign-in and invite emails are sent through Resend, an email delivery service, which receives your email address to deliver them. If you sign in with Google or GitHub, they tell us your email address and name.",
+        "Our server keeps logs of requests, including your IP address, to keep LORE running and safe.",
+        "Nothing is sold or shared. There are no ads and no third-party analytics.",
+      ] },
+      { h: "Cookies", body: [
+        "Two cookies, both needed to sign you in: a session cookie that keeps you signed in, and a CSRF cookie that stops other sites from making requests as you. While you sign in with Google or GitHub, one more cookie holds that sign-in for up to 10 minutes. There are no tracking cookies.",
+        "Your browser also keeps a few display choices, such as your theme, on your own device.",
+      ] },
+      { h: "Keeping and deleting", body: [
+        "Traces are deleted after 30 days.",
+        "You can remove your AI key at any time from the account menu.",
+        "Deleting a chat hides it at once and deletes its traces. Its text is removed for good when your history needs the room, or when you delete your account.",
+        "“Delete my account”, in the account menu, removes everything: your library and books, chats, traces, reports, usage counts, your key and your sign-ins. A waitlist request under your email is anonymised.",
+      ] },
+      { h: "Contact", body: ["Questions about your data, or a request to see or delete it: write to privacy@jrvn.site."] },
+    ] as LegalSection[],
+  },
+  terms: {
+    title: "Terms",
+    docTitle: "Terms · LORE",
+    lede: "The few rules of LORE’s beta, in plain English.",
+    sections: [
+      { h: "The beta", body: [
+        "LORE is in a private, invite-only beta. It is provided as is: it may have bugs or get things wrong, and it may change or stop at any time.",
+        "Answers are written by an AI model from your books. LORE cites the passages behind every sentence, so check anything that matters against them.",
+        "If these terms change, the date at the top changes too.",
+      ] },
+      { h: "Your books", body: [
+        "Upload only books you own, for your own personal use. Your books stay yours: LORE uses them only to answer your questions.",
+      ] },
+      { h: "Your AI key", body: [
+        "You are responsible for your AI key and its usage, including any limits or charges from your provider. LORE uses it only for your own books and questions.",
+      ] },
+      { h: "Fair use", body: [
+        "Use LORE as a reader would. No abuse and no scraping: no automated or bulk requests, no attempts to reach other readers’ data, and nothing that overloads or attacks the service.",
+      ] },
+      { h: "Accounts", body: [
+        "We can disable an account that misuses the service. You can delete yours at any time with “Delete my account”.",
+      ] },
+      // TODO(user): who provides LORE (name or company), the governing law and where disputes are heard.
+      { h: "The legal details", body: [
+        "Who provides LORE, and the law that governs these terms, will be set out here before invitations go out. Questions meanwhile: privacy@jrvn.site.",
+      ] },
+    ] as LegalSection[],
+  },
 };
