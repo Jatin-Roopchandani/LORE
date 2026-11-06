@@ -101,7 +101,7 @@ LORE_GOOGLE_CLIENT_ID=…  LORE_GOOGLE_CLIENT_SECRET=…
 LORE_MAIL_CONSOLE=1            # no Resend needed: sign-in emails go to <data root>/dev-mailbox.txt (localhost only)
 ```
 Then:
-1. Run `lore admin grant you@gmail.com`.
+1. Run `lore migrate` (creates the central database), then `lore admin grant you@gmail.com`.
 2. Start `lore ui` and open <http://localhost:8766>.
 3. Go through the whole flow:
    1. the homepage;
