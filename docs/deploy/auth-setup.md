@@ -98,7 +98,7 @@ LORE_DATABASE_URL=sqlite:////home/jatin/lore-multi/central.db
 LORE_DATA_DIR=/home/jatin/lore-multi        # a separate, empty data root, not your real library
 LORE_SESSION_SECRET=…  LORE_CSRF_SECRET=…  LORE_KEY_ENCRYPTION_KEY=…
 LORE_GOOGLE_CLIENT_ID=…  LORE_GOOGLE_CLIENT_SECRET=…
-LORE_RESEND_API_KEY=…  LORE_MAIL_FROM=…     # optional locally
+LORE_MAIL_CONSOLE=1            # no Resend needed: sign-in emails go to <data root>/dev-mailbox.txt (localhost only)
 ```
 Then:
 1. Run `lore admin grant you@gmail.com`.

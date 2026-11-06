@@ -87,7 +87,9 @@ def test_opening_the_link_spends_nothing_only_the_button_does(env):
     for _ in range(3):  # a mail scanner prefetching the link, again and again
         page = scanner.get(path)
         assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
-        assert page.headers["referrer-policy"] == "no-referrer"
+        # same-origin, not no-referrer: no-referrer makes the browser send Origin: null on the
+        # page's own form POST, which the origin guard refuses (found in a real browser).
+        assert page.headers["referrer-policy"] == "same-origin"
         assert page.headers["cache-control"] == "no-store"
     assert scanner.get("/api/me").status_code == 401  # no session from a GET
     with sessions() as db:
@@ -363,3 +365,21 @@ def test_the_email_endpoint_is_public_but_still_needs_json(env):
     r = client.post("/auth/email", content="email=alice@example.org",
                     headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert r.status_code == 422
+
+
+def test_the_continue_button_works_from_the_page_itself_and_a_null_origin_is_refused(env):
+    """The form POST a browser sends from the Continue page carries this site's Origin; a
+    POST with Origin: null (another page with no-referrer, a sandboxed frame) is refused."""
+    client, sessions, mailer, *_ = env
+    ask_link(client, "alice@example.org")
+    path = link_path(mailer)
+    from urllib.parse import parse_qs, urlparse
+    token = parse_qs(urlparse(path).query)["token"][0]
+    forged = client.post("/auth/email/verify", data={"token": token},
+                         headers={"Origin": "null"}, follow_redirects=False)
+    assert forged.status_code == 403
+    with sessions() as db:
+        assert db.scalars(sa.select(LoginToken).where(LoginToken.used_at.is_not(None))).first() is None
+    ok = client.post("/auth/email/verify", data={"token": token},
+                     headers={"Origin": BASE_URL.rstrip("/")}, follow_redirects=False)
+    assert ok.status_code in (302, 303) and ok.headers["location"] == "/app"

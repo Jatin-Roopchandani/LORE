@@ -1005,11 +1005,14 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         # The mailed sign-in link: a page with a "Continue signing in" button
         # that POSTs the token (lore.auth.signin). Opening the link spends
         # nothing, so a mail scanner that prefetches it cannot sign anyone
-        # in or burn the link. The URL holds the token: no Referer, no cache.
+        # in or burn the link. The URL holds the token, so no cache, and the
+        # Referer never leaves this site (`same-origin`). Not `no-referrer`:
+        # with it, browsers send `Origin: null` on the page's own form POST,
+        # and the origin guard rightly refuses that.
         @api.get("/auth/email/verify", include_in_schema=False)
         def continue_sign_in():
             page = _spa_page()
-            page.headers["Referrer-Policy"] = "no-referrer"
+            page.headers["Referrer-Policy"] = "same-origin"
             page.headers["Cache-Control"] = "no-store"
             return page
 
