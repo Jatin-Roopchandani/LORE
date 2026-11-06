@@ -83,3 +83,17 @@ def test_install_is_idempotent_and_attaches_to_the_access_logger():
     filters = [f for f in logging.getLogger("uvicorn.access").filters
                if isinstance(f, RedactQuerySecrets)]
     assert len(filters) == 1
+
+
+def test_the_dev_mailbox_writes_messages_to_a_file_on_localhost_only(tmp_path):
+    from lore.auth.mailer import DevMailboxMailer, MailError
+    box = DevMailboxMailer(tmp_path / "dev-mailbox.txt", "http://localhost:8767")
+    box.send(to="a@example.com", subject="Your LORE sign-in link", text="open http://localhost:8767/x")
+    written = (tmp_path / "dev-mailbox.txt").read_text()
+    assert "To: a@example.com" in written and "http://localhost:8767/x" in written
+    for public in ("https://lore.jrvn.site", "http://192.168.1.4:8767", "https://example.com"):
+        try:
+            DevMailboxMailer(tmp_path / "x.txt", public)
+        except MailError:
+            continue
+        raise AssertionError(f"the dev mailbox accepted {public}")

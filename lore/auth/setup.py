@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import sessionmaker
 
 from lore.auth.current import AuthContext
-from lore.auth.mailer import ResendMailer, UnconfiguredMailer
+import os
+
+from lore.auth.mailer import DevMailboxMailer, ResendMailer, UnconfiguredMailer
 from lore.auth.providers import default_providers
 from lore.auth.redact import install_log_redaction
 from lore.auth.settings import AuthSettings
@@ -23,8 +25,12 @@ def build_context(base: LoreConfig, *, auth: AuthSettings | None = None,
     sessions = central_sessions or make_session_factory(
         make_engine(database_url(base)))
     if mailer is None:
-        mailer = (ResendMailer(settings.resend_api_key, settings.mail_from)
-                  if settings.resend_api_key else UnconfiguredMailer())
+        if os.environ.get("LORE_MAIL_CONSOLE", "").strip().lower() in ("1", "true", "yes", "on"):
+            # Local development: mail goes to <data root>/dev-mailbox.txt (localhost only).
+            mailer = DevMailboxMailer(base.data_dir / "dev-mailbox.txt", settings.base_url)
+        else:
+            mailer = (ResendMailer(settings.resend_api_key, settings.mail_from)
+                      if settings.resend_api_key else UnconfiguredMailer())
     if providers is None:
         providers = default_providers(settings.google, settings.github)
     install_log_redaction()

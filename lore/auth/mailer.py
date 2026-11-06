@@ -51,6 +51,33 @@ class UnconfiguredMailer:
         raise MailError("no mail service is configured (LORE_RESEND_API_KEY)")
 
 
+
+class DevMailboxMailer:
+    """Local development only (`LORE_MAIL_CONSOLE=1` with a localhost
+    `LORE_BASE_URL`): each message is appended to a mailbox file instead of
+    being sent, so sign-in links can be tried without a mail service. It
+    refuses any non-local site, so it can never stand in for real mail."""
+
+    def __init__(self, path, base_url: str) -> None:
+        from pathlib import Path
+        from urllib.parse import urlsplit
+        host = (urlsplit(base_url).hostname or "").lower()
+        if host not in ("localhost", "127.0.0.1", "::1"):
+            raise MailError("the dev mailbox is for a localhost LORE_BASE_URL only")
+        self.path = Path(path)
+
+    def __repr__(self) -> str:
+        return f"DevMailboxMailer({str(self.path)!r})"
+
+    def send(self, *, to: str, subject: str, text: str,
+             html: str | None = None) -> None:
+        from datetime import datetime, timezone
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        with self.path.open("a", encoding="utf-8") as box:
+            box.write(f"=== {stamp}\nTo: {to}\nSubject: {subject}\n\n{text}\n\n")
+
+
 def sign_in_message(link: str) -> tuple[str, str, str]:
     """(subject, text, html) for a sign-in link."""
     text = ("Open this link to sign in to LORE. It works once and expires in"
