@@ -50,7 +50,7 @@ from lore.beats.store import beats_for_entities
 from lore.codex import store as codex_store
 from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiOutputError
-from lore.query import codexslice, interpret
+from lore.query import codexslice, hubselect, interpret
 from lore.query import timeline as timeline_module
 from lore.query import write as write_module
 from lore.query.events import EDGES_PER_PART_CAP, edge_key, emit
@@ -62,7 +62,7 @@ from lore.query import visible as visible_module
 from lore.query.retrieval import search_chunks
 from lore.query.scope import Scope
 from lore.query.seed import _entities, named_seeds
-from lore.query.subgraph import assemble_ranked, relevance, run_template
+from lore.query.subgraph import assemble_ranked, relevance
 from lore.query.synthesize import (
     CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _content_words, _finish, _numbers,
     _normalise, _overlap, _same_evidence, check_answer, shaped_claims, synthesize,
@@ -620,10 +620,13 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
     ask = section_question(section.focus or section.heading, names)
     rows: list[EdgeRow] = []
     for seed in seeds:
-        found = run_template(kuzu, TemplateCall("across_books", {
-            "entity_id": seed.id, "limit": SECTION_EDGES_PER_BOOK}))
-        rows += visible_module.shown_rows(
-            kuzu, scope.books, [r for r in found if scope.sees(r.book_id, r.chapter_seq)], books)
+        rows += hubselect.search(
+            kuzu, TemplateCall("across_books", {"entity_id": seed.id,
+                                                "limit": SECTION_EDGES_PER_BOOK}),
+            lance=lance, vector=vector, question=ask,
+            keep=lambda found: visible_module.shown_rows(
+                kuzu, scope.books, [r for r in found if scope.sees(r.book_id, r.chapter_seq)],
+                books))
     # The graph view stages a section's starting entities and relationships as it
     # starts, as it does for each part of an ordinary answer (part = the section).
     emit(on_event, "seeds", part=index, entities=list(seeds))

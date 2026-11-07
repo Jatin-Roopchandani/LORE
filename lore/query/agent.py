@@ -52,6 +52,7 @@ from lore.query.templates import MAX_EVIDENCE_CHARS
 from lore.query.viewpoint import load_viewpoint
 from lore.query import timeline as timeline_module
 from lore.query import codexslice
+from lore.query import hubselect
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
@@ -863,6 +864,11 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
     # The codex lines of each part's entities (codexslice.py); only with DEEP on.
     part_codex: list[list] = [[] for _ in parts]
     running_in: list[list[int]] = [[] for _ in parts]  # part index -> scope indexes
+    # Per part: the entities its text (or the question) names, and the chunks
+    # of edges between two of them whose predicate the words ask about
+    # ("killed" -> KILLS): fused into the part's ranking (CUE_FUSION).
+    part_named: list[set[str]] = [set() for _ in parts]
+    cue_hits: list[list[tuple[str, str]]] = [[] for _ in parts]
     for index, (part, part_vector) in enumerate(parts):
         running = [si for si in active if runs_in(si, part)]
         running_in[index] = running
@@ -894,6 +900,7 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
                     visible=ctx.scope.books)
                 seeds = judged.seeds
             found_in[si] = (seeds, judged, part_books)
+            part_named[index] |= {s.id for s in named}
         shown = [s for si in running for s in found_in[si][0]]
         if len(running) > 1:  # one entry per entity, as first found
             shown = list({s.id: s for s in reversed(shown)}.values())[::-1]
@@ -950,10 +957,22 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
             if call.template not in templates:
                 templates.append(call.template)
             called.append(call.template)
-            found = run_template(kuzu, call)
-            if scope.books is not None:  # an entity's edges in another world's books
+            def seen_rows(found, scope=scope):
+                if scope.books is None:
+                    return found
+                # an entity's edges in another world's books
                 found = [r for r in found if scope.sees(r.book_id, r.chapter_seq)]
-                found = visible_module.shown_rows(kuzu, scope.books, found, books)
+                return visible_module.shown_rows(kuzu, scope.books, found, books)
+
+            # A hub's rows: question-aware and story-spanning, not its earliest.
+            asks = f"{part} {question}"
+            found = hubselect.search(kuzu, call, lance=lance, vector=part_vector,
+                                     question=asks, keep=seen_rows)
+            cued = hubselect.cued_predicates(asks)
+            cue_hits[index] += [(r.chunk_id, r.predicate) for r in found if r.predicate in cued
+                                and r.subject_id in part_named[index]
+                                and r.object_id in part_named[index]
+                                and r.subject_id != r.object_id]
             rows.extend(found)
             found_rows += found
             if part_books and len({r.chunk_id for r in found}) < WEAK_EVIDENCE:
@@ -1005,6 +1024,9 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
     if KEYWORD_K > 0:
         score_lists = [fused(scores, [c for c, _, _ in hits])
                        for scores, hits in zip(score_lists, keyword_hits)]
+    if hubselect.CUE_FUSION:
+        score_lists = [fused(scores, hubselect.cue_ranked(hits, scores)) if hits else scores
+                       for scores, hits in zip(score_lists, cue_hits)]
     # Task 10e: within a part, relevance alone decides; a question about
     # each book is already one part per book. Book fairness is kept only on
     # the no-decomposition fallback -- decomposition failed or was not run,

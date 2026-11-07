@@ -428,3 +428,41 @@ def test_every_template_returns_entity_ids(tmp_path) -> None:
         # edge; every other template returns the edge it traversed from e1.
         want = {("e2", "e3")} if name == "two_hop" else {("e1", "e2")}
         assert want <= got <= {("e1", "e2"), ("e2", "e3")}, name
+
+
+# --- story order is the chunk's numeric position, not its id as text --------
+#
+# Chunk ids are `<book>:<chapter>:<seq>`; as text ":1000" sorts before ":2",
+# so a chapter whose seqs cross a digit boundary came back out of order and
+# LIMIT kept the wrong rows.
+
+def test_templates_order_chunks_by_their_numeric_seq(tmp_path: Path) -> None:
+    store = KuzuStore(tmp_path / "kuzu")
+    for entity_id in ("a", "b"):
+        store.execute("CREATE (:Entity {id: $id, name: $id, kind: 'Character'})",
+                      {"id": entity_id})
+    for s in [1000, 2, 99, 10, 1]:
+        store.execute(
+            "MATCH (a:Entity), (b:Entity) WHERE a.id = 'a' AND b.id = 'b' "
+            "CREATE (a)-[:REL {predicate: 'KNOWS', predicate_raw: 'k', evidence: 'ev', "
+            "confidence: 0.9, chunk_id: $c, book_id: 'bk', chapter_seq: 1, run_id: 'r'}]->(b)",
+            {"c": f"bk:1:{s}"})
+    calls = {
+        "neighbours": {"entity_id": "a"},
+        "path_between": {"a_id": "a", "b_id": "b"},
+        "by_predicate": {"entity_id": "a", "predicate": "KNOWS"},
+        "shared_neighbours": {"a_id": "a", "b_id": "b"},
+        "across_books": {"entity_id": "a"},
+        "chapter_window": {"entity_id": "a", "lo": 1, "hi": 1},
+    }
+    for name, slots in calls.items():
+        rows = run_template(store, TemplateCall(template=name, slots={**slots, "limit": 3}))
+        assert [r.chunk_id for r in rows] == ["bk:1:1", "bk:1:2", "bk:1:10"], name
+    store.close()
+
+
+def test_chunk_seq_and_story_key() -> None:
+    from lore.ingest.models import chunk_seq, chunk_story_key
+    assert chunk_seq("bk:3:1187") == 1187 and chunk_seq("odd") == 0
+    ids = ["bk:1:1000", "bk:1:2", "bk:1:10"]
+    assert sorted(ids, key=chunk_story_key) == ["bk:1:2", "bk:1:10", "bk:1:1000"]

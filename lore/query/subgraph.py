@@ -5,6 +5,7 @@ import sqlite3
 from itertools import zip_longest
 from typing import Iterable, Sequence
 
+from lore.ingest.models import chunk_story_key
 from lore.ingest.registry import chunks_by_id
 from lore.query import visible as visible_module
 from lore.query.models import CodexLine, EdgeRow, Evidence, Passage, TemplateCall, TimelineBeat
@@ -75,7 +76,7 @@ def _edge_key(edge: EdgeRow) -> tuple:
     arrived in — which, before the templates were given a total order, was a
     different order on every run.
     """
-    return (edge.book_id, edge.chapter_seq, edge.chunk_id, edge.predicate,
+    return (edge.book_id, edge.chapter_seq, chunk_story_key(edge.chunk_id), edge.predicate,
             edge.predicate_raw, edge.subject, edge.object, edge.confidence,
             edge.evidence)
 
@@ -90,7 +91,8 @@ def _by_relevance(items: list[_Item], scores: dict[str, float]) -> list[_Item]:
     """Each book's items most-relevant first (reading order breaks ties),
     then round-robin across books."""
     books: dict[str, list[_Item]] = {}
-    for item in sorted(items, key=lambda i: (_relevance_key(scores, i[0]), i[1], i[2], i[0])):
+    for item in sorted(items, key=lambda i: (_relevance_key(scores, i[0]), i[1], i[2],
+                                                chunk_story_key(i[0]))):
         books.setdefault(item[1], []).append(item)
     return _round_robin(books)
 
@@ -137,7 +139,8 @@ def assemble(conn: sqlite3.Connection, rows: list[EdgeRow], *,
 
     ordered: list[tuple[str, str, int]] = []
     seen: set[str] = set()
-    for row in sorted(edges, key=lambda r: (r.book_id, r.chapter_seq, r.chunk_id)):
+    for row in sorted(edges, key=lambda r: (r.book_id, r.chapter_seq,
+                                            chunk_story_key(r.chunk_id))):
         if row.chunk_id not in seen:
             seen.add(row.chunk_id)
             ordered.append((row.chunk_id, row.book_id, row.chapter_seq))
@@ -166,7 +169,8 @@ def assemble(conn: sqlite3.Connection, rows: list[EdgeRow], *,
 
 def _pure_relevance(items: list[_Item], scores: dict[str, float]) -> list[_Item]:
     """Most relevant first across every book (reading order breaks ties)."""
-    return sorted(items, key=lambda i: (_relevance_key(scores, i[0]), i[1], i[2], i[0]))
+    return sorted(items, key=lambda i: (_relevance_key(scores, i[0]), i[1], i[2],
+                                                chunk_story_key(i[0])))
 
 
 class _Turns:
@@ -303,7 +307,8 @@ def assemble_ranked(
     if not positions:
         return Evidence(edges=(), passages=(), truncated=False)
 
-    ordered = sorted(positions.items(), key=lambda kv: (kv[1][0], kv[1][1], kv[0]))
+    ordered = sorted(positions.items(),
+                     key=lambda kv: (kv[1][0], kv[1][1], chunk_story_key(kv[0])))
     texts = chunks_by_id(conn, [c for c, _ in ordered])
     # Whatever path a chunk came from (edge, vector, keyword), a licence or
     # table-of-contents chunk is no evidence.

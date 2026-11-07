@@ -10,6 +10,8 @@ titles.
 """
 from __future__ import annotations
 
+from lore.ingest.models import chunk_seq
+
 from dataclasses import dataclass, field
 from typing import Iterable, Mapping
 
@@ -61,11 +63,7 @@ def _series_key(series: str | None) -> str:
     return " ".join((series or "").split()).casefold()
 
 
-def _seq(chunk_id: str) -> int:
-    try:
-        return int(chunk_id.rsplit(":", 1)[-1])
-    except ValueError:
-        return 0
+_seq = chunk_seq  # a chunk's numeric position in its book
 
 
 def order_passages(passages: Iterable[Passage],

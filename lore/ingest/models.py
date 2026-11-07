@@ -27,6 +27,23 @@ class ParsedBook:
     series_index: float | None = None
 
 
+def chunk_seq(chunk_id: str) -> int:
+    """A chunk's position in its book, from its id `<book>:<chapter>:<seq>`
+    (0 for an id of another shape)."""
+    try:
+        return int(str(chunk_id).rsplit(":", 1)[-1])
+    except ValueError:
+        return 0
+
+
+def chunk_story_key(chunk_id: str) -> tuple[int, int, str]:
+    """Sort key putting chunks of one book in story order: the numeric seq,
+    never the id as text (as text ":1000" sorts before ":2"). In Cypher and
+    SQL the same order within a (book, chapter) is `size(id), id`: ids there
+    share the `<book>:<chapter>:` prefix, so the shorter seq is the smaller."""
+    return (chunk_seq(chunk_id), len(str(chunk_id)), str(chunk_id))
+
+
 @dataclass(frozen=True)
 class Chunk:
     id: str

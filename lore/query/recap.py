@@ -34,6 +34,8 @@ never evidence. Nothing here knows any library or any question.
 """
 from __future__ import annotations
 
+from lore.ingest.models import chunk_seq
+
 import asyncio
 import logging
 import math
@@ -155,11 +157,7 @@ def chapter_names(conn: sqlite3.Connection,
             for c in story_chapters(conn, b) if c.get("heading")}
 
 
-def _seq(chunk_id: str) -> int:
-    try:
-        return int(chunk_id.rsplit(":", 1)[-1])
-    except ValueError:
-        return 0
+_seq = chunk_seq  # a chunk's numeric position in its book
 
 
 def _number(text: str) -> int | None:

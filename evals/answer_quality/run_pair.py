@@ -103,6 +103,15 @@ ARM_SETTINGS = {
     # history are unaffected by either arm.
     "followups": ("lore.query.decompose", "FOLLOWUPS",
                   lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A hub's edges past the limit chosen by the question and spread over the
+    # story, direct edges first for two entities (lore/query/hubselect.py).
+    # `hub_select=false` is the template's own LIMIT, earliest edges first.
+    "hub_select": ("lore.query.hubselect", "HUB_SELECT",
+                   lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Passages of an edge between two named entities whose predicate the
+    # question asks about join the part's ranking (hubselect.CUE_FUSION).
+    "cue_fusion": ("lore.query.hubselect", "CUE_FUSION",
+                   lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
 
 

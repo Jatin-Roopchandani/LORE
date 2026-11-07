@@ -315,4 +315,21 @@ async def named_seeds(kuzu: _Kuzu, entity_ids: Sequence[str], *,
     """Named entity ids as seeds: resolved to their canonical, edgeless dropped,
     in the order given. Uncapped; the caller's vector seeds carry the cap."""
     resolved = live_entity_ids(kuzu, canonical_ids(kuzu, list(entity_ids)))
+    linked = [i for i in live_entity_ids(kuzu, identified_with(kuzu, resolved))
+              if i not in resolved]
+    resolved = resolved + linked
     return _entities(kuzu, resolved, {i: 0.0 for i in resolved}, exclude_names, book_ids)
+
+
+def identified_with(kuzu: _Kuzu, entity_ids: Sequence[str]) -> list[str]:
+    """Entities an IDENTIFIED_AS edge links to these (lore/graph/loader.py):
+    one a character believes or claims is another ("Ba'alzamon is the Dark
+    One"). Never merged, so a question naming either also seeds the other,
+    and the edge itself, with its sentence, says who holds the belief."""
+    if not entity_ids:
+        return []
+    rows = kuzu.execute(
+        "MATCH (a:Entity)-[r:REL]-(b:Entity) WHERE a.id IN $ids"
+        " AND r.predicate = 'IDENTIFIED_AS' RETURN DISTINCT b.id ORDER BY b.id",
+        {"ids": list(entity_ids)})
+    return [str(r[0]) for r in rows]
