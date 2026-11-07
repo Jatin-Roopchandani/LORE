@@ -55,6 +55,23 @@ async def test_an_unknown_template_name_is_rejected() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_template_name_with_the_models_reasoning_glued_on_is_read() -> None:
+    # Live trace: Claude Haiku answered "path_between: how Rand al'Thor and The
+    # Dark One are connected, to show ..." in the template field, and the
+    # part fell to "no graph search fitted" with a direct KILLS edge in the graph.
+    for raw in ("path_between: how A and B are connected", " Path_Between ",
+                "`path_between`", "path between", "path_between (2 entities)"):
+        call = await _select(TemplateChoice(template=raw, entities=[1, 2]))
+        assert call is not None and call.template == "path_between", raw
+    assert await _select(TemplateChoice(template="paths: neighbours", entities=[1])) is None
+
+
+def test_the_schema_offers_only_the_template_names() -> None:
+    schema = TemplateChoice.model_json_schema()
+    assert schema["properties"]["template"]["enum"] == list(TEMPLATES)
+
+
+@pytest.mark.asyncio
 async def test_a_number_outside_the_seed_list_is_rejected() -> None:
     # The model may only choose among entities we actually surfaced.
     assert await _select(TemplateChoice(template="neighbours", entities=[4])) is None

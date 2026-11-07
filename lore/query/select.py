@@ -16,9 +16,10 @@ Determinism is the caller's job, not this module's: whoever builds
 """
 from __future__ import annotations
 
+import re
 from typing import Awaitable, Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from lore.query.models import SeedEntity, Template, TemplateCall
 from lore.query.templates import TEMPLATES
@@ -51,7 +52,10 @@ range; otherwise leave the chapter numbers at 0.
 
 
 class TemplateChoice(BaseModel):
-    template: str
+    # The schema offers the names only (a provider honouring it cannot glue
+    # its reasoning on); the field stays a str so a reply that still does is
+    # read by `template_name`, not rejected by validation.
+    template: str = Field(json_schema_extra={"enum": list(TEMPLATES)})
     entities: list[int]
     predicate: str = ""
     chapter_lo: int = 0
@@ -93,8 +97,29 @@ def _chosen_ids(numbers: list[int], seeds: list[SeedEntity]) -> list[str] | None
     return ids
 
 
+def template_name(raw: str) -> str | None:
+    """The template a model's `template` answer names, or None.
+
+    Models add to the name: "path_between: how A and B are connected, to
+    show ..." (a live reply), "`path_between`", "path between". The name is
+    read from the START of the answer only, the longest run of leading words
+    that is a template's name; a name buried later ("paths: neighbours") is
+    not guessed at.
+    """
+    text = (raw or "").strip().strip("`'\"*").strip().lower()
+    lead = re.match(r"[a-z][a-z_\s-]*", text)
+    if not lead:
+        return None
+    words = [w for w in re.split(r"[\s_-]+", lead.group()) if w]
+    for k in range(len(words), 0, -1):
+        name = "_".join(words[:k])
+        if name in TEMPLATES:
+            return name
+    return None
+
+
 def _slots_for(choice: TemplateChoice, seeds: list[SeedEntity], limit: int) -> dict | None:
-    template = TEMPLATES.get(choice.template)
+    template = TEMPLATES.get(template_name(choice.template) or "")
     if template is None:
         return None
     ids = _chosen_ids(choice.entities, seeds)
@@ -151,4 +176,4 @@ async def select_template(
     slots = _slots_for(choice, seeds, limit)
     if slots is None:
         return None
-    return TemplateCall(template=choice.template, slots=slots)
+    return TemplateCall(template=template_name(choice.template), slots=slots)
