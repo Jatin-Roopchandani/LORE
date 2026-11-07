@@ -1675,7 +1675,10 @@ def admin_rotate_keys() -> None:
     except KeyDecryptError as exc:
         typer.echo(f"lore admin: {exc}; nothing was changed", err=True)
         raise typer.Exit(1)
-    typer.echo(f"re-encrypted {count} key(s) under the current master key")
+    from lore.mcp.oauth import rotate_client_secrets
+    clients = rotate_client_secrets(sessions, master)  # MCP clients' OAuth secrets
+    typer.echo(f"re-encrypted {count} key(s) and {clients} MCP client secret(s)"
+               " under the current master key")
 
 
 @admin_app.command(name="generate-master-key")

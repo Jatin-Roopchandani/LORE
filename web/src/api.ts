@@ -1,5 +1,5 @@
 import type { AdminEvent, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
-  EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, McpCheck, DeviceSession, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
+  EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, McpCheck, McpConnection, McpHosted, McpToken, McpTokenMade, ConsentInfo, DeviceSession, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
   SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
@@ -180,8 +180,19 @@ export const api = {
     sendJson<ReadingPositionData>("PUT", withWorld("/api/reading-position", world), body),
   quota: () => getJson<Quota>("/api/quota"),
   mcp: () => getJson<McpInfo>("/api/mcp"),
-  // Local mode: builds the MCP server as `lore mcp` would and lists its tools (404 in multi mode).
+  // Local mode: builds the MCP server as `lore mcp` would and lists its tools; multi mode: the hosted server's tools.
   mcpCheck: () => getJson<McpCheck>("/api/mcp/check"),
+  // Multi mode: the hosted endpoint's address, and the user's MCP access tokens (session only; shown once when made).
+  mcpHosted: () => getJson<McpHosted>("/api/mcp", true),
+  mcpTokens: () => getJson<{ tokens: McpToken[]; max_tokens: number }>("/api/me/mcp-tokens", true),
+  createMcpToken: (name: string) => sendJson<McpTokenMade>("POST", "/api/me/mcp-tokens", { name }, true),
+  revokeMcpToken: (id: string) => sendJson<{ revoked: true }>("DELETE", `/api/me/mcp-tokens/${encodeURIComponent(id)}`, undefined, true),
+  // Apps connected through OAuth (claude.ai custom connectors and the like); disconnecting ends every token they hold.
+  mcpConnections: () => getJson<{ connections: McpConnection[] }>("/api/me/mcp-connections", true),
+  disconnectMcp: (id: string) => sendJson<{ revoked: true }>("DELETE", `/api/me/mcp-connections/${encodeURIComponent(id)}`, undefined, true),
+  // The consent page: what the request asks for, and the reader's answer ({redirect}: where to send the browser).
+  consent: (req: string) => getJson<ConsentInfo>(`/api/oauth/consent?req=${encodeURIComponent(req)}`, true),
+  decideConsent: (req: string, approve: boolean) => sendJson<{ redirect: string }>("POST", "/api/oauth/consent", { req, approve }, true),
   settings: () => getJson<{ show_internals: boolean }>("/api/settings"),
 };
 

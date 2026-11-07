@@ -473,6 +473,122 @@ class AdminEvent(Base):
     __table_args__ = (sa.Index("ix_admin_events_at", "at"),)
 
 
+class McpToken(Base):
+    """A personal access token for the hosted MCP endpoint (lore.central.mcp_tokens).
+
+    The token itself (`lore_` + 256 random bits) is shown once, when it is
+    made; only its SHA-256 is stored, with `prefix` (its first characters) to
+    tell tokens apart in a list. A revoked token keeps its row (`revoked_at`)
+    so a lookup of it fails the same way as an unknown one.
+    """
+
+    __tablename__ = "mcp_tokens"
+
+    id: Mapped[str] = mapped_column(sa.String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(sa.String(100), nullable=False)
+    token_hash: Mapped[str] = mapped_column(sa.String(64), nullable=False, unique=True)
+    prefix: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (sa.Index("ix_mcp_tokens_user", "user_id"),)
+
+    def __repr__(self) -> str:  # never the hash either
+        return f"McpToken(id={self.id!r}, user_id={self.user_id!r}, prefix={self.prefix!r})"
+
+
+class OAuthClient(Base):
+    """An MCP client registered through OAuth dynamic client registration
+    (lore.mcp.oauth). `info` is its registered metadata (redirect URIs, name,
+    grant types), never its secret. A confidential client's secret is sealed
+    with the master key (AES-GCM, bound to the client id), because the token
+    endpoint must compare it; a public client has none."""
+
+    __tablename__ = "oauth_clients"
+
+    client_id: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    info: Mapped[dict] = mapped_column(sa.JSON, nullable=False)
+    secret_ciphertext: Mapped[bytes | None] = mapped_column(sa.LargeBinary)
+    secret_nonce: Mapped[bytes | None] = mapped_column(sa.LargeBinary)
+    key_version: Mapped[str | None] = mapped_column(sa.String(16))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+
+    def __repr__(self) -> str:
+        return f"OAuthClient(client_id={self.client_id!r})"
+
+
+class OAuthGrant(Base):
+    """One user's consent to one client: what Settings lists as a connected
+    app. Revoking it ends every token issued under it."""
+
+    __tablename__ = "oauth_grants"
+
+    id: Mapped[str] = mapped_column(sa.String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    client_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("oauth_clients.client_id", ondelete="CASCADE"),
+        nullable=False)
+    client_name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    scopes: Mapped[list] = mapped_column(sa.JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (sa.Index("ix_oauth_grants_user", "user_id"),)
+
+
+class OAuthCode(Base):
+    """An authorization code: single use, minutes long, stored hashed. A
+    second use revokes the grant the first one made (`grant_id`)."""
+
+    __tablename__ = "oauth_codes"
+
+    code_hash: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    client_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("oauth_clients.client_id", ondelete="CASCADE"),
+        nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    redirect_uri: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    redirect_uri_explicit: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    code_challenge: Mapped[str] = mapped_column(sa.String(128), nullable=False)
+    scopes: Mapped[list] = mapped_column(sa.JSON, nullable=False)
+    resource: Mapped[str | None] = mapped_column(sa.String(512))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    grant_id: Mapped[str | None] = mapped_column(sa.String(32))
+
+
+class OAuthToken(Base):
+    """An access token (an hour) or a refresh token (30 days, rotated on use),
+    stored as its SHA-256 only."""
+
+    __tablename__ = "oauth_tokens"
+
+    token_hash: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    grant_id: Mapped[str] = mapped_column(
+        sa.String(32), sa.ForeignKey("oauth_grants.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (
+        sa.CheckConstraint("kind IN ('access', 'refresh')", name="ck_oauth_tokens_kind"),
+        sa.Index("ix_oauth_tokens_grant", "grant_id"),
+    )
+
+
 class InflightSlot(Base):
     """One unit of work in flight (release step 6): a question being answered,
     an upload being parsed. A limit of N for `kind` is N possible rows

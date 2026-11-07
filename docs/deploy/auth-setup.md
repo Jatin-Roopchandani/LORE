@@ -157,6 +157,10 @@ LORE_MAIL_FROM=LORE <login@jrvn.site>
 ```
 `LORE_INVITE_ONLY` defaults to on in multi mode. Keep it on for the beta. Step 6 adds rate-limit variables; its report lists them.
 
+## 7. Connecting Claude to LORE (MCP)
+
+Readers connect claude.ai, Claude Desktop, Claude Code or Cursor to their own library at `https://lore.jrvn.site/mcp`: claude.ai and Claude Desktop through a custom connector (OAuth, using the sign-in set up above), the others with a personal access token from Settings → MCP connector. Nothing extra to configure; the steps a reader follows are in [mcp.md](mcp.md).
+
 ## Checklist
 
 - [ ] jrvn.site verified in Google Search Console (TXT record at Namecheap, kept forever)

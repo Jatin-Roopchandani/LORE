@@ -84,7 +84,16 @@ export interface McpInfo { stdio_command: string; http_command: string; http_url
   lore?: string; env?: Record<string, string>; claude_desktop?: string; claude_code?: string; claude_code_http?: string;
   library?: { data_dir: string; central_db: string | null } }
 export interface McpCheck { ok: boolean; lore_found: boolean; tools: { name: string; summary: string }[]; problem: string | null;
-  library_found?: boolean }
+  library_found?: boolean; hosted?: boolean }
+// Multi mode's GET /api/mcp: the hosted endpoint's address (the page builds the snippets).
+export interface McpHosted { hosted: true; base_url: string; mcp_url: string; max_tokens: number; oauth: boolean }
+// One personal access token as listed (never the token itself; `token` only in the reply that made it).
+export interface McpToken { id: string; name: string; prefix: string; created_at: string; last_used_at: string | null }
+export interface McpTokenMade extends McpToken { token: string }
+// An app connected through OAuth (one per consent), revocable in Settings.
+export interface McpConnection { id: string; client_name: string; created_at: string; last_used_at: string | null }
+// What the consent page shows: the client's own name (shown as text) and where it sends the browser back to.
+export interface ConsentInfo { client_name: string | null; redirect_host: string }
 export interface DeviceSession { id: string; device: string; created_at: string; last_active: string; current: boolean }
 export interface EntityCardData { id: string; name: string; kind: string; aliases: string[]; books: string[]; world?: WorldRef;
   edges_out: Edge[]; edges_in: Edge[]; edges_out_total: number; edges_in_total: number; truncated: boolean }

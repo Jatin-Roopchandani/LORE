@@ -338,10 +338,14 @@ def test_mcp_check_reports_a_server_that_cannot_start(local, monkeypatch):
     assert body["ok"] is False and "RuntimeError" in body["problem"]
 
 
-def test_mcp_routes_are_not_there_in_multi_mode(app, central):
+def test_mcp_routes_describe_the_hosted_endpoint_in_multi_mode(app, central):
+    """No local command, path or data directory: the hosted address only."""
     alice = sign_in(app, central, ALICE)
-    assert alice.get("/api/mcp").status_code == 404
-    assert alice.get("/api/mcp/check").status_code == 404
+    body = alice.get("/api/mcp").json()
+    assert body["hosted"] is True and body["mcp_url"].endswith("/mcp")
+    assert not {"lore", "env", "claude_desktop", "http_command", "library"} & set(body)
+    check = alice.get("/api/mcp/check").json()
+    assert check["ok"] is True and "cypher_query" not in {t["name"] for t in check["tools"]}
 
 
 # --- LORE_CONFIG ------------------------------------------------------------------

@@ -41,6 +41,9 @@ _ALLOWED_CALLS = frozenset({"show_tables", "table_info", "db_version"})
 _BANNED = (
     "COPY", "LOAD", "EXPORT", "IMPORT", "ATTACH", "INSTALL",
     "CREATE", "MERGE", "SET", "DELETE", "DROP", "ALTER",
+    # Cypher's other write clause. The read-only connection refuses it too,
+    # but every write clause is refused here, not left to the engine.
+    "REMOVE",
     # Defence in depth. Kuzu's built-in file-reading table functions --
     # verified callable via a mid-query CALL past the allowlist check below
     # before this list was added -- are the CALL-based equivalent of

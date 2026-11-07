@@ -539,6 +539,13 @@ a.tbtn.primary{color:var(--panel)}
 .danger-zone .delete-account{display:flex;flex-direction:column;gap:10px;border:1px solid var(--danger);border-radius:10px;padding:14px}
 .danger-zone .delete-account label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
 .danger-zone .delete-account input{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:8px 10px;font:inherit;max-width:360px}
+/* MCP connector (hosted): the new-token form, the token list's prefix, and the shown-once token. */
+.mcp-new{display:flex;flex-direction:column;gap:0;margin:0}
+.mcp-new input{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:7px 10px;font:inherit;font-size:13.5px;flex:1 1 220px;min-width:0;max-width:360px}
+.set-list.mcp-tokens .mcp-prefix{font:12px var(--f-mono);color:var(--muted)}
+.settings .notice .snip{margin-top:8px}
+.set-section p.set-label{margin:6px 0 0}
+.mcp-steps{margin:0;padding:0 0 0 20px;display:flex;flex-direction:column;gap:4px}
 .tbtn.danger:hover{background:var(--danger);color:var(--panel)}
 .tbtn:disabled{opacity:.5;cursor:not-allowed}
 .settings .provider-settings{display:flex;flex-direction:column;gap:12px}
