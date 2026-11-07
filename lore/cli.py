@@ -81,6 +81,7 @@ from lore.resolve.disambiguation import (
 # Aliased: `ask` is also this CLI's query command below, and the later def
 # would silently shadow the import and break `lore disambiguate`.
 from lore.resolve.disambiguation import ask as ask_disambiguation
+from lore.resolve.synonyms import SYNONYM_BATCH, ask_synonyms
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -1190,25 +1191,36 @@ def disambiguate(
 
     pending = store.pending()
     todo = store.unanswered(pending)
-    if not todo:
+    # Synonym questions (lore/resolve/synonyms.py): their own prompt and cache.
+    pending_synonyms = store.pending_synonyms()
+    synonyms_todo = store.unanswered_synonyms(pending_synonyms)
+    if not todo and not synonyms_todo:
+        total = len(pending) + len(pending_synonyms)
         typer.echo(
-            f"nothing to ask — {len(pending)} pending question(s),"
-            f" {len(pending)} already answered (0 requests spent)"
+            f"nothing to ask — {total} pending question(s),"
+            f" {total} already answered (0 requests spent)"
         )
         return
+    batches = -(-len(todo) // MAX_BATCH) + -(-len(synonyms_todo) // SYNONYM_BATCH)
 
     if dry_run:
-        batches = -(-len(todo) // MAX_BATCH)
         typer.echo(
-            f"would ask {len(todo)} question(s) in {batches} request(s)"
-            " (0 requests spent):"
+            f"would ask {len(todo) + len(synonyms_todo)} question(s) in {batches}"
+            " request(s) (0 requests spent):"
         )
         for index, question in enumerate(todo, start=1):
             options = " | ".join(c.name for c in question.candidates)
             typer.echo(f"  {index}. {question.mention} ({question.kind})"
                        f" -> {options} | none")
             typer.echo(f"     {question.evidence}")
+        for index, question in enumerate(synonyms_todo, start=len(todo) + 1):
+            typer.echo(f"  {index}. {question.a.name} ({question.a.kind}) /"
+                       f" {question.b.name} ({question.b.kind}) ->"
+                       " same | claimed | different")
+            if question.together:
+                typer.echo(f"     {question.together}")
         return
+    todo_count = len(todo) + len(synonyms_todo)
 
     try:
         api_key = (_llm_credentials(config, "disambiguate").key
@@ -1216,7 +1228,7 @@ def disambiguate(
                    else resolve_api_key(key_file=default_key_file()))
     except GeminiKeyFileError as exc:
         typer.echo(f"disambiguate failed: {exc}")
-        typer.echo(f"{len(todo)} question(s) still pending; 0 requests spent.")
+        typer.echo(f"{todo_count} question(s) still pending; 0 requests spent.")
         raise typer.Exit(2)
     if api_key is None:
         typer.echo(
@@ -1227,11 +1239,10 @@ def disambiguate(
             " lore.toml, so it cannot end up in git."
         )
         typer.echo(
-            f"{len(todo)} question(s) still pending; 0 requests spent."
+            f"{todo_count} question(s) still pending; 0 requests spent."
         )
         raise typer.Exit(2)
 
-    batches = -(-len(todo) // MAX_BATCH)
     # A cascade, not one model: a 429/503/404 moves to the next entry
     # instead of sleeping, which is what turns five per-model daily quotas
     # into aggregate capacity.
@@ -1247,12 +1258,14 @@ def disambiguate(
         # Same loop for the request and the close: httpx binds its sockets
         # to the loop that opened them.
         try:
-            return await ask_disambiguation(client, todo)
+            names = await ask_disambiguation(client, todo) if todo else {}
+            same = await ask_synonyms(client, synonyms_todo) if synonyms_todo else {}
+            return names, same
         finally:
             await client.aclose()
 
     try:
-        answers = asyncio.run(_run())
+        answers, synonym_answers = asyncio.run(_run())
     except (GeminiError, AnswerMismatchError) as exc:
         typer.echo(f"disambiguate failed: {exc}")
         # Nothing is written until a complete, verified answer set is in
@@ -1264,10 +1277,13 @@ def disambiguate(
         )
         raise typer.Exit(1)
 
-    store.save_answers(answers)
+    if answers:
+        store.save_answers(answers)
+    if synonym_answers:
+        store.save_synonym_answers(synonym_answers)
     merges = sum(1 for value in answers.values() if value)
     typer.echo(
-        f"asked {len(todo)} question(s) in {batches} request(s);"
+        f"asked {todo_count} question(s) in {batches} request(s);"
         f" answered by {client.last_model}"
         f" ({client.requests_made} HTTP call(s) across the cascade)"
     )
@@ -1275,6 +1291,15 @@ def disambiguate(
         f"recorded {len(answers)} answer(s): {merges} merge(s),"
         f" {len(answers) - merges} refusal(s)"
     )
+    if synonym_answers:
+        verdicts = list(synonym_answers.values())
+        same = verdicts.count("same")
+        merges += same
+        typer.echo(
+            f"recorded {len(verdicts)} synonym verdict(s): {same} same,"
+            f" {verdicts.count('claimed')} claimed (linked, not merged),"
+            f" {verdicts.count('different')} different"
+        )
     typer.echo(f"cached in {store.answers_path} — a reload spends 0 requests")
     # Per model, because a cascade that fell through a 429 spent one
     # request against THAT model's budget, not against the one that

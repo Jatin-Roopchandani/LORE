@@ -344,3 +344,39 @@ def test_an_exhausted_cascade_writes_nothing(tmp_path: Path, monkeypatch) -> Non
     for model in DEFAULT_MODELS:
         assert model in result.output
     assert not (config.disambiguation_dir / "answers.json").exists()
+
+
+def _seed_synonyms(tmp_path: Path):
+    from lore.resolve.synonyms import Side, SynonymQuestion
+    config = LoreConfig.load().model_copy(update={"data_dir": tmp_path / "data"})
+    config.ensure_dirs()
+    store = DisambiguationStore(config.disambiguation_dir)
+    for a, b in (("Myrddraal", "Fade"), ("Rand", "Tam")):
+        store.record_synonym(SynonymQuestion(
+            "b1", Side(f"id-{a}", a, "Faction", (f"{a} rode.",)),
+            Side(f"id-{b}", b, "Faction", (f"{b} watched.",))))
+    store.flush("b1")
+    return config, DisambiguationStore(config.disambiguation_dir).pending_synonyms()
+
+
+def test_synonym_questions_are_asked_in_their_own_request_and_cached(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, questions = _seed_synonyms(tmp_path)
+    verdicts = {"Fade": "same", "Tam": "different"}
+    reply = "\n".join(f"{n}. {q.a.name} / {q.b.name} -> "
+                      f"{verdicts.get(q.a.name) or verdicts.get(q.b.name)}"
+                      for n, q in enumerate(questions, start=1))
+    client = _FakeClient(replies=[reply])
+    dry = _run(tmp_path, monkeypatch, ["disambiguate", "--dry-run"], client)
+    assert dry.exit_code == 0, dry.output
+    assert "Myrddraal" in dry.output and client.prompts == []
+    result = _run(tmp_path, monkeypatch, ["disambiguate"], client)
+    assert result.exit_code == 0, result.output
+    assert len(client.prompts) == 1 and "same, claimed or different" in client.prompts[0]
+    store = DisambiguationStore(config.disambiguation_dir)
+    got = {frozenset({q.a.name, q.b.name}): store.synonym_verdict(q) for q in questions}
+    assert got == {frozenset({"Myrddraal", "Fade"}): "same",
+                   frozenset({"Rand", "Tam"}): "different"}
+    again = _run(tmp_path, monkeypatch, ["disambiguate"], _FakeClient())
+    assert "nothing to ask" in again.output

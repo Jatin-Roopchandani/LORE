@@ -384,6 +384,10 @@ class DisambiguationStore:
         self.directory = Path(directory)
         self._recorded: dict[str, dict[str, Question]] = {}
         self._answers: dict[str, str] | None = None
+        # Synonym questions (lore/resolve/synonyms.py): two names, one thing?
+        # Kept in files of their own, so neither kind can break the other's read.
+        self._synonyms: dict[str, dict[str, object]] = {}
+        self._synonym_answers: dict[str, str] | None = None
 
     # -- paths ------------------------------------------------------------
     @property
@@ -410,15 +414,14 @@ class DisambiguationStore:
         linger and spend a request. A book with nothing to ask loses its
         file entirely.
         """
-        recorded = self._recorded.get(book_id, {})
-        path = self.pending_path(book_id)
-        if not recorded:
-            path.unlink(missing_ok=True)
-            return
-        _atomic_write(
-            path,
-            [recorded[key].as_dict() for key in sorted(recorded)],
-        )
+        for recorded, path in (
+                (self._recorded.get(book_id, {}), self.pending_path(book_id)),
+                (self._synonyms.get(book_id, {}),
+                 self.synonym_pending_dir / f"{_safe_name(book_id)}.json")):
+            if not recorded:
+                path.unlink(missing_ok=True)
+                continue
+            _atomic_write(path, [recorded[key].as_dict() for key in sorted(recorded)])
 
     # -- reading ----------------------------------------------------------
     def pending(self) -> list[Question]:
@@ -497,3 +500,69 @@ class DisambiguationStore:
         merged.update(answers)
         _atomic_write(self.answers_path, merged)
         self._answers = merged
+
+    # -- synonym questions (lore/resolve/synonyms.py) ---------------------
+    @property
+    def synonym_pending_dir(self) -> Path:
+        return self.directory / "pending_synonyms"
+
+    @property
+    def synonym_answers_path(self) -> Path:
+        return self.directory / "synonym_answers.json"
+
+    def record_synonym(self, question) -> None:
+        """Note a synonym question. Written by `flush`, like `record`."""
+        self._synonyms.setdefault(question.book_id, {})[question.key] = question
+
+    def pending_synonyms(self) -> list:
+        """Every recorded synonym question, deduplicated by key; a corrupt
+        file is skipped."""
+        from lore.resolve.synonyms import SynonymQuestion
+
+        found: dict[str, SynonymQuestion] = {}
+        if not self.synonym_pending_dir.is_dir():
+            return []
+        for path in sorted(self.synonym_pending_dir.glob("*.json")):
+            try:
+                rows = json.loads(path.read_text())
+                if not isinstance(rows, list):
+                    continue
+                for raw in rows:
+                    question = SynonymQuestion.from_dict(raw)
+                    found[question.key] = question
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                continue
+        return [found[key] for key in sorted(found)]
+
+    def synonym_answers(self) -> dict[str, str]:
+        if self._synonym_answers is None:
+            self._synonym_answers = self._read_synonym_answers()
+        return self._synonym_answers
+
+    def _read_synonym_answers(self) -> dict[str, str]:
+        try:
+            raw = json.loads(self.synonym_answers_path.read_text())
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(raw, dict):
+            return {}
+        return {str(k): v for k, v in raw.items() if isinstance(v, str)}
+
+    def synonym_verdict(self, question) -> str | None:
+        """"same", "claimed" or "different", or None: not asked yet, or a
+        cached value that is none of the three (never merges)."""
+        from lore.resolve.synonyms import CLAIMED, DIFFERENT, SAME
+
+        verdict = self.synonym_answers().get(question.key)
+        return verdict if verdict in (SAME, CLAIMED, DIFFERENT) else None
+
+    def unanswered_synonyms(self, questions: Iterable) -> list:
+        cached = self.synonym_answers()
+        return [q for q in questions if q.key not in cached]
+
+    def save_synonym_answers(self, answers: dict[str, str]) -> None:
+        """Merge new verdicts into the cache, re-read from disk first."""
+        merged = self._read_synonym_answers()
+        merged.update(answers)
+        _atomic_write(self.synonym_answers_path, merged)
+        self._synonym_answers = merged
