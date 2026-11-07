@@ -23,6 +23,8 @@ dependencies = [
     "authlib>=1.9.3",
     "itsdangerous>=2.2.0",
     "cryptography>=46",
+    "anthropic>=2.6.0",
+    "openai>=3.46.0",
 ]
 
 [project.scripts]

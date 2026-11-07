@@ -1,0 +1,86 @@
+[
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"select: who is Watson?\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"synthesize: claims\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"decompose: parts\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"check: faithful?\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"write: prose\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"extract: chunk\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"adjudicate: same?\"}]}],\"generationConfig\":{\"temperature\":0}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"narrator: who?\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"_gemini_client: text\"}]}],\"generationConfig\":{\"temperature\":0}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"_beats_client: json\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"_codex_client: json\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ },
+ {
+  "method": "POST",
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+  "x-goog-api-key": "AIzaGOLDENgoldenGOLDENgoldenGOLDENgold0001",
+  "content-type": "application/json",
+  "body": "{\"contents\":[{\"parts\":[{\"text\":\"intro: entity\\n\\nRespond with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\\n{\\\"properties\\\": {\\\"ok\\\": {\\\"title\\\": \\\"Ok\\\", \\\"type\\\": \\\"boolean\\\"}, \\\"note\\\": {\\\"anyOf\\\": [{\\\"type\\\": \\\"string\\\"}, {\\\"type\\\": \\\"null\\\"}], \\\"default\\\": null, \\\"title\\\": \\\"Note\\\"}, \\\"items\\\": {\\\"default\\\": [], \\\"items\\\": {\\\"type\\\": \\\"string\\\"}, \\\"title\\\": \\\"Items\\\", \\\"type\\\": \\\"array\\\"}}, \\\"required\\\": [\\\"ok\\\"], \\\"title\\\": \\\"G\\\", \\\"type\\\": \\\"object\\\"}\\n\"}]}],\"generationConfig\":{\"temperature\":0,\"responseMimeType\":\"application/json\",\"maxOutputTokens\":16384}}"
+ }
+]

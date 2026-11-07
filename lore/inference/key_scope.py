@@ -50,20 +50,36 @@ class KeyScope:
     """One user's key for one unit of work, plus what happened with it.
 
     `on_request(model)` is called once per HTTP attempt (the per-user usage
-    count). `rejected` turns True when Gemini refuses the key (401/403, or a
-    400 that says API_KEY_INVALID), whatever the calling code then does with
-    the exception, so the web app and the worker can tell a bad key from any
-    other failure.
+    count). `rejected` turns True when the provider refuses the key (Gemini:
+    401/403, or a 400 that says API_KEY_INVALID; Claude and OpenAI: 401/403),
+    whatever the calling code then does with the exception, so the web app
+    and the worker can tell a bad key from any other failure.
+
+    `provider` is the user's active provider (gemini, anthropic or openai);
+    `model` and `fast_model` their chosen model(s), unused for Gemini, whose
+    cascades come from the configuration. `on_usage(provider, model, input,
+    output)` receives each Claude or OpenAI response's token counts, and
+    `over_cap()` says whether the user's own daily token cap is reached.
     """
 
-    __slots__ = ("user_id", "_key", "_on_request", "rejected")
+    __slots__ = ("user_id", "_key", "_on_request", "rejected", "provider",
+                 "model", "fast_model", "_on_usage", "_over_cap")
 
     def __init__(self, user_id: str, key: str | None,
-                 on_request: Callable[[str], None] | None = None) -> None:
+                 on_request: Callable[[str], None] | None = None, *,
+                 provider: str = "gemini", model: str | None = None,
+                 fast_model: str | None = None,
+                 on_usage: Callable[[str, str, int, int], None] | None = None,
+                 over_cap: Callable[[], bool] | None = None) -> None:
         self.user_id = user_id
         self._key = key
         self._on_request = on_request
         self.rejected = False
+        self.provider = provider
+        self.model = model
+        self.fast_model = fast_model
+        self._on_usage = on_usage
+        self._over_cap = over_cap
 
     @property
     def key(self) -> str | None:
@@ -71,7 +87,7 @@ class KeyScope:
 
     def __repr__(self) -> str:  # never the key
         state = "with a key" if self._key else "no key"
-        return f"KeyScope(user_id={self.user_id!r}, {state})"
+        return f"KeyScope(user_id={self.user_id!r}, {self.provider}, {state})"
 
     __str__ = __repr__
 
@@ -135,6 +151,21 @@ def note_request(model: str) -> None:
     scope = _BOUND.get()
     if scope is not None and scope._on_request is not None:
         scope._on_request(model)
+
+
+def note_usage(provider: str, model: str, input_tokens: int, output_tokens: int) -> None:
+    """Called by the Claude and OpenAI models with each response's token counts."""
+    scope = _BOUND.get()
+    if scope is not None and scope._on_usage is not None:
+        scope._on_usage(provider, model, input_tokens, output_tokens)
+
+
+def over_token_cap() -> bool:
+    """True when the bound user's own daily token cap is reached."""
+    scope = _BOUND.get()
+    if scope is None or scope._over_cap is None:
+        return False
+    return bool(scope._over_cap())
 
 
 def note_rejection() -> None:
