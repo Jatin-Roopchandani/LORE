@@ -164,6 +164,10 @@ class GeminiOutputError(GeminiError):
         self.model = model
 
 
+CREDIT_MESSAGE = ("Your Gemini key's prepaid credit has run out. Top it up in"
+                  " Google AI Studio, or switch provider in Settings → AI providers.")
+
+
 class GeminiQuotaError(GeminiError):
     """No model in the cascade could serve the request.
 
@@ -172,6 +176,16 @@ class GeminiQuotaError(GeminiError):
     when this escapes: a half-written cache would make the next run ask
     the wrong questions.
     """
+
+
+class GeminiCreditError(GeminiQuotaError):
+    """HTTP 402: the key's prepaid credit is used up (RESOURCE_EXHAUSTED,
+    "prepayment credits are depleted"). A quota error, so every handler sorts
+    it as "no capacity now", but never cascaded: every model bills the same
+    account. Its text is fixed (CREDIT_MESSAGE), never Google's."""
+
+    def __init__(self, message: str = CREDIT_MESSAGE) -> None:
+        super().__init__(message)
 
 
 def limits_for(model: str) -> ModelLimits:
@@ -382,6 +396,10 @@ class GeminiClient:
                 f" {' or '.join(_KEY_VARIABLES)} in your environment, or"
                 " ~/.config/lore/gemini.env."
             )
+        if response.status_code == 402:
+            # Prepaid credit used up: the same for every model on this key.
+            key_scope.note_credit_exhausted(model)
+            raise GeminiCreditError()
         if response.status_code == 429:
             # Counted for the bound user (the paid-plan hint needs to know
             # whether Google ever said "out of allowance" today).
@@ -427,6 +445,8 @@ class GeminiClient:
         for model in willing:
             try:
                 text = await self._generate_one(model, prompt, generation_config)
+            except GeminiCreditError:
+                raise  # the next model bills the same account: no cascade
             except GeminiQuotaError as exc:
                 refusals.append(str(exc))
                 self._cooling_until[model] = self._now() + COOLDOWN_SECONDS

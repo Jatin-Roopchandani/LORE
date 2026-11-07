@@ -567,18 +567,22 @@ class KeyService:
 
     def paid_hint(self, user_id: str) -> bool:
         """True when the user's Gemini key seems to be on a paid plan: today
-        (Pacific) some Gemini model took more requests than its free-tier
-        daily count and Google never answered 429. Only a hint: the switch
-        stays the user's (`set_gemini_paid`)."""
+        (Pacific) Google answered 402 (prepaid credit used up: only a paid
+        plan prepays), or some Gemini model took more requests than its
+        free-tier daily count and Google never answered 429. Only a hint:
+        the switch stays the user's (`set_gemini_paid`)."""
         from lore.inference.gemini import limits_for
         day = self._day()
         with self.sessions() as db:
-            rows = db.execute(sa.select(Usage.model, Usage.requests, Usage.quota_refusals)
+            rows = db.execute(sa.select(Usage.model, Usage.requests, Usage.quota_refusals,
+                                        Usage.credit_refusals)
                               .where(Usage.user_id == user_id, Usage.day == day,
                                      Usage.provider == GEMINI)).all()
-        if any(refusals for _m, _r, refusals in rows):
+        if any(credit for *_rest, credit in rows):
+            return True
+        if any(refusals for _m, _r, refusals, _c in rows):
             return False
-        return any(requests > limits_for(model).rpd for model, requests, _ in rows)
+        return any(requests > limits_for(model).rpd for model, requests, _q, _c in rows)
 
     def credentials_for(self, user_id: str) -> Credentials:
         """The active provider, its plaintext key and the chosen model(s), for
@@ -622,7 +626,8 @@ class KeyService:
         return today(self._now())
 
     def _bump(self, user_id: str, provider: str, model: str, requests: int,
-              tokens_in: int, tokens_out: int, refusals: int = 0) -> None:
+              tokens_in: int, tokens_out: int, refusals: int = 0,
+              credit: int = 0) -> None:
         day = self._day()
         with self.sessions() as db:
             for _ in range(2):
@@ -633,14 +638,16 @@ class KeyService:
                     .values(requests=Usage.requests + requests,
                             input_tokens=Usage.input_tokens + tokens_in,
                             output_tokens=Usage.output_tokens + tokens_out,
-                            quota_refusals=Usage.quota_refusals + refusals)
+                            quota_refusals=Usage.quota_refusals + refusals,
+                            credit_refusals=Usage.credit_refusals + credit)
                     .execution_options(synchronize_session=False))
                 if hit.rowcount:
                     db.commit()
                     return
                 db.add(Usage(user_id=user_id, day=day, model=model, provider=provider,
                              requests=requests, input_tokens=tokens_in,
-                             output_tokens=tokens_out, quota_refusals=refusals))
+                             output_tokens=tokens_out, quota_refusals=refusals,
+                             credit_refusals=credit))
                 try:
                     db.commit()
                     return
@@ -672,6 +679,13 @@ class KeyService:
             self._bump(user_id, GEMINI, model, 0, 0, 0, refusals=1)
         except Exception:  # noqa: BLE001 - only the paid-plan hint reads it
             log.exception("could not record a quota refusal in the usage table")
+
+    def record_credit_refusal(self, user_id: str, model: str) -> None:
+        """Gemini answered 402 (prepaid credit used up) for this user."""
+        try:
+            self._bump(user_id, GEMINI, model, 0, 0, 0, credit=1)
+        except Exception:  # noqa: BLE001 - only the paid-plan hint reads it
+            log.exception("could not record a credit refusal in the usage table")
 
     def usage_today(self, user_id: str) -> dict:
         day = self._day()
@@ -787,6 +801,9 @@ class KeyService:
         def refusal(model: str) -> None:
             self.record_quota_refusal(user_id, model)
 
+        def credit(model: str) -> None:
+            self.record_credit_refusal(user_id, model)
+
         gemini = creds.provider == GEMINI
         paid = gemini and creds.paid_tier
         # A free-tier Gemini key records requests only, exactly as before; a
@@ -795,4 +812,5 @@ class KeyService:
                         model=creds.model, fast_model=creds.fast_model,
                         on_usage=usage if (paid or not gemini) else None,
                         over_cap=lambda: self.over_cap(user_id),
-                        paid_tier=paid, on_refusal=refusal if gemini else None)
+                        paid_tier=paid, on_refusal=refusal if gemini else None,
+                        on_credit=credit if gemini else None)

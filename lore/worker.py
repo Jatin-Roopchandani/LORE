@@ -37,6 +37,7 @@ from lore.inference.key_scope import KeyRequired, KeyScope
 from lore.orchestrator import jobs, runner
 from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.move import prepare_move
+from lore.inference.gemini import CREDIT_MESSAGE
 from lore.orchestrator.pipeline import KeyStop
 from lore.tenancy import config_for
 from lore.worlds import get_world
@@ -61,6 +62,8 @@ NO_KEY_REASON = ("Paused: connect your AI provider's API key in Settings, then"
                  " this book continues.")
 REJECTED_REASON = ("Paused: your AI provider refused your API key. Replace it in"
                    " Settings, then this book continues.")
+# Gemini 402: the key's prepaid credit is used up (the key itself is fine).
+CREDIT_EXHAUSTED = "credit_exhausted"
 
 
 PURGE_EVERY = timedelta(hours=1)
@@ -230,7 +233,10 @@ class Worker:
             self.keys.mark_rejected(job.user_id)  # also pauses the queued ones
         else:
             with self.sessions() as session:
-                queue.pause_user(session, job.user_id)
+                if result.outcome == CREDIT_EXHAUSTED:
+                    queue.pause_user(session, job.user_id, outcome=CREDIT_EXHAUSTED)
+                else:
+                    queue.pause_user(session, job.user_id)
 
     def _beat(self, job_id: int, stop: threading.Event) -> None:
         while not stop.wait(self._heartbeat_every):
@@ -303,6 +309,8 @@ class Worker:
                     self._make_move_stages(cfg, world)))
         if result is None:
             return Outcome(SKIPPED, error="another runner holds this book")
+        if result.state == jobs.WAITING_KEY and result.stopped_reason == CREDIT_MESSAGE:
+            return Outcome(CREDIT_EXHAUSTED, error=CREDIT_MESSAGE, paused=True)
         if result.state == jobs.WAITING_KEY:
             outcome = KEY_INVALID if scope.rejected else KEY_REQUIRED
             return Outcome(outcome, error=result.stopped_reason, paused=True)

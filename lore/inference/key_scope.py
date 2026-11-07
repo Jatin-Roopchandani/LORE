@@ -64,12 +64,13 @@ class KeyScope:
     `paid_tier` (Gemini only): the user says their Gemini key is on a paid
     plan, so Gemini is metered like Claude and OpenAI (tokens through
     `on_usage`, the token cap) instead of LORE's free-tier ledger.
-    `on_refusal(model)` is told of each 429 Gemini answers.
+    `on_refusal(model)` is told of each 429 Gemini answers, `on_credit(model)`
+    of each 402 (the key's prepaid credit is used up).
     """
 
     __slots__ = ("user_id", "_key", "_on_request", "rejected", "provider",
                  "model", "fast_model", "_on_usage", "_over_cap", "paid_tier",
-                 "_on_refusal")
+                 "_on_refusal", "_on_credit")
 
     def __init__(self, user_id: str, key: str | None,
                  on_request: Callable[[str], None] | None = None, *,
@@ -78,7 +79,8 @@ class KeyScope:
                  on_usage: Callable[[str, str, int, int], None] | None = None,
                  over_cap: Callable[[], bool] | None = None,
                  paid_tier: bool = False,
-                 on_refusal: Callable[[str], None] | None = None) -> None:
+                 on_refusal: Callable[[str], None] | None = None,
+                 on_credit: Callable[[str], None] | None = None) -> None:
         self.user_id = user_id
         self._key = key
         self._on_request = on_request
@@ -90,6 +92,7 @@ class KeyScope:
         self._over_cap = over_cap
         self.paid_tier = paid_tier
         self._on_refusal = on_refusal
+        self._on_credit = on_credit
 
     @property
     def key(self) -> str | None:
@@ -176,6 +179,13 @@ def note_quota_refusal(model: str) -> None:
     scope = _BOUND.get()
     if scope is not None and scope._on_refusal is not None:
         scope._on_refusal(model)
+
+
+def note_credit_exhausted(model: str) -> None:
+    """Called by GeminiClient when Gemini answers 402 (prepaid credit used up)."""
+    scope = _BOUND.get()
+    if scope is not None and scope._on_credit is not None:
+        scope._on_credit(model)
 
 
 def over_token_cap() -> bool:

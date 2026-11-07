@@ -312,6 +312,10 @@ class Usage(Base):
     # the paid-plan hint needs to know there were none.
     quota_refusals: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0,
                                                 server_default="0")
+    # Gemini 402s ("prepaid credit used up") that day (migration 0012): only a
+    # paid plan has prepaid credit, so one is a signal for the same hint.
+    credit_refusals: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0,
+                                                 server_default="0")
 
     __table_args__ = (sa.Index("ix_usage_day", "day"),)
 

@@ -19,8 +19,8 @@ from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.registry import book_rows, list_books
 from lore.inference.gemini import (
-    GeminiAuthError, GeminiError, GeminiKeyFileError, GeminiQuotaError,
-    default_key_file, resolve_api_key,
+    CREDIT_MESSAGE, GeminiAuthError, GeminiCreditError, GeminiError,
+    GeminiKeyFileError, GeminiQuotaError, default_key_file, resolve_api_key,
 )
 from lore.inference import key_scope
 from lore.inference.key_scope import gemini_api_key
@@ -1082,6 +1082,8 @@ def _upstream(exc: GeminiError) -> dict:
                      f" invalid. To fix it, {_KEY_HELP}.")
     if isinstance(exc, GeminiKeyFileError):
         return error("upstream_unavailable", str(exc))
+    if isinstance(exc, GeminiCreditError):  # 402: fixed, friendly text
+        return error("upstream_unavailable", CREDIT_MESSAGE)
     if isinstance(exc, GeminiQuotaError):
         return error("upstream_unavailable",
                      f"{exc} This is Gemini declining or cooling down, not"
