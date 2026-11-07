@@ -13,6 +13,22 @@ def test_defaults_when_no_file(tmp_path: Path, monkeypatch) -> None:
     assert cfg.ollama.host == "http://localhost:11434"
 
 
+def test_env_overrides_the_ollama_host(tmp_path: Path, monkeypatch) -> None:
+    """In a container Ollama is another service (deploy/compose.yaml):
+    LORE_OLLAMA_HOST points at it without a second lore.toml."""
+    monkeypatch.setenv("LORE_OLLAMA_HOST", "http://ollama:11434")
+    (tmp_path / "lore.toml").write_text('[lore.ollama]\nmodel = "m:1"\n')
+    cfg = LoreConfig.load(tmp_path / "lore.toml")
+    assert cfg.ollama.host == "http://ollama:11434"
+    assert cfg.ollama.model == "m:1", "the rest of the file still applies"
+
+
+def test_without_the_env_the_ollama_host_comes_from_the_file(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("LORE_OLLAMA_HOST", raising=False)
+    (tmp_path / "lore.toml").write_text('[lore.ollama]\nhost = "http://box:1"\n')
+    assert LoreConfig.load(tmp_path / "lore.toml").ollama.host == "http://box:1"
+
+
 def test_load_from_toml(tmp_path: Path) -> None:
     toml = tmp_path / "lore.toml"
     toml.write_text(

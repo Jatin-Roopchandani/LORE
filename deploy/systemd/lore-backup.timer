@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the LORE backup every night
+
+[Timer]
+# 03:30 server time; up to 10 minutes later, and once at boot if a run was missed.
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

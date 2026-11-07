@@ -1,0 +1,156 @@
+# LORE in production: one small VM (Oracle A1, arm64, 1 OCPU, 6 GB + 4 GB swap).
+# Public traffic arrives only through the Cloudflare Tunnel (cloudflared ->
+# http://web:8000); nothing here is published on the host.
+#
+# Run it through deploy/update.sh, or by hand from the checkout:
+#   docker compose -f deploy/compose.yaml --env-file /srv/lore/.env <command>
+# The --env-file supplies the values interpolated below (POSTGRES_PASSWORD,
+# CLOUDFLARE_TUNNEL_TOKEN, LORE_IMAGE_TAG, COMPOSE_PROFILES, ...). The lore
+# services also read the whole file as their environment (LORE_ENV_FILE).
+#
+# Memory (limits; 6 GB RAM in all): web 1.5 GB, worker 2 GB, db 512 MB,
+# ollama 1 GB, cloudflared 128 MB, about 5.1 GB, the rest for the OS and the
+# page cache. Swap absorbs a burst. Raise the limits after a resize (see
+# docs/deploy/server.md).
+
+name: lore
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+x-lore: &lore
+  image: lore:${LORE_IMAGE_TAG:-latest}
+  env_file:
+    - path: ${LORE_ENV_FILE:-/srv/lore/.env}
+      required: true
+  environment: &lore-env
+    LORE_MULTI_USER: "1"
+    LORE_TRUST_PROXY: "1"             # client address from X-Forwarded-For (cloudflared)
+    LORE_DATA_DIR: /data
+    LORE_OLLAMA_HOST: http://ollama:11434
+    # Built here from POSTGRES_PASSWORD so the password lives in one place;
+    # it must be URL-safe (openssl rand -hex 24).
+    LORE_DATABASE_URL: postgresql+psycopg://lore:${POSTGRES_PASSWORD:-}@db:5432/lore
+  volumes:
+    - lore-data:/data
+  logging: *logging
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: lore
+      POSTGRES_DB: lore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    # Modest: a few dozen users, one web and one worker process.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=96MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=40
+      - -c
+      - wal_buffers=4MB
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lore -d lore -q"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 512m
+    shm_size: 128m
+    logging: *logging
+    restart: unless-stopped
+
+  # The Ollama already running on the server (container `ollama`, volume
+  # `ollama`, nomic-embed-text pulled), adopted: see docs/deploy/server.md.
+  # Embeddings only, so one model stays loaded for good. Not published.
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    container_name: ${OLLAMA_CONTAINER_NAME:-ollama}
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    mem_limit: 1g
+    logging: *logging
+    restart: unless-stopped
+
+  # One-shot: brings the central database to the image's migrations, then
+  # exits. web and worker start only after it succeeded.
+  migrate:
+    <<: *lore
+    command: ["lore", "migrate"]
+    healthcheck: {disable: true}
+    depends_on:
+      db: {condition: service_healthy}
+    restart: "no"
+    mem_limit: 512m
+
+  web:
+    <<: *lore
+    command: ["lore", "ui", "--host", "0.0.0.0", "--port", "8000"]
+    # The image's HEALTHCHECK probes http://127.0.0.1:8000/healthz.
+    depends_on:
+      db: {condition: service_healthy}
+      ollama: {condition: service_started}
+      migrate: {condition: service_completed_successfully}
+    mem_limit: 1536m
+    stop_grace_period: 20s
+    # Debugging only, never the public way in: uncomment to reach the app at
+    # http://127.0.0.1:8000 on the server (an SSH tunnel). The app answers only
+    # the Host it is served on, so keep host and container port both 8000.
+    # ports: ["127.0.0.1:8000:8000"]
+
+  worker:
+    <<: *lore
+    command: ["lore", "worker"]
+    healthcheck: {disable: true}
+    depends_on:
+      db: {condition: service_healthy}
+      ollama: {condition: service_started}
+      migrate: {condition: service_completed_successfully}
+    mem_limit: 2g
+    # SIGTERM hands the running job back to the queue; give it time.
+    stop_grace_period: 60s
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      web: {condition: service_started}
+    # On by default on the server through COMPOSE_PROFILES=tunnel in .env;
+    # left out of a local test run.
+    profiles: ["tunnel"]
+    mem_limit: 128m
+    logging: *logging
+    restart: unless-stopped
+
+volumes:
+  lore-data:
+  pg-data:
+  # The existing volume with the pulled model. External, so `down -v` can
+  # never delete it.
+  ollama:
+    external: true
+    name: ${OLLAMA_VOLUME:-ollama}

@@ -139,6 +139,8 @@ Then:
 
 ## 6. The full production `.env`
 
+With the Docker deploy ([server.md](server.md)), start from `deploy/.env.example` instead: compose sets `LORE_MULTI_USER`, `LORE_TRUST_PROXY`, `LORE_DATA_DIR` and `LORE_DATABASE_URL` itself (the last from `POSTGRES_PASSWORD`), and the file adds the Postgres, tunnel and backup settings. The list below is what LORE itself reads.
+
 ```
 LORE_MULTI_USER=1
 LORE_BASE_URL=https://lore.jrvn.site

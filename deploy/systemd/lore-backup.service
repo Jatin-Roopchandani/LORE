@@ -1,0 +1,17 @@
+# Installed by docs/deploy/server.md ("Enable backups"):
+#   sudo cp /srv/lore/app/deploy/systemd/lore-backup.* /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now lore-backup.timer
+# User= is the account that owns /srv/lore and is in the docker group.
+[Unit]
+Description=LORE nightly backup (central database + data volume)
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+Nice=10
+IOSchedulingClass=idle
+Environment=LORE_ROOT=/srv/lore
+ExecStart=/srv/lore/app/deploy/backup.sh
