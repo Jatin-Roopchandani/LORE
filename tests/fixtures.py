@@ -46,6 +46,80 @@ def make_epub(
     return path
 
 
+def make_raw_epub(
+    path: Path,
+    docs: list[tuple[str, str]],
+    ncx: list | None = None,
+    nav: list | None = None,
+    title: str = "Raw Book",
+) -> Path:
+    """An EPUB written by hand, for table-of-contents tests ebooklib cannot
+    write (no headings, NCX only, nav only, src#fragment anchors).
+
+    docs: (file name under OEBPS/, body html) in spine order.
+    ncx / nav: TOC entries (label, href) or (label, href, [children]);
+    None leaves that TOC out of the book.
+    """
+    import zipfile
+    from html import escape
+
+    def page(body: str) -> str:
+        return ('<?xml version="1.0" encoding="utf-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml" '
+                'xmlns:epub="http://www.idpf.org/2007/ops"><head><title>x</title></head>'
+                f"<body>{body}</body></html>")
+
+    def ncx_points(entries, counter=[0]) -> str:
+        out = []
+        for e in entries:
+            counter[0] += 1
+            kids = ncx_points(e[2]) if len(e) > 2 else ""
+            out.append(f'<navPoint id="np{counter[0]}" playOrder="{counter[0]}"><navLabel><text>'
+                       f'{escape(e[0])}</text></navLabel><content src="{e[1]}"/>{kids}</navPoint>')
+        return "".join(out)
+
+    def nav_list(entries) -> str:
+        items = []
+        for e in entries:
+            kids = nav_list(e[2]) if len(e) > 2 else ""
+            items.append(f'<li><a href="{e[1]}">{escape(e[0])}</a>{kids}</li>')
+        return f"<ol>{''.join(items)}</ol>"
+
+    manifest = [f'<item id="d{i}" href="{name}" media-type="application/xhtml+xml"/>'
+                for i, (name, _) in enumerate(docs)]
+    if ncx is not None:
+        manifest.append('<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>')
+    if nav is not None:
+        manifest.append('<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" '
+                        'properties="nav"/>')
+    spine_attr = ' toc="ncx"' if ncx is not None else ""
+    opf = ('<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" '
+           'version="3.0" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+           f'<dc:identifier id="uid">raw-1</dc:identifier><dc:title>{escape(title)}</dc:title>'
+           '<dc:language>en</dc:language><dc:creator>A</dc:creator></metadata>'
+           f"<manifest>{''.join(manifest)}</manifest><spine{spine_attr}>"
+           + "".join(f'<itemref idref="d{i}"/>' for i in range(len(docs)))
+           + "</spine></package>")
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        z.writestr("META-INF/container.xml",
+                   '<?xml version="1.0"?><container version="1.0" '
+                   'xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles>'
+                   '<rootfile full-path="OEBPS/content.opf" '
+                   'media-type="application/oebps-package+xml"/></rootfiles></container>')
+        z.writestr("OEBPS/content.opf", opf)
+        for name, body in docs:
+            z.writestr(f"OEBPS/{name}", page(body))
+        if ncx is not None:
+            z.writestr("OEBPS/toc.ncx",
+                       '<?xml version="1.0" encoding="utf-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" '
+                       f'version="2005-1"><head/><docTitle><text>{escape(title)}</text></docTitle>'
+                       f"<navMap>{ncx_points(ncx, [0])}</navMap></ncx>")
+        if nav is not None:
+            z.writestr("OEBPS/nav.xhtml",
+                       page(f'<nav epub:type="toc"><h1>Contents</h1>{nav_list(nav)}</nav>'))
+    return path
+
+
 def make_pdf(
     path: Path,
     pages: list[str],
