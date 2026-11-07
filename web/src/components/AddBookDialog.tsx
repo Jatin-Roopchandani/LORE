@@ -84,7 +84,9 @@ export function AddBookDialog({ open, onClose, worlds = [], multi = false, onUpl
     const p = r.processing;
     if (p.state === "needs_confirm")
       return ESTIMATE.text(p.estimate.input_tokens + p.estimate.output_tokens, p.estimate.estimated_cost_usd);
-    return p.state === "waiting" ? UPLOAD.next.waiting(clock(p.resumable_at)) : UPLOAD.next[p.state];
+    if (p.state === "waiting")
+      return p.reason === "token_cap" ? UPLOAD.next.waitingCap(clock(p.resumable_at)) : UPLOAD.next.waiting(clock(p.resumable_at));
+    return UPLOAD.next[p.state];
   };
   const confirm = async (id: string) => {
     setConfirmed("starting");

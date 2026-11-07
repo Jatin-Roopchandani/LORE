@@ -24,7 +24,7 @@ export const DEEP = {
     deep: "Every question gets a long, sectioned answer.",
     focused: "Every question gets a short answer.",
   } as Record<Depth, string>,
-  costNote: "A deep answer can take a few dozen requests from the daily allowance.",
+  costNote: "A deep answer can take a few dozen requests to your AI provider.",
   contents: "Contents",
   writing: "Writing…",
   claimsOnly: "Showing the checked facts; the written section didn't pass verification.",
@@ -134,6 +134,12 @@ export const LIBRARY = {
   startFailed: "Couldn't start processing.",
   gemini: (used: number, limit: number, reserve: number, internals: boolean) =>
     `${internals ? "Gemini requests" : "Question allowance"} today: ${used} of ${limit} used \u00b7 ${reserve} kept for answering questions`,
+  // Claude, OpenAI or a paid Gemini plan: tokens instead of the free tier's requests. `tokens` null: not counted (local).
+  metered: (provider: string, tokens: number | null, usd: number | null, cap: number | null) =>
+    tokens == null ? `${provider} \u00b7 billed to your own account`
+      : `${provider} \u00b7 today: ${tokens.toLocaleString("en")} tokens`
+        + (usd != null ? ` (about $${usd > 0 && usd < 0.01 ? "0.01" : usd.toFixed(2)})` : "")
+        + (cap ? ` \u00b7 daily cap ${cap.toLocaleString("en")}` : ""),
 };
 
 export const UI = {
@@ -187,6 +193,7 @@ export const UPLOAD = {
     queued: "The book is in the queue and starts shortly. Its progress shows in the Library.",
     busy: "Another book is being processed. When it is done, press Continue on this one in the Library.",
     waiting: (time: string) => `Today's allowance is used up, so the book waits. Press Continue in the Library after ${time} (your time).`,
+    waitingCap: (time: string) => `Your daily token cap is reached, so the book waits. Press Continue in the Library after ${time} (your time).`,
   },
   addedTo: (title: string, world: string | null) => world ? `\u201c${title}\u201d is in the world \u201c${world}\u201d.` : `\u201c${title}\u201d is in your library.`,
   openLibrary: "Open it in the Library",
@@ -273,8 +280,8 @@ export const EXPLORE = {
   showEdge: (a: string, b: string) => `Show how ${a} and ${b} are connected`,
   // Ask
   askIntro: "Ask LORE about this entity. Each question is answered from the books.",
-  askCost: "Uses the daily allowance.",
-  askCostDeep: "Uses the daily allowance: a deep answer can take a few dozen requests.",
+  askCost: "Uses your AI provider: requests from Gemini's free allowance, or tokens on a paid plan.",
+  askCostDeep: "Uses your AI provider: a deep answer can take a few dozen requests.",
   askBusy: "LORE is still answering the previous question.",
   deepDive: (name: string) => `Deep dive on ${name}`,
   change: (name: string) => `How does ${name} change across the story?`,
@@ -698,6 +705,7 @@ export const SETTINGS = {
   perModel: (model: string, count: number, limit: number) => `${model}: ${count.toLocaleString("en")} of ${limit.toLocaleString("en")} used`,
   resets: (time: string) => `Resets at midnight Pacific (${time} here).`,
   localModels: "This library uses local models: there is no daily budget.",
+  billed: (provider: string) => `This library runs on ${provider}, billed to your own account: LORE keeps no daily request limit.`,
   geminiNoneYet: "No Gemini requests yet today.",
   noneYet: "No requests yet today.",
   usageUnavailable: "Usage isn't available right now.",

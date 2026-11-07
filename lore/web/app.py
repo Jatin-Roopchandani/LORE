@@ -186,12 +186,17 @@ def _port_open(port: int) -> bool:
         return False
 
 
-def _quota(config: LoreConfig) -> dict:
+def _quota(config: LoreConfig, multi: bool = False) -> dict:
     now = datetime.now(GOOGLE_DAY_ZONE)
     midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0,
                                                   microsecond=0)
     if config.synthesis.provider != "gemini":
         return {"provider": "local", "models": [], "resets_at": midnight.isoformat()}
+    if not multi and (
+            config.llm.provider != "gemini" or config.llm.gemini_paid):
+        # Local mode on Claude, OpenAI or a paid Gemini plan: billed, no ledger.
+        return {"provider": "billed", "billed_by": config.llm.provider, "models": [],
+                "resets_at": midnight.isoformat()}
     try:
         conn = sqlite3.connect(f"file:{config.sqlite_path}?mode=ro", uri=True)
         try:
@@ -506,7 +511,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         }
 
     @api.get("/api/books")
-    def books(config: LoreConfig = Depends(user_config)):
+    def books(config: LoreConfig = Depends(user_config),
+              user: CurrentUser = Depends(current_user)):
         recover(config)
         now = now_utc()
         conn = open_db(config.sqlite_path)
@@ -517,7 +523,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             gemini = _gemini_use(conn, config, now)
         finally:
             conn.close()
-        return {"books": [
+        return {"usage": usage_line(user, config), "books": [
             {"id": b["id"], "title": b["title"], "author": b["author"],
              "status": b["status"], "world": b["world"], "series": b["series"],
              "series_index": b["series_index"],
@@ -653,6 +659,24 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             model = roles.ANTHROPIC_DEFAULT
         return provider, model
 
+    def usage_line(user: CurrentUser, cfg: LoreConfig) -> dict:
+        """What the Library footer shows: on Gemini's free tier, `free` (the
+        ledger's `gemini` numbers); otherwise `metered`: the provider and,
+        in multi mode, today's tokens, their estimated cost where a price is
+        known, and the user's daily token cap (local mode keeps no tokens)."""
+        provider, _model = processing_choice(user, cfg)
+        if provider == "gemini" and not gemini_paid_for(user, cfg):
+            return {"mode": "free", "provider": "gemini"}
+        out = {"mode": "metered", "provider": provider, "tokens_today": None,
+               "cost_usd": None, "daily_token_cap": None}
+        if multi:
+            summary = key_service.usage_summary(user.id)
+            today = summary["today"]
+            out.update(tokens_today=today["input_tokens"] + today["output_tokens"],
+                       cost_usd=today["estimated_cost_usd"],
+                       daily_token_cap=summary["daily_token_cap"])
+        return out
+
     def gemini_paid_for(user: CurrentUser, cfg: LoreConfig) -> bool:
         """The user's "I'm on a paid Gemini plan" (multi), or [lore.llm] gemini_paid."""
         if not multi:
@@ -709,7 +733,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                                     " processing can start after midnight Pacific",
                                     now=now)
                     job = jobs.get_job(conn, book_id)
-                    return {"state": "waiting",
+                    return {"state": "waiting", "reason": "token_cap",
                             "resumable_at": job.resumable_at.isoformat()}
                 finally:
                     conn.close()
@@ -939,7 +963,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     @api.get("/api/quota")
     def quota(config: LoreConfig = Depends(user_config)):
-        out = _quota(config)
+        out = _quota(config, multi)
         if multi:  # per-model counts name the models: internals
             out["models"] = []
         return out

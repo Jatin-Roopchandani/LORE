@@ -38,7 +38,7 @@ const quotaBody = { provider: "gemini", resets_at: "2026-11-08T08:00:00Z",
 
 type Call = { url: string; method: string; body?: string };
 function serve({ role = "user", providers = [gemini, claude, row("openai")] as Info[], name = "Ada" as string | null,
-  usage = usageBody as Record<string, unknown>, hint = false } = {}) {
+  usage = usageBody as Record<string, unknown>, hint = false, quota = quotaBody as Record<string, unknown> } = {}) {
   const calls: Call[] = [];
   let state = { active: providers.find((p) => p.active)?.provider ?? "gemini", providers, daily_token_cap: null,
     gemini_paid: providers.some((p) => p.provider === "gemini" && p.paid_tier), gemini_paid_hint: hint };
@@ -71,7 +71,7 @@ function serve({ role = "user", providers = [gemini, claude, row("openai")] as I
     if (url === "/api/me/delete") return json({ deleted: true });
     if (url === "/api/mcp") return json(mcpBody);
     if (url === "/api/mcp/check") return json(checkBody);
-    if (url === "/api/quota") return json(quotaBody);
+    if (url === "/api/quota") return json(quota);
     return json({ ok: true });
   }));
   return calls;
@@ -393,6 +393,13 @@ test("Usage (local): Gemini's daily budget, per model with internals on", async 
   expect(await screen.findByText(SETTINGS.geminiToday(960, 1000))).toBeInTheDocument();
   expect(screen.getByText(SETTINGS.perModel("gemini-flash", 40, 500))).toBeInTheDocument();
   expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "4");
+});
+
+test("Usage (local, on Claude): billed, no Gemini budget", async () => {
+  serve({ quota: { provider: "billed", billed_by: "anthropic", models: [], resets_at: "2026-11-08T08:00:00Z" } });
+  await openAt("usage", { showInternals: true });
+  expect(await screen.findByText(SETTINGS.billed("Claude"))).toBeInTheDocument();
+  expect(screen.queryByRole("progressbar")).toBeNull();
 });
 
 test("Usage (local, internals off): no model names", async () => {

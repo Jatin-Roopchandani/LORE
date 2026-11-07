@@ -78,7 +78,8 @@ export interface WorldRef { id: number; name: string }
 export interface WorldBook { id: string; title: string; series: string | null; series_index: number | null }
 export interface World { id: number; name: string; books: WorldBook[] }
 export interface QuotaModel { model: string; count: number; limit: number; remaining: number }
-export interface Quota { provider: "gemini" | "local"; models: QuotaModel[]; resets_at: string }
+// provider "billed": local mode on Claude, OpenAI or a paid Gemini plan (`billed_by`): no free-tier ledger.
+export interface Quota { provider: "gemini" | "local" | "billed"; billed_by?: ProviderId; models: QuotaModel[]; resets_at: string }
 export interface McpInfo { stdio_command: string; http_command: string; http_url: string; http_running: boolean;
   lore?: string; env?: Record<string, string>; claude_desktop?: string; claude_code?: string; claude_code_http?: string;
   library?: { data_dir: string; central_db: string | null } }
@@ -102,7 +103,11 @@ export interface LibraryBook { id: string; title: string; author: string | null;
   world: string | null; series: string | null; series_index: number | null; job: BookJob | null }
 export type MoveResult = { started: true; world: WorldRef } | { started: false };
 export interface GeminiUse { used_today: number; limit: number; answer_reserve: number }
-export interface LibraryStatus { books: LibraryBook[]; gemini: GeminiUse }
+// `usage`: what the footer shows. `free`: Gemini's free tier (the `gemini` numbers). `metered`: Claude, OpenAI or a
+// paid Gemini plan, with today's tokens, an estimated cost (where a price is known) and the cap (multi mode only).
+export type LibraryUsage = { mode: "free"; provider: "gemini" }
+  | { mode: "metered"; provider: ProviderId; tokens_today: number | null; cost_usd: number | null; daily_token_cap: number | null };
+export interface LibraryStatus { books: LibraryBook[]; gemini: GeminiUse; usage?: LibraryUsage }
 
 // The graph explorer's reads (profile, timeline, relations, edge, search, path, passage).
 export interface EntityRef { id: string; name: string; kind: string }
@@ -202,7 +207,8 @@ export interface TraceRecord { request_id: string; user_id: string; created_at: 
 // mode), queued for the worker (multi mode), waiting for the Gemini allowance to reset, or added while another book runs.
 export type UploadProcessing =
   | { state: "processing" } | { state: "queued"; job: number } | { state: "busy" }
-  | { state: "waiting"; resumable_at: string }
+  // reason "token_cap": the user's own daily token cap (a billed provider), not Gemini's allowance.
+  | { state: "waiting"; resumable_at: string; reason?: "token_cap" }
   // A paid provider (Claude, OpenAI) and an estimate above the threshold: nothing started; Continue confirms.
   | { state: "needs_confirm"; estimate: ProcessEstimate };
 export interface UploadResult { book_id: string; title: string; world: WorldRef | null; filename: string; processing: UploadProcessing }

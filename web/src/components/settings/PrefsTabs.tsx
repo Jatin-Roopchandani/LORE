@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, isError } from "../../api";
-import { SETTINGS } from "../../messages";
+import { PROVIDERS, SETTINGS } from "../../messages";
 import { applyMotion, loadMotion, type Motion } from "../../settings";
 import { loadOpen, saveOpen, STEPS_KEY } from "../../stepsPref";
 import type { Depth, Quota, World } from "../../types";
@@ -107,6 +107,7 @@ function LocalBudget({ showInternals }: { showInternals: boolean }) {
   useEffect(() => { api.quota().then((q) => setQuota(isError(q) ? null : q)); }, []);
   if (quota === undefined) return null;
   if (quota === null) return <p className="hint">{SETTINGS.usageUnavailable}</p>;
+  if (quota.provider === "billed") return <p className="hint">{SETTINGS.billed(PROVIDERS.names[quota.billed_by ?? "gemini"] ?? "your provider")}</p>;
   if (quota.provider !== "gemini") return <p className="hint">{SETTINGS.localModels}</p>;
   const time = new Date(quota.resets_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   if (!quota.models.length) {

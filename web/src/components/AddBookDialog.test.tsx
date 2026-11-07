@@ -96,6 +96,15 @@ test("an existing world is sent by its id", async () => {
   expect(FakeXhr.last!.body!.get("world")).toBe("1");
 });
 
+test("a book waiting on the user's own token cap says so, not Gemini's allowance", async () => {
+  dialog();
+  await choose();
+  await upload();
+  await act(async () => FakeXhr.last!.reply(202, ok({ processing: { state: "waiting", reason: "token_cap", resumable_at: "2026-11-06T08:00:00Z" } })));
+  expect(screen.getByText(/Your daily token cap is reached, so the book waits\./)).toBeInTheDocument();
+  expect(screen.queryByText(/Today's allowance/)).toBeNull();
+});
+
 test("a queued, busy or waiting book says what happens next", async () => {
   dialog();
   await choose();

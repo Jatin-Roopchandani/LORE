@@ -147,6 +147,15 @@ function WorldHeader({ group, error, onRename, onDelete }:
 // `onChange`: called once a world was renamed or deleted, and when a move has run its course, so the page
 // can refetch the worlds and the graph. `focusBook`: a book just added; the panel opens at it and polls until its
 // processing shows (a queued book's row may take a moment to appear).
+// The footer follows the user's provider: Gemini's free tier shows today's requests; Claude, OpenAI and a paid Gemini
+// plan show tokens (and an estimated cost where a price is known, and the daily cap when set).
+function footer(data: LibraryStatus, showInternals: boolean): string {
+  const u = data.usage;
+  if (u && u.mode === "metered")
+    return LIBRARY.metered(PROVIDERS.names[u.provider] ?? u.provider, u.tokens_today, u.cost_usd, u.daily_token_cap);
+  return LIBRARY.gemini(data.gemini.used_today, data.gemini.limit, data.gemini.answer_reserve, showInternals);
+}
+
 export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook = null }:
   { open: boolean; onClose: () => void; showInternals: boolean; onChange?: () => void; focusBook?: string | null }) {
   const [data, setData] = useState<LibraryStatus | null>(null);
@@ -278,7 +287,7 @@ export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook
             ) : <p className="hint">{WORLDS.noBooksInWorld}</p>}
           </div>
         )) : <p className="hint">{LIBRARY.empty}</p>)}
-        {data && <p className="hint lib-foot">{LIBRARY.gemini(data.gemini.used_today, data.gemini.limit, data.gemini.answer_reserve, showInternals)}</p>}
+        {data && <p className="hint lib-foot">{footer(data, showInternals)}</p>}
         <div className="row-end"><button className="tbtn" type="button" onClick={onClose}>{LIBRARY.close}</button></div>
       </div>
     </div>

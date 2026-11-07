@@ -9,7 +9,7 @@ const job = (o: object) => ({ stage: "extract", state: "running", done: 3, total
 const book = (id: string, j: object | null, status = "graphed", world: string | null = "Alpha Saga", series: string | null = null, series_index: number | null = null) =>
   ({ id, title: `Book ${id}`, author: null, status, world, series, series_index, job: j });
 const worldRow = (id: number, name: string, books: object[] = []) => ({ id, name, books });
-let status: { books: object[]; gemini: object };
+let status: { books: object[]; gemini: object; usage?: object };
 let worlds: object[];
 let posts: string[];
 let sent: { url: string; method: string; body: unknown }[];
@@ -46,6 +46,38 @@ test("paused: Continue is disabled until the time passes, then the timer enables
   expect(btn).toBeDisabled();
   await tick(30000 * 41);
   expect(screen.getByRole("button", { name: "Continue Book a" })).toBeEnabled();
+});
+
+test("footer, Gemini free tier: today's requests (as before)", async () => {
+  status = { gemini, usage: { mode: "free", provider: "gemini" }, books: [book("a", null)] };
+  await open();
+  expect(screen.getByText(/Question allowance today: 120 of 500 used · 50 kept/)).toBeInTheDocument();
+  vi.clearAllTimers();
+});
+
+test("footer, Claude: today's tokens, the estimated cost and the cap; no Gemini allowance", async () => {
+  status = { gemini, books: [book("a", null)],
+    usage: { mode: "metered", provider: "anthropic", tokens_today: 1234567, cost_usd: 4.2, daily_token_cap: 5000000 } };
+  await open();
+  expect(screen.getByText("Claude · today: 1,234,567 tokens (about $4.20) · daily cap 5,000,000")).toBeInTheDocument();
+  expect(screen.queryByText(/allowance/)).toBeNull();
+  vi.clearAllTimers();
+});
+
+test("footer, Gemini paid or OpenAI: tokens, and no cost where no price is known", async () => {
+  status = { gemini, books: [book("a", null)],
+    usage: { mode: "metered", provider: "openai", tokens_today: 900, cost_usd: null, daily_token_cap: null } };
+  await open();
+  expect(screen.getByText("OpenAI · today: 900 tokens")).toBeInTheDocument();
+  vi.clearAllTimers();
+});
+
+test("footer, local mode on a billed provider: no token count kept", async () => {
+  status = { gemini, books: [book("a", null)],
+    usage: { mode: "metered", provider: "gemini", tokens_today: null, cost_usd: null, daily_token_cap: null } };
+  await open();
+  expect(screen.getByText("Gemini · billed to your own account")).toBeInTheDocument();
+  vi.clearAllTimers();
 });
 
 test("a running job names the provider it runs on", async () => {
