@@ -1693,6 +1693,11 @@ def worker_command(
     if once:
         worker.run_once()
         return
+    import signal
+
+    def _graceful(signum, frame):  # SIGTERM stops like Ctrl-C: the job is handed back
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, _graceful)
     try:
         worker.run_forever(poll_every=poll)
     except KeyboardInterrupt:

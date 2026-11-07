@@ -118,6 +118,9 @@ class Job(Base):
     # failed); `error` carries the reason for a failure.
     outcome: Mapped[str | None] = mapped_column(sa.String(32))
     error: Mapped[str | None] = mapped_column(sa.Text)
+    # A queued job is not claimed before this (migration 0013): a worker gave
+    # it back because its book still looked running elsewhere. Null: now.
+    not_before: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     __table_args__ = (
         sa.CheckConstraint("kind IN ('process', 'move')", name="ck_jobs_kind"),

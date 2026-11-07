@@ -78,12 +78,14 @@ def enqueue(session: Session, user_id: str, book_id: str, kind: str,
     raise RuntimeError("could not enqueue the job")
 
 
-def _candidate(session: Session) -> Job | None:
+def _candidate(session: Session, now: datetime) -> Job | None:
     holder = aliased(Job)
     busy = sa.exists().where(holder.user_id == Job.user_id, holder.state == CLAIMED)
     # Only an active user's jobs run: a disabled or deleting account's wait.
     active = sa.select(User.id).where(User.status == "active")
-    stmt = (sa.select(Job).where(Job.state == QUEUED, ~busy, Job.user_id.in_(active))
+    due = sa.or_(Job.not_before.is_(None), Job.not_before <= now)
+    stmt = (sa.select(Job).where(Job.state == QUEUED, due, ~busy,
+                                 Job.user_id.in_(active))
             .order_by(Job.id).limit(1)
             .with_for_update(skip_locked=True))  # ignored by SQLite
     return session.scalars(stmt).first()
@@ -94,7 +96,7 @@ def claim_next(session: Session, worker_id: str, *,
     """Atomically claim the oldest queued job whose user has none running."""
     moment = now or utcnow()
     for _ in range(_CLAIM_TRIES):
-        job = _candidate(session)
+        job = _candidate(session, moment)
         if job is None:
             session.rollback()
             return None
@@ -103,7 +105,8 @@ def claim_next(session: Session, worker_id: str, *,
                 sa.update(Job)
                 .where(Job.id == job.id, Job.state == QUEUED)
                 .values(state=CLAIMED, claimed_by=worker_id, claimed_at=moment,
-                        heartbeat_at=moment, attempts=Job.attempts + 1)
+                        heartbeat_at=moment, attempts=Job.attempts + 1,
+                        not_before=None)
                 .returning(Job.id)
                 .execution_options(synchronize_session=False)).first()
             session.commit()
@@ -144,15 +147,18 @@ def finish(session: Session, job_id: int, worker_id: str, *, outcome: str,
     return res.rowcount == 1
 
 
-def requeue(session: Session, job_id: int, worker_id: str) -> bool:
+def requeue(session: Session, job_id: int, worker_id: str, *,
+            not_before: datetime | None = None) -> bool:
     """The holder gives a claimed job back to the queue (it stopped at a safe
-    point and should run again, e.g. on the user's new provider). Not an
-    attempt that failed: `attempts` is given back too. Commits; False when
-    the claim was lost."""
+    point and should run again, e.g. on the user's new provider, or its book
+    still looks running elsewhere: then `not_before` delays the next claim).
+    Not an attempt that failed: `attempts` is given back too. Commits; False
+    when the claim was lost."""
     res = session.execute(
         sa.update(Job)
         .where(Job.id == job_id, Job.state == CLAIMED, Job.claimed_by == worker_id)
         .values(state=QUEUED, claimed_by=None, claimed_at=None, heartbeat_at=None,
+                not_before=not_before,
                 attempts=sa.case((Job.attempts > 0, Job.attempts - 1), else_=0))
         .execution_options(synchronize_session=False))
     session.commit()

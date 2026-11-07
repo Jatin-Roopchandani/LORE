@@ -75,6 +75,8 @@ NEEDS_CONFIRM = "needs_confirm"
 
 
 PURGE_EVERY = timedelta(hours=1)
+# Past the book row's STALE_AFTER before a delayed job is claimed again.
+BUSY_MARGIN = timedelta(seconds=5)
 
 
 class Outcome(NamedTuple):
@@ -83,6 +85,7 @@ class Outcome(NamedTuple):
     error: str | None = None
     paused: bool = False
     requeue: bool = False  # stopped at a safe point: run it again (new provider)
+    not_before: datetime | None = None  # with requeue: not claimed before this
 
 
 class KeyGuard:
@@ -213,7 +216,8 @@ class Worker:
         try:
             if result.requeue:
                 with self.sessions() as session:
-                    if not queue.requeue(session, job.id, self.worker_id):
+                    if not queue.requeue(session, job.id, self.worker_id,
+                                         not_before=result.not_before):
                         log.warning("job %s: claim was lost before it was requeued", job.id)
                 return
             if result.paused:
@@ -278,6 +282,31 @@ class Worker:
             log.warning("a stored key did not decrypt (user %s)", user_id)
             return Outcome(KEY_INVALID, error=REJECTED_REASON, paused=True)
 
+    def _busy(self, row: jobs.BookJob) -> Outcome:
+        """The book still looks running (a stopped worker's fresh heartbeat,
+        or a CLI run): give the job back until that row would go stale,
+        rather than finish it as skipped and leave the book stopped."""
+        when = row.updated_at + jobs.STALE_AFTER + BUSY_MARGIN
+        return Outcome(SKIPPED, error="a job is already running for this book",
+                       requeue=True, not_before=when)
+
+    def _interrupted(self, job: Job, config: LoreConfig) -> None:
+        """A graceful stop (Ctrl-C, SIGTERM) mid-job: the book row says
+        interrupted (Continue needs no wait) and the job goes back to the
+        queue, so the next worker resumes it at once. Best effort."""
+        try:
+            conn = open_db(config.sqlite_path)
+            try:
+                row = jobs.get_job(conn, job.book_id)
+                if row is not None and row.state == jobs.RUNNING:
+                    jobs.stop_switch(conn, job.book_id, "interrupted", now=self._clock())
+            finally:
+                conn.close()
+            with self.sessions() as session:
+                queue.requeue(session, job.id, self.worker_id)
+        except Exception:  # noqa: BLE001 - stopping anyway; staleness recovers it
+            log.exception("job %s: could not mark it interrupted", job.id)
+
     def _after_switch(self, job: Job, config: LoreConfig, row: jobs.BookJob) -> Outcome:
         """The user switched provider mid-job: requeue it to resume on the new
         one, unless that one is paid and the estimate for the rest needs
@@ -331,7 +360,10 @@ class Worker:
                     if not prepare_move(conn, job.book_id, move_world, now=now):
                         return Outcome(SKIPPED, error="nothing to move")
                 else:
-                    ok, why = jobs.can_continue(jobs.get_job(conn, job.book_id), now)
+                    current = jobs.get_job(conn, job.book_id)
+                    if current is not None and jobs.is_fresh(current, now):
+                        return self._busy(current)
+                    ok, why = jobs.can_continue(current, now)
                     if not ok:
                         return Outcome(SKIPPED, error=why)
                     # An unfinished move continues as a move (see the web app).
@@ -340,6 +372,9 @@ class Worker:
                         move_world = None
                     jobs.claim_job(conn, job.book_id, now=now)
             except JobRefused as exc:
+                current = jobs.get_job(conn, job.book_id)
+                if current is not None and jobs.is_fresh(current, self._clock()):
+                    return self._busy(current)
                 return Outcome(SKIPPED, error=str(exc))
         finally:
             conn.close()
@@ -347,13 +382,24 @@ class Worker:
         def guarded(stages: list) -> list:
             return [KeyGuard(stage, scope) for stage in stages]
 
-        with key_scope.bound(scope):  # every client in the stages: this user's key
-            result = runner.run_claimed(
-                config, job.book_id, move_world, self._clock,
-                make_stages=lambda cfg: guarded(self._make_stages(cfg)),
-                make_move_stages=lambda cfg, world: guarded(
-                    self._make_move_stages(cfg, world)))
+        try:
+            with key_scope.bound(scope):  # every client in the stages: this user's key
+                result = runner.run_claimed(
+                    config, job.book_id, move_world, self._clock,
+                    make_stages=lambda cfg: guarded(self._make_stages(cfg)),
+                    make_move_stages=lambda cfg, world: guarded(
+                        self._make_move_stages(cfg, world)))
+        except (KeyboardInterrupt, SystemExit):
+            self._interrupted(job, config)
+            raise
         if result is None:
+            conn = open_db(config.sqlite_path)
+            try:
+                current = jobs.get_job(conn, job.book_id)
+            finally:
+                conn.close()
+            if current is not None and jobs.is_fresh(current, self._clock()):
+                return self._busy(current)
             return Outcome(SKIPPED, error="another runner holds this book")
         if result.state == jobs.IDLE and result.stopped_reason == SWITCH_REASON:
             return self._after_switch(job, config, result)
