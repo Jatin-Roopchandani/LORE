@@ -56,6 +56,10 @@ class ChunkStage:
 
     name = "chunk"
 
+    @staticmethod
+    def shown(config) -> bool:
+        return False  # done at upload: no step to wait for (lore.orchestrator.plan)
+
     def total(self, ctx: StageContext) -> int:
         return 0
 
@@ -200,6 +204,10 @@ class DisambiguateStage:
     @staticmethod
     def _store(ctx: StageContext) -> DisambiguationStore:
         return DisambiguationStore(ctx.config.disambiguation_dir)
+
+    @staticmethod
+    def shown(config) -> bool:
+        return bool(config.disambiguation.enabled)
 
     def _counts(self, ctx: StageContext):
         """(unanswered questions, total batches, batches already answered)."""
@@ -394,6 +402,10 @@ class BeatsStage:
 
     def total(self, ctx: StageContext) -> int:
         return len(self._plan_for(ctx))
+
+    @staticmethod
+    def shown(config) -> bool:
+        return bool(config.beats.enabled)
 
     def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
         self.skipped = []
@@ -599,6 +611,10 @@ class CodexStage:
     def _cache(ctx: StageContext, item: _CodexItem):
         return codex_build.cache_path(ctx.config.codex_dir, item.entity.id,
                                       item.evidence_hash)
+
+    @staticmethod
+    def shown(config) -> bool:
+        return bool(config.codex.enabled)
 
     def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
         self.skipped = []

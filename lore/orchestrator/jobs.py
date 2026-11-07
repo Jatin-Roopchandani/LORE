@@ -210,10 +210,21 @@ def set_move_target(conn: sqlite3.Connection, book_id: str,
 
 def advance(conn: sqlite3.Connection, book_id: str, done: int, *,
             now: datetime | None = None) -> None:
-    """Record progress within the stage (an absolute count); also a heartbeat."""
+    """Record progress within the stage (an absolute count); also a heartbeat.
+    The stage's first report also starts its clock (lore.orchestrator.plan)."""
+    ts = _iso(_aware(now))
     _write(conn, book_id,
-           "UPDATE book_jobs SET done_items = ?, updated_at = ? WHERE book_id = ?",
-           (done, _iso(_aware(now)), book_id))
+           "UPDATE book_jobs SET done_items = ?, updated_at = ?,"
+           " stage_started_at = COALESCE(stage_started_at, ?),"
+           " stage_base = COALESCE(stage_base, ?) WHERE book_id = ?",
+           (done, ts, ts, done, book_id))
+
+
+def reset_stage_clock(conn: sqlite3.Connection, book_id: str) -> None:
+    """A stage starts (or resumes): its clock starts at its first report."""
+    _write(conn, book_id,
+           "UPDATE book_jobs SET stage_started_at = NULL, stage_base = NULL"
+           " WHERE book_id = ?", (book_id,))
 
 
 def set_progress(conn: sqlite3.Connection, book_id: str, done: int, total: int, *,

@@ -115,6 +115,17 @@ export const WORLDS = {
   changeFailed: "That change didn't go through.",
 };
 
+// A step's time estimate, rounded on purpose ("~5 min", "~1 h"). null: nothing measured yet, so no invented precision.
+function duration(seconds: number | null): string {
+  if (seconds == null) return "a few minutes";
+  if (seconds < 60) return "under a minute";
+  const min = seconds / 60;
+  if (min < 10) return `~${Math.max(1, Math.round(min))} min`;
+  if (min < 55) return `~${Math.round(min / 5) * 5} min`;
+  const h = Math.round((seconds / 3600) * 2) / 2;
+  return `~${h % 1 ? h.toFixed(1) : h.toFixed(0)} h`;
+}
+
 export const LIBRARY = {
   open: "Books", manage: "Manage library\u2026", title: "Library", close: "Close", loading: "Loading the library…", empty: "No books yet.",
   unreachable: "LORE isn't reachable. Check that `lore ui` is still running.",
@@ -125,6 +136,16 @@ export const LIBRARY = {
   progress: (done: number, total: number) => `${done.toLocaleString("en")} / ${total.toLocaleString("en")}`,
   // A step that can't count its work yet (moving a book out of the graph, a load before it knows its mentions).
   slowStep: "This step can take a while on CPU.",
+  // The step list under a running book: "Step 4 of 6 · Writing entity profiles · ~50 min left".
+  stepOf: (step: number, of: number, label: string, left: string | null) =>
+    `Step ${step} of ${of} \u00b7 ${label}${left ? ` \u00b7 ${left}` : ""}`,
+  stepsLabel: "All steps",
+  stepDone: "done",
+  stepCount: (done: number, total: number) => `${done.toLocaleString("en")} / ${total.toLocaleString("en")}`,
+  duration,
+  // The whole: the known part, and "plus a few minutes" when some step has no estimate. null: nothing known.
+  left: (seconds: number | null, unknown: boolean) =>
+    seconds == null ? null : `${duration(seconds)} left${unknown ? " (plus a few minutes)" : ""}`,
   progressLabel: (stage: string) => `${STAGE_LABEL[stage] ?? stage} progress`,
   continuesAfter: (time: string, left: string) => `Continues after ${time} (your time) \u2014 in ${left}`,
   inHM: (mins: number) => `${Math.floor(mins / 60)}h ${mins % 60}m`,

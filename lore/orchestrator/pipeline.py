@@ -21,7 +21,7 @@ from lore.config import LoreConfig
 from lore.inference import key_scope
 from lore.inference.gemini import CREDIT_MESSAGE, GeminiCreditError, limits_for
 from lore.inference.providers import factory as providers
-from lore.orchestrator import jobs
+from lore.orchestrator import jobs, plan
 from lore.orchestrator.gemini_budget import calls_today, today
 
 # Order matters. `beats` needs the loaded graph (its entities), so it follows load;
@@ -233,7 +233,9 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
     # later stamp is unguarded, and the row stays `running` between stages.
     if not claimed:
         jobs.claim_job(conn, book_id, now=clock())
-    jobs.set_provider(conn, book_id, providers.active_provider(config))
+    provider = providers.active_provider(config)
+    model = providers.processing_model(config)
+    jobs.set_provider(conn, book_id, provider)
 
     ctx = StageContext(conn, config, book_id)
     ctl = JobCtl(ctx, clock)
@@ -242,6 +244,7 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
             continue
         total = stage.total(ctx)
         jobs.start_job(conn, book_id, stage.name, total, now=clock(), guard=False)
+        jobs.reset_stage_clock(conn, book_id)
         try:
             with keep_alive(conn, book_id, clock, keepalive_interval):
                 stage.run(ctx, ctl)
@@ -269,6 +272,10 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
                 f"{stop} (during {stage.name}: {cur.done_items}/{cur.total_items})",
                 now=clock())
             return jobs.get_job(conn, book_id)
+        try:  # this stage's measured speed, for the next book's estimates
+            plan.record_stage(conn, book_id, stage.name, provider, model, clock())
+        except sqlite3.Error:
+            pass
         jobs.finish_stage(conn, book_id, _next_stage(stage.name), now=clock(),
                           keep_running=True)
     jobs.done(conn, book_id, now=clock())

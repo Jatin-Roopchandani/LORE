@@ -311,6 +311,14 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 @keyframes lib-indeterminate{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
 @media (prefers-reduced-motion:reduce){.lib-bar.indeterminate span{width:100%;opacity:.45}}
 :root[data-motion="reduce"] .lib-bar.indeterminate span{width:100%;opacity:.45}
+.lib-steps{font-size:12px;color:var(--ink)}
+.lib-steps summary{cursor:pointer;color:var(--muted)}
+.lib-steps ol{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+.lib-steps .step{display:flex;gap:6px;align-items:baseline}
+.lib-steps .step .tick{width:1em;text-align:center}
+.lib-steps .step.done{color:var(--muted)}
+.lib-steps .step.current{font-weight:600;color:var(--ink)}
+.lib-steps .step.upcoming{color:var(--muted);opacity:.7}
 .lib-foot{border-top:1px solid var(--line);padding-top:8px}
 
 .lib-world{display:flex;flex-direction:column;gap:8px}

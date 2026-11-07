@@ -100,6 +100,57 @@ test("the load's real counts show as a bar and a grouped count", async () => {
   vi.clearAllTimers();
 });
 
+const plan = {
+  step: 4, of: 6, seconds_left: 3000, unknown_left: false,
+  steps: [
+    { stage: "extract", state: "done", seconds_left: 0 }, { stage: "load", state: "done", seconds_left: 0 },
+    { stage: "beats", state: "done", seconds_left: 0 },
+    { stage: "codex", state: "current", done: 120, total: 2400, seconds_left: 2700 },
+    { stage: "disambiguate", state: "upcoming", seconds_left: 300 },
+    { stage: "ready", state: "upcoming", seconds_left: null },
+  ],
+};
+
+test("a running book shows where it is in the whole pipeline, collapsed, with time left", async () => {
+  status = { gemini, books: [book("a", job({ stage: "codex", done: 120, total: 2400, plan }), "ingested")] };
+  await open();
+  const summary = screen.getByText("Step 4 of 6 · Writing entity profiles · ~50 min left");
+  const details = summary.closest("details")!;
+  expect(details).not.toHaveAttribute("open");
+  await userEvent.click(summary);
+  expect(details).toHaveAttribute("open");
+  const items = within(screen.getByRole("list", { name: LIBRARY.stepsLabel })).getAllByRole("listitem");
+  expect(items.map((li) => li.className)).toEqual(["step done", "step done", "step done", "step current", "step upcoming", "step upcoming"]);
+  expect(items[3]).toHaveAttribute("aria-current", "step");
+  expect(within(items[3]).getByText("120 / 2,400")).toBeInTheDocument();
+  expect(within(items[3]).getByText("~45 min")).toBeInTheDocument();
+  expect(within(items[0]).getByText(LIBRARY.stepDone)).toBeInTheDocument();
+  expect(within(items[4]).getByText("~5 min")).toBeInTheDocument();
+  expect(within(items[5]).getByText("a few minutes")).toBeInTheDocument();  // nothing measured: no invented precision
+  vi.clearAllTimers();
+});
+
+test("the total says when some step has no estimate, and no list without a plan", async () => {
+  status = { gemini, books: [
+    book("a", job({ plan: { ...plan, seconds_left: 5400, unknown_left: true } }), "ingested"),
+    book("b", job({}), "ingested")] };
+  await open();
+  expect(screen.getByText("Step 4 of 6 · Writing entity profiles · ~1.5 h left (plus a few minutes)")).toBeInTheDocument();
+  expect(screen.getAllByText(/^Step \d of \d/)).toHaveLength(1);
+  vi.clearAllTimers();
+});
+
+test("durations are rounded to friendly values", () => {
+  expect(LIBRARY.duration(null)).toBe("a few minutes");
+  expect(LIBRARY.duration(20)).toBe("under a minute");
+  expect(LIBRARY.duration(70)).toBe("~1 min");
+  expect(LIBRARY.duration(7 * 60 + 20)).toBe("~7 min");
+  expect(LIBRARY.duration(23 * 60)).toBe("~25 min");
+  expect(LIBRARY.duration(58 * 60)).toBe("~1 h");
+  expect(LIBRARY.duration(100 * 60)).toBe("~1.5 h");
+  expect(LIBRARY.left(null, true)).toBeNull();
+});
+
 test("a running job names the provider it runs on", async () => {
   status = { gemini, books: [book("a", job({ provider: "anthropic" }), "ingested")] };
   await open();

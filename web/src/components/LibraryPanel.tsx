@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, isError } from "../api";
 import { LIBRARY, PROVIDERS, WORLDS } from "../messages";
-import type { LibraryBook, LibraryStatus, World } from "../types";
+import type { LibraryBook, LibraryStatus, StepPlan, World } from "../types";
 
 const POLL_MS = 3000;
 const TICK_MS = 30000;
@@ -67,9 +67,34 @@ function Row({ book, now, busy, error, focus = false, onGo, onMove, children }: 
         {body}
         <button className="tbtn" type="button" disabled={busy || job?.state === "running"} aria-label={WORLDS.moveOpenLabel(book.title)} onClick={onMove}>{WORLDS.moveOpen}</button>
       </div>
+      {job?.state === "running" && job.plan && <Steps plan={job.plan} />}
       {children}
       {error && <p className="hint" role="alert">{error}</p>}
     </li>
+  );
+}
+
+// The whole pipeline under a running book, collapsed to "Step 4 of 6 · Writing entity profiles · ~50 min left"; the
+// disclosure lists every step: done ones ticked, the current one with its live count, upcoming ones greyed out.
+// The list comes from the server (the stages it will really run); only the labels live here. No animation.
+function Steps({ plan }: { plan: StepPlan }) {
+  const current = plan.steps.find((s) => s.state === "current");
+  const label = current ? LIBRARY.stage(current.stage) : "";
+  return (
+    <details className="lib-steps">
+      <summary>{LIBRARY.stepOf(plan.step, plan.of, label, LIBRARY.left(plan.seconds_left, plan.unknown_left))}</summary>
+      <ol aria-label={LIBRARY.stepsLabel}>
+        {plan.steps.map((s) => (
+          <li key={s.stage} className={`step ${s.state}`} aria-current={s.state === "current" ? "step" : undefined}>
+            <span className="tick" aria-hidden="true">{s.state === "done" ? "\u2713" : s.state === "current" ? "\u25B8" : "\u00B7"}</span>
+            <span>{LIBRARY.stage(s.stage)}</span>
+            {s.state === "done" && <span className="hint">{LIBRARY.stepDone}</span>}
+            {s.state === "current" && (s.total ?? 0) > 1 && <span className="hint">{LIBRARY.stepCount(s.done ?? 0, s.total ?? 0)}</span>}
+            {s.state !== "done" && <span className="hint">{LIBRARY.duration(s.seconds_left)}</span>}
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 

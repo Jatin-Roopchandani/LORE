@@ -209,13 +209,14 @@ def _quota(config: LoreConfig, multi: bool = False) -> dict:
 
 
 def _job_out(job: jobs.BookJob | None, now: datetime,
-             provider: str | None = None) -> dict | None:
-    """`provider`: what the book's latest run used (the Library row names it)."""
+             provider: str | None = None, steps: dict | None = None) -> dict | None:
+    """`provider`: what the book's latest run used (the Library row names it).
+    `steps`: the step list with time estimates (lore.orchestrator.plan)."""
     if job is None:
         return None
     ok, why = jobs.can_continue(job, now)
     return {
-        "stage": job.stage, "state": job.state, "provider": provider,
+        "stage": job.stage, "state": job.state, "provider": provider, "plan": steps,
         "done": job.done_items, "total": job.total_items,
         "stopped_reason": job.stopped_reason,
         "resumable_at": job.resumable_at.isoformat() if job.resumable_at else None,
@@ -521,13 +522,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             used = jobs.providers_of(conn)
             rows = list_books(conn)
             gemini = _gemini_use(conn, config, now)
+            steps = step_lists(user, config, conn, by_book, used, now)
         finally:
             conn.close()
         return {"usage": usage_line(user, config), "books": [
             {"id": b["id"], "title": b["title"], "author": b["author"],
              "status": b["status"], "world": b["world"], "series": b["series"],
              "series_index": b["series_index"],
-             "job": _job_out(by_book.get(b["id"]), now, used.get(b["id"]))}
+             "job": _job_out(by_book.get(b["id"]), now, used.get(b["id"]),
+                             steps.get(b["id"]))}
             for b in rows], "gemini": gemini}
 
     def _process(config: LoreConfig, book_id: str,
@@ -658,6 +661,34 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         if provider == "anthropic" and model not in roles.ANTHROPIC_MODELS:
             model = roles.ANTHROPIC_DEFAULT
         return provider, model
+
+    def step_lists(user: CurrentUser, cfg: LoreConfig, conn, by_book: dict,
+                   used: dict, now: datetime) -> dict:
+        """Each unfinished book's step list, from the stages the runner would
+        run for it (a move's own stages when one is under way)."""
+        from lore.orchestrator import plan
+        pending = {b: j for b, j in by_book.items() if j.state != jobs.DONE}
+        if not pending:
+            return {}
+        choice, chosen_model = processing_choice(user, cfg)
+        process_names: list[str] | None = None
+        out = {}
+        for book_id, job in pending.items():
+            target = jobs.move_target(conn, book_id)
+            if target is not None:
+                names = plan.names_for(lambda: make_move_stages(cfg, target), cfg)
+            else:
+                if process_names is None:
+                    process_names = plan.names_for(lambda: make_stages(cfg), cfg)
+                names = process_names
+            provider = used.get(book_id) or choice
+            if provider == "gemini":
+                model = (cfg.extraction.gemini_models or [None])[0]
+            else:
+                model = chosen_model if provider == choice else None
+            out[book_id] = plan.steps(conn, book_id, job, names, now,
+                                      provider=provider, model=model)
+        return out
 
     def usage_line(user: CurrentUser, cfg: LoreConfig) -> dict:
         """What the Library footer shows: on Gemini's free tier, `free` (the

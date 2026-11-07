@@ -89,6 +89,19 @@ def active_provider(config) -> str:
     return config.llm.provider
 
 
+def processing_model(config) -> str | None:
+    """The model a book's processing mostly runs on (the fast role), for the
+    step list's timings: the bound user's choice, `[lore.llm]`, or Gemini's
+    first extraction model."""
+    provider = active_provider(config)
+    if provider == GEMINI:
+        return (config.extraction.gemini_models or [None])[0]
+    scope = key_scope.current()
+    if scope is not None:
+        return scope.fast_model or scope.model
+    return config.llm.fast_model or config.llm.model or None
+
+
 def gemini_paid(config) -> bool:
     """True when the current unit of work's Gemini key is on a paid plan: the
     bound user's switch (multi mode), else `[lore.llm] gemini_paid` (local)."""

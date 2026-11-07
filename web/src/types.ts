@@ -98,7 +98,13 @@ export interface BookJob { stage: string; state: "running" | "waiting_quota" | "
   done: number; total: number; stopped_reason: string | null; resumable_at: string | null;
   can_continue: boolean; continue_reason: string;
   // The provider the book's latest run used (multi mode: the user's choice at the time); absent from older servers.
-  provider?: ProviderId | null }
+  provider?: ProviderId | null;
+  // The whole pipeline as the server will run it for this book (lore/orchestrator/plan.py), with seconds left per step
+  // (null: unknown) and in all (`seconds_left`: the known part; `unknown_left`: some step has no estimate).
+  plan?: StepPlan | null }
+export interface PlanStep { stage: string; state: "done" | "current" | "upcoming"; done?: number; total?: number;
+  seconds_left: number | null }
+export interface StepPlan { steps: PlanStep[]; step: number; of: number; seconds_left: number | null; unknown_left: boolean }
 export interface LibraryBook { id: string; title: string; author: string | null; status: string;
   world: string | null; series: string | null; series_index: number | null; job: BookJob | null }
 export type MoveResult = { started: true; world: WorldRef } | { started: false };

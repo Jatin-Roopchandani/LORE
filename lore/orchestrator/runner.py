@@ -30,6 +30,10 @@ class MarksGraphed:
     def total(self, ctx) -> int:
         return self._stage.total(ctx)
 
+    def shown(self, config) -> bool:
+        shown = getattr(self._stage, "shown", None)
+        return True if shown is None else shown(config)
+
     def run(self, ctx, job_ctl) -> None:
         self._stage.run(ctx, job_ctl)
         with ctx.conn:
