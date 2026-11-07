@@ -57,8 +57,9 @@ env_get() {
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 dir="$BACKUPS/daily/$stamp"
-mkdir -p "$dir.part"
 umask 077
+mkdir -p "$dir.part"
+chmod 700 "$BACKUPS" "$dir.part"
 log "start: $dir"
 
 # --- the central database ---------------------------------------------------------

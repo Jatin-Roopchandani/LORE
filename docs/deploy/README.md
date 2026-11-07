@@ -2,6 +2,8 @@
 
 LORE has two modes. **Local mode** (the default) is one user and one library, as ever: `lore ui` and `lore process`. **Multi mode** serves many users from one deployment: each user gets an isolated library, a central database holds the users and the job queue, and book processing runs in a separate worker process.
 
+**The production deploy** (Docker Compose on one VM behind a Cloudflare Tunnel: image, updates, backups) is in [server.md](server.md), with the files in `deploy/`. In multi mode `lore ui` may bind a non-loopback address (`--host 0.0.0.0` in the container), and `GET /healthz` answers `{"ok": true}` while the central database does.
+
 This page covers step 1 of the release work (the tenancy core). Sign-in is step 2, so a multi-mode web process refuses every request with 401 until auth is in place; the tests exercise it through an injected resolver.
 
 ## The pieces
