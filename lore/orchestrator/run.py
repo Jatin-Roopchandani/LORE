@@ -2,7 +2,10 @@
 
 Each unit is idempotent — chunk IDs are deterministic, so re-running a
 unit reproduces exactly the same work and overwrites its own artifacts.
-Nothing is marked complete until its outputs validate.
+Nothing is marked complete until its outputs are durably on disk (lore.fs:
+temp, fsync, rename) and validate. A `completed` unit whose files have since
+gone missing or come back damaged is not trusted: a resume demotes and
+redoes it (`heal_completed`).
 """
 from __future__ import annotations
 
@@ -14,8 +17,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from lore import fs
 from lore.config import LoreConfig
 from lore.extract.runner import ExtractionHalted
+from lore.graph.artifacts import completed_units_with_problems, demote_units
 from lore.ingest.registry import chunks_for_book
 from lore.kaggle_api.client import KaggleClient
 from lore.orchestrator import quota
@@ -84,6 +89,21 @@ def set_unit_state(
                 " VALUES (?, ?, ?, ?, ?)",
                 (JOB_KIND, book_id, state, unit_id, error),
             )
+
+
+def heal_completed(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
+                   units: list[WorkUnit]) -> set[str]:
+    """The ids of `units` that are completed AND whose files are whole.
+
+    A completed unit whose directory is gone or whose files are missing,
+    empty or unreadable is demoted to `failed` here, so it is extracted
+    again instead of being trusted (or crashing the load).
+    """
+    completed = [u.unit_id for u in units if unit_state(conn, u.unit_id) == "completed"]
+    problems = completed_units_with_problems(conn, config, book_id, completed)
+    if problems:
+        demote_units(conn, book_id, problems)
+    return set(completed) - set(problems)
 
 
 def _kaggle_config_for_extraction(config: LoreConfig):
@@ -168,13 +188,15 @@ def _run_unit(
         out_dir = work_dir / "out"
         client.run_and_wait(kernel_dir, out_dir, on_tick=on_event)
         summary = validate_output(unit, out_dir)
-        # Copy the artifacts out BEFORE the finally clause deletes work_dir.
+        # Copy the artifacts out BEFORE the finally clause deletes work_dir:
+        # durably, and the manifest last, so `completed` (set below, after
+        # this) is only ever written once every file is in place.
         dest.mkdir(parents=True, exist_ok=True)
-        for name in ("triplets.parquet", "embeddings.parquet", "manifest.json",
-                     "dead_letter.jsonl"):
+        for name in ("triplets.parquet", "embeddings.parquet",
+                     "dead_letter.jsonl", "manifest.json"):
             source = out_dir / name
             if source.is_file():
-                shutil.copy2(source, dest / name)
+                fs.atomic_copy(source, dest / name)
     except Exception as exc:  # any failure re-queues the unit
         # A failed unit's kernel log is otherwise lost forever: dispatching
         # the next unit pushes a new kernel version over it, and `kaggle
@@ -227,11 +249,8 @@ def run_extraction(
         raise ValueError(f"no chunks registered for book {book_id}")
     report = RunReport(book_id=book_id, units_total=len(units))
 
-    pending = [
-        unit
-        for unit in units
-        if not (resume and unit_state(conn, unit.unit_id) == "completed")
-    ]
+    whole = heal_completed(conn, config, book_id, units) if resume else set()
+    pending = [unit for unit in units if unit.unit_id not in whole]
     tier = None
     if pending and config.extraction_provider == "gemini":
         from lore.orchestrator.local import make_gemini_tier

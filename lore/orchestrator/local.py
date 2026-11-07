@@ -13,13 +13,14 @@ Both write the kernel-shaped artifacts and check them with the same
 from __future__ import annotations
 
 import json
-import os
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from lore import fs
 from lore.config import LoreConfig
 from lore.extract.embed import DOCUMENT_PREFIX, write_unit_outputs
 from lore.extract.runner import (
@@ -62,22 +63,23 @@ class QuotaHalted(ExtractionHalted):
 
 PARTS_DIR = "parts"
 
+log = logging.getLogger(__name__)
+
 
 def parts_dir(dest: Path) -> Path:
     return dest / PARTS_DIR
 
 
 def parts_done(dest: Path, unit: WorkUnit) -> int:
-    """How many of the unit's chunks already have a saved part."""
+    """How many of the unit's chunks already have a saved, readable part."""
     folder = parts_dir(dest)
-    return sum((folder / f"{chunk.id}.json").is_file() for chunk in unit.chunks)
+    return sum(_load_part(folder, chunk.id) is not None for chunk in unit.chunks)
 
 
 def _write_part(folder: Path, chunk_id: str, result: ExtractionResult,
                 models: set[str]) -> None:
-    """One chunk's outcome (extraction or dead letter), saved atomically so a
-    stop mid-write never leaves a half part."""
-    folder.mkdir(parents=True, exist_ok=True)
+    """One chunk's outcome (extraction or dead letter), saved atomically and
+    durably (lore.fs), so neither a stop nor a machine kill leaves a half part."""
     if result.results:
         body = {"extraction": result.results[0].extraction.model_dump(mode="json"),
                 "dead": None}
@@ -86,14 +88,35 @@ def _write_part(folder: Path, chunk_id: str, result: ExtractionResult,
         body = {"extraction": None,
                 "dead": {"raw_output": dead.raw_output, "error": dead.error}}
     body["models"] = sorted(models)
-    target = folder / f"{chunk_id}.json"
-    tmp = folder / f"{chunk_id}.json.tmp"
-    tmp.write_text(json.dumps(body))
-    os.replace(tmp, target)
+    fs.atomic_write_json(folder / f"{chunk_id}.json", body)
+
+
+def _load_part(folder: Path, chunk_id: str) -> tuple[ExtractionResult, set[str]] | None:
+    """A saved part, or None when there is none to use.
+
+    A part that is empty, truncated or does not validate (what a hard kill
+    could leave before writes were fsynced) is treated as missing: logged
+    once, removed, and its chunk requested again. Never a crash.
+    """
+    path = folder / f"{chunk_id}.json"
+    if not path.is_file():
+        return None
+    try:
+        return _read_part(folder, chunk_id)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        log.warning("part %s is damaged (%s); its chunk will be extracted again",
+                    path, exc)
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return None
 
 
 def _read_part(folder: Path, chunk_id: str) -> tuple[ExtractionResult, set[str]]:
     body = json.loads((folder / f"{chunk_id}.json").read_text())
+    if not isinstance(body, dict):
+        raise ValueError("a part is a JSON object")
     result = ExtractionResult()
     if body["extraction"] is not None:
         result.results.append(ChunkResult(
@@ -248,19 +271,24 @@ async def run_unit_gemini(
     done = parts_done(dest, unit)
     if on_chunk is not None:
         on_chunk(done)
+    parts: dict[str, tuple[ExtractionResult, set[str]]] = {}
     for chunk in unit.chunks:
-        if (folder / f"{chunk.id}.json").is_file():
+        saved = _load_part(folder, chunk.id)
+        if saved is not None:
+            parts[chunk.id] = saved
             continue
         generator = GeminiExtractionProvider(client, before_request)
         one = await extract_chunks([ChunkInput(chunk.id, chunk.text)], generator)
         _write_part(folder, chunk.id, one, generator.answered_by)
+        # Read back, so a fresh chunk and a resumed one assemble identically.
+        parts[chunk.id] = _read_part(folder, chunk.id)
         done += 1
         if on_chunk is not None:
             on_chunk(done)
     result = ExtractionResult()
     models: set[str] = set()
     for chunk in unit.chunks:
-        part, part_models = _read_part(folder, chunk.id)
+        part, part_models = parts[chunk.id]
         result.results.extend(part.results)
         result.dead_letters.extend(part.dead_letters)
         models |= part_models

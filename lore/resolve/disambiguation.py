@@ -58,12 +58,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import uuid4
+
+from lore import fs
 
 # One request carries at most this many questions. Far below the token
 # ceiling (17 questions is ~2k tokens against 250,000 TPM); the cap exists
@@ -344,7 +344,8 @@ async def ask(client, questions: Sequence[Question], *, max_batch: int = MAX_BAT
 
 
 def _atomic_write(path: Path, payload: object) -> None:
-    """Write-temp-then-rename, so a reader never sees a partial file.
+    """Write-temp, fsync, rename (lore.fs), so a reader never sees a partial
+    file, even after the machine is killed mid-write.
 
     The temp name carries the pid and a random suffix. A shared
     `<name>.tmp` looked fine and was not: two processes writing at once
@@ -352,14 +353,7 @@ def _atomic_write(path: Path, payload: object) -> None:
     FileNotFoundError because the first had already moved it away —
     measured, not theorised.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.{uuid4().hex[:8]}.tmp")
-    try:
-        temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-        os.replace(temporary, path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
+    fs.atomic_write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def _safe_name(book_id: str) -> str:

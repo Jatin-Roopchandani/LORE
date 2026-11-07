@@ -15,7 +15,7 @@ from lore.graph.artifacts import (
     read_triplets,
 )
 from lore.ingest.registry import ingest_book
-from lore.orchestrator.run import set_unit_state
+from lore.orchestrator.run import set_unit_state, unit_state
 
 BOOK = "abcdef0123456789"
 
@@ -111,7 +111,23 @@ def test_missing_triplets_file_raises_loudly(tmp_path: Path) -> None:
     set_unit_state(conn, BOOK, unit_id, "completed")
     (d / "triplets.parquet").unlink()
 
+    # Caught before any read, and the row demoted so a resume redoes it.
+    with pytest.raises(MissingArtifactError, match=unit_id):
+        completed_unit_dirs(conn, config, BOOK)
+    assert unit_state(conn, unit_id) == "failed"
+    conn.close()
+
+
+def test_a_file_lost_between_listing_and_reading_still_raises(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.ensure_dirs()
+    conn = open_db(config.sqlite_path)
+    _seed_book(conn)
+    unit_id = f"{BOOK}-u0000-aaaa"
+    d = _unit(config, unit_id, "c0")
+    set_unit_state(conn, BOOK, unit_id, "completed")
     dirs = completed_unit_dirs(conn, config, BOOK)
+    (d / "triplets.parquet").unlink()
     with pytest.raises(MissingArtifactError, match=unit_id):
         read_triplets(dirs)
     conn.close()

@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 
+from lore import fs
 from lore.extract.runner import ExtractionResult
 
 # nomic-embed-text-v1.5 expects a task-instruction prefix on every input;
@@ -62,26 +62,28 @@ def write_unit_outputs(
             columns["entity_kinds"].append(kinds)
             columns["extractor_model"].append(model)
             columns["run_id"].append(unit_id)
-    pq.write_table(pa.table(columns), dest / "triplets.parquet")
-    pq.write_table(
+    # Every file is written durably and atomically (lore.fs), and the
+    # manifest LAST: a unit whose manifest is whole had all four land.
+    fs.atomic_write_parquet(dest / "triplets.parquet", pa.table(columns))
+    fs.atomic_write_parquet(
+        dest / "embeddings.parquet",
         pa.table({
             "chunk_id": chunk_ids,
             "vector": vectors,
             "embed_model": [embed_model] * len(chunk_ids),
         }),
-        dest / "embeddings.parquet",
     )
-    with (dest / "dead_letter.jsonl").open("w") as handle:
-        for dead in result.dead_letters:
-            handle.write(
-                json.dumps({
-                    "chunk_id": dead.chunk_id,
-                    "raw_output": dead.raw_output,
-                    "error": dead.error,
-                })
-                + "\n"
-            )
-    (dest / "manifest.json").write_text(
+    fs.atomic_write_text(dest / "dead_letter.jsonl", "".join(
+        json.dumps({
+            "chunk_id": dead.chunk_id,
+            "raw_output": dead.raw_output,
+            "error": dead.error,
+        })
+        + "\n"
+        for dead in result.dead_letters
+    ))
+    fs.atomic_write_text(
+        dest / "manifest.json",
         json.dumps({
             "unit_id": unit_id,
             "chunks_in": len(chunk_ids),

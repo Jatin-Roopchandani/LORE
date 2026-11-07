@@ -6,6 +6,12 @@ again after a stop does only the missing work. The runner owns the
 until the daily allowance resets; Gemini's 402 (prepaid credit used up, from
 any stage) parks it as waiting_key with a friendly reason, resumable with
 Continue; any other exception marks it failed.
+
+A later stage that finds completed extraction units with missing or damaged
+files (DamagedUnitsError, after a hard kill) sends the book back to
+`extract` once in the same run, which redoes exactly those units; a run
+with no extract stage fails with the job saved at `extract`, so Continue
+re-extracts them.
 """
 from __future__ import annotations
 
@@ -18,6 +24,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from lore.config import LoreConfig
+from lore.graph.artifacts import DamagedUnitsError
 from lore.inference import key_scope
 from lore.inference.gemini import CREDIT_MESSAGE, GeminiCreditError, limits_for
 from lore.inference.providers import factory as providers
@@ -239,9 +246,10 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
 
     ctx = StageContext(conn, config, book_id)
     ctl = JobCtl(ctx, clock)
-    for stage in stages:
-        if STAGES.index(stage.name) < resume_at:
-            continue
+    queue = [stage for stage in stages if STAGES.index(stage.name) >= resume_at]
+    rewound = False
+    while queue:
+        stage = queue.pop(0)
         total = stage.total(ctx)
         jobs.start_job(conn, book_id, stage.name, total, now=clock(), guard=False)
         jobs.reset_stage_clock(conn, book_id)
@@ -252,6 +260,17 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
             jobs.stop_key(conn, book_id, str(stop), now=clock())
             return jobs.get_job(conn, book_id)
         except Exception as exc:  # noqa: BLE001 - sorted below
+            if caused_by(exc, DamagedUnitsError) and stage.name != "extract":
+                # The damaged units are already demoted to `failed`.
+                at = next((i for i, s in enumerate(stages) if s.name == "extract"), None)
+                if at is not None and not rewound:
+                    rewound = True
+                    queue = list(stages[at:])
+                    continue
+                jobs.fail(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000],
+                          now=clock())
+                jobs.set_stage(conn, book_id, "extract")
+                return jobs.get_job(conn, book_id)
             if caused_by(exc, ProviderSwitch):
                 jobs.stop_switch(conn, book_id, SWITCH_REASON, now=clock())
                 return jobs.get_job(conn, book_id)

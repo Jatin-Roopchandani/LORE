@@ -13,7 +13,13 @@ from collections.abc import Callable
 from lore.config import LoreConfig
 from lore.orchestrator.local import make_gemini_tier, parts_done
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
-from lore.orchestrator.run import RunReport, _run_unit_here, _UnitHalted, book_units, unit_state
+from lore.orchestrator.run import (
+    RunReport,
+    _run_unit_here,
+    _UnitHalted,
+    book_units,
+    heal_completed,
+)
 from lore.orchestrator.workunit import WorkUnit
 
 
@@ -49,8 +55,8 @@ class ExtractStage:
             raise ValueError(
                 'resumable processing needs extraction_provider = "gemini"')
         units = self._units(ctx)
-        completed = {u.unit_id for u in units
-                     if unit_state(ctx.conn, u.unit_id) == "completed"}
+        # Completed units whose files a crash damaged are demoted and redone.
+        completed = heal_completed(ctx.conn, config, ctx.book_id, units)
         report = self.report = RunReport(
             ctx.book_id, units_total=len(units), units_completed=len(completed))
         base = sum(len(u.chunks) for u in units if u.unit_id in completed)

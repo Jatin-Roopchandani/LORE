@@ -21,6 +21,7 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from lore import fs
 from lore.beats.store import KINDS, Beat, beat_id
 from lore.ingest.models import Chunk
 from lore.query.models import Claim, Passage
@@ -244,9 +245,6 @@ def read_cached(path: Path, chunks: Sequence[Chunk]) -> BeatsAnswer | None:
 
 
 def write_cached(path: Path, chunks: Sequence[Chunk], answer: BeatsAnswer) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({
+    fs.atomic_write_json(path, {
         "prompt_hash": prompt_hash(), "text_hash": _text_hash(chunks),
-        "answer": answer.model_dump()}))
-    tmp.replace(path)
+        "answer": answer.model_dump()})

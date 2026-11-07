@@ -921,8 +921,9 @@ async def load_book(
     if not dirs:
         raise ValueError(f"no completed extraction units for book {book_id}")
 
-    triplets = read_triplets(dirs)
-    embedding_rows = read_embeddings(dirs)
+    # A unit whose file cannot be read is demoted to re-extract (artifacts).
+    triplets = read_triplets(dirs, conn=conn)
+    embedding_rows = read_embeddings(dirs, conn=conn)
     # Every completed unit embeds each of its chunks exactly once, so a chunk
     # embedded twice means two completed units cover it: stale `completed`
     # job rows from a different packing (another work_unit_size, or an older

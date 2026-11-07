@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
+from lore import fs
 from lore.db.lance_store import EMBED_DIM
 from lore.extract.schemas import SCHEMA_VERSION
 from lore.ingest.models import Chunk
@@ -64,19 +65,19 @@ def write_unit(
     `lore` package the kernel imports so both tiers share one runner."""
     unit_dir = dest / unit.unit_id
     unit_dir.mkdir(parents=True, exist_ok=True)
-    with (unit_dir / "unit.jsonl").open("w") as handle:
-        for chunk in unit.chunks:
-            handle.write(
-                json.dumps(
-                    {
-                        "chunk_id": chunk.id,
-                        "text": chunk.text,
-                        "chapter_seq": chunk.chapter_seq,
-                    }
-                )
-                + "\n"
-            )
-    (unit_dir / "unit-manifest.json").write_text(
+    fs.atomic_write_text(unit_dir / "unit.jsonl", "".join(
+        json.dumps(
+            {
+                "chunk_id": chunk.id,
+                "text": chunk.text,
+                "chapter_seq": chunk.chapter_seq,
+            }
+        )
+        + "\n"
+        for chunk in unit.chunks
+    ))
+    fs.atomic_write_text(
+        unit_dir / "unit-manifest.json",
         json.dumps(
             {
                 "unit_id": unit.unit_id,

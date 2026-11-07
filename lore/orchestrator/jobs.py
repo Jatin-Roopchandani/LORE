@@ -282,6 +282,14 @@ def fail(conn: sqlite3.Connection, book_id: str, reason: str, *,
            (reason, _iso(_aware(now)), book_id))
 
 
+def set_stage(conn: sqlite3.Connection, book_id: str, stage: str) -> None:
+    """Move a stopped job back to `stage`: Continue resumes there. Used when
+    a later stage found extraction units that must be redone."""
+    _write(conn, book_id,
+           "UPDATE book_jobs SET stage = ?, done_items = 0, total_items = 0"
+           " WHERE book_id = ?", (stage, book_id))
+
+
 def done(conn: sqlite3.Connection, book_id: str, *,
          now: datetime | None = None) -> None:
     _write(conn, book_id,

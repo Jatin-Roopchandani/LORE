@@ -36,6 +36,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from lore import fs
 from lore.beats.store import Beat, beats_for_entities
 from lore.codex.store import ASPECTS, CodexEntry, Statement
 from lore.query.models import BookInfo, Claim, Passage
@@ -396,14 +397,11 @@ def write_cached(path: Path, evidence_hash_: str, answer: CodexAnswer,
     output was unusable MAX_ATTEMPTS times: it is read like any answer (so the
     entity is not asked again), and, keyed by the prompt and evidence hashes
     like any other, goes stale with either."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
     data = {"prompt_hash": prompt_hash(), "evidence_hash": evidence_hash_,
             "answer": answer.model_dump()}
     if failed:
         data["failed"] = True
-    tmp.write_text(json.dumps(data))
-    tmp.replace(path)
+    fs.atomic_write_json(path, data)
 
 
 # An entity whose answer is unusable is asked again on the next run, up to this
@@ -429,9 +427,6 @@ def read_attempts(path: Path, evidence_hash_: str) -> int:
 
 
 def write_attempts(path: Path, evidence_hash_: str, attempts: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    target = _attempts_path(path)
-    tmp = target.with_suffix(".attempts.tmp")
-    tmp.write_text(json.dumps({"prompt_hash": prompt_hash(),
-                               "evidence_hash": evidence_hash_, "attempts": attempts}))
-    tmp.replace(target)
+    fs.atomic_write_json(_attempts_path(path), {
+        "prompt_hash": prompt_hash(), "evidence_hash": evidence_hash_,
+        "attempts": attempts})

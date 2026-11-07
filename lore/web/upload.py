@@ -48,6 +48,7 @@ from fastapi.responses import JSONResponse
 from python_multipart.multipart import MultipartParser, parse_options_header
 from starlette.requests import ClientDisconnect
 
+from lore import fs
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.sandbox import SandboxLimits
@@ -218,6 +219,9 @@ class _Form:
 
     def _part_end(self) -> None:
         if self._current == "file":
+            # Durable before it is renamed into the inbox and registered.
+            self._file.flush()
+            os.fsync(self._file.fileno())
             self._file.close()
             self._file = None
         elif self._current == "world":
@@ -280,6 +284,7 @@ def _register(cfg: LoreConfig, part: Path, display: str, kind: str, book_id: str
         conn.close()
     stored = part.with_name(f"{uuid.uuid4().hex}.{kind}")
     part.rename(stored)
+    fs.fsync_dir(stored.parent)
     try:
         # Checked, parsed, chunked and classified in a limited subprocess
         # (lore.ingest.sandbox): this process never opens the untrusted file.

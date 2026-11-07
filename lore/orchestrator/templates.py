@@ -4,6 +4,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from lore import fs
 from lore.config import LoreConfig
 from lore.orchestrator.workunit import WorkUnit, write_unit
 
@@ -68,5 +69,5 @@ def materialize_extract_run(
                 text = text.replace(f'"{key}"', f'"{value}"')
             else:
                 text = text.replace(key, value)
-        path.write_text(text)
+        fs.atomic_write_text(path, text)
     return kernel_dir, dataset_dir
