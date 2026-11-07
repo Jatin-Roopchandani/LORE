@@ -27,39 +27,6 @@
 .au-line{margin:clamp(8px,3vh,36px) auto 0;font:600 clamp(26px,2.5vw,40px)/1.12 var(--f-ui);letter-spacing:-.022em;max-width:21ch;text-align:center}
 .au-line span{display:block;color:var(--spark)}
 .au-art{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center}
-/* The constellation (AuthGraph.tsx): orbit rings turning slowly, a glow at the centre, quiet links drawing in, the
-   three links of the meeting drawn in turn and then carrying a travelling spark, the outer stars twinkling. */
-.ag{display:block;width:100%;max-width:560px;height:100%;max-height:min(58vh,560px);overflow:visible}
-.ag-orbits{transform-origin:300px 270px;animation:ag-spin 140s linear infinite}
-.ag-orbit{fill:none;stroke:rgb(120 174 234 / .26);stroke-width:1.2;stroke-dasharray:2 7}
-.ag-orbit-inner{stroke:rgb(235 170 60 / .22);stroke-dasharray:1 6}
-.ag-halo{opacity:0;animation:ag-fade 1.6s ease .1s forwards}
-.ag-quiet line{stroke:#2E3B48;stroke-width:1.4;stroke-dasharray:1;stroke-dashoffset:1;animation:ag-draw .9s ease-out forwards}
-.ag-quiet .ag-q0{animation-delay:.15s}.ag-quiet .ag-q1{animation-delay:.27s}.ag-quiet .ag-q2{animation-delay:.39s}.ag-quiet .ag-q3{animation-delay:.51s}
-.ag-quiet .ag-q4{animation-delay:.63s}.ag-quiet .ag-q5{animation-delay:.75s}.ag-quiet .ag-q6{animation-delay:.87s}
-.ag-hot-line{stroke:var(--spark);stroke-width:3;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:ag-draw .9s ease forwards}
-.ag-flow{stroke:#FFE3A6;stroke-width:3;stroke-linecap:round;stroke-dasharray:.07 .93;stroke-dashoffset:1;opacity:0;filter:drop-shadow(0 0 4px rgb(235 170 60 / .9));animation:ag-flow 3.2s linear infinite}
-.ag-hot1 .ag-hot-line{animation-delay:1s}.ag-hot2 .ag-hot-line{animation-delay:1.6s}.ag-hot3 .ag-hot-line{animation-delay:2.2s}
-.ag-hot1 .ag-flow{animation-delay:3s}.ag-hot2 .ag-flow{animation-delay:3.6s}.ag-hot3 .ag-flow{animation-delay:4.2s}
-.ag-node{transform-box:fill-box;transform-origin:center;opacity:0;animation:ag-pop .55s cubic-bezier(.2,.9,.3,1.3) forwards}
-.ag-node{animation-delay:.1s}.ag-n0{animation-delay:.35s}.ag-n1{animation-delay:.43s}.ag-n2{animation-delay:.51s}.ag-n3{animation-delay:.59s}
-.ag-outer .ag-dot{animation:ag-twinkle 4.5s ease-in-out infinite}
-.ag-t1{animation-delay:.6s!important}.ag-t2{animation-delay:1.2s!important}.ag-t3{animation-delay:1.8s!important}.ag-t4{animation-delay:2.4s!important}.ag-t5{animation-delay:3s!important}
-.ag-lit .ag-dot{filter:drop-shadow(0 0 10px rgb(235 170 60 / .8));animation:ag-pulse 2.8s ease-in-out 2.4s infinite}
-.ag text{font:500 14px var(--f-ui);fill:#C2CDD7}
-.ag text.ag-main{font-weight:600;font-size:15.5px;fill:#E3E9EF}
-.ag-labels{opacity:0;animation:ag-fade .7s ease .8s forwards}
-.ag-tag{font:600 12.5px var(--f-ui)!important;fill:var(--spark)!important;opacity:0;animation:ag-fade .5s ease forwards}
-.ag-tag1{animation-delay:1.7s}.ag-tag2{animation-delay:2.3s}.ag-tag3{animation-delay:2.9s}
-@keyframes ag-draw{to{stroke-dashoffset:0}}
-@keyframes ag-fade{to{opacity:1}}
-@keyframes ag-pop{from{opacity:0;transform:scale(.2)}to{opacity:1;transform:none}}
-@keyframes ag-spin{to{transform:rotate(360deg)}}
-@keyframes ag-flow{0%{opacity:0;stroke-dashoffset:1}10%{opacity:1}90%{opacity:1}100%{opacity:0;stroke-dashoffset:0}}
-@keyframes ag-twinkle{0%,100%{opacity:1}50%{opacity:.55}}
-@keyframes ag-pulse{0%,100%{filter:drop-shadow(0 0 6px rgb(235 170 60 / .6))}50%{filter:drop-shadow(0 0 16px rgb(235 170 60 / 1))}}
-.au-caption{margin:0;display:flex;align-items:center;justify-content:center;gap:8px;font-size:12.5px;color:var(--night-muted)}
-.au-caption::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--spark);box-shadow:0 0 8px rgb(235 170 60 / .7);flex:none}
 @keyframes au-draw{to{stroke-dashoffset:0}}
 @keyframes au-fade{to{opacity:1}}
 @keyframes au-pop{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:none}}
@@ -159,7 +126,7 @@
   .au-brand{position:relative;height:auto;flex-direction:row;align-items:center;gap:14px;padding:14px 16px}
   .au-brand::after{inset:auto 0 0 0;width:auto;height:1px;background:var(--night-line)}
   .au-line{margin:0 0 0 auto;font:500 13px/1.3 var(--f-ui);letter-spacing:0;color:var(--night-muted);text-align:right;max-width:none}
-  .au-line span,.au-art,.au-caption{display:none}
+  .au-line span,.au-art{display:none}
   .au-wordmark b{font-size:20px}
   .au-main{justify-content:flex-start;padding:32px 16px 48px}
   .au-col{max-width:440px}
@@ -169,8 +136,6 @@
 /* Short desktop windows: the graph gives way first. */
 
 @media (prefers-reduced-motion:reduce){
-  .ag *,.ag g{animation:none!important;opacity:1!important;stroke-dashoffset:0!important;transform:none!important}
-  .ag-flow{display:none}
   .au *{transition:none!important}
   .au-spin{animation-duration:1.6s}
 }

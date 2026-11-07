@@ -55,23 +55,10 @@ html:has(.lh){scroll-behavior:smooth;scroll-padding-top:calc(68px + 12px)}
 .lh h1 span{color:var(--spark)}
 .h-lede{font-size:clamp(17px,1.35vw,21px);color:var(--night-muted);max-width:42ch;margin:0 0 30px}
 .h-ctas{display:flex;gap:10px;flex-wrap:wrap}
-.h-hero-art{position:relative}
-.h-constellation{width:100%;height:auto;display:block;overflow:visible}
-.h-constellation .h-e{stroke:#2E3B48;stroke-width:1.3}
-.h-constellation .h-e.h-hot{stroke:var(--spark);stroke-width:2.6;stroke-dasharray:var(--len,300);stroke-dashoffset:var(--len,300);animation:h-draw 1.6s ease forwards}
-.h-constellation .h-hot1{--len:179;animation-delay:.4s}
-.h-constellation .h-hot2{--len:187;animation-delay:1.2s}
-.h-constellation .h-hot3{--len:243;animation-delay:2s}
-.h-constellation text{font:500 13px var(--f-ui);fill:#C9D3DC}
-.h-constellation .h-tag{font:600 11px var(--f-ui);fill:var(--spark);opacity:0;animation:h-fade .6s ease forwards}
-.h-constellation .h-tag1{animation-delay:1.1s}
-.h-constellation .h-tag2{animation-delay:1.9s}
-.h-constellation .h-tag3{animation-delay:2.7s}
-.h-constellation .h-node{transform-box:fill-box;transform-origin:center}
-.h-constellation .h-node.h-lit{animation:h-pulse 2.8s ease-in-out infinite}
+.h-hero-art{position:relative;display:flex;justify-content:center}
+.h-hero-art .ag{max-width:620px;max-height:min(72vh,620px)}
 @keyframes h-draw{to{stroke-dashoffset:0}}@keyframes h-fade{to{opacity:1}}
 @keyframes h-pulse{0%,100%{filter:none}50%{filter:drop-shadow(0 0 8px rgb(235 170 60 / .8))}}
-.h-hero-answer{width:min(470px,100%);margin:-8px 0 0 auto;padding:16px 18px;opacity:0;transform:translateY(8px);animation:h-rise .6s ease 3.2s forwards}
 @keyframes h-rise{to{opacity:1;transform:none}}
 .h-q{font:600 13px/1.3 var(--f-ui);color:var(--muted);display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
 .h-q span{background:var(--accent-soft);color:var(--ink);border-radius:8px;padding:6px 10px;font-weight:500}
@@ -203,8 +190,7 @@ html:has(.lh){scroll-behavior:smooth;scroll-padding-top:calc(68px + 12px)}
 @media (max-width:900px){
   .h-hero,.h-beta{grid-template-columns:1fr}
   .h-hero{min-height:auto;padding-top:calc(var(--nav-h) + 32px)}
-  .h-hero-answer{margin:12px 0 0}
-  .h-pin-grid{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);gap:14px;height:calc(100svh - var(--nav-h) - 24px)}
+    .h-pin-grid{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);gap:14px;height:calc(100svh - var(--nav-h) - 24px)}
   .h-pin-text .h-intro{display:none}
   .h-pin-text h2{font-size:22px;margin-bottom:12px}
   .h-step h3{font-size:19px}.h-step p{font-size:15px}
@@ -223,8 +209,6 @@ html:has(.lh){scroll-behavior:smooth;scroll-padding-top:calc(68px + 12px)}
 }
 @media (max-width:560px){.lh .h-nav .h-invite{display:none}}
 @media (prefers-reduced-motion:reduce){
-  .h-constellation .h-e.h-hot{animation:none;stroke-dashoffset:0}.h-constellation .h-tag{animation:none;opacity:1}
-  .h-constellation .h-node.h-lit{animation:none}.h-hero-answer{animation:none;opacity:1;transform:none}
   .h-pin-steps .h-step{transition:none}.h-stage .h-phase{transition:none}.h-beta-steps li{transition:none}.h-scroll-cue i::after{animation:none}
   .h-progress li,.h-pin-dots button::before,.h-written,.h-mini .h-e,.h-waitlist,.h-beta-steps li::before,.h-nav{transition:none}
   .h-stage[data-step="4"] .h-p4 .h-checked:not(.is-cut) b{animation:none}

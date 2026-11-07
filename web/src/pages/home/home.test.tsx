@@ -47,7 +47,7 @@ describe("the homepage", () => {
 
     expect(screen.getByText(HOME.lede)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: HOME.heroGraphLabel })).toBeInTheDocument();
-    expect(screen.getByText(HOME.heroQuestion)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: HOME.heroGraphLabel })).toBeInTheDocument(); // the symmetric constellation, no answer card
     for (const s of HOME.steps) expect(screen.getByText(s.h)).toBeInTheDocument();
     for (const f of HOME.features) expect(screen.getByRole("heading", { name: f.title })).toBeInTheDocument();
     for (const s of HOME.betaSteps) expect(screen.getByText(s.b, { selector: "b" })).toBeInTheDocument();

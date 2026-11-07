@@ -2,7 +2,7 @@ import "./auth.css";
 import type { ReactNode } from "react";
 import { AUTH } from "../messages";
 import { AlertIcon, Spinner } from "./authIcons";
-import { AuthGraph } from "./AuthGraph";
+import { StoryGraph } from "./StoryGraph";
 import { Logo } from "./Logo";
 
 // The frame of the sign-in, waitlist and continue-signing-in pages: the homepage's night sky on the left (logo, the
@@ -19,8 +19,7 @@ export function AuthShell({ children, mark = true }: { children: ReactNode; mark
         </a>
         <p className="au-line">{AUTH.brandLine} <span>{AUTH.brandLineGlow}</span></p>
         {/* A picture of the product, not content: hidden from assistive technology so the form comes first. */}
-        <div className="au-art" aria-hidden="true"><AuthGraph /></div>
-        <p className="au-caption">{AUTH.brandCaption}</p>
+        <div className="au-art" aria-hidden="true"><StoryGraph /></div>
       </div>
       <main className="au-main">
         <div className="au-col">

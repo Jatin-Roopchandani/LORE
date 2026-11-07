@@ -1,9 +1,11 @@
+import "./StoryGraph.css";
 import { AUTH, HOME } from "../messages";
 
-// The constellation beside the sign-in pages: chapters 1-2 of A Study in Scarlet (spoiler-free), laid out
+// The constellation of the homepage hero and the sign-in pages: chapters 1-2 of A Study in Scarlet (spoiler-free), laid out
 // mirror-symmetric about the vertical axis. Watson and Holmes are a pair at the centre with Stamford, who
 // introduces them, above. Watson's world fans out on the left and Holmes's on the right; 221B Baker Street,
-// which they share, sits at the bottom between them. Decorative: hidden from assistive technology by the caller.
+// which they share, sits at the bottom between them. With a `label` it is an image with that description (the
+// homepage); without one it is decorative and the caller hides it from assistive technology (the sign-in pages).
 const G = HOME.heroGraph;
 const CX = 300, CY = 270, R = 205;
 
@@ -53,9 +55,10 @@ const HOT: { from: string; to: string; tag: string; tx: number; ty: number; anch
 
 const line = (a: string, b: string) => ({ x1: at[a].x, y1: at[a].y, x2: at[b].x, y2: at[b].y });
 
-export function AuthGraph() {
+export function StoryGraph({ label }: { label?: string }) {
   return (
-    <svg className="ag" viewBox="0 0 600 540" preserveAspectRatio="xMidYMid meet">
+    <svg className="ag" viewBox="0 0 600 540" preserveAspectRatio="xMidYMid meet"
+      {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}>
       <defs>
         <radialGradient id="ag-glow" cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor="rgb(120 174 234 / .22)" />

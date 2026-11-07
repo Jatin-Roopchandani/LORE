@@ -416,7 +416,6 @@ export const AUTH = {
   // The night brand panel beside every sign-in page (a phone shows only the logo and the first line).
   brandLine: "Ask your books anything.",
   brandLineGlow: "Every answer checked against the page.",
-  brandCaption: "Spoiler-free: A Study in Scarlet, chapters 1–2 only.",
   graphBookOfLife: "The Book of Life",
   signInTitle: "Welcome back",
   signInLead: "Sign in to pick up your reading where you left off.",
@@ -686,11 +685,6 @@ export const HOME = {
     meetsAgain: "meets again", introduces: "introduces", sharesRooms: "shares rooms with",
   },
   youAsked: "You asked",
-  heroQuestion: "What does Holmes do for a living?",
-  heroAnswer: [
-    "He calls himself a consulting detective, “the only one in the world”: when London’s government and private detectives are at fault, they come to him, and he puts them on the right scent. ",
-    { cite: "15" },
-  ] as Seg[],
   scrollCue: "Scroll to see how it answers",
 
   howTitle: "How LORE answers a question",
