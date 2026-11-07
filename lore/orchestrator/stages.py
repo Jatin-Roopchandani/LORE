@@ -14,6 +14,7 @@ wire fakes.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -41,6 +42,8 @@ from lore.resolve.disambiguation import (
     ask as ask_disambiguation,
 )
 from lore.resolve.synonyms import SYNONYM_BATCH, ask_synonyms
+
+log = logging.getLogger(__name__)
 
 
 def quota_stop_from(exc: GeminiQuotaError) -> QuotaStop:
@@ -254,7 +257,7 @@ class DisambiguateStage:
                         answers = await ask_disambiguation(client, batch)
                         store.save_answers(answers)
                     else:
-                        answers = await ask_synonyms(client, batch)
+                        answers = await _ask_synonyms_softly(client, batch)
                         store.save_synonym_answers(answers)
                     if answers and self._reload is not None:
                         # Durable before anything else can stop the run.
@@ -277,6 +280,19 @@ class DisambiguateStage:
             return
         self._reload(ctx)
         jobs.set_needs_reload(ctx.conn, ctx.book_id, False)
+
+
+async def _ask_synonyms_softly(client, batch) -> dict[str, str]:
+    """Synonym answers for one batch, asked twice at most. Answers that still
+    cannot be read merge nothing (the questions stay unanswered for a later
+    run): a bad reply here must never stop a book."""
+    from lore.resolve.disambiguation import AnswerMismatchError
+    for attempt in (1, 2):
+        try:
+            return await ask_synonyms(client, batch)
+        except AnswerMismatchError as exc:
+            log.warning("synonym answers unreadable (attempt %d of 2): %s", attempt, exc)
+    return {}
 
 
 def _user_or_local_key() -> str | None:

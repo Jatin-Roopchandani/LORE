@@ -253,3 +253,19 @@ def test_the_disambiguate_stage_asks_synonym_questions_and_reloads(stage_env) ->
     again = _Client()
     run_book(conn, config, BOOK, [DisambiguateStage(lambda cfg: again)], force=True)
     assert again.prompts == []
+
+
+def test_unreadable_synonym_answers_never_stop_the_stage() -> None:
+    import asyncio
+    from lore.orchestrator.stages import _ask_synonyms_softly
+    from tests.test_synonyms import _two_questions
+
+    class Mumbler:
+        calls = 0
+
+        async def generate(self, prompt: str) -> str:
+            Mumbler.calls += 1
+            return "I think they are the same."
+
+    assert asyncio.run(_ask_synonyms_softly(Mumbler(), _two_questions())) == {}
+    assert Mumbler.calls == 2  # asked again once, then gave up without raising

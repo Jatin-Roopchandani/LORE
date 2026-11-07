@@ -288,3 +288,31 @@ def test_merging_repoints_mentions_aliases_and_alias_records() -> None:
     assert {(a.alias_id, a.canonical_id) for a in merged.aliases} == {(old, m), (f, m)}
     # the input is untouched
     assert len(resolution.entities) == 2
+
+
+def test_a_bare_verdict_without_the_echo_is_read_by_its_number() -> None:
+    from lore.resolve.synonyms import parse_synonym_answers
+    qs = _two_questions()
+    out = parse_synonym_answers(qs, "1. same\n2. Different.")
+    assert out == {qs[0].key: "same", qs[1].key: "different"}
+
+
+def test_a_wrong_echo_is_still_refused() -> None:
+    import pytest
+    from lore.resolve.disambiguation import AnswerMismatchError
+    from lore.resolve.synonyms import parse_synonym_answers
+    qs = _two_questions()
+    with pytest.raises(AnswerMismatchError):
+        parse_synonym_answers(qs, "1. Somebody / Else -> same\n2. different")
+
+
+def test_a_bare_answer_with_a_missing_number_is_still_refused() -> None:
+    import pytest
+    from lore.resolve.disambiguation import AnswerMismatchError
+    from lore.resolve.synonyms import parse_synonym_answers
+    with pytest.raises(AnswerMismatchError):
+        parse_synonym_answers(_two_questions(), "1. same")
+
+
+def _two_questions():
+    return [_question("Myrddraal", "Fade"), _question("Trollocs", "Myrddraal")]

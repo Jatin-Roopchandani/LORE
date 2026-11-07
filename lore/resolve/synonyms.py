@@ -734,6 +734,12 @@ def _strip_kinds(text: str, q: SynonymQuestion) -> str:
     return text
 
 
+def _bare_verdict(body: str) -> bool:
+    """True for a line that is only a verdict word ("same", "Different.")."""
+    words = body.split()
+    return len(words) == 1 and re.sub(r"[^a-z]", "", words[0].casefold()) in _VERDICTS
+
+
 def parse_synonym_answers(questions: Sequence[SynonymQuestion], text: str) -> dict[str, str]:
     """{question key: same | claimed | different}, or AnswerMismatchError.
 
@@ -749,7 +755,12 @@ def parse_synonym_answers(questions: Sequence[SynonymQuestion], text: str) -> di
         if not match:
             continue
         number = int(match.group(1))
-        pieces = _ARROW.split(match.group(2).strip().strip("*").strip())
+        body = match.group(2).strip().strip("*").strip()
+        pieces = _ARROW.split(body)
+        if len(pieces) == 1 and _bare_verdict(body):
+            # "3. same": a model may drop the echo. With every number present
+            # exactly once (checked below) the numbering alone aligns it.
+            pieces = ["", body]
         if len(pieces) != 2:
             raise AnswerMismatchError(f"answer {number} is not `<n>. <a> / <b> -> <verdict>`:"
                                       f" {line.strip()!r}")
@@ -765,7 +776,7 @@ def parse_synonym_answers(questions: Sequence[SynonymQuestion], text: str) -> di
     for number, (echoed, verdict) in sorted(parsed.items()):
         q = questions[number - 1]
         echo = _squash(_strip_kinds(echoed, q))
-        if echo not in {_squash(q.a.name + q.b.name), _squash(q.b.name + q.a.name)}:
+        if echoed and echo not in {_squash(q.a.name + q.b.name), _squash(q.b.name + q.a.name)}:
             raise AnswerMismatchError(
                 f"answer {number} echoes {echoed!r} but question {number} asked about"
                 f" {q.a.name!r} / {q.b.name!r}")
