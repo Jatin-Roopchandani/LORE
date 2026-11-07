@@ -1,5 +1,5 @@
 import type { AdminEvent, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
-  EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
+  EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, McpCheck, DeviceSession, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
   SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
@@ -180,6 +180,8 @@ export const api = {
     sendJson<ReadingPositionData>("PUT", withWorld("/api/reading-position", world), body),
   quota: () => getJson<Quota>("/api/quota"),
   mcp: () => getJson<McpInfo>("/api/mcp"),
+  // Local mode: builds the MCP server as `lore mcp` would and lists its tools (404 in multi mode).
+  mcpCheck: () => getJson<McpCheck>("/api/mcp/check"),
   settings: () => getJson<{ show_internals: boolean }>("/api/settings"),
 };
 
@@ -197,7 +199,27 @@ export const authApi = {
     sendJson<{ ok: true }>("POST", "/api/waitlist", { email, reading, consent, website }, true),
   // Deletes the account and everything in it; `confirm` is the user's own email, typed.
   deleteMe: (confirm: string) => sendJson<{ deleted: true }>("POST", "/api/me/delete", { confirm }, true),
+  // Signed-in devices: this user's live sessions; revoke one (never this device: that is Sign out), or all the others.
+  sessions: () => getJson<{ sessions: DeviceSession[] }>("/api/me/sessions", true),
+  revokeSession: (id: string) => sendJson<{ revoked: number }>("DELETE", `/api/me/sessions/${encodeURIComponent(id)}`, undefined, true),
+  signOutOthers: () => sendJson<{ revoked: number }>("POST", "/api/me/sessions/sign-out-others", {}, true),
+  // Download my data: a zip of this user's chats and their books' metadata (never keys).
+  exportData: exportData,
 };
+
+async function exportData(): Promise<{ blob: Blob; filename: string } | { error: ApiError }> {
+  try {
+    const r = await fetch("/api/me/export", { method: "POST", headers: { Accept: "application/zip", ...csrfHeaders() } });
+    if (!r.ok) {
+      if (signedOut(r)) return { error: { code: "unauthorized", message: "" } };
+      return { error: { code: `http_${r.status}`, message: "" } };
+    }
+    const named = /filename="([^"]+)"/.exec(r.headers.get("content-disposition") ?? "");
+    return { blob: await r.blob(), filename: named?.[1] ?? "lore-data.zip" };
+  } catch {
+    return { error: { code: "unreachable", message: "" } };
+  }
+}
 
 // The signed-in user's own model-provider keys (multi-user mode): Gemini, Claude (anthropic) or OpenAI. `get` is the
 // active provider's key. The server never sends a key back, only its last four characters.

@@ -6,6 +6,7 @@ import { EDGE_LABEL_PX, frame, makeDrawEdgeLabel } from "../edgeLabel";
 import { createNodeBorderProgram } from "@sigma/node-border";
 import { nodeLabel, type GraphView } from "../graphView";
 import { worldSlot } from "../worlds";
+import { prefersReducedMotion } from "../settings";
 import type { Positions } from "../layout";
 
 const KIND_VAR: Record<string, string> = { Character: "--k-character", Place: "--k-place", Faction: "--k-faction", Object: "--k-object",
@@ -274,7 +275,7 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     const at = s.getNodeDisplayData(focusId);
     if (!at) return;
     const ratio = Math.min(s.getCamera().ratio, 0.7);
-    s.getCamera().animate({ x: at.x, y: at.y, ratio }, { duration: 300 });
+    s.getCamera().animate({ x: at.x, y: at.y, ratio }, { duration: prefersReducedMotion() ? 0 : 300 });
   }, [focusRequest]);
   return <div ref={box} className="gcanvas" role="img" aria-label="Entities and relationships used for the answer" />;
 }

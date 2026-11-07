@@ -1,6 +1,7 @@
 import type { ApiError, Depth, StepName } from "./types";
 
-export interface Msg { text: string; retry?: boolean; command?: string }
+// `settings`: a Settings tab that fixes it (a link to `#settings/<tab>` is shown under the message).
+export interface Msg { text: string; retry?: boolean; command?: string; settings?: "providers" | "usage" }
 export const OLLAMA_START = "CUDA_VISIBLE_DEVICES=-1 OLLAMA_VULKAN=0 ~/.local/ollama/bin/ollama serve";
 
 export const STEP_LABEL: Record<StepName, string> = {
@@ -358,7 +359,7 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
   switch (error.code) {
     case "budget_exhausted":
       return { text: `Today's ${i ? "Gemini requests are" : "question allowance is"} used up. `
-        + `${i ? "They reset" : "It resets"} at midnight Pacific${until(ctx.resetsAt, ctx.now ?? new Date())}.` };
+        + `${i ? "They reset" : "It resets"} at midnight Pacific${until(ctx.resetsAt, ctx.now ?? new Date())}.`, settings: "usage" };
     case "upstream_unavailable":
       // The backend has no separate Ollama code: an outage is upstream_unavailable naming Ollama.
       if (/ollama/i.test(error.message))
@@ -380,9 +381,9 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
     case "bad_request":
       return { text: error.message || "That question couldn't be sent. Questions are 1 to 2,000 characters." };
     case "key_required":
-      return { text: "Connect your AI provider to ask questions." };
+      return { text: "Connect your AI provider to ask questions.", settings: "providers" };
     case "key_invalid":
-      return { text: "Your AI provider refused your API key. Replace it to carry on." };
+      return { text: "Your AI provider refused your API key. Replace it to carry on.", settings: "providers" };
     case "model_refused":
       return { text: "The AI model declined to answer this. Try asking it another way." };
     case "too_large":
@@ -397,13 +398,10 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
   }
 }
 
-// Theme picker.
+// Theme picker (Settings, Appearance).
 export const THEME = {
-  button: "Theme",
-  menu: "Choose a theme",
   system: "System",
   systemHint: "Follows your device",
-  groups: { dark: "Dark", light: "Light" },
 };
 
 // Sign-in, the waitlist and the public pages (multi-user mode).
@@ -612,6 +610,119 @@ export const ACCOUNT_DELETE = {
   deleting: "Deleting…",
   cancel: "Cancel",
   failed: "The account couldn't be deleted. Please try again.",
+};
+
+// The Settings popup: one dialog over the app (never a page), opened from the ⚙ button, the account menu, or a
+// `#settings/<tab>` link. Every string the popup and its tabs show, except the provider and usage panels' own.
+export const SETTINGS = {
+  title: "Settings",
+  open: "Settings",
+  close: "Close settings",
+  tabsLabel: "Settings sections",
+  tabs: {
+    account: "Account", providers: "AI providers", usage: "Usage", appearance: "Appearance", reading: "Reading",
+    mcp: "MCP connector", data: "Your data", admin: "Admin",
+  } as Record<string, string>,
+  leads: {
+    account: "Who you are, how you sign in, and where you're signed in.",
+    providers: "The AI provider LORE uses for your books and questions, under your own key.",
+    usage: "What you've used today and this month.",
+    appearance: "How LORE looks on this device.",
+    reading: "How LORE opens and answers, on this device.",
+    mcp: "Use your LORE library from Claude Desktop, Claude Code or any MCP client.",
+    data: "Take your data with you, or delete it.",
+    dataLocal: "Your library is on this computer. Here's where, and how to back it up.",
+    admin: "Waitlist, invites, users and reports.",
+  } as Record<string, string>,
+  // Account
+  accountMenu: "Account menu",
+  name: "Name", email: "Email", noName: "Not set",
+  methods: "Sign-in methods",
+  methodNames: { google: "Google", github: "GitHub", email: "Email link" } as Record<string, string>,
+  linkedSince: (when: string) => `Linked ${when}`,
+  justNow: "just now",
+  onDate: (date: string) => `on ${date}`,
+  emailAlways: (email: string) => `You can always sign in with a link emailed to ${email}.`,
+  connect: (name: string) => `Connect ${name}`,
+  connectHint: (email: string) => `Sign in with the account that uses ${email}; it is linked to this account by that address.`,
+  devices: "Signed-in devices",
+  thisDevice: "This device",
+  lastActive: (when: string) => `Last active ${when}`,
+  signedInAt: (when: string) => `Signed in ${when}`,
+  revoke: "Sign out",
+  revokeLabel: (device: string) => `Sign out ${device}`,
+  revokeOthers: "Sign out of other devices",
+  revokedOthers: (n: number) => (n === 1 ? "Signed out of 1 other device." : `Signed out of ${n} other devices.`),
+  onlyThisDevice: "You're signed in on this device only.",
+  devicesFailed: "Your devices couldn't be loaded. Try again.",
+  revokeFailed: "That device couldn't be signed out. Try again.",
+  signOutHere: "Sign out of this device",
+  // Usage (local mode: the Gemini daily budget)
+  geminiToday: (left: number, limit: number) => `Gemini requests left today: ${left.toLocaleString("en")} of ${limit.toLocaleString("en")}`,
+  requestsToday: (left: number, limit: number) => `Requests left today: ${left.toLocaleString("en")} of ${limit.toLocaleString("en")}`,
+  perModel: (model: string, count: number, limit: number) => `${model}: ${count.toLocaleString("en")} of ${limit.toLocaleString("en")} used`,
+  resets: (time: string) => `Resets at midnight Pacific (${time} here).`,
+  localModels: "This library uses local models: there is no daily budget.",
+  geminiNoneYet: "No Gemini requests yet today.",
+  noneYet: "No requests yet today.",
+  usageUnavailable: "Usage isn't available right now.",
+  // Appearance
+  theme: "Theme",
+  themeBasics: "System, light and dark",
+  themeGroups: { dark: "Dark themes", light: "Light themes" } as Record<string, string>,
+  motion: "Motion",
+  motionOptions: { system: "Follow my device", reduce: "Reduce motion" } as Record<string, string>,
+  motionHint: "Reduce motion stops animations and the answer's streaming effect, whatever your device says.",
+  // Reading
+  world: "World to open in",
+  worldHint: "The same choice as the World menu in the top bar.",
+  allWorlds: "All worlds",
+  position: "Reading position",
+  positionHint: "Hide what comes after the chapter you've reached. It's set per world, from the bookmark button in the top bar.",
+  positionOpen: "Set reading position",
+  positionNeedsWorld: "Choose one world first: a reading position belongs to a world.",
+  steps: "Show how this was found",
+  stepsHint: "Open the steps panel under each answer by default.",
+  depth: "Default answer depth",
+  depthHint: "The same choice as Deep dive under the question box.",
+  depthOptions: { auto: "Auto", deep: "Deep on", focused: "Deep off" } as Record<string, string>,
+  internals: "Show internals",
+  internalsHint: "Model names, request counts and technical errors. This browser only; lore.toml's [web] show_internals is the default.",
+  // MCP connector
+  mcpWhat: "LORE runs an MCP server on this computer. Connect it and Claude (or any MCP client) can search your library, look up characters and walk the graph, with your reading position applied.",
+  mcpWhatHosted: "An MCP connector lets Claude Desktop, Claude Code or any MCP client search your library, look up characters and walk the graph, with your reading position applied.",
+  mcpDesktop: "Claude Desktop",
+  mcpDesktopHint: "Add this to claude_desktop_config.json (Settings, Developer, Edit Config), then restart Claude Desktop.",
+  mcpCode: "Claude Code",
+  mcpCodeHint: "Run once in a terminal. Claude Code starts LORE itself when it needs it.",
+  mcpHttp: "HTTP",
+  mcpHttpHint: "For clients that connect over HTTP. Start the server, then point the client at the address. Loopback only.",
+  mcpHttpClaude: "Then, for Claude Code:",
+  mcpHttpCommand: "the HTTP start command", mcpHttpAddress: "the HTTP address", mcpCodeHttp: "the Claude Code HTTP command",
+  mcpCheck: "Check",
+  mcpChecking: "Checking…",
+  mcpOk: "The MCP server starts here.",
+  mcpFailed: "The MCP server can't start here.",
+  mcpCheckFailed: "The check couldn't run. Is LORE still running?",
+  mcpNoLibrary: "No library was found at this data directory yet.",
+  mcpTools: (n: number) => `The ${n} tools it exposes`,
+  mcpLoading: "Loading the connection details…",
+  mcpSoon: "Connecting LORE to MCP clients is coming soon for hosted accounts.",
+  mcpSoonHint: "For now it works with LORE running on your own computer.",
+  copy: "Copy", copied: "Copied",
+  // Your data
+  download: "Download my data",
+  downloadHint: "A zip of your chats (every question and answer) and your books' details: titles, authors, series and worlds. Your AI provider keys are never included.",
+  downloading: "Preparing…",
+  downloadFailed: "Your data couldn't be downloaded. Try again.",
+  libraryAt: "Your library lives here",
+  chatsAt: "Your chats are kept here",
+  backup: "To back it up",
+  backupHint: "Stop lore ui and any lore mcp first, then copy the folder. To restore, put it back in the same place.",
+  // Admin
+  adminLink: "Open the admin page",
+  openTab: (tab: string) => `Open ${tab} in Settings`,
+  adminHint: "Opens in this tab.",
 };
 
 // A friendly server error carries a reference the user can quote.

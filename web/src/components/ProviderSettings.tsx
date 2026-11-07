@@ -161,7 +161,8 @@ function ConnectedProvider({ info, onChange }: { info: ProviderInfo; onChange: (
 }
 
 // Settings: every connected provider (switch the active one or its model, replace, remove), and adding another.
-export function ProviderSettings() {
+// `heading`: false inside the Settings popup, whose tab already names the section.
+export function ProviderSettings({ heading = true }: { heading?: boolean } = {}) {
   const [state, setState] = useState<ProvidersState | null>(null);
   const [adding, setAdding] = useState<ProviderId | null>(null);
   const load = () => { keyApi.providers().then((r) => { if (!isError(r) && Array.isArray(r.providers)) setState(r); }); };
@@ -172,7 +173,7 @@ export function ProviderSettings() {
   const changed = (next?: ProvidersState) => { if (next) setState(next); else load(); };
   return (
     <div className="provider-settings">
-      <h4>{PROVIDERS.section}</h4>
+      {heading && <h4>{PROVIDERS.section}</h4>}
       {connected.map((info) => <ConnectedProvider key={info.provider} info={info} onChange={changed} />)}
       {others.length > 0 && (<>
         <h5>{PROVIDERS.addAnother}</h5>

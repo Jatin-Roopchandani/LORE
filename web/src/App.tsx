@@ -8,8 +8,9 @@ import { QuickSwitcher } from "./components/QuickSwitcher";
 import { TopBar } from "./components/TopBar";
 import { HISTORY } from "./messages";
 import { isMulti } from "./routing";
+import { applyMotion, loadInternals, loadMotion, saveInternals } from "./settings";
 import { applyTheme, loadTheme } from "./theme";
-import type { Book, SubgraphData, World } from "./types";
+import type { Book, Me, SubgraphData, World } from "./types";
 import { useAsk } from "./useAsk";
 import { loadWorld, resolveWorld, saveWorld } from "./worlds";
 
@@ -20,7 +21,9 @@ type KeyState = "checking" | "ok" | "missing" | "invalid";
 export default function App() {
   const [keyState, setKeyState] = useState<KeyState>(() => (isMulti() ? "checking" : "ok"));
   // Multi-user: ask who we are once, so a lost or stale CSRF cookie is re-issued before the first POST (saving a key too).
-  useEffect(() => { if (isMulti()) authApi.me(); }, []);
+  // The answer also names the account menu's owner.
+  const [me, setMe] = useState<Me | null>(null);
+  useEffect(() => { if (isMulti()) authApi.me().then((r) => { if (r && !isError(r) && r.user) setMe(r); }); }, []);
   useEffect(() => {
     if (!isMulti()) return;
     keyApi.get().then((k) => {
@@ -33,10 +36,10 @@ export default function App() {
   if (keyState === "checking") return <div className="app" aria-busy="true" />;
   if (keyState === "missing" || keyState === "invalid")
     return <KeyOnboarding reason={keyState} onDone={() => setKeyState("ok")} />;
-  return <ReadingApp />;
+  return <ReadingApp me={me} />;
 }
 
-function ReadingApp() {
+function ReadingApp({ me }: { me: Me | null }) {
   // The remembered world choice; the list of worlds (null while loading) can still overrule it.
   const [stored, setStored] = useState<string | null>(() => loadWorld());
   const [worlds, setWorlds] = useState<World[] | null>(null);
@@ -44,7 +47,12 @@ function ReadingApp() {
   const chooseWorld = useCallback((w: string) => { setStored(w); saveWorld(w); }, []);
   const ask = useAsk(world, chooseWorld);
   const [books, setBooks] = useState<Book[]>([]);
-  const [showInternals, setShowInternals] = useState(true);
+  // Internals: the server's default (lore.toml; always off in multi mode), unless this browser chose otherwise in
+  // Settings, Reading (local mode only).
+  const [serverInternals, setServerInternals] = useState(true);
+  const [internalsChoice, setInternalsChoice] = useState<boolean | null>(() => (isMulti() ? null : loadInternals()));
+  const showInternals = isMulti() ? false : internalsChoice ?? serverInternals;
+  const chooseInternals = useCallback((on: boolean) => { saveInternals(on); setInternalsChoice(on); }, []);
   const [hiddenBooks, setHiddenBooks] = useState<Set<string>>(new Set());
   const [hoverChunks, setHoverChunks] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -69,9 +77,9 @@ function ReadingApp() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  useEffect(() => { applyTheme(loadTheme()); }, []);
+  useEffect(() => { applyTheme(loadTheme()); applyMotion(loadMotion()); }, []);
   useEffect(() => {
-    api.settings().then((s) => { if (!isError(s)) setShowInternals(s.show_internals); });
+    api.settings().then((s) => { if (!isError(s)) setServerInternals(s.show_internals); });
   }, []);
   useEffect(() => {
     api.worlds().then((w) => { if (!isError(w) && Array.isArray(w)) setWorlds(w); });
@@ -111,7 +119,7 @@ function ReadingApp() {
     <div className="app">
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey}
         worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)} onPositionChange={positionChanged}
-        historyOpen={drawerOpen} onToggleHistory={toggleHistory} />
+        historyOpen={drawerOpen} onToggleHistory={toggleHistory} depth={ask.depth} onDepth={ask.setDepth} onShowInternals={chooseInternals} me={me} />
       {ask.importable > 0 && (
         <div className="import-offer" role="status">
           <span>{HISTORY.importOffer(ask.importable)}</span>

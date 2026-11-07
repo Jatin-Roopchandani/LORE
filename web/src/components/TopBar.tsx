@@ -8,14 +8,19 @@ import { BooksDropdown } from "./BooksDropdown";
 import { QuotaChip } from "./QuotaChip";
 import { ReadingPosition } from "./ReadingPosition";
 import { WorldSelector } from "./WorldSelector";
-import { SettingsMenu } from "./SettingsMenu";
-import { ThemeMenu } from "./ThemeMenu";
+import { AccountMenu } from "./AccountMenu";
+import { SETTINGS_BUTTON_ID, SettingsDialog } from "./SettingsDialog";
+import { SETTINGS } from "../messages";
 import { isMulti } from "../routing";
+import { openSettings } from "../settings";
+import type { Depth, Me } from "../types";
 
-export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange, onPositionChange, historyOpen = false, onToggleHistory }:
+export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange, onPositionChange, historyOpen = false, onToggleHistory,
+  depth, onDepth, onShowInternals, me = null }:
   { books: Book[]; hiddenBooks: Set<string>; onBooksChange: (s: Set<string>) => void; showInternals: boolean; refreshKey: number;
     worlds?: World[]; world?: string; onWorldChange?: (w: string) => void; onLibraryChange?: () => void; onPositionChange?: () => void;
-    historyOpen?: boolean; onToggleHistory?: () => void }) {
+    historyOpen?: boolean; onToggleHistory?: () => void; depth?: Depth; onDepth?: (d: Depth) => void; onShowInternals?: (on: boolean) => void; me?: Me | null }) {
+  const multi = isMulti();
   const [adding, setAdding] = useState(false);
   const [library, setLibrary] = useState(false);
   // The book the Library opens at (just uploaded): it is scrolled to and watched until its processing shows.
@@ -36,11 +41,14 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
         <button className="tbtn" type="button" onClick={() => { setFocusBook(null); setLibrary(true); }}>{LIBRARY.open}</button>
         <button className="tbtn primary" type="button" onClick={() => setAdding(true)}>+ Add book</button>
         <QuotaChip quota={quota} showInternals={showInternals} />
-        <ThemeMenu />
-        <SettingsMenu showInternals={showInternals} />
+        <button id={SETTINGS_BUTTON_ID} className="tbtn icon" type="button" aria-label={SETTINGS.open} aria-haspopup="dialog"
+          onClick={() => openSettings()}>⚙</button>
+        {multi && <AccountMenu me={me?.user ?? null} />}
       </div>
+      <SettingsDialog worlds={worlds} world={world} onWorldChange={onWorldChange} depth={depth} onDepth={onDepth}
+        showInternals={showInternals} onShowInternals={onShowInternals} />
       <LibraryPanel open={library} onClose={() => { setLibrary(false); setFocusBook(null); }} showInternals={showInternals} onChange={onLibraryChange} focusBook={focusBook} />
-      <AddBookDialog open={adding} onClose={() => setAdding(false)} worlds={worlds} multi={isMulti()}
+      <AddBookDialog open={adding} onClose={() => setAdding(false)} worlds={worlds} multi={multi}
         onUploaded={() => onLibraryChange?.()}
         onOpenBook={(id) => { setAdding(false); setFocusBook(id); setLibrary(true); }} />
     </header>

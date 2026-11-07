@@ -13,7 +13,8 @@ function Totals({ label, totals }: { label: string; totals: TokenTotals }) {
   );
 }
 
-export function UsagePanel() {
+// `heading`: false inside the Settings popup, whose tab already names the section.
+export function UsagePanel({ heading = true }: { heading?: boolean } = {}) {
   const [usage, setUsage] = useState<UsageToday | null>(null);
   const [cap, setCap] = useState("");
   const [problem, setProblem] = useState("");
@@ -41,7 +42,7 @@ export function UsagePanel() {
   };
   return (
     <div className="usage-panel">
-      <h4>{USAGE.section}</h4>
+      {heading && <h4>{USAGE.section}</h4>}
       {(usage.provider ?? "gemini") === "gemini" && <p className="hint">{USAGE.requestsToday(usage.requests, usage.limit)}</p>}
       {tokens && (<>
         <Totals label={USAGE.today} totals={tokens.today} />

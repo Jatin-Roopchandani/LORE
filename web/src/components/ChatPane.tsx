@@ -2,7 +2,8 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { useAsk } from "../useAsk";
 import { foldEvents, type AskState } from "../askReducer";
 import type { ThreadEntry } from "../history";
-import { CHAT, errorMessage, POSITION, UI } from "../messages";
+import { CHAT, errorMessage, POSITION, SETTINGS, UI } from "../messages";
+import { hrefFor } from "../settings";
 import { Claims } from "./Claims";
 import { Prose } from "./Prose";
 import { HowPanel } from "./HowPanel";
@@ -11,7 +12,7 @@ import { AskBox } from "./AskBox";
 import { Sections } from "./Sections";
 import { ShortAnswer } from "./ShortAnswer";
 import { StepList } from "./StepList";
-import { Snip } from "./SettingsMenu";
+import { Snip } from "./Snip";
 import { exampleQuestions } from "../examples";
 import type { AskEvent, SubgraphData } from "../types";
 
@@ -144,6 +145,7 @@ function AnswerBody({ state, run, showInternals, resetsAt, onHoverChunks, onRetr
         <div className="note" role="alert">
           <p>{err.text}</p>
           {err.command && <Snip text={err.command} />}
+          {err.settings && <a className="tbtn" href={hrefFor(err.settings)}>{SETTINGS.openTab(SETTINGS.tabs[err.settings])}</a>}
           {err.retry && onRetry && <button className="tbtn" type="button" onClick={onRetry}>Retry</button>}
         </div>
       )}

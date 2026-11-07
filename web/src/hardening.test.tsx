@@ -1,10 +1,11 @@
 // Release step 6 in the browser: deleting one's account, the admin's user controls, friendly errors that quote a
 // reference, and a 429 from /api/ask shown in its own words.
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { nav, streamAsk } from "./api";
 import { ACCOUNT_DELETE, ADMIN, ADMIN_USERS, errorMessage } from "./messages";
-import { SettingsMenu } from "./components/SettingsMenu";
+import { SettingsDialog } from "./components/SettingsDialog";
+import { openSettings } from "./settings";
 import { Admin } from "./pages/Admin";
 
 type Call = { url: string; method: string; body: any };
@@ -26,8 +27,8 @@ test("Delete my account needs the email typed, then posts it and leaves", async 
     ? { body: { user: { id: "u", email: "me@example.org", name: null, role: "user" } } }
     : { body: { deleted: true } });
   const go = vi.spyOn(nav, "to").mockImplementation(() => {});
-  render(<SettingsMenu showInternals={false} />);
-  await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  render(<SettingsDialog />);
+  act(() => openSettings("data"));
   await userEvent.click(await screen.findByRole("button", { name: ACCOUNT_DELETE.open }));
   const confirm = screen.getByRole("button", { name: ACCOUNT_DELETE.confirm });
   expect(confirm).toBeDisabled();

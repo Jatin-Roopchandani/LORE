@@ -5,6 +5,7 @@ import { chatsApi, failed } from "./chatsApi";
 import { addToHistory, entriesOf, importBody, importDone, itemFromChat, keepLegacy, loadHistory, loadLegacy, markImportDone,
   saveHistory, type HistoryItem, type ThreadEntry } from "./history";
 import { loadDepth, saveDepth } from "./depth";
+import { prefersReducedMotion } from "./settings";
 import { createScheduler, type Scheduler } from "./scheduler";
 import type { AskEvent, Depth } from "./types";
 
@@ -12,7 +13,8 @@ type Action = { kind: "reset"; question: string } | { kind: "event"; event: AskE
 function reducer(state: AskState, action: Action): AskState {
   return action.kind === "reset" ? initialState(action.question) : askReducer(state, action.event);
 }
-const reduceMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+// The device's setting, or the Settings popup's "Reduce motion" override.
+const reduceMotion = prefersReducedMotion;
 
 const standaloneOf = (events: AskEvent[]): string | null => {
   const e = events.find((x) => x.type === "understood");

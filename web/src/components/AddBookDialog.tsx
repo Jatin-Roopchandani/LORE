@@ -5,7 +5,7 @@ import { shellQuote } from "../shell";
 import type { UploadError, UploadResult, World } from "../types";
 import { MAX_UPLOAD_BYTES, uploadBook, type UploadProgress } from "../upload";
 import { suggestWorld } from "../worlds";
-import { Snip } from "./SettingsMenu";
+import { Snip } from "./Snip";
 
 const NEW_WORLD = "new";
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });

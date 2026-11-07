@@ -79,7 +79,12 @@ export interface WorldBook { id: string; title: string; series: string | null; s
 export interface World { id: number; name: string; books: WorldBook[] }
 export interface QuotaModel { model: string; count: number; limit: number; remaining: number }
 export interface Quota { provider: "gemini" | "local"; models: QuotaModel[]; resets_at: string }
-export interface McpInfo { stdio_command: string; http_command: string; http_url: string; http_running: boolean }
+export interface McpInfo { stdio_command: string; http_command: string; http_url: string; http_running: boolean;
+  lore?: string; env?: Record<string, string>; claude_desktop?: string; claude_code?: string; claude_code_http?: string;
+  library?: { data_dir: string; central_db: string | null } }
+export interface McpCheck { ok: boolean; lore_found: boolean; tools: { name: string; summary: string }[]; problem: string | null;
+  library_found?: boolean }
+export interface DeviceSession { id: string; device: string; created_at: string; last_active: string; current: boolean }
 export interface EntityCardData { id: string; name: string; kind: string; aliases: string[]; books: string[]; world?: WorldRef;
   edges_out: Edge[]; edges_in: Edge[]; edges_out_total: number; edges_in_total: number; truncated: boolean }
 export interface EntityKind { id: string; name: string; kind: string; books: string[]; world?: WorldRef }
@@ -128,7 +133,8 @@ export interface PassageText { chunk_id: string; book_id: string; book_title: st
 
 // Sign-in and accounts (multi-user mode).
 export interface AuthProviders { providers: string[]; email: boolean; invite_only: boolean }
-export interface Me { user: { id: string; email: string; name: string | null; role: "user" | "admin" } }
+export interface Me { user: { id: string; email: string; name: string | null; role: "user" | "admin" };
+  identities?: { provider: string; created_at: string }[] }
 export interface WaitlistEntry { id: number; email: string; reading: string | null; status: "pending" | "invited" | "declined";
   created_at: string; invited_at: string | null }
 export interface AdminUser { id: string; email: string; name: string | null; role: string; status: string; created_at: string;
