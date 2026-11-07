@@ -182,6 +182,18 @@ def test_questions_carry_both_sides_evidence_and_the_linking_sentence() -> None:
     assert "Myrddraal" in prompt and "Fade" in prompt and "same, claimed or different" in prompt
 
 
+def test_snippets_prefer_sentences_that_name_the_entity() -> None:
+    ents = [_e("Fade", "Faction", "the Fade"), _e("Myrddraal", "Faction"), _e("Rand")]
+    edges = [Edge("id:Fade", "HUNTS", "id:Rand", "He should have known.", "b:1:1"),
+             Edge("id:Fade", "HUNTS", "id:Rand", "She is dead.", "b:1:2"),
+             Edge("id:Fade", "HUNTS", "id:Rand", "And a Fade came.", "b:1:3"),
+             Edge("id:Myrddraal", "HUNTS", "id:Rand", "The Myrddraal rode.", "b:1:4")]
+    pair = syn.Pair("id:Fade", "id:Myrddraal", 1.0)
+    (q,) = syn.questions_for("b", [pair], ents, edges)
+    fade = q.a if q.a.name == "Fade" else q.b
+    assert fade.snippets[0] == "And a Fade came."
+
+
 def test_the_question_key_is_the_book_and_the_pair_whatever_the_snippets() -> None:
     q1 = _question()
     q2 = syn.SynonymQuestion("b", q1.b, syn.Side(q1.a.id, q1.a.name, q1.a.kind, ("other",)))

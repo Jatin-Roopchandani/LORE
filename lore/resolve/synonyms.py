@@ -616,6 +616,12 @@ def _spread(items: Sequence, n: int) -> list:
     return [items[round(i * (len(items) - 1) / (n - 1))] for i in range(n)]
 
 
+def _named_in(forms: Iterable[str], sentence: str) -> bool:
+    lowered = sentence.casefold()
+    return any(re.search(r"(?<!\w)" + re.escape(f.casefold()) + r"(?!\w)", lowered)
+               for f in forms if len(f) > 2)
+
+
 def _story_key(chunk_id: str) -> tuple:
     parts = chunk_id.split(":")
     return tuple((0, int(p)) if p.isdigit() else (1, p) for p in parts)
@@ -644,8 +650,16 @@ def questions_for(book_id: str, pairs: Iterable[Pair], entities: Iterable[Entity
         for _key, sentence in own:
             if sentence not in seen:
                 seen.append(sentence)
-        picked = _spread(seen, SNIPPETS)
         entity = entities[eid]
+        # an evidence sentence often says "he" or "it": prefer ones that
+        # carry the name, so the judge reads the name in use
+        forms = {re.sub(r"^(?:the|a|an)\s+", "", n.strip(), flags=re.IGNORECASE)
+                 for n in (entity.name, *entity.names)}
+        named = [s for s in seen if _named_in(forms, s)]
+        picked = _spread(named, SNIPPETS)
+        if len(picked) < SNIPPETS:
+            rest = [s for s in seen if s not in named]
+            picked += _spread(rest, SNIPPETS - len(picked))
         return Side(eid, entity.name, entity.kind,
                     tuple(s[:SNIPPET_CHARS] for s in picked))
 
