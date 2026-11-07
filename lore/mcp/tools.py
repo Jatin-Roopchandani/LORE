@@ -182,7 +182,7 @@ _EDGE_COLUMNS = (
 )
 # Every EdgeOut field, so two rows tie only when they would print identically.
 _EDGE_ORDER = (
-    "r.book_id, r.chapter_seq, r.chunk_id, r.predicate, r.predicate_raw,"
+    "r.book_id, r.chapter_seq, size(r.chunk_id), r.chunk_id, r.predicate, r.predicate_raw,"
     " r.evidence, r.confidence"
 )
 

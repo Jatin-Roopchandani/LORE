@@ -38,14 +38,19 @@ _RETURN = (
 # `by_predicate` and `across_books` came back in 20 different orders, and
 # `chapter_window` returned 10 different row SETS, silently dropping
 # different facts each run. Every field appears, so no two distinct rows tie.
+#
+# Within a book and chapter, story order is the chunk's numeric seq: ids are
+# `<book>:<chapter>:<seq>` with that prefix shared, so `size(chunk_id),
+# chunk_id` is the numeric order (as text alone ":1000" sorts before ":2").
+# The id itself still follows, so the order stays total for ids of any shape.
 _ORDER = (
-    "ORDER BY book_id, chapter_seq, chunk_id, predicate, predicate_raw, "
+    "ORDER BY book_id, chapter_seq, size(chunk_id), chunk_id, predicate, predicate_raw, "
     "subject, object, confidence, evidence, subject_id, object_id "
 )
 
 # The same order, chapter first: this template exists to walk a chapter range.
 _ORDER_BY_CHAPTER = (
-    "ORDER BY chapter_seq, book_id, chunk_id, predicate, predicate_raw, "
+    "ORDER BY chapter_seq, book_id, size(chunk_id), chunk_id, predicate, predicate_raw, "
     "subject, object, confidence, evidence, subject_id, object_id "
 )
 
@@ -112,7 +117,7 @@ _ACROSS_BOOKS = (
     "book_id AS book_id, fact.chapter_seq AS chapter_seq, "
     "fact.chunk_id AS chunk_id, fact.subject_id AS subject_id, "
     "fact.object_id AS object_id "
-    "ORDER BY book_id, chapter_seq, chunk_id, predicate, predicate_raw, "
+    "ORDER BY book_id, chapter_seq, size(chunk_id), chunk_id, predicate, predicate_raw, "
     "subject, object, confidence, evidence, subject_id, object_id"
 )
 

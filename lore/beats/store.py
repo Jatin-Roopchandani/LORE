@@ -84,7 +84,7 @@ def beats_for_entities(conn: sqlite3.Connection,
         f"SELECT b.id, b.book_id, b.chapter_seq, b.chunk_id, b.kind, b.text,"
         f" b.quote FROM beats b WHERE b.id IN (SELECT beat_id FROM"
         f" beat_entities WHERE entity_id IN ({marks}))"
-        f" ORDER BY b.book_id, b.chapter_seq, b.part, b.id", ids).fetchall()
+        f" ORDER BY b.book_id, b.chapter_seq, b.part, length(b.chunk_id), b.chunk_id, b.id", ids).fetchall()
     return _loaded(conn, rows)
 
 
@@ -100,7 +100,7 @@ def beats_for_books(conn: sqlite3.Connection, book_ids: Sequence[str]) -> list[B
         rows += conn.execute(
             "SELECT id, book_id, chapter_seq, chunk_id, kind, text, quote FROM beats"
             f" WHERE book_id IN ({','.join('?' * len(chunk))})"
-            " ORDER BY book_id, chapter_seq, part, id", chunk).fetchall()
+            " ORDER BY book_id, chapter_seq, part, length(chunk_id), chunk_id, id", chunk).fetchall()
     return _loaded(conn, rows)
 
 
