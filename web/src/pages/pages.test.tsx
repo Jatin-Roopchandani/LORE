@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Router from "../Router";
 import { ADMIN, AUTH, HOME, LEGAL } from "../messages";
@@ -20,14 +20,27 @@ afterEach(() => { vi.unstubAllGlobals(); document.cookie = "lore_csrf=; path=/; 
 
 const PROVIDERS = { providers: ["github", "google"], email: true, invite_only: true };
 
+const SENT = { status: 202, body: { sent: true } };
+const ask = (url: string) => url === "/auth/email";
+async function requestLink(address = "me@example.org", user: Pick<typeof userEvent, "type" | "click"> = userEvent) {
+  await user.type(screen.getByLabelText(AUTH.emailLabel), address);
+  await user.click(screen.getByRole("button", { name: AUTH.sendLink }));
+}
+
 describe("SignIn", () => {
-  test("offers the configured providers and an email form, and a way to request an invite", async () => {
+  test("offers the configured providers in Google's button style, the email form, and a way to request an invite", async () => {
     serve(() => ({ body: PROVIDERS }));
     render(<SignIn search="" />);
-    expect(await screen.findByRole("link", { name: AUTH.withGoogle })).toHaveAttribute("href", "/auth/google/start");
+    const google = await screen.findByRole("link", { name: AUTH.withGoogle });
+    expect(google).toHaveAttribute("href", "/auth/google/start");
+    expect(google.querySelector("svg")).not.toBeNull(); // the G, inline
     expect(screen.getByRole("link", { name: AUTH.withGithub })).toHaveAttribute("href", "/auth/github/start");
+    expect(screen.getByText(AUTH.or)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: AUTH.signInTitle })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: AUTH.sendLink })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: AUTH.requestInvite })).toHaveAttribute("href", "/waitlist");
+    expect(screen.getByRole("link", { name: AUTH.termsLink })).toHaveAttribute("href", "/terms");
+    expect(screen.getByRole("link", { name: AUTH.privacyLink })).toHaveAttribute("href", "/privacy");
   });
 
   test("shows only the providers the server has configured", async () => {
@@ -37,36 +50,146 @@ describe("SignIn", () => {
     expect(screen.queryByRole("link", { name: AUTH.withGoogle })).toBeNull();
   });
 
-  test("an invite in the address is carried to the provider and to the emailed link", async () => {
-    const calls = serve((url) => url === "/auth/email" ? { status: 202, body: { sent: true } } : { body: PROVIDERS });
+  test("with no provider configured there are no provider buttons and no divider", async () => {
+    const calls = serve(() => ({ body: { ...PROVIDERS, providers: [] } }));
+    render(<SignIn search="" />);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(screen.queryByRole("link", { name: /Continue with/ })).toBeNull();
+    expect(screen.queryByText(AUTH.or)).toBeNull();
+    expect(screen.getByRole("button", { name: AUTH.sendLink })).toBeInTheDocument();
+  });
+
+  test("an invite in the address shows the banner and is carried to the provider and to the emailed link", async () => {
+    const calls = serve((url) => ask(url) ? SENT : { body: PROVIDERS });
     render(<SignIn search="?invite=abc_DEF-123" />);
     expect(await screen.findByRole("link", { name: AUTH.withGoogle })).toHaveAttribute("href", "/auth/google/start?invite=abc_DEF-123");
+    expect(screen.getByText(AUTH.invitedTitle)).toBeInTheDocument();
     expect(screen.getByText(AUTH.invited)).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@example.org");
-    await userEvent.click(screen.getByRole("button", { name: AUTH.sendLink }));
-    expect(calls.find((c) => c.url === "/auth/email")!.body).toEqual({ email: "me@example.org", invite: "abc_DEF-123" });
+    await requestLink();
+    expect(calls.find((c) => ask(c.url))!.body).toEqual({ email: "me@example.org", invite: "abc_DEF-123" });
   });
 
-  test("asking for a link says the same thing whoever asks", async () => {
-    serve((url) => url === "/auth/email" ? { status: 202, body: { sent: true } } : { body: PROVIDERS });
-    render(<SignIn search="" />);
-    await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@example.org");
-    await userEvent.click(screen.getByRole("button", { name: AUTH.sendLink }));
-    expect(await screen.findByText(AUTH.linkSent)).toBeInTheDocument();
-  });
-
-  test("rate limits and bad addresses show their own messages", async () => {
-    serve((url) => url === "/auth/email" ? { status: 429, body: { error: { code: "rate_limited", message: "x" } } } : { body: PROVIDERS });
-    render(<SignIn search="" />);
-    await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@example.org");
-    await userEvent.click(screen.getByRole("button", { name: AUTH.sendLink }));
-    expect(await screen.findByText(AUTH.rateLimited)).toBeInTheDocument();
-  });
-
-  test("an error code from the server shows a fixed message, never the raw text", async () => {
+  test("no invite, no banner", async () => {
     serve(() => ({ body: PROVIDERS }));
-    render(<SignIn search="?error=email_unverified" />);
-    expect(await screen.findByText(AUTH.errors.email_unverified)).toBeInTheDocument();
+    render(<SignIn search="" />);
+    await screen.findByRole("link", { name: AUTH.withGoogle });
+    expect(screen.queryByText(AUTH.invitedTitle)).toBeNull();
+  });
+
+  test("while the link is being sent the button is busy and says so", async () => {
+    let answer: (r: Response) => void = () => {};
+    vi.stubGlobal("fetch", vi.fn((url: string) => ask(url)
+      ? new Promise<Response>((done) => { answer = done; })
+      : Promise.resolve(new Response(JSON.stringify(PROVIDERS)))));
+    render(<SignIn search="" />);
+    await requestLink();
+    const busy = await screen.findByRole("button", { name: AUTH.sending });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute("aria-busy", "true");
+    answer(new Response(JSON.stringify({ sent: true }), { status: 202 }));
+    expect(await screen.findByRole("heading", { name: AUTH.checkInbox })).toBeInTheDocument();
+  });
+
+  test("asking for a link says the same thing whoever asks: check your inbox, naming the address", async () => {
+    serve((url) => ask(url) ? SENT : { body: PROVIDERS });
+    render(<SignIn search="" />);
+    await requestLink("  me@example.org ");
+    const heading = await screen.findByRole("heading", { level: 1, name: AUTH.checkInbox });
+    expect(heading).toHaveFocus();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(`${AUTH.sentBefore}me@example.org${AUTH.sentAfter}`);
+    expect(screen.queryByLabelText(AUTH.emailLabel)).toBeNull(); // the form is gone
+    expect(screen.queryByRole("link", { name: AUTH.withGoogle })).toBeNull();
+  });
+
+  describe("after the link is sent", () => {
+    beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    test("counts down before offering to resend, then resends and counts down again", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const calls = serve((url) => ask(url) ? SENT : { body: PROVIDERS });
+      render(<SignIn search="?invite=INV" />);
+      await requestLink("me@example.org", user);
+      await screen.findByRole("heading", { name: AUTH.checkInbox });
+      expect(screen.getByText(AUTH.didntGet)).toBeInTheDocument();
+      expect(screen.getByText(AUTH.resendIn(30))).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: AUTH.resend })).toBeNull();
+      act(() => { vi.advanceTimersByTime(10_000); });
+      expect(screen.getByText(AUTH.resendIn(20))).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(20_000); });
+      const resend = screen.getByRole("button", { name: AUTH.resend });
+      expect(screen.queryByText(/Resend in/)).toBeNull();
+      await user.click(resend);
+      expect(await screen.findByText(AUTH.resent)).toBeInTheDocument();
+      const asks = calls.filter((c) => ask(c.url));
+      expect(asks).toHaveLength(2);
+      expect(asks[1].body).toEqual({ email: "me@example.org", invite: "INV" });
+      expect(screen.getByText(AUTH.resendIn(30))).toBeInTheDocument();
+    });
+
+    test("a refused resend shows why, and the resend button stays", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      let n = 0;
+      serve((url) => ask(url) ? (n++ ? { status: 429, body: { error: { code: "rate_limited", message: "x" } } } : SENT) : { body: PROVIDERS });
+      render(<SignIn search="" />);
+      await requestLink("me@example.org", user);
+      await screen.findByRole("heading", { name: AUTH.checkInbox });
+      act(() => { vi.advanceTimersByTime(30_000); });
+      await user.click(screen.getByRole("button", { name: AUTH.resend }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(AUTH.rateLimited);
+      expect(screen.getByRole("button", { name: AUTH.resend })).toBeEnabled();
+    });
+
+    test("'Use a different email' goes back to an empty, focused field", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      serve((url) => ask(url) ? SENT : { body: PROVIDERS });
+      render(<SignIn search="" />);
+      await requestLink("me@example.org", user);
+      await screen.findByRole("heading", { name: AUTH.checkInbox });
+      await user.click(screen.getByRole("button", { name: AUTH.differentEmail }));
+      const field = screen.getByLabelText(AUTH.emailLabel);
+      expect(field).toHaveValue("");
+      expect(field).toHaveFocus();
+      expect(screen.getByRole("heading", { name: AUTH.signInTitle })).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(30_000); }); // the old countdown is gone, nothing ticks into the form
+      expect(screen.queryByText(/Resend/)).toBeNull();
+    });
+  });
+
+  test("an address that isn't one is caught before anything is sent", async () => {
+    const calls = serve(() => ({ body: PROVIDERS }));
+    render(<SignIn search="" />);
+    await userEvent.click(screen.getByRole("button", { name: AUTH.sendLink }));
+    const field = screen.getByLabelText(AUTH.emailLabel);
+    expect(screen.getByRole("alert")).toHaveTextContent(AUTH.emailMissing);
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(field).toHaveFocus();
+    await userEvent.type(field, "not-an-address");
+    expect(screen.queryByRole("alert")).toBeNull(); // typing clears it
+    await userEvent.click(screen.getByRole("button", { name: AUTH.sendLink }));
+    expect(screen.getByRole("alert")).toHaveTextContent(AUTH.invalidEmail);
+    expect(field).toHaveAccessibleDescription(AUTH.invalidEmail);
+    expect(calls.some((c) => ask(c.url))).toBe(false);
+  });
+
+  test.each([
+    ["invalid_email", 400, AUTH.invalidEmail],
+    ["rate_limited", 429, AUTH.rateLimited],
+    ["mail_failed", 502, AUTH.sendFailed],
+  ])("the server's %s shows its own message and keeps the form", async (code, status, message) => {
+    serve((url) => ask(url) ? { status, body: { error: { code, message: "x" } } } : { body: PROVIDERS });
+    render(<SignIn search="" />);
+    await requestLink();
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByLabelText(AUTH.emailLabel)).toHaveValue("me@example.org");
+    expect(screen.getByRole("button", { name: AUTH.sendLink })).toBeEnabled();
+  });
+
+  test.each(Object.keys(AUTH.errors))("the server's ?error=%s shows its fixed message in an alert", async (code) => {
+    serve(() => ({ body: PROVIDERS }));
+    render(<SignIn search={`?error=${code}`} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(AUTH.errors[code]);
   });
 
   test("an unknown error code falls back to the generic message and shows nothing from the address", async () => {
@@ -77,11 +200,23 @@ describe("SignIn", () => {
   });
 
   test("the sign-in call is sent without a CSRF header when there is no session (none exists yet)", async () => {
-    const calls = serve((url) => url === "/auth/email" ? { status: 202, body: { sent: true } } : { body: PROVIDERS });
+    const calls = serve((url) => ask(url) ? SENT : { body: PROVIDERS });
     render(<SignIn search="" />);
-    await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@example.org");
-    await userEvent.click(screen.getByRole("button", { name: AUTH.sendLink }));
-    expect(calls.find((c) => c.url === "/auth/email")!.headers["X-CSRF-Token"]).toBeUndefined();
+    await requestLink();
+    await screen.findByRole("heading", { name: AUTH.checkInbox });
+    expect(calls.find((c) => ask(c.url))!.headers["X-CSRF-Token"]).toBeUndefined();
+  });
+
+  test("the brand panel carries the logo link home, the promise and the spoiler-free graph", async () => {
+    serve(() => ({ body: PROVIDERS }));
+    const { container } = render(<SignIn search="" />);
+    await screen.findByRole("link", { name: AUTH.withGoogle });
+    expect(screen.getAllByRole("link", { name: AUTH.homeLabel })[0]).toHaveAttribute("href", "/");
+    expect(screen.getByText(AUTH.brandLineGlow)).toBeInTheDocument();
+    const art = container.querySelector(".au-art")!;
+    expect(art).toHaveAttribute("aria-hidden", "true");
+    expect(art.querySelectorAll("line").length).toBeGreaterThan(10);
+    expect(container.querySelector("[style]")).toBeNull(); // nothing the CSP would refuse
   });
 });
 
@@ -89,13 +224,15 @@ describe("Waitlist", () => {
   test("submits the email, reading and consent, with the honeypot empty, and thanks the person", async () => {
     const calls = serve(() => ({ status: 202, body: { ok: true } }));
     render(<Waitlist />);
+    expect(screen.getByRole("heading", { level: 1, name: AUTH.waitlistTitle })).toBeInTheDocument();
     const submit = screen.getByRole("button", { name: AUTH.submit });
     expect(submit).toBeDisabled(); // no consent yet
     await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@example.org");
     await userEvent.type(screen.getByLabelText(AUTH.readingLabel), "Dracula");
     await userEvent.click(screen.getByLabelText(AUTH.consentLabel));
     await userEvent.click(submit);
-    expect(await screen.findByText(AUTH.thanks)).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent(AUTH.thanks);
+    expect(screen.getByRole("heading", { level: 1, name: AUTH.waitlistDone })).toHaveFocus();
     expect(calls[0]).toMatchObject({ url: "/api/waitlist", method: "POST",
       body: { email: "me@example.org", reading: "Dracula", consent: true, website: "" } });
   });
@@ -115,6 +252,14 @@ describe("Waitlist", () => {
     await userEvent.click(screen.getByLabelText(AUTH.consentLabel));
     await userEvent.click(screen.getByRole("button", { name: AUTH.submit }));
     expect(await screen.findByText(AUTH.thanks)).toBeInTheDocument();
+  });
+
+  test("uses the same split frame, and links back to sign in", () => {
+    serve(() => ({ status: 202, body: { ok: true } }));
+    const { container } = render(<Waitlist />);
+    expect(container.querySelector(".au .au-brand")).not.toBeNull();
+    expect(screen.getByRole("link", { name: AUTH.signIn })).toHaveAttribute("href", "/signin");
+    expect(screen.getByRole("link", { name: AUTH.termsLink })).toHaveAttribute("href", "/terms");
   });
 });
 
