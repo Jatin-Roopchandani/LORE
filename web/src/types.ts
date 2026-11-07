@@ -134,10 +134,25 @@ export interface WaitlistEntry { id: number; email: string; reading: string | nu
 export interface AdminUser { id: string; email: string; name: string | null; role: string; status: string; created_at: string;
   has_key?: boolean; requests_today?: number }
 // The signed-in user's Gemini key (multi-user mode): never the key itself, only its last four characters.
-export interface KeyStatus { present: boolean; last4: string | null; added_at: string | null; last_ok_at: string | null;
+export interface KeyStatus { provider?: ProviderId; present: boolean; last4: string | null; added_at: string | null; last_ok_at: string | null;
   last_error: "rejected" | "unchecked" | null }
-export interface KeySaved extends KeyStatus { check: "ok" | "unavailable"; warning?: string }
-export interface UsageToday { day: string; requests: number; limit: number; models: Record<string, number> }
+export interface KeySaved extends KeyStatus { check: "ok" | "unavailable"; warning?: string; models?: string[]; active?: ProviderId }
+// The model providers a user can connect (GET /api/me/providers). Keys are never sent back, only their last four.
+export type ProviderId = "gemini" | "anthropic" | "openai";
+export interface ProviderInfo { provider: ProviderId; connected: boolean; active: boolean; last4: string | null;
+  added_at: string | null; last_ok_at: string | null; last_error: "rejected" | "unchecked" | null;
+  model: string | null; fast_model: string | null; models: string[] }
+export interface ProvidersState { active: ProviderId; providers: ProviderInfo[]; daily_token_cap: number | null }
+export interface TokenTotals { requests: number; input_tokens: number; output_tokens: number;
+  estimated_cost_usd: number | null; models: Record<string, { provider: ProviderId; requests: number;
+    input_tokens: number; output_tokens: number; estimated_cost_usd: number | null }> }
+export interface UsageSummary { day: string; month: string; today: TokenTotals; month_total: TokenTotals;
+  daily_token_cap: number | null; cap_reached: boolean; requests_limit: number }
+// GET /api/books/{id}/estimate: a rough estimate (is_estimate) of what processing a book costs on a paid provider.
+export interface ProcessEstimate { provider: ProviderId; model: string | null; chunks: number; input_tokens: number;
+  output_tokens: number; estimated_cost_usd: number | null; needs_confirm: boolean; is_estimate: true }
+export interface UsageToday { day: string; requests: number; limit: number; models: Record<string, number>;
+  provider?: ProviderId; tokens?: UsageSummary }
 export interface NewInvite { code: string; link: string; expires_at: string }
 // A world's reading position: where the reader is, so the graph, panels and answers stay within what they have read.
 // `order` is each book against the one being read: "before"/"after" in its series, "unknown" (it has its own read toggle).
@@ -176,7 +191,9 @@ export interface TraceRecord { request_id: string; user_id: string; created_at: 
 // mode), queued for the worker (multi mode), waiting for the Gemini allowance to reset, or added while another book runs.
 export type UploadProcessing =
   | { state: "processing" } | { state: "queued"; job: number } | { state: "busy" }
-  | { state: "waiting"; resumable_at: string };
+  | { state: "waiting"; resumable_at: string }
+  // A paid provider (Claude, OpenAI) and an estimate above the threshold: nothing started; Continue confirms.
+  | { state: "needs_confirm"; estimate: ProcessEstimate };
 export interface UploadResult { book_id: string; title: string; world: WorldRef | null; filename: string; processing: UploadProcessing }
 // An upload refusal; `book_id` comes with already_added (the book that is already in the library).
 export interface UploadError { error: ApiError; book_id?: string }

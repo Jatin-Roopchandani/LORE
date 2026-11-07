@@ -126,7 +126,7 @@ export const LIBRARY = {
   continue: "Continue", retry: "Retry", process: "Process",
   action: (verb: string, title: string) => `${verb} ${title}`,
   pausedDefault: "Paused until the daily allowance resets.",
-  pausedKey: "Paused: your Gemini key needs attention.",
+  pausedKey: "Paused: your AI provider's key needs attention.",
   failedDefault: "Processing failed.",
   startFailed: "Couldn't start processing.",
   gemini: (used: number, limit: number, reserve: number, internals: boolean) =>
@@ -187,6 +187,7 @@ export const UPLOAD = {
   },
   addedTo: (title: string, world: string | null) => world ? `\u201c${title}\u201d is in the world \u201c${world}\u201d.` : `\u201c${title}\u201d is in your library.`,
   openLibrary: "Open it in the Library",
+  startFailed: "Processing couldn't start. Press Continue on the book in the Library.",
   terminal: "Or add it from the terminal",
   tooBig: (name: string) => `${name} is larger than 50 MB.`,
 };
@@ -203,8 +204,8 @@ const UPLOAD_ERRORS: Record<string, string> = {
   rate_limited: "Too many uploads in a short time. Wait an hour and try again.",
   already_added: "That book is already in your library.",
   busy: "Another upload is still in progress. Wait for it to finish.",
-  key_required: "Add your Gemini API key before adding books.",
-  key_invalid: "Gemini refused your API key. Replace it to carry on.",
+  key_required: "Connect your AI provider before adding books.",
+  key_invalid: "Your AI provider refused your API key. Replace it to carry on.",
   bad_upload: "The upload didn't arrive whole. Try again.",
   unknown_world: "That world no longer exists. Choose another.",
   invalid_world: "That world name can't be used. Choose another.",
@@ -379,9 +380,11 @@ export function errorMessage(error: ApiError, ctx: { showInternals: boolean; res
     case "bad_request":
       return { text: error.message || "That question couldn't be sent. Questions are 1 to 2,000 characters." };
     case "key_required":
-      return { text: "Add your Gemini API key to ask questions." };
+      return { text: "Connect your AI provider to ask questions." };
     case "key_invalid":
-      return { text: "Gemini refused your API key. Replace it to carry on." };
+      return { text: "Your AI provider refused your API key. Replace it to carry on." };
+    case "model_refused":
+      return { text: "The AI model declined to answer this. Try asking it another way." };
     case "too_large":
       return { text: "This answer was too large to keep in your history." };
     case "chat_not_found":
@@ -446,41 +449,85 @@ export const AUTH = {
   notFound: "There's nothing at this address.",
 };
 
-// Each user's own Gemini key (multi-user mode): onboarding, the account menu and the errors that lead back to them.
-export const KEYS = {
-  onboardingTitle: "Add your Gemini API key",
-  replaceTitle: "Replace your Gemini API key",
-  why: "LORE reads your books and answers your questions with Google's Gemini models. Each reader brings their own free key, so LORE costs you nothing and your allowance is yours alone.",
-  getKey: "Get a free key from Google AI Studio",
-  getKeyUrl: "https://aistudio.google.com/app/apikey",
-  freeTier: "The free tier allows about 1,000 requests a day, and resets at midnight Pacific time. A question takes a handful; processing a book takes more.",
-  privacy: "The passages LORE finds and your questions are sent to Gemini under your own key. Your key is stored encrypted and is never shown in full again.",
-  rejected: "Gemini refused your saved key. It may have been deleted or expired. Paste a new one to carry on; your paused books continue once it works.",
-  fieldLabel: "Gemini API key",
+// Connecting an AI provider (multi-user mode): the onboarding screen ("Connect your AI provider") and the provider and
+// usage panels the Settings popup shows. Prices are US dollars per million tokens, input / output.
+export const PROVIDERS = {
+  connectTitle: "Connect your AI provider",
+  replaceTitle: "Your AI provider needs a new key",
+  lead: "LORE reads your books and answers your questions with an AI model, under your own key. Pick one provider to start; you can add another or switch later in Settings.",
+  rejected: "Your provider refused your saved key. It may have been deleted or expired. Paste a new one to carry on; your paused books continue once it works.",
+  privacy: "The passages LORE finds and your questions are sent to the provider you choose, under your own key. Your key is stored encrypted and is never shown in full again.",
+  names: { gemini: "Gemini", anthropic: "Claude", openai: "OpenAI" } as Record<string, string>,
+  makers: { gemini: "Google", anthropic: "Anthropic", openai: "OpenAI" } as Record<string, string>,
+  getKey: { gemini: "Get a free key from Google AI Studio", anthropic: "Get a key: console.anthropic.com → API Keys",
+    openai: "Get a key: platform.openai.com → API keys" } as Record<string, string>,
+  getKeyUrl: { gemini: "https://aistudio.google.com/app/apikey", anthropic: "https://console.anthropic.com/settings/keys",
+    openai: "https://platform.openai.com/api-keys" } as Record<string, string>,
+  cost: { gemini: "Free tier: about 1,000 requests a day, resetting at midnight Pacific.",
+    anthropic: "Billed to your own account by the provider.", openai: "Billed to your own account by the provider." } as Record<string, string>,
+  fieldLabel: (name: string) => `${name} API key`,
   placeholder: "Paste your key here",
   save: "Check and save",
   checking: "Checking…",
-  saved: "Key saved.",
-  continue: "Continue",
-  cancel: "Cancel",
   errors: {
-    key_format: "That doesn't look like a Gemini API key. Copy the whole key from Google AI Studio and paste it again.",
-    key_invalid: "Gemini didn't accept that key. Check you copied all of it, or create a new key in Google AI Studio.",
+    key_format: "That doesn't look like a key for this provider. Copy the whole key and paste it again.",
+    key_invalid: "The provider didn't accept that key. Check you copied all of it, or create a new one.",
     rate_limited: "Too many tries. Please wait a while and try again.",
     unreachable: "LORE isn't reachable right now. Check your connection and try again.",
+    bad_request: "That choice couldn't be saved. Please try again.",
   } as Record<string, string>,
-  saveFailed: "The key couldn't be saved. Please try again.",
-  // The account menu.
-  section: "Gemini key",
+  saveFailed: "That couldn't be saved. Please try again.",
+  modelLabel: "Model",
+  fastModelLabel: "Model for short steps (optional)",
+  fastModelSame: "Same as above",
+  fastModelHint: "Searching, splitting questions and checking answers can run on a cheaper model.",
+  openaiSuggested: "Suggested: the cheapest general model your key lists. You can pick another.",
+  claudeModels: [
+    { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", price: "$2 / $10" },
+    { id: "claude-opus-5-5", name: "Claude Opus 5.5", price: "$4 / $20" },
+    { id: "claude-haiku-5-5", name: "Claude Haiku 5.5", price: "$0.10 / $0.50" },
+  ],
+  priceHeading: "Price per million tokens (input / output)",
+  novelEstimate: "Estimate, not a measurement: processing a typical novel (about 100,000 words) uses roughly 1.2 million tokens, about $5 on Sonnet 5.5, $10 on Opus 5.5 or $0.30 on Haiku 5.5. Each question uses far fewer.",
+  saved: "Key saved.",
+  startReading: "Start reading",
+  continue: "Continue",
+  cancel: "Cancel",
+  // Settings: connected providers.
+  section: "AI providers",
+  active: "In use",
+  use: (name: string) => `Use ${name}`,
   endingIn: (last4: string) => `Key ending in …${last4}`,
-  none: "No key saved.",
-  needsReplacing: "Gemini refused this key. Replace it to carry on.",
+  needsReplacing: "The provider refused this key. Replace it to carry on.",
   unchecked: "Not confirmed yet: it will be checked on your next question.",
-  replace: "Replace",
+  replace: "Replace key",
   remove: "Remove",
-  removeConfirm: "Remove your key? Asking questions and processing books stop until you add one again.",
+  removeConfirm: (name: string) => `Remove your ${name} key? If it is the one in use, LORE switches to another connected provider, or stops until you add one.`,
   removeYes: "Remove key",
-  usage: (used: number, limit: number) => `Requests used today: ${used.toLocaleString("en")} / about ${limit.toLocaleString("en")}`,
+  addAnother: "Add another provider",
+};
+
+// Settings: what the user has used, and their own optional daily token cap (Claude and OpenAI).
+export const USAGE = {
+  section: "Usage",
+  requestsToday: (used: number, limit: number) => `Gemini requests today: ${used.toLocaleString("en")} / about ${limit.toLocaleString("en")}`,
+  tokens: (label: string, tokens: number) => `${label}: ${tokens.toLocaleString("en")} tokens`,
+  today: "Today", month: "This month",
+  cost: (usd: number) => `about $${usd > 0 && usd < 0.01 ? "0.01" : usd.toFixed(2)} (estimate)`,
+  capLabel: "Daily token cap",
+  capHint: "Optional. When today's tokens reach it, questions stop and books wait until midnight Pacific.",
+  capOff: "Off",
+  capSave: "Save cap",
+  capClear: "Turn off",
+  capReached: "Today's token cap is reached.",
+  capInvalid: "Enter a whole number of tokens, or turn the cap off.",
+};
+
+// Before a book is processed on a paid provider (Claude, OpenAI).
+export const ESTIMATE = {
+  text: (tokens: number, usd: number | null) =>
+    `Processing this book should use about ${(tokens / 1e6).toFixed(1)} million tokens${usd != null ? `, roughly $${usd.toFixed(2)}` : ""}, billed to your own account. This is an estimate; nothing has started yet.`,
+  confirm: "Process it",
 };
 
 // The admin page.
@@ -506,7 +553,7 @@ export const ADMIN = {
   copy: "Copy",
   copied: "Copied",
   users: "Users",
-  userColumns: { email: "Email", name: "Name", role: "Role", status: "Status", joined: "Joined", key: "Gemini key", today: "Requests today", actions: "" },
+  userColumns: { email: "Email", name: "Name", role: "Role", status: "Status", joined: "Joined", key: "AI key", today: "Requests today", actions: "" },
   reports: "Reported answers",
   noReports: "No reports yet.",
   reportColumns: { when: "When", email: "Email", question: "Question", note: "Note", status: "Status", actions: "" },
@@ -559,7 +606,7 @@ export const SIGNIN_LINK = {
 export const ACCOUNT_DELETE = {
   open: "Delete my account",
   title: "Delete your account",
-  lead: "This deletes your library (books, graph and history), your saved Gemini key and your sign-ins. It can't be undone.",
+  lead: "This deletes your library (books, graph and history), your saved AI provider keys and your sign-ins. It can't be undone.",
   confirmLabel: (email: string) => `Type ${email} to confirm`,
   confirm: "Delete my account for good",
   deleting: "Deleting…",
@@ -684,7 +731,7 @@ export const HOME = {
   betaSub: "Invite-only for now, while we let readers in in small groups.",
   betaSteps: [
     { b: "Request an invite", span: "Leave your email. We'll send a sign-in link when your spot opens." },
-    { b: "Bring your own AI key", span: "Connect a key from your AI provider, so your questions run on your own account. Gemini works today, including its free tier; Claude and OpenAI are coming soon." },
+    { b: "Bring your own AI key", span: "Connect a key from your AI provider, so your questions run on your own account. Gemini (including its free tier), Claude and OpenAI all work today." },
     { b: "Add a book you own", span: "EPUB or PDF, up to 50 MB. LORE reads it once, then you can explore it and ask anything." },
   ],
   formTitle: "Request an invite",
@@ -734,7 +781,7 @@ export const LEGAL = {
         "Waitlist requests: your email and, if you tell us, what you’re reading.",
       ]] },
       { h: "Where it goes", body: [
-        "Your books and questions go to your own AI provider, under your own key. Today that is Gemini, from Google. To build a book’s graph, LORE sends the book’s text; when you ask, it sends your question and the passages it found. Your provider’s terms cover what it receives: on Gemini’s free tier, Google may use it to improve its products.",
+        "Your books and questions go to your own AI provider, under your own key: Gemini (Google), Claude (Anthropic) or OpenAI, whichever you connect. To build a book’s graph, LORE sends the book’s text; when you ask, it sends your question and the passages it found. Your provider’s terms cover what it receives: on Gemini’s free tier, for example, Google may use it to improve its products.",
         "The search index (the embeddings) is made on our own server, not by an outside service.",
         "Sign-in and invite emails are sent through Resend, an email delivery service, which receives your email address to deliver them. If you sign in with Google or GitHub, they tell us your email address and name.",
         "Our server keeps logs of requests, including your IP address, to keep LORE running and safe.",

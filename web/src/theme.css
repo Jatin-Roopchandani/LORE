@@ -441,3 +441,18 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .upload-cli[open]{display:flex;flex-direction:column;gap:6px}
 .linkbtn{border:0;background:none;color:var(--accent);cursor:pointer;padding:0;font:inherit;text-decoration:underline}
 .lib-row.focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+
+/* AI providers (ProviderSettings, UsagePanel, the onboarding cards): theme tokens only. */
+.provider-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:12px 0}
+.provider-card{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.provider-card h2{margin:0;font-size:16px}
+.provider-row{border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
+.provider-row h5,.provider-settings h5{margin:0;font-size:13px;display:flex;gap:8px;align-items:center}
+.provider-row .badge{font:600 10px var(--f-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+.model-picker{display:flex;flex-direction:column;gap:6px}
+.model-picker select{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:4px 8px;font:inherit;font-size:13px;max-width:100%}
+.price-table{border-collapse:collapse;font-size:13px}
+.price-table caption{text-align:left;padding-bottom:4px}
+.price-table th,.price-table td{text-align:left;padding:2px 12px 2px 0;font-weight:400;border-bottom:1px solid var(--line)}
+.usage-panel{display:flex;flex-direction:column;gap:6px}
+.usage-panel input{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:4px 8px;font:inherit;max-width:160px}

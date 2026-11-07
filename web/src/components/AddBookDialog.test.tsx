@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AddBookDialog } from "./AddBookDialog";
-import { UPLOAD, uploadError } from "../messages";
+import { ESTIMATE, UPLOAD, uploadError } from "../messages";
 
 // A stand-in for XMLHttpRequest: records what was sent, and the test answers it.
 class FakeXhr {
@@ -173,4 +173,21 @@ test("the multi-user app offers no terminal command", async () => {
   expect(screen.queryByText(UPLOAD.terminal)).toBeNull();
   expect(screen.queryByText(/lore ingest/)).toBeNull();
   expect(screen.getByRole("button", { name: UPLOAD.upload })).toBeInTheDocument();
+});
+
+test("on a paid provider, a costly book shows the estimate and starts only when confirmed", async () => {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ started: true, queued: true, job: 9 }), { status: 202 }));
+  vi.stubGlobal("fetch", fetchMock);
+  dialog();
+  await choose();
+  await upload();
+  const estimate = { provider: "anthropic", model: "claude-sonnet-5-5", chunks: 420, input_tokens: 756000,
+    output_tokens: 315000, estimated_cost_usd: 4.66, needs_confirm: true, is_estimate: true };
+  await act(async () => FakeXhr.last!.reply(202, ok({ processing: { state: "needs_confirm", estimate } })));
+  expect(screen.getByText(ESTIMATE.text(1071000, 4.66))).toBeInTheDocument();
+  expect(screen.getByText(/about 1\.1 million tokens, roughly \$4\.66/)).toBeInTheDocument();
+  expect(fetchMock).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: ESTIMATE.confirm }));
+  expect(fetchMock).toHaveBeenCalledWith("/api/books/b123/continue", expect.objectContaining({ method: "POST" }));
+  expect(await screen.findByText(UPLOAD.next.queued)).toBeInTheDocument();
 });

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { UI, UPLOAD, WORLDS, uploadError } from "../messages";
+import { api, isError } from "../api";
+import { ESTIMATE, UI, UPLOAD, WORLDS, uploadError } from "../messages";
 import { shellQuote } from "../shell";
 import type { UploadError, UploadResult, World } from "../types";
 import { MAX_UPLOAD_BYTES, uploadBook, type UploadProgress } from "../upload";
@@ -35,7 +36,9 @@ export function AddBookDialog({ open, onClose, worlds = [], multi = false, onUpl
     zone.current?.focus();
     return () => { opener.current?.focus(); };
   }, [open]);
-  const reset = () => { setFile(null); setMsg(""); setProgress(null); setSending(false); setDone(null); setFailure(null); };
+  // A paid provider's estimate was above the threshold: processing starts only when the user confirms (Continue).
+  const [confirmed, setConfirmed] = useState<"no" | "starting" | "started" | "failed">("no");
+  const reset = () => { setFile(null); setMsg(""); setProgress(null); setSending(false); setDone(null); setFailure(null); setConfirmed("no"); };
   useEffect(() => { if (!open) { abort.current?.abort(); abort.current = null; reset(); } }, [open]);
   useEffect(() => () => abort.current?.abort(), []);
   useEffect(() => {
@@ -79,7 +82,14 @@ export function AddBookDialog({ open, onClose, worlds = [], multi = false, onUpl
   const pct = progress && progress.total > 0 ? Math.min(100, Math.round((progress.loaded / progress.total) * 100)) : 0;
   const nextText = (r: UploadResult) => {
     const p = r.processing;
+    if (p.state === "needs_confirm")
+      return ESTIMATE.text(p.estimate.input_tokens + p.estimate.output_tokens, p.estimate.estimated_cost_usd);
     return p.state === "waiting" ? UPLOAD.next.waiting(clock(p.resumable_at)) : UPLOAD.next[p.state];
+  };
+  const confirm = async (id: string) => {
+    setConfirmed("starting");
+    const r = await api.continueBook(id);
+    setConfirmed(isError(r) ? "failed" : "started");
   };
   const openBook = (id: string) => onOpenBook?.(id);
   return (
@@ -88,9 +98,14 @@ export function AddBookDialog({ open, onClose, worlds = [], multi = false, onUpl
         <h2 id="add-title">{UPLOAD.title}</h2>
         {done ? (
           <div className="upload-done" role="status">
-            <strong>{done.processing.state === "waiting" ? UPLOAD.waitingTitle : UPLOAD.started}</strong>
+            <strong>{done.processing.state === "waiting" || (done.processing.state === "needs_confirm" && confirmed !== "started")
+              ? UPLOAD.waitingTitle : UPLOAD.started}</strong>
             <p className="hint">{UPLOAD.addedTo(done.title, done.world?.name ?? null)}</p>
-            <p className="hint">{nextText(done)}</p>
+            <p className="hint">{confirmed === "started" ? UPLOAD.next.queued : nextText(done)}</p>
+            {done.processing.state === "needs_confirm" && confirmed !== "started" && (
+              <button className="tbtn primary" type="button" disabled={confirmed === "starting"}
+                onClick={() => confirm(done.book_id)}>{ESTIMATE.confirm}</button>)}
+            {confirmed === "failed" && <p className="hint" role="alert">{UPLOAD.startFailed}</p>}
             <div className="row-end">
               <button className="tbtn" type="button" onClick={reset}>{UPLOAD.another}</button>
               <button className="tbtn primary" type="button" onClick={() => openBook(done.book_id)}>{UPLOAD.openLibrary}</button>

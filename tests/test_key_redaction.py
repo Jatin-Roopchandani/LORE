@@ -197,3 +197,31 @@ def test_saving_a_key_logs_nothing_about_it(tmp_path, central, caplog):
         assert FAKE_KEY not in r.text
     assert alice.delete("/api/me/key").status_code == 200
     assert FAKE_KEY not in caplog.text
+
+
+# --- Claude and OpenAI key shapes ---------------------------------------------------
+
+CLAUDE_KEY = "sk-ant-api03-FAKEfakeFAKEfakeFAKEfakeFAKEfake_-0001"
+OPENAI_KEYS = ("sk-proj-FAKEfakeFAKEfakeFAKEfakeFAKEfake0002",
+               "sk-svcacct-FAKEfakeFAKEfakeFAKEfake0003", "sk-FAKEfakeFAKEfakeFAKEfake0004")
+
+
+@pytest.mark.parametrize("secret", (CLAUDE_KEY, *OPENAI_KEYS))
+def test_claude_and_openai_keys_are_blanked_in_logs_and_tracebacks(caplog, secret):
+    install_log_redaction()
+    logging.getLogger("anthropic").warning("auth header %s", secret)
+    try:
+        raise RuntimeError(f"bad key {secret}")
+    except RuntimeError:
+        logging.getLogger("openai").exception("failed")
+    assert secret not in caplog.text
+    assert redact_keys(f"[{secret}]") == f"[{KEY_MASK}]"
+
+
+def test_short_sk_words_are_not_mistaken_for_keys():
+    assert redact_keys("task-runner sk-short desk-lamp") == "task-runner sk-short desk-lamp"
+
+
+def test_traces_blank_claude_keys():
+    from lore import tracing
+    assert CLAUDE_KEY not in tracing.clean(f"prompt with {CLAUDE_KEY}")

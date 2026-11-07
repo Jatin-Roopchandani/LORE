@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
-import { KEYS } from "./messages";
+import { PROVIDERS } from "./messages";
 
 const quota = vi.fn(() => Promise.resolve({ provider: "gemini", models: [], resets_at: "2026-10-08T07:00:00Z" }));
 const overview = vi.fn((_world?: string) => Promise.resolve({ nodes: [{ id: "h", name: "Holmes", kind: "Character", books: [] }], edges: [], truncated: false, depth: 0 }));
@@ -14,7 +14,7 @@ const chatCreate = vi.fn((_b: object) => Promise.resolve({ chat: { id: "x" }, cr
 const me = vi.fn(() => Promise.resolve({ user: { id: "u", email: "me@example.org", name: null, role: "user" } }));
 // The signed-in user's Gemini key (multi-user mode); the key-problem channel is the real one, so tests can fire it.
 const keyStatus = vi.fn(() => Promise.resolve({ present: true, last4: "1234", added_at: null, last_ok_at: null, last_error: null } as object));
-const keySave = vi.fn((_key: string) => Promise.resolve({ present: true, last4: "WXYZ", added_at: null, last_ok_at: null, last_error: null, check: "ok" } as object));
+const keySave = vi.fn((_key: string, _provider?: string) => Promise.resolve({ present: true, last4: "WXYZ", added_at: null, last_ok_at: null, last_error: null, check: "ok" } as object));
 const keyListeners = new Set<(p: string) => void>();
 const fireKeyProblem = (p: string) => keyListeners.forEach((l) => l(p));
 let askError = "interrupted";
@@ -26,7 +26,7 @@ vi.mock("./chatsApi", async (importOriginal) => ({ ...(await importOriginal<type
     remove: () => Promise.resolve({ deleted: true }) } }));
 vi.mock("./api", () => ({
   authApi: { me: () => me() },
-  keyApi: { get: () => keyStatus(), save: (k: string) => keySave(k), usage: () => Promise.resolve({ error: { code: "x", message: "" } }),
+  keyApi: { get: () => keyStatus(), save: (k: string, p?: string) => keySave(k, p), usage: () => Promise.resolve({ error: { code: "x", message: "" } }),
     remove: () => Promise.resolve({ deleted: true }) },
   onKeyProblem: (l: (p: string) => void) => { keyListeners.add(l); return () => { keyListeners.delete(l); }; },
   reportKeyProblem: (c: string) => fireKeyProblem(c),
@@ -137,7 +137,7 @@ test("replaying a question asked in another world switches the selector to it", 
   await waitFor(() => expect(overview).toHaveBeenLastCalledWith("2"));
 });
 
-// --- each user's own Gemini key (multi-user mode) ---
+// --- each user's own AI provider key (multi-user mode) ---
 
 const multi = () => { document.head.innerHTML = '<meta name="lore-multi" content="1">'; };
 const noKey = { present: false, last4: null, added_at: null, last_ok_at: null, last_error: null };
@@ -146,15 +146,14 @@ test("a signed-in user without a key sees the onboarding screen, and saving one 
   multi();
   keyStatus.mockResolvedValueOnce(noKey);
   render(<App />);
-  expect(await screen.findByRole("heading", { name: KEYS.onboardingTitle })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: PROVIDERS.connectTitle })).toBeInTheDocument();
   expect(screen.queryByPlaceholderText("Ask about your books…")).toBeNull();
-  expect(screen.getByRole("link", { name: KEYS.getKey })).toHaveAttribute("href", "https://aistudio.google.com/app/apikey");
+  expect(screen.getByRole("link", { name: PROVIDERS.getKey.gemini })).toHaveAttribute("href", "https://aistudio.google.com/app/apikey");
   expect(screen.getByText(/about 1,000 requests a day/)).toBeInTheDocument();
-  expect(screen.getByText(/midnight Pacific/)).toBeInTheDocument();
-  expect(screen.getByText(/sent to Gemini under your own key/)).toBeInTheDocument();
-  await userEvent.type(screen.getByLabelText(KEYS.fieldLabel), "AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake123");
-  await userEvent.click(screen.getByRole("button", { name: KEYS.save }));
-  expect(keySave).toHaveBeenCalledWith("AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake123");
+  expect(screen.getByText(/sent to the provider you choose, under your own key/)).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText(PROVIDERS.fieldLabel("Gemini")), "AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake123");
+  await userEvent.click(screen.getAllByRole("button", { name: PROVIDERS.save })[0]);
+  expect(keySave).toHaveBeenCalledWith("AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake123", "gemini");
   expect(await screen.findByPlaceholderText("Ask about your books…")).toBeInTheDocument();
 });
 
@@ -162,19 +161,19 @@ test("a user with a key goes straight to the app", async () => {
   multi();
   render(<App />);
   expect(await screen.findByPlaceholderText("Ask about your books…")).toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: KEYS.onboardingTitle })).toBeNull();
+  expect(screen.queryByRole("heading", { name: PROVIDERS.connectTitle })).toBeNull();
   expect(keyStatus).toHaveBeenCalledTimes(1);
 });
 
-test("a key Gemini refused opens the replace screen", async () => {
+test("a key the provider refused opens the replace screen", async () => {
   multi();
   keyStatus.mockResolvedValueOnce({ ...noKey, present: true, last4: "1234", last_error: "rejected" });
   render(<App />);
-  expect(await screen.findByRole("heading", { name: KEYS.replaceTitle })).toBeInTheDocument();
-  expect(screen.getByRole("alert")).toHaveTextContent(KEYS.rejected);
+  expect(await screen.findByRole("heading", { name: PROVIDERS.replaceTitle })).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(PROVIDERS.rejected);
 });
 
-test.each([["key_required", KEYS.onboardingTitle], ["key_invalid", KEYS.replaceTitle]])(
+test.each([["key_required", PROVIDERS.connectTitle], ["key_invalid", PROVIDERS.replaceTitle]])(
   "an ask answered %s routes to the key screen", async (code, heading) => {
     multi();
     askError = code;

@@ -1,4 +1,4 @@
-import type { AdminEvent, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
+import type { AdminEvent, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
   EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
   SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
@@ -199,12 +199,22 @@ export const authApi = {
   deleteMe: (confirm: string) => sendJson<{ deleted: true }>("POST", "/api/me/delete", { confirm }, true),
 };
 
-// The signed-in user's own Gemini key (multi-user mode). The server never sends the key back, only its last four characters.
+// The signed-in user's own model-provider keys (multi-user mode): Gemini, Claude (anthropic) or OpenAI. `get` is the
+// active provider's key. The server never sends a key back, only its last four characters.
 export const keyApi = {
   get: () => getJson<KeyStatus>("/api/me/key", true),
-  save: (key: string) => sendJson<KeySaved>("PUT", "/api/me/key", { key }, true),
-  remove: () => sendJson<{ deleted: boolean }>("DELETE", "/api/me/key", undefined, true),
+  save: (key: string, provider?: ProviderId) =>
+    sendJson<KeySaved>("PUT", "/api/me/key", provider ? { provider, key } : { key }, true),
+  remove: (provider?: ProviderId) =>
+    sendJson<{ deleted: boolean }>("DELETE", provider ? `/api/me/key?provider=${provider}` : "/api/me/key", undefined, true),
   usage: () => getJson<UsageToday>("/api/me/usage", true),
+  providers: () => getJson<ProvidersState>("/api/me/providers", true),
+  // Switch the active provider, and/or its model (and an optional cheaper model for the short steps).
+  choose: (provider: ProviderId, model?: string | null, fastModel?: string | null) =>
+    sendJson<ProvidersState>("PUT", "/api/me/provider",
+      { provider, ...(model ? { model } : {}), ...(fastModel !== undefined ? { fast_model: fastModel ?? "" } : {}) }, true),
+  setTokenCap: (cap: number | null) => sendJson<UsageSummary>("PUT", "/api/me/token-cap", { cap }, true),
+  estimate: (bookId: string) => getJson<ProcessEstimate>(`/api/books/${encodeURIComponent(bookId)}/estimate`, true),
 };
 
 export const adminApi = {
