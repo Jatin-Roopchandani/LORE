@@ -46,12 +46,15 @@ export function ProviderKeyForm({ provider, onSaved, onCancel }:
 // Claude's three models and their prices (the cost-honesty table).
 export function ClaudePrices() {
   return (
-    <table className="price-table">
-      <caption className="hint">{PROVIDERS.priceHeading}</caption>
-      <tbody>
-        {PROVIDERS.claudeModels.map((m) => <tr key={m.id}><th scope="row">{m.name}</th><td>{m.price}</td></tr>)}
-      </tbody>
-    </table>
+    <>
+      <table className="price-table">
+        <caption className="hint">{PROVIDERS.priceHeading}</caption>
+        <tbody>
+          {PROVIDERS.claudeModels.map((m) => <tr key={m.id}><th scope="row">{m.name}</th><td>{m.price}</td></tr>)}
+        </tbody>
+      </table>
+      <p className="hint">{PROVIDERS.priceExplain}</p>
+    </>
   );
 }
 
@@ -84,6 +87,7 @@ export function ModelPicker({ info, onChosen }: { info: ProviderInfo; onChosen: 
         </select>
       </label>
       <p className="hint">{PROVIDERS.fastModelHint}</p>
+      {info.provider === "anthropic" && <p className="hint">{PROVIDERS.priceExplain}</p>}
       {problem && <div className="notice error" role="alert">{problem}</div>}
     </div>
   );

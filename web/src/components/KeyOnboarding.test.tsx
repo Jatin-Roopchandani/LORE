@@ -46,8 +46,8 @@ test("three cards, each with its own key link and cost note; fields hide what is
   expect(within(card("OpenAI")).getByText(PROVIDERS.cost.openai)).toBeInTheDocument();
   // Claude's price table and the marked estimate.
   expect(within(card("Claude")).getByText("Claude Opus 5.5")).toBeInTheDocument();
-  expect(within(card("Claude")).getByText("$4 / $20")).toBeInTheDocument();
-  expect(within(card("Claude")).getByText("$0.10 / $0.50")).toBeInTheDocument();
+  expect(within(card("Claude")).getByText("$4 in · $20 out per million tokens")).toBeInTheDocument();
+  expect(within(card("Claude")).getByText("$0.10 in · $0.50 out per million tokens")).toBeInTheDocument();
   expect(within(card("Claude")).getByText(/Estimate, not a measurement/)).toBeInTheDocument();
 });
 

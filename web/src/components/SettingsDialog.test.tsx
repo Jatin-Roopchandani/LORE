@@ -268,6 +268,16 @@ test("AI providers: last four, which is in use, the model; never a key", async (
   expect(screen.getByRole("button", { name: "OpenAI" })).toBeInTheDocument();  // add another
 });
 
+test("AI providers: Claude's prices say in and out per million tokens, with what that means", async () => {
+  markMulti();
+  serve();
+  await openAt("providers");
+  const picker = await screen.findByLabelText(PROVIDERS.modelLabel);
+  expect(within(picker).getByRole("option", { name: "Claude Sonnet 5.5 ($2 in · $10 out per million tokens)" })).toBeInTheDocument();
+  expect(screen.getByText(PROVIDERS.priceExplain)).toBeInTheDocument();
+  expect(screen.queryByText(/\$2 \/ \$10/)).toBeNull();
+});
+
 test("AI providers: switching the active provider and the model", async () => {
   markMulti();
   const calls = serve();
