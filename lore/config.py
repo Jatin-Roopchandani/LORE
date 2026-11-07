@@ -221,7 +221,10 @@ class LoreConfig(BaseModel):
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
-        candidate = path if path is not None else Path("lore.toml")
+        # LORE_CONFIG names the file when the working directory is not the
+        # project's (an MCP client starts `lore mcp` wherever it likes).
+        candidate = (path if path is not None
+                     else Path(os.environ.get("LORE_CONFIG") or "lore.toml"))
         raw: dict = {}
         if candidate.is_file():
             with candidate.open("rb") as f:

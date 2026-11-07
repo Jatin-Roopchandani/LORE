@@ -84,6 +84,7 @@ PASS = {
     "bad_request": "That request couldn't be read.",
     "confirm_mismatch": "The confirmation didn't match.",
     "self_action": "You can't do that to your own account.",
+    "current_session": "Use Sign out to sign this device out.",
 }
 
 # FastAPI's {"detail": ...} errors (HTTPException, validation) by status.

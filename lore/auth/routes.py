@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import json
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
+from lore.auth import devices
 from lore.auth.cookies import CSRF_COOKIE, SESSION_COOKIE, cleared_headers, session_headers
 from lore.auth.current import AuthContext, session_user
 from lore.auth.sessions import LIFETIME, delete_session
 from lore.auth.tokens import csrf_token, same
 from lore.auth.admin import build_admin_router
 from lore.auth.signin import build_signin_router
-from lore.central.models import User
+from lore.central.models import Identity, User
 
 
 def build_router(ctx: AuthContext) -> APIRouter:
@@ -83,7 +85,63 @@ def build_router(ctx: AuthContext) -> APIRouter:
                                           int(LIFETIME.total_seconds()))[1]
             response.headers.append(name.decode(), value.decode())
         response.headers["Cache-Control"] = "no-store"
+        with ctx.sessions() as db:
+            linked = db.scalars(sa.select(Identity).where(Identity.user_id == user.id)
+                                .order_by(Identity.created_at)).all()
+            identities = [{"provider": i.provider, "created_at": i.created_at.isoformat()}
+                          for i in linked]
         return {"user": {"id": row.id, "email": row.email, "name": row.name,
-                         "role": row.role}}
+                         "role": row.role},
+                "identities": identities}
+
+    # --- signed-in devices (the Settings popup's Account tab) -------------
+    # DELETE and POST carry the CSRF token like every other mutating route
+    # (the guard in create_app); each query is filtered by the user's id.
+
+    def unauthorized() -> JSONResponse:
+        return JSONResponse({"error": {"code": "unauthorized",
+                                       "message": "sign in required"}}, status_code=401)
+
+    @router.get("/api/me/sessions")
+    def my_sessions(request: Request):
+        user = session_user(request)
+        if user is None:
+            return unauthorized()
+        current = devices.current_hash(request.cookies.get(SESSION_COOKIE))
+        with ctx.sessions() as db:
+            listed = devices.list_sessions(db, user.id, ctx.now(), current)
+        return JSONResponse({"sessions": listed}, headers={"Cache-Control": "no-store"})
+
+    @router.delete("/api/me/sessions/{sid}")
+    def end_session(sid: str, request: Request):
+        """Sign one of my other devices out. This device signs out with
+        POST /auth/logout instead (it also clears the cookies)."""
+        user = session_user(request)
+        if user is None:
+            return unauthorized()
+        current = devices.current_hash(request.cookies.get(SESSION_COOKIE))
+        if current and devices.valid_id(sid) and devices.public_id(current) == sid:
+            return JSONResponse({"error": {"code": "current_session",
+                                           "message": "use Sign out for this device"}},
+                                status_code=400)
+        with ctx.sessions() as db:
+            gone = devices.revoke(db, user.id, sid)
+            db.commit()
+        if not gone:  # unknown, expired, or someone else's: all look the same
+            return JSONResponse({"error": {"code": "not_found",
+                                           "message": "no such session"}}, status_code=404)
+        return JSONResponse({"revoked": gone}, headers={"Cache-Control": "no-store"})
+
+    @router.post("/api/me/sessions/sign-out-others")
+    def end_other_sessions(request: Request):
+        """Sign out of every device but this one."""
+        user = session_user(request)
+        if user is None:
+            return unauthorized()
+        current = devices.current_hash(request.cookies.get(SESSION_COOKIE))
+        with ctx.sessions() as db:
+            gone = devices.revoke_others(db, user.id, current)
+            db.commit()
+        return JSONResponse({"revoked": gone}, headers={"Cache-Control": "no-store"})
 
     return router

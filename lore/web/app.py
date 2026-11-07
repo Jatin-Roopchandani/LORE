@@ -8,6 +8,7 @@ MCP; 4xx only for a malformed request to this API).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shlex
 import shutil
@@ -148,6 +149,33 @@ _NOT_BUILT = """<!doctype html><meta charset="utf-8"><title>LORE</title>
 def _lore_executable() -> str:
     beside = Path(sys.executable).with_name("lore")
     return str(beside) if beside.exists() else (shutil.which("lore") or "lore")
+
+
+def mcp_setup(config: LoreConfig, exe: str, http_running: bool) -> dict:
+    """The exact snippets that connect an MCP client to this library: the
+    real `lore` executable, with the data directory (and lore.toml, when the
+    server was started beside one) pinned by environment, because an MCP
+    client starts `lore mcp` in a working directory of its own choosing."""
+    env = {"LORE_DATA_DIR": str(Path(config.data_dir).resolve())}
+    toml = Path("lore.toml").resolve()
+    if toml.is_file():
+        env["LORE_CONFIG"] = str(toml)
+    desktop = {"mcpServers": {"lore": {"command": exe, "args": ["mcp"], "env": env}}}
+    flags = " ".join(f"-e {shlex.quote(f'{k}={v}')}" for k, v in env.items())
+    url = f"http://127.0.0.1:{MCP_PORT}/mcp"
+    exports = " ".join(f"{k}={shlex.quote(v)}" for k, v in env.items())
+    return {
+        "lore": exe,
+        "env": env,
+        "claude_desktop": json.dumps(desktop, indent=2),
+        "claude_code": f"claude mcp add --scope user lore {flags} -- {shlex.quote(exe)} mcp",
+        "http_command": f"{exports} {shlex.quote(exe)} mcp --http --port {MCP_PORT}",
+        "http_url": url,
+        "claude_code_http": f"claude mcp add --scope user --transport http lore {url}",
+        "http_running": http_running,
+        # The older field names, kept for any client of the first panel.
+        "stdio_command": f"claude mcp add lore -- {shlex.quote(exe)} mcp",
+    }
 
 
 def _port_open(port: int) -> bool:
@@ -379,6 +407,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     api.include_router(build_history_router(
         central, central_user, lambda: datetime.now(timezone.utc),
         report_limit=throttle.report if throttle is not None else None))
+    from lore.web.export import build_export_router
+    api.include_router(build_export_router(central, central_user, user_config))
 
     if auth_ctx is not None:
         api.state.auth = auth_ctx
@@ -903,12 +933,35 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     def mcp(config: LoreConfig = Depends(user_config)):
         if multi:  # MCP is local-only (lore.mcp.server refuses multi mode)
             return _api_error(404, "not_found", "MCP is not available here")
-        return {
-            "stdio_command": f"claude mcp add lore -- {shlex.quote(_lore_executable())} mcp",
-            "http_command": f"lore mcp --http --port {MCP_PORT}",
-            "http_url": f"http://127.0.0.1:{MCP_PORT}/mcp",
-            "http_running": _port_open(MCP_PORT),
-        }
+        out = mcp_setup(config, _lore_executable(), _port_open(MCP_PORT))
+        # Where the library lives, for the Your data tab's backup advice: the
+        # data directory and, when it is a file, the central database (chats).
+        central_url = database_url(base)
+        out["library"] = {"data_dir": out["env"]["LORE_DATA_DIR"],
+                          "central_db": central_url.removeprefix("sqlite:///")
+                          if central_url.startswith("sqlite:///") else None}
+        return out
+
+    @api.get("/api/mcp/check")
+    async def mcp_check(config: LoreConfig = Depends(user_config)):
+        """Can the MCP server start here? Builds it as `lore mcp` would (no
+        transport, nothing served) and lists the tools it exposes."""
+        if multi:
+            return _api_error(404, "not_found", "MCP is not available here")
+        exe = _lore_executable()
+        found = Path(exe).is_file() or shutil.which(exe) is not None
+        try:
+            from lore.mcp.server import build_server
+            listed = await build_server(config).list_tools()
+        except Exception as exc:  # noqa: BLE001 -- the check reports, never raises
+            return {"ok": False, "lore_found": found, "tools": [],
+                    "problem": f"the MCP server could not start: {type(exc).__name__}"}
+        out = [{"name": t.name,
+                "summary": " ".join((t.description or "").strip().split("\n\n")[0].split())}
+               for t in listed]
+        return {"ok": found, "lore_found": found, "tools": out,
+                "problem": None if found else f"the lore command was not found at {exe}",
+                "library_found": config.sqlite_path.exists()}
 
     @api.get("/api/settings")
     def settings(config: LoreConfig = Depends(user_config)):
