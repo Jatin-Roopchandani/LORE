@@ -116,3 +116,66 @@ def test_selection_is_deterministic_whatever_the_row_order() -> None:
     a = select_rows(rows, 30, scores=scores, cued={"KILLS"})
     b = select_rows(list(reversed(rows)), 30, scores=scores, cued={"KILLS"})
     assert sorted(map(repr, a)) == sorted(map(repr, b))
+
+
+def _identity_graph(path):
+    """Rand fights Ba'alzamon (the fight is told under Ba'alzamon's name); the
+    characters believe Ba'alzamon is the Dark One (IDENTIFIED_AS)."""
+    from lore.db.kuzu_store import KuzuStore
+
+    store = KuzuStore(path)
+    for eid, name in [("r", "Rand"), ("d", "The Dark One"), ("b", "Ba'alzamon"), ("t", "Tam")]:
+        store.execute("CREATE (:Entity {id: $id, name: $n, kind: 'Character'})",
+                      {"id": eid, "n": name})
+
+    def edge(s, o, p, ch, seq, ev="ev"):
+        store.execute(
+            "MATCH (a:Entity), (b:Entity) WHERE a.id = $s AND b.id = $o "
+            "CREATE (a)-[:REL {predicate: $p, predicate_raw: $p, evidence: $ev, confidence: 0.9,"
+            " chunk_id: $c, book_id: 'w', chapter_seq: $ch, run_id: 'r'}]->(b)",
+            {"s": s, "o": o, "p": p, "c": f"w:{ch}:{seq}", "ch": ch, "ev": ev})
+
+    edge("r", "d", "OPPOSES", 3, 1, "Rand fears the Dark One.")
+    edge("r", "b", "KILLS", 52, 12, "the blade of Light severed the cord")
+    edge("b", "d", "IDENTIFIED_AS", 53, 4, "Best we still call him the Dark One. Or Ba'alzamon.")
+    edge("r", "t", "LOVES", 1, 1)
+    return store
+
+
+def test_a_search_from_an_entity_also_walks_from_what_it_is_identified_with(tmp_path) -> None:
+    from lore.query import hubselect
+    from lore.query.models import TemplateCall
+
+    store = _identity_graph(tmp_path / "kuzu")
+    rows = hubselect.search(store, TemplateCall("path_between", {"a_id": "r", "b_id": "d", "limit": 40}),
+                            question="what happened when Rand fought the Dark One")
+    assert any(r.chunk_id == "w:52:12" for r in rows)  # the fight, told under Ba'alzamon's name
+    assert [r.chunk_id for r in rows] == sorted((r.chunk_id for r in rows),
+                                                key=lambda c: (int(c.split(":")[1]), int(c.split(":")[2])))
+    # Everything about the Dark One includes what is told under Ba'alzamon's name;
+    # without the link, the Dark One's own neighbours never reach the fight.
+    call = TemplateCall("neighbours", {"entity_id": "d", "limit": 40})
+    assert any(r.chunk_id == "w:52:12" for r in hubselect.search(store, call))
+    hubselect.SEARCH_IDENTITY_LINKS = False
+    try:
+        assert not any(r.chunk_id == "w:52:12" for r in hubselect.search(store, call))
+    finally:
+        hubselect.SEARCH_IDENTITY_LINKS = True
+    store.close()
+
+
+def test_identity_variants_never_pair_an_entity_with_itself(tmp_path) -> None:
+    from lore.query import hubselect
+    from lore.query.models import TemplateCall
+
+    store = _identity_graph(tmp_path / "kuzu")
+    variants = hubselect.identity_variants(store, TemplateCall("path_between", {"a_id": "b", "b_id": "d", "limit": 5}))
+    assert all(v.slots["a_id"] != v.slots["b_id"] for v in variants)
+    assert variants[0].slots == {"a_id": "b", "b_id": "d", "limit": 5}
+    store.close()
+
+
+def test_direct_edges_of_a_linked_entity_count_as_the_pairs_own() -> None:
+    rows = [_row(i) for i in range(1, 300)] + [_row(500, "KILLS", sid="h", oid="b2")]
+    kept = select_rows(rows, 20, pair=(["h"], ["o9", "b2"]))
+    assert any(r.object_id == "b2" for r in kept)

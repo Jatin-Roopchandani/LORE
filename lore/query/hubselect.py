@@ -74,7 +74,7 @@ def _content_key(row: EdgeRow) -> tuple:
 def select_rows(rows: Sequence[EdgeRow], limit: int, *,
                 scores: dict[str, float] | None = None,
                 cued: Iterable[str] = (),
-                pair: tuple[str, str] | None = None) -> list[EdgeRow]:
+                pair: tuple | None = None) -> list[EdgeRow]:
     """`limit` of `rows` (see the module docstring), in their given order."""
     rows = list(rows)
     if limit <= 0:
@@ -101,8 +101,11 @@ def select_rows(rows: Sequence[EdgeRow], limit: int, *,
     index = range(len(rows))
     pin_cap = max(1, int(limit * PINNED_SHARE))
     if pair is not None:
-        a, b = pair
-        direct = [i for i in index if {rows[i].subject_id, rows[i].object_id} == {a, b}]
+        a, b = ({pair[0]} if isinstance(pair[0], str) else set(pair[0]),
+                {pair[1]} if isinstance(pair[1], str) else set(pair[1]))
+        direct = [i for i in index
+                  if (rows[i].subject_id in a and rows[i].object_id in b)
+                  or (rows[i].subject_id in b and rows[i].object_id in a)]
         take(sorted(direct, key=lambda i: (rows[i].predicate not in cued, relevant(rows[i]))),
              pin_cap)
     if cued:
@@ -139,6 +142,44 @@ def cue_ranked(hits: Sequence[tuple[str, str]], scores: dict[str, float]) -> lis
                                          chunk_story_key(c)))[:CUE_HITS]
 
 
+# An entity an IDENTIFIED_AS edge ties to another (Ba'alzamon, whom the
+# characters believe is the Dark One) is searched together with it: a search
+# from the Dark One also walks from Ba'alzamon, so the fight the book tells
+# under Ba'alzamon's name is found. Off for an eval arm.
+SEARCH_IDENTITY_LINKS = True
+MAX_LINKED_PER_SLOT = 2
+_ENTITY_SLOTS = ("entity_id", "a_id", "b_id")
+
+
+def _with_links(kuzu, entity_id: str) -> list[str]:
+    """The entity, then up to MAX_LINKED_PER_SLOT entities it is identified with."""
+    if not SEARCH_IDENTITY_LINKS:
+        return [entity_id]
+    from lore.query.seed import identified_with  # seed imports this module's callers
+    try:
+        linked = [i for i in identified_with(kuzu, [entity_id]) if i != entity_id]
+    except Exception:  # noqa: BLE001 - a graph without the edge type: nothing linked
+        linked = []
+    return [entity_id, *linked[:MAX_LINKED_PER_SLOT]]
+
+
+def identity_variants(kuzu, call: TemplateCall) -> list[TemplateCall]:
+    """`call`, plus the same call with each entity slot swapped for an entity
+    it is identified with (every combination, the original first). Two slots
+    naming the same entity after a swap are skipped."""
+    options = [(slot, _with_links(kuzu, str(call.slots[slot])))
+               for slot in _ENTITY_SLOTS if slot in call.slots]
+    variants = [dict(call.slots)]
+    for slot, ids in options:
+        variants = [{**v, slot: i} for v in variants for i in ids]
+    out = []
+    for slots in variants:
+        if "a_id" in slots and "b_id" in slots and slots["a_id"] == slots["b_id"]:
+            continue
+        out.append(TemplateCall(call.template, slots))
+    return out or [call]
+
+
 def search(kuzu, call: TemplateCall, *, lance=None, vector: Sequence[float] | None = None,
            question: str = "",
            keep: Callable[[list[EdgeRow]], list[EdgeRow]] | None = None) -> list[EdgeRow]:
@@ -152,8 +193,20 @@ def search(kuzu, call: TemplateCall, *, lance=None, vector: Sequence[float] | No
         rows = run_template(kuzu, call)
         return keep(rows) if keep else rows
     limit = int(call.slots.get("limit", 0))
-    rows = run_template(kuzu, TemplateCall(call.template,
-                                           {**call.slots, "limit": max(limit, FETCH_CAP)}))
+    rows: list[EdgeRow] = []
+    seen: set[tuple] = set()
+    variants = identity_variants(kuzu, call)
+    for variant in variants:
+        for row in run_template(kuzu, TemplateCall(variant.template,
+                                                   {**variant.slots, "limit": max(limit, FETCH_CAP)})):
+            key = _content_key(row)
+            if key not in seen:
+                seen.add(key)
+                rows.append(row)
+    if len(variants) > 1 and call.template != "across_books":
+        # several variants: back into story order, as one template returns it
+        rows.sort(key=lambda r: (r.book_id, r.chapter_seq, chunk_story_key(r.chunk_id),
+                                 _content_key(r)))
     if keep:
         rows = keep(rows)
     groups: dict[str, list[EdgeRow]] = {}
@@ -167,7 +220,8 @@ def search(kuzu, call: TemplateCall, *, lance=None, vector: Sequence[float] | No
         scores = relevance(list(vector), stored)
     pair = None
     if "a_id" in call.slots and "b_id" in call.slots:
-        pair = (str(call.slots["a_id"]), str(call.slots["b_id"]))
+        pair = (_with_links(kuzu, str(call.slots["a_id"])),
+                _with_links(kuzu, str(call.slots["b_id"])))
     cued = cued_predicates(question)
     out: list[EdgeRow] = []
     for group in groups.values():

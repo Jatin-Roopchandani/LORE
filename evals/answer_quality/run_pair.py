@@ -114,6 +114,9 @@ ARM_SETTINGS = {
                    lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Vector-found seeds bring what an IDENTIFIED_AS edge ties them to, as
     # named seeds already do (seed.FOLLOW_IDENTITY_LINKS).
+    # A template from an entity also walks from what IDENTIFIED_AS ties it to.
+    "identity_search": ("lore.query.hubselect", "SEARCH_IDENTITY_LINKS",
+                        lambda v: v.lower() in ("1", "true", "yes", "on")),
     "identity_links": ("lore.query.seed", "FOLLOW_IDENTITY_LINKS",
                        lambda v: v.lower() in ("1", "true", "yes", "on")),
 }

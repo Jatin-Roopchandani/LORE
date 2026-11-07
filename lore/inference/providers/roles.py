@@ -38,7 +38,10 @@ class Site:
 SITES: dict[str, Site] = {
     "select": Site(FAST, "low"),
     "decompose": Site(FAST, "low"),
-    "check": Site(FAST, "low"),
+    # The faithfulness check drops claims it calls unsupported: measured on
+    # Claude, the fast model at low effort refused verbatim-quoted claims, so
+    # the writer model checks.
+    "check": Site(WRITER, "low"),
     "synthesize": Site(WRITER, "medium"),
     "write": Site(WRITER, "medium"),
     "extract": Site(FAST, "low"),
