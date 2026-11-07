@@ -1,7 +1,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LibraryPanel } from "./LibraryPanel";
-import { STAGE_LABEL } from "../messages";
+import { LIBRARY, STAGE_LABEL } from "../messages";
 
 const gemini = { used_today: 120, limit: 500, answer_reserve: 50 };
 const job = (o: object) => ({ stage: "extract", state: "running", done: 3, total: 10, stopped_reason: null, resumable_at: null,
@@ -77,6 +77,26 @@ test("footer, local mode on a billed provider: no token count kept", async () =>
     usage: { mode: "metered", provider: "gemini", tokens_today: null, cost_usd: null, daily_token_cap: null } };
   await open();
   expect(screen.getByText("Gemini · billed to your own account")).toBeInTheDocument();
+  vi.clearAllTimers();
+});
+
+test("a running step with no real count shows an indeterminate bar, not a frozen 0 / 1", async () => {
+  status = { gemini, books: [book("a", job({ stage: "load", done: 0, total: 1 }), "ingested")] };
+  await open();
+  expect(screen.getByText("Building the graph")).toBeInTheDocument();
+  const bar = screen.getByRole("progressbar");
+  expect(bar).toHaveClass("indeterminate");
+  expect(bar).not.toHaveAttribute("aria-valuenow");
+  expect(screen.getByText(LIBRARY.slowStep)).toBeInTheDocument();
+  expect(screen.queryByText("0 / 1")).toBeNull();
+  vi.clearAllTimers();
+});
+
+test("the load's real counts show as a bar and a grouped count", async () => {
+  status = { gemini, books: [book("a", job({ stage: "load", done: 340, total: 2900 }), "ingested")] };
+  await open();
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "340");
+  expect(screen.getByText("340 / 2,900")).toBeInTheDocument();
   vi.clearAllTimers();
 });
 

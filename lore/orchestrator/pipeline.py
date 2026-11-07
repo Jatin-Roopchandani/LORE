@@ -165,6 +165,11 @@ class JobCtl:
     def heartbeat(self) -> None:
         jobs.heartbeat(self._ctx.conn, self._ctx.book_id, now=self._moment())
 
+    def progress(self, done: int, total: int) -> None:
+        """Both counts, for a stage that learns its total once under way."""
+        jobs.set_progress(self._ctx.conn, self._ctx.book_id, done, total,
+                          now=self._moment())
+
     def spend_check(self) -> None:
         """Call before each Gemini request; stops once only the answer
         reserve (or less) of today's requests remains."""

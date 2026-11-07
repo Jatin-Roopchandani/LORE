@@ -23,6 +23,7 @@ import re
 from collections.abc import Awaitable, Callable, Container, Iterable, Iterator
 from dataclasses import dataclass, field
 
+from lore import progress
 from lore.resolve.disambiguation import Candidate, Question
 from lore.resolve.normalize import entity_id, leading_titles, normalize_name
 from lore.resolve.predicates import cosine
@@ -543,7 +544,10 @@ async def resolve_mentions(
     # Task 11a: every title an entity's surface forms carry ("major", "mr").
     titles: dict[str, set[str]] = {}
 
-    for mention in ordered_mentions:
+    # Progress (lore.progress): one step per mention, the long part of a load
+    # (each may embed). Reported before each, and once more when all are done.
+    for index, mention in enumerate(ordered_mentions):
+        progress.report(index, len(ordered_mentions))
         normalized = normalize_name(mention.name)
         if not normalized:
             # A mention with no word characters at all mints no entity.
@@ -891,4 +895,5 @@ async def resolve_mentions(
         )
         for cid in alias_sets
     ]
+    progress.report(len(ordered_mentions), len(ordered_mentions))
     return result

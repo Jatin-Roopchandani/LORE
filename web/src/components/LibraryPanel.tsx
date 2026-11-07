@@ -18,7 +18,18 @@ function Row({ book, now, busy, error, focus = false, onGo, onMove, children }: 
     <button className="tbtn" type="button" disabled={disabled || busy} aria-label={LIBRARY.action(verb, book.title)} onClick={onGo}>{verb}</button>
   );
   let body: React.ReactNode;
-  if (job?.state === "running") {
+  if (job?.state === "running" && job.total <= 1) {
+    // No real count (a one-step stage, or a load that hasn't counted its mentions yet): an indeterminate bar, never a
+    // frozen 0 / 1. Reduce-motion stops the animation (theme.css).
+    body = (<>
+      <span className="lib-state">{job.provider
+        ? LIBRARY.stageOn(job.stage, PROVIDERS.names[job.provider] ?? job.provider) : LIBRARY.stage(job.stage)}</span>
+      <div className="lib-bar indeterminate" role="progressbar" aria-label={LIBRARY.progressLabel(job.stage)} aria-busy="true">
+        <span />
+      </div>
+      <span className="hint">{LIBRARY.slowStep}</span>
+    </>);
+  } else if (job?.state === "running") {
     const pct = job.total > 0 ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0;
     body = (<>
       <span className="lib-state">{job.provider

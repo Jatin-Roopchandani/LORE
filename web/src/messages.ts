@@ -122,7 +122,9 @@ export const LIBRARY = {
   stage: (stage: string) => STAGE_LABEL[stage] ?? stage,
   // A running job's stage and the provider it runs on: "Reading passages · Claude".
   stageOn: (stage: string, provider: string) => `${STAGE_LABEL[stage] ?? stage} · ${provider}`,
-  progress: (done: number, total: number) => `${done} / ${total}`,
+  progress: (done: number, total: number) => `${done.toLocaleString("en")} / ${total.toLocaleString("en")}`,
+  // A step that can't count its work yet (moving a book out of the graph, a load before it knows its mentions).
+  slowStep: "This step can take a while on CPU.",
   progressLabel: (stage: string) => `${STAGE_LABEL[stage] ?? stage} progress`,
   continuesAfter: (time: string, left: string) => `Continues after ${time} (your time) \u2014 in ${left}`,
   inHM: (mins: number) => `${Math.floor(mins / 60)}h ${mins % 60}m`,

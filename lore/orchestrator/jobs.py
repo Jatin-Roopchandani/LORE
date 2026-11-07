@@ -216,6 +216,15 @@ def advance(conn: sqlite3.Connection, book_id: str, done: int, *,
            (done, _iso(_aware(now)), book_id))
 
 
+def set_progress(conn: sqlite3.Connection, book_id: str, done: int, total: int, *,
+                 now: datetime | None = None) -> None:
+    """A stage that learns its item count only once under way (the load):
+    both counts at once."""
+    _write(conn, book_id,
+           "UPDATE book_jobs SET done_items = ?, total_items = ?, updated_at = ?"
+           " WHERE book_id = ?", (done, total, _iso(_aware(now)), book_id))
+
+
 def heartbeat(conn: sqlite3.Connection, book_id: str, *,
               now: datetime | None = None) -> None:
     _write(conn, book_id,

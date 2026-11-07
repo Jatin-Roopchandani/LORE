@@ -307,6 +307,10 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .lib-state{font-size:12px;font-weight:600}
 .lib-bar{flex:1 1 120px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
 .lib-bar span{display:block;height:100%;background:var(--accent)}
+.lib-bar.indeterminate span{width:30%;animation:lib-indeterminate 1.6s ease-in-out infinite}
+@keyframes lib-indeterminate{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
+@media (prefers-reduced-motion:reduce){.lib-bar.indeterminate span{width:100%;opacity:.45}}
+:root[data-motion="reduce"] .lib-bar.indeterminate span{width:100%;opacity:.45}
 .lib-foot{border-top:1px solid var(--line);padding-top:8px}
 
 .lib-world{display:flex;flex-direction:column;gap:8px}

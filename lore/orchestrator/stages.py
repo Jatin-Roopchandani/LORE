@@ -14,9 +14,11 @@ wire fakes.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from lore import progress
 from lore.beats import build as beats_build
 from lore.beats.store import relink as relink_beats, save_beats
 from lore.codex import build as codex_build
@@ -128,6 +130,9 @@ class ReassignStage:
         job_ctl.advance(1)
 
 
+PROGRESS_EVERY = 1.0  # seconds between progress writes from inside a load
+
+
 class LoadStage:
     """Resolve entities and write the graph and vector index.
 
@@ -149,8 +154,22 @@ class LoadStage:
         job_ctl.advance(0)
         if ctx.config.adjudication.provider == "gemini":
             job_ctl.spend_check()
-        self.reload(ctx)
-        job_ctl.advance(1)
+        # Real progress: the resolver reports one step per mention (each may
+        # embed on a CPU), so the row reads e.g. 340 / 2,900, not 0 / 1 for
+        # tens of minutes. Written at most once a second, and the last one.
+        last = [float("-inf")]
+
+        def report(done: int, total: int) -> None:
+            moment = time.monotonic()
+            if done < total and moment - last[0] < PROGRESS_EVERY:
+                return
+            last[0] = moment
+            job_ctl.progress(done, max(total, 1))
+
+        with progress.bound(report):
+            self.reload(ctx)
+        row = jobs.get_job(ctx.conn, ctx.book_id)
+        job_ctl.advance(max(1, row.total_items if row is not None else 1))
 
     def reload(self, ctx: StageContext) -> None:
         """Load again, keeping the fresh report (also used to apply answers)."""
