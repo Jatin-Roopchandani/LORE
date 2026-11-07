@@ -609,8 +609,25 @@ async def test_the_graph_path_embeds_the_question_exactly_once(tmp_path: Path) -
 
 
 async def test_templates_are_asked_for_the_wide_candidate_pool(tmp_path: Path) -> None:
+    from lore.query import hubselect
     from lore.query.agent import CANDIDATE_LIMIT
 
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    kuzu = FakeKuzu(EDGE)
+    await answer_question(conn, kuzu, FakeLance([SEED_ROW]), "q", models)
+    # fetched wide, then cut to CANDIDATE_LIMIT by hubselect.select_rows
+    assert [p["limit"] for p in kuzu.template_params] == [max(CANDIDATE_LIMIT,
+                                                              hubselect.FETCH_CAP)]
+    conn.close()
+
+
+async def test_templates_keep_the_template_limit_with_hub_select_off(
+        tmp_path: Path, monkeypatch) -> None:
+    from lore.query import hubselect
+    from lore.query.agent import CANDIDATE_LIMIT
+
+    monkeypatch.setattr(hubselect, "HUB_SELECT", False)
     conn = _conn(tmp_path)
     ollama, models = _local()
     kuzu = FakeKuzu(EDGE)
