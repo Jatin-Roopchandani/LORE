@@ -292,35 +292,49 @@ def _intro_model(config: LoreConfig):
     Gemini, there is no key, or the ledger says every model is spent. A seam
     for tests."""
     from lore.db.sqlite import open_db
-    from lore.inference.gemini import GeminiClient, default_key_file, resolve_api_key
+    from lore.inference.gemini import default_key_file, resolve_api_key
     from lore.orchestrator.gemini_budget import (
         BudgetExceeded, check_budget, recorder_for, today,
     )
 
+    from lore.inference import key_scope
+    from lore.inference.providers import factory as providers
+
     if config.selection.provider != "gemini" or not config.selection.models:
         return None
-    conn = open_db(config.sqlite_path)
-    try:
-        open_models = []
-        for model in config.selection.models:
-            try:
-                check_budget(conn, model, today())
-            except BudgetExceeded:
-                continue
-            open_models.append(model)
-    finally:
-        conn.close()
-    if not open_models:
-        return None
-    from lore.inference.key_scope import gemini_api_key
-    try:  # the bound user's key in multi mode, the local key file otherwise
-        api_key = gemini_api_key(local=lambda: resolve_api_key(key_file=default_key_file()))
-    except Exception:  # noqa: BLE001 -- no usable key means no model intro
-        return None
-    if not api_key:
-        return None
-    client = GeminiClient(api_key, models=open_models,
-                          recorder=recorder_for(config.sqlite_path))
+    if not providers.on_gemini(config):
+        # Claude or OpenAI: no free-tier ledger, only the user's own token cap.
+        if key_scope.over_token_cap():
+            return None
+        try:
+            creds = providers.credentials(config)
+            client = providers.build(creds, config, "intro",
+                                     gemini_models=config.selection.models)
+        except Exception:  # noqa: BLE001 -- no usable key means no model intro
+            return None
+    else:
+        conn = open_db(config.sqlite_path)
+        try:
+            open_models = []
+            for model in config.selection.models:
+                try:
+                    check_budget(conn, model, today())
+                except BudgetExceeded:
+                    continue
+                open_models.append(model)
+        finally:
+            conn.close()
+        if not open_models:
+            return None
+        try:  # the bound user's key in multi mode, the local key file otherwise
+            creds = providers.credentials(
+                config, local=lambda: resolve_api_key(key_file=default_key_file()))
+        except Exception:  # noqa: BLE001 -- no usable key means no model intro
+            return None
+        if not creds.key:
+            return None
+        client = providers.build(creds, config, "intro", gemini_models=open_models,
+                                 recorder=recorder_for(config.sqlite_path))
 
     async def generate_json(prompt, schema):
         return await client.generate_json(prompt, schema)

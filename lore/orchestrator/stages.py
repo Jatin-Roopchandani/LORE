@@ -29,6 +29,7 @@ from lore.inference.gemini import (
     resolve_api_key,
 )
 from lore.inference.key_scope import gemini_api_key
+from lore.inference.providers import factory as providers
 from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import recorder_for
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
@@ -244,14 +245,22 @@ def _user_or_local_key() -> str | None:
     return gemini_api_key(local=lambda: resolve_api_key(key_file=default_key_file()))
 
 
+def _site_client(config, site: str, models, missing: str):
+    """The user's provider for `site` (providers.factory); on Gemini the same
+    cascade client as ever, counted in the ledger."""
+    creds = providers.credentials(
+        config, local=lambda: resolve_api_key(key_file=default_key_file()))
+    if creds.key is None:
+        raise RuntimeError(missing)
+    gemini = creds.provider == providers.GEMINI
+    return providers.build(creds, config, site, gemini_models=models,
+                           recorder=recorder_for(config.sqlite_path) if gemini else None)
+
+
 def _gemini_client(config) -> GeminiClient:
-    api_key = _user_or_local_key()
-    if api_key is None:
-        raise RuntimeError(
-            "disambiguation needs a Gemini API key (GEMINI_API_KEY or"
-            " ~/.config/lore/gemini.env)")
-    return GeminiClient(api_key, models=config.disambiguation.models,
-                        recorder=recorder_for(config.sqlite_path))
+    return _site_client(config, "disambiguate", config.disambiguation.models,
+                        "disambiguation needs a Gemini API key (GEMINI_API_KEY or"
+                        " ~/.config/lore/gemini.env)")
 
 
 @dataclass(frozen=True)
@@ -268,23 +277,15 @@ class _BeatPart:
 
 
 def _beats_client(config) -> GeminiClient:
-    api_key = _user_or_local_key()
-    if api_key is None:
-        raise RuntimeError(
-            "story beats need a Gemini API key (GEMINI_API_KEY or"
-            " ~/.config/lore/gemini.env)")
-    return GeminiClient(api_key, models=config.extraction.gemini_models,
-                        recorder=recorder_for(config.sqlite_path))
+    return _site_client(config, "beats", config.extraction.gemini_models,
+                        "story beats need a Gemini API key (GEMINI_API_KEY or"
+                        " ~/.config/lore/gemini.env)")
 
 
 def _codex_client(config) -> GeminiClient:
-    api_key = _user_or_local_key()
-    if api_key is None:
-        raise RuntimeError(
-            "the codex needs a Gemini API key (GEMINI_API_KEY or"
-            " ~/.config/lore/gemini.env)")
-    return GeminiClient(api_key, models=config.extraction.gemini_models,
-                        recorder=recorder_for(config.sqlite_path))
+    return _site_client(config, "codex", config.extraction.gemini_models,
+                        "the codex needs a Gemini API key (GEMINI_API_KEY or"
+                        " ~/.config/lore/gemini.env)")
 
 
 def _local_embedder(config):

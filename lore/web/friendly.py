@@ -38,6 +38,7 @@ FIXED = {
     "upstream_unavailable": "The answer service is busy right now. Try again in a minute.",
     "timeout": "That took too long and was stopped. Try a narrower question.",
     "budget_exhausted": "Today's question allowance is used up. It resets at midnight Pacific.",
+    "model_refused": "The AI model declined to answer this. Try asking it another way.",
     "cypher_rejected": "That query isn't allowed.",
     "mail_failed": "The email could not be sent. Nothing was changed.",
     "cancelled": "The question was cancelled.",
@@ -77,9 +78,9 @@ PASS = {
     "too_large": "That's too large.",
     "history_full": "Your history is full. Delete some chats first.",
     "invalid_email": "That doesn't look like an email address.",
-    "key_required": "Add your Gemini API key to ask questions and process books.",
-    "key_invalid": "Gemini refused your API key. Replace it in Account settings.",
-    "key_format": "That doesn't look like a Gemini API key.",
+    "key_required": "Connect your AI provider to ask questions and process books.",
+    "key_invalid": "Your AI provider refused your API key. Replace it in Settings.",
+    "key_format": "That doesn't look like an API key for this provider.",
     "bad_request": "That request couldn't be read.",
     "confirm_mismatch": "The confirmation didn't match.",
     "self_action": "You can't do that to your own account.",
@@ -92,9 +93,12 @@ BY_STATUS = {
     422: "invalid_request", 429: "rate_limited",
 }
 
-# Model names: gemini-2.5-flash, gemma-3-27b-it, models/..., and whatever
-# the configuration names (lore.config), added by `known_models`.
-_MODEL = re.compile(r"\b(?:models/)?(?:gemini|gemma)-[0-9][\w.\-]*", re.IGNORECASE)
+# Model names: gemini-2.5-flash, gemma-3-27b-it, models/..., claude-sonnet-5-5,
+# gpt-9-mini, o7-mini, and whatever the configuration names (lore.config),
+# added by `known_models`.
+_MODEL = re.compile(r"\b(?:models/)?(?:(?:gemini|gemma)-[0-9][\w.\-]*"
+                    r"|claude-[a-z]+-[0-9][\w.\-]*|gpt-[0-9][\w.\-]*|o[0-9]+-[a-z][\w.\-]*)",
+                    re.IGNORECASE)
 _PATH = re.compile(r"(?<![\w/:])/(?:[\w.\-]+/)+[\w.\-]*")
 _TRACE = re.compile(r"Traceback \(most recent call last\).*", re.DOTALL)
 _FRAME = re.compile(r'File "[^"]*", line \d+')

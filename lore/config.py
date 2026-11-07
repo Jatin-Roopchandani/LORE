@@ -131,6 +131,34 @@ class AdjudicationConfig(BaseModel):
     models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
 
 
+class LlmConfig(BaseModel):
+    """Which remote model provider the steps set to "gemini" run on (local mode).
+
+    `provider` is "gemini" (the default: every step exactly as before),
+    "anthropic" (Claude) or "openai". The `[lore.<step>] provider = "gemini"`
+    settings keep meaning "this step runs on the remote model"; this section
+    picks the remote. Claude and OpenAI keys come from ANTHROPIC_API_KEY /
+    OPENAI_API_KEY or ~/.config/lore/anthropic.env / openai.env, never from
+    lore.toml.
+
+    `model`: Claude's model (default claude-sonnet-5-5; claude-opus-5-5 or
+    claude-haiku-5-5 also work), or the OpenAI model id (required: LORE never
+    assumes one). `fast_model`: an optional cheaper model for the short
+    structured steps (lore.inference.providers.roles). `effort`: per call
+    site, Claude's effort ("low" ... "max"), e.g. {write = "high"}.
+
+    In multi mode each user's own choice (Account settings) applies instead.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["gemini", "anthropic", "openai"] = "gemini"
+    model: str = ""
+    fast_model: str = ""
+    effort: dict[str, Literal["low", "medium", "high", "xhigh", "max"]] = Field(
+        default_factory=dict)
+
+
 class WebConfig(BaseModel):
     """`lore ui` (Phase 5a). show_internals gates provider details (model
     names, the Gemini quota, Ollama commands, the MCP panel): on for a
@@ -189,6 +217,7 @@ class LoreConfig(BaseModel):
     beats: BeatsConfig = Field(default_factory=BeatsConfig)
     answers: AnswersConfig = Field(default_factory=AnswersConfig)
     codex: CodexConfig = Field(default_factory=CodexConfig)
+    llm: LlmConfig = Field(default_factory=LlmConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":

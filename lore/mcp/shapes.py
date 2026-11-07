@@ -20,7 +20,7 @@ from lore.query.write import answer_coverage
 
 ERROR_CODES = frozenset(
     {"no_graph", "budget_exhausted", "cypher_rejected", "not_found", "timeout",
-     "upstream_unavailable"}
+     "upstream_unavailable", "model_refused"}
 )
 
 

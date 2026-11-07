@@ -16,7 +16,9 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from lore.config import LoreConfig
+from lore.inference import key_scope
 from lore.inference.gemini import limits_for
+from lore.inference.providers import factory as providers
 from lore.orchestrator import jobs
 from lore.orchestrator.gemini_budget import calls_today, today
 
@@ -141,6 +143,13 @@ class JobCtl:
         """Call before each Gemini request; stops once only the answer
         reserve (or less) of today's requests remains."""
         cfg = self._ctx.config
+        if not providers.on_gemini(cfg):
+            # Claude or OpenAI: billed to the user, so no free-tier ledger and
+            # no reserve; only the user's own daily token cap stops processing.
+            if key_scope.over_token_cap():
+                raise QuotaStop("your daily token cap is reached (Account settings);"
+                                " processing continues after midnight Pacific")
+            return
         left = processing_budget_left(self._ctx.conn, cfg, today(self._moment()))
         reserve = cfg.processing.answer_reserve
         if left <= reserve:

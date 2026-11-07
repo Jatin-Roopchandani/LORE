@@ -22,7 +22,10 @@ from lore.inference.gemini import (
     GeminiAuthError, GeminiError, GeminiKeyFileError, GeminiQuotaError,
     default_key_file, resolve_api_key,
 )
+from lore.inference import key_scope
 from lore.inference.key_scope import gemini_api_key
+from lore.inference.providers import factory as providers
+from lore.inference.providers.base import ProviderRefusal
 from lore.mcp.guards import TIMEOUT_MS, CypherRejected, run_guarded
 from lore.mcp.shapes import (
     BookOut, ChunkHit, Citation, CypherResult, EdgeOut, EntityCard,
@@ -993,6 +996,13 @@ def _check_synthesis_budget(config: LoreConfig) -> str | None:
     """
     if config.synthesis.provider != "gemini":
         return None  # the local model spends no Gemini budget
+    if not providers.on_gemini(config):
+        # Claude or OpenAI: billed to the user, so no free-tier ledger. Only
+        # the user's own daily token cap (multi mode, off by default) stops it.
+        if key_scope.over_token_cap():
+            return ("You have used today's token cap set in Account settings."
+                    " It resets at midnight Pacific.")
+        return None
     conn = open_db(config.sqlite_path)
     try:
         refusals = []
@@ -1009,7 +1019,7 @@ def _check_synthesis_budget(config: LoreConfig) -> str | None:
 
 
 class _KeyMissing(Exception):
-    pass
+    """No key for the chosen provider; the message (if any) says which."""
 
 
 def _build_models(config: LoreConfig) -> QueryModels:
@@ -1019,13 +1029,22 @@ def _build_models(config: LoreConfig) -> QueryModels:
     an empty model list also raises: that is a config error and propagates).
     """
     api_key = None
+    creds = None
     if "gemini" in (config.selection.provider, config.synthesis.provider):
-        # Multi mode: the bound user's key, never the server's. Local mode:
-        # the environment or the key file, as ever.
-        api_key = gemini_api_key(
-            local=lambda: resolve_api_key(key_file=default_key_file()))
+        # Multi mode: the bound user's provider and key, never the server's.
+        # Local mode: [lore.llm]'s provider; Gemini's key from the environment
+        # or the key file, as ever.
+        try:
+            creds = providers.credentials(
+                config, local=lambda: resolve_api_key(key_file=default_key_file()))
+        except ValueError as exc:  # Claude or OpenAI chosen locally, no key
+            raise _KeyMissing(str(exc)) from None
+        api_key = creds.key
         if not api_key:
             raise _KeyMissing()
+    if creds is not None and creds.provider != providers.GEMINI:
+        # Billed tokens, not Gemini's free-tier ledger: no recorder.
+        return make_query_models(config, api_key=api_key, credentials=creds)
     return make_query_models(config, api_key=api_key,
                              recorder=recorder_for(config.sqlite_path))
 
@@ -1036,7 +1055,26 @@ def _upstream(exc: GeminiError) -> dict:
     GeminiAuthError gets fixed text rather than its own: the key is never
     in an exception message, but nothing here should depend on that.
     Never `budget_exhausted`: that sends the user to wait for midnight.
+
+    Claude and OpenAI failures (lore.inference.providers.base) name their
+    provider; a model's refusal is `model_refused`, not an outage.
     """
+    provider = getattr(exc, "provider", None)
+    if provider is not None:
+        name = providers.label(provider)
+        if isinstance(exc, ProviderRefusal):
+            return error("model_refused",
+                         f"{name} declined to answer this question. Try asking it"
+                         " another way.")
+        if isinstance(exc, GeminiAuthError):
+            return error("upstream_unavailable",
+                         f"{name} rejected the API key, so the key is missing or"
+                         " invalid.")
+        if isinstance(exc, GeminiQuotaError):
+            return error("upstream_unavailable",
+                         f"{exc} This is {name} declining or overloaded; try again"
+                         " shortly.")
+        return error("upstream_unavailable", f"{name} failed: {exc}. Try again shortly.")
     if isinstance(exc, GeminiAuthError):
         return error("upstream_unavailable",
                      "Gemini rejected the API key, so the key is missing or"
@@ -1101,7 +1139,9 @@ async def lore_search(config: LoreConfig, query: str,
                     models = _build_models(config)
                 except GeminiError as exc:
                     return _upstream(exc)
-                except _KeyMissing:
+                except _KeyMissing as missing:
+                    if str(missing):
+                        return error("upstream_unavailable", str(missing))
                     return error("upstream_unavailable",
                                  "the Gemini API key is missing or invalid:"
                                  f" {_KEY_HELP}.")

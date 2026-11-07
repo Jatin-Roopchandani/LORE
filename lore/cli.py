@@ -660,6 +660,16 @@ def _print_matter_plan(plan, dry_run: bool) -> None:
         typer.echo(f"    entity {entity_id} loses this book")
 
 
+def _llm_credentials(config: LoreConfig, command: str):
+    """[lore.llm]'s Claude or OpenAI credentials, or a clear exit."""
+    from lore.inference.providers import factory as providers
+    try:
+        return providers.credentials(config)
+    except (ValueError, GeminiKeyFileError) as exc:
+        typer.echo(f"{command} failed: {exc}")
+        raise typer.Exit(2)
+
+
 def _graph_build_key(
     config: LoreConfig, command: str, *, extracting: bool, loading: bool
 ) -> str | None:
@@ -678,6 +688,11 @@ def _graph_build_key(
         settings.append('[lore.adjudication] provider = "gemini"')
         alternatives.append('[lore.adjudication] provider = "ollama"')
     if not settings:
+        return None
+    if config.llm.provider != "gemini":
+        # [lore.llm] picks Claude or OpenAI: check its key now, before any
+        # unit is dispatched; each step then builds its model from it.
+        _llm_credentials(config, command)
         return None
     try:
         api_key = resolve_api_key(key_file=default_key_file())
@@ -1196,7 +1211,9 @@ def disambiguate(
         return
 
     try:
-        api_key = resolve_api_key(key_file=default_key_file())
+        api_key = (_llm_credentials(config, "disambiguate").key
+                   if config.llm.provider != "gemini"
+                   else resolve_api_key(key_file=default_key_file()))
     except GeminiKeyFileError as exc:
         typer.echo(f"disambiguate failed: {exc}")
         typer.echo(f"{len(todo)} question(s) still pending; 0 requests spent.")
@@ -1218,8 +1235,13 @@ def disambiguate(
     # A cascade, not one model: a 429/503/404 moves to the next entry
     # instead of sleeping, which is what turns five per-model daily quotas
     # into aggregate capacity.
-    client = GeminiClient(api_key, models=config.disambiguation.models,
-                          recorder=recorder_for(config.sqlite_path))
+    if config.llm.provider != "gemini":
+        from lore.inference.providers import factory as providers
+        client = providers.build(_llm_credentials(config, "disambiguate"), config,
+                                 "disambiguate", gemini_models=config.disambiguation.models)
+    else:
+        client = GeminiClient(api_key, models=config.disambiguation.models,
+                              recorder=recorder_for(config.sqlite_path))
 
     async def _run():
         # Same loop for the request and the close: httpx binds its sockets
@@ -1334,10 +1356,14 @@ def ask(
     config = LoreConfig.load()
 
     api_key = None
+    creds = None
     remote = [f"[lore.{name}]" for name, section in (
         ("selection", config.selection), ("synthesis", config.synthesis))
         if section.provider == "gemini"]
-    if remote:
+    if remote and config.llm.provider != "gemini":
+        creds = _llm_credentials(config, "ask")
+        api_key = creds.key
+    elif remote:
         try:
             api_key = resolve_api_key(key_file=default_key_file())
         except GeminiKeyFileError as exc:
@@ -1390,8 +1416,11 @@ def ask(
         conn = sqlite3.connect(f"file:{config.sqlite_path}?mode=ro", uri=True)
         titles = {**graphed, **{b["id"]: b["title"] for b in list_books(conn)}}
         lance = LanceStore(config.lancedb_dir)
-        models = make_query_models(config, api_key,
-                                   recorder=recorder_for(config.sqlite_path))
+        if creds is not None:  # Claude or OpenAI: billed tokens, no Gemini ledger
+            models = make_query_models(config, api_key, credentials=creds)
+        else:
+            models = make_query_models(config, api_key,
+                                       recorder=recorder_for(config.sqlite_path))
         # A deep answer starts no further section once the ledger says every
         # synthesis model is spent: the same check lore_search gives it.
         from lore.mcp import tools as mcp_tools

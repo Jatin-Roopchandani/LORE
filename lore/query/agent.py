@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from lore.config import LoreConfig
 from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiClient
+from lore.inference.providers import factory as providers
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
 from lore.query import deep as deep_module
@@ -237,6 +238,7 @@ def make_query_models(
     ollama: OllamaProvider | None = None,
     gemini: GeminiClient | None = None,
     recorder: Callable[[str], None] | None = None,
+    credentials=None,
 ) -> QueryModels:
     """Build the query side's models. `ollama`/`gemini` are for tests.
 
@@ -252,10 +254,22 @@ def make_query_models(
     `gemini` is always shared), so per-model throttling and the RPM budget
     are counted once and `aclose` closes it once. Only two different
     `models` lists get two clients, because a client's cascade is fixed.
+
+    `credentials` (lore.inference.providers.factory) names the user's
+    provider. On Gemini (or None) everything above holds unchanged. On Claude
+    or OpenAI each remote call site gets its own model from the factory, with
+    its role's model and effort: decomposition and the check run on the
+    `fast` role, the claims and the prose on the `writer` role.
     """
     remote_steps = [name for name, section in (("selection", config.selection),
                                                ("synthesis", config.synthesis))
                     if section.provider == "gemini"]
+    if (credentials is None and remote_steps and gemini is None
+            and providers.active_provider(config) != providers.GEMINI):
+        credentials = providers.credentials(config)  # local mode's [lore.llm]
+    other = credentials is not None and credentials.provider != providers.GEMINI
+    if other:
+        api_key = credentials.key
     if remote_steps and gemini is None and not api_key:
         # Checked before any client opens, so a refusal leaks nothing.
         sections = " and ".join(f"[lore.{name}]" for name in remote_steps)
@@ -264,10 +278,16 @@ def make_query_models(
     # The one provider the embedder built (or was given): generators share it.
     local = embedder.provider
     remotes: dict[tuple[str, ...], GeminiClient] = {}
+    sites: dict[str, object] = {}  # Claude or OpenAI: one model per call site
 
-    def remote(models: list[str]) -> GeminiClient:
+    def remote(models: list[str], site: str = "synthesize") -> GeminiClient:
         if gemini is not None:
             return gemini
+        if other:
+            if site not in sites:
+                sites[site] = providers.build(credentials, config, site,
+                                              gemini_models=models)
+            return sites[site]
         key = tuple(models)
         if key not in remotes:
             remotes[key] = GeminiClient(api_key, models=models, recorder=recorder)
@@ -276,7 +296,7 @@ def make_query_models(
     embed = embedder.embed
 
     if config.selection.provider == "gemini":
-        selector = remote(config.selection.models)
+        selector = remote(config.selection.models, "select")
 
         async def select(prompt: str, schema: type[BaseModel]) -> BaseModel:
             return await selector.generate_json(prompt, schema)
@@ -302,6 +322,11 @@ def make_query_models(
 
         # The synthesis client and cascade; generate_json runs at temperature 0.
         decompose_with = synthesize_with
+        check_with = write_with = synthesize_with
+        if other:
+            decompose_with = _json_call(remote(config.synthesis.models, "decompose"))
+            check_with = _json_call(remote(config.synthesis.models, "check"))
+            write_with = _json_call(remote(config.synthesis.models, "write"))
 
         def synthesis_model() -> str | None:
             return writer.last_model
@@ -314,10 +339,13 @@ def make_query_models(
             # A short prompt, deterministic like selection.
             return await local.generate(prompt, schema, options=SELECTION_OPTIONS)
 
+        check_with = write_with = synthesize_with
+
         def synthesis_model() -> str | None:
             return config.ollama.model
 
-    opened = [gemini] if gemini is not None and remote_steps else list(remotes.values())
+    opened = ([gemini] if gemini is not None and remote_steps
+              else list(remotes.values()) + list(sites.values()))
 
     async def aclose() -> None:
         try:
@@ -333,10 +361,18 @@ def make_query_models(
     return QueryModels(embed, select, synthesize_with, synthesis_model, aclose,
                        selection_model, decompose=decompose_with, viewpoint=viewpoint,
                        evidence_chars=evidence_budget(config.synthesis.provider),
-                       # The same callable as synthesis: same provider, same
+                       # On Gemini, the same callable as synthesis: same
                        # client, same cascade, same temperature 0, and so the
-                       # same request bookkeeping.
-                       check=synthesize_with, write=synthesize_with)
+                       # same request bookkeeping. On Claude or OpenAI, each
+                       # its own call site (role and effort).
+                       check=check_with, write=write_with)
+
+
+def _json_call(model):
+    async def call(prompt: str, schema: type[BaseModel], *,
+                   avoid: str | None = None) -> BaseModel:
+        return await model.generate_json(prompt, schema)
+    return call
 
 
 async def _select(question, seeds, models: QueryModels):

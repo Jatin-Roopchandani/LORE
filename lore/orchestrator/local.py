@@ -39,7 +39,8 @@ from lore.inference.gemini import (
     default_key_file,
     resolve_api_key,
 )
-from lore.inference.key_scope import gemini_api_key
+from lore.inference.key_scope import gemini_api_key  # noqa: F401 - a patch point
+from lore.inference.providers import factory as providers
 from lore.inference.ollama import OllamaProvider
 from lore.orchestrator.gemini_budget import recorder_for
 from lore.orchestrator.pipeline import QuotaStop
@@ -313,17 +314,20 @@ def missing_gemini_key_message(settings: list[str], alternative: str) -> str:
 
 def make_gemini_tier(config: LoreConfig, api_key: str | None = None) -> GeminiTier:
     """Build the run's tier. Raises ValueError, opening nothing, without a key."""
-    # A bound user's key in multi mode, never the file (key_scope).
-    key = gemini_api_key(api_key,
-                         local=lambda: resolve_api_key(key_file=default_key_file()))
-    if not key:
+    # A bound user's provider and key in multi mode, never the file
+    # (key_scope); [lore.llm]'s provider in local mode (providers.factory).
+    creds = providers.credentials(
+        config, api_key, local=lambda: resolve_api_key(key_file=default_key_file()))
+    if not creds.key:
         raise ValueError(missing_gemini_key_message(
             ['extraction_provider = "gemini"'],
             'set extraction_provider = "kaggle" or "ollama"',
         ))
+    gemini = creds.provider == providers.GEMINI
     return GeminiTier(
         config=config,
-        client=GeminiClient(key, models=config.extraction.gemini_models,
-                            recorder=recorder_for(config.sqlite_path)),
+        client=providers.build(creds, config, "extract",
+                               gemini_models=config.extraction.gemini_models,
+                               recorder=recorder_for(config.sqlite_path) if gemini else None),
         embedder=OllamaProvider(config.ollama),
     )
