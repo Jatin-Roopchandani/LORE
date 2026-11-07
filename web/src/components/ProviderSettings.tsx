@@ -115,8 +115,52 @@ export function ProviderCard({ provider, onConnected }: { provider: ProviderId; 
   );
 }
 
+// The hint's dismissal, per browser and day (it comes back on another day if the condition holds again).
+const HINT_KEY = "lore-gemini-paid-hint-dismissed-v1";
+const today = () => new Date().toISOString().slice(0, 10);
+function hintDismissed(): boolean {
+  try { return localStorage.getItem(HINT_KEY) === today(); } catch { return false; }
+}
+function dismissHint(): void {
+  try { localStorage.setItem(HINT_KEY, today()); } catch { /* storage blocked: dismissed for this view only */ }
+}
+
+// Gemini only: the user's own "I'm on a paid Gemini plan" switch, and the hint that their key seems to be on one.
+// LORE never turns the switch on by itself.
+export function GeminiPaidSwitch({ paid, hint, onChange }:
+  { paid: boolean; hint: boolean; onChange: (state: ProvidersState) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const [dismissed, setDismissed] = useState(hintDismissed);
+  const toggle = async () => {
+    setBusy(true); setProblem("");
+    const r = await keyApi.setGeminiPaid(!paid);
+    setBusy(false);
+    if (isError(r)) { setProblem(PROVIDERS.errors[r.error.code] ?? PROVIDERS.saveFailed); return; }
+    onChange(r);
+  };
+  return (
+    <div className="gemini-paid">
+      {hint && !paid && !dismissed && (
+        <div className="notice" role="status">
+          {PROVIDERS.geminiPaidHint}{" "}
+          <button className="tbtn" type="button" onClick={() => { dismissHint(); setDismissed(true); }}>{PROVIDERS.dismiss}</button>
+        </div>
+      )}
+      <label className="switch-row">
+        <input type="checkbox" role="switch" checked={paid} aria-checked={paid} disabled={busy} onChange={toggle} />
+        {PROVIDERS.geminiPaid}
+      </label>
+      <p className="hint">{PROVIDERS.geminiPaidHelp}</p>
+      {problem && <div className="notice error" role="alert">{problem}</div>}
+    </div>
+  );
+}
+
 // One connected provider in Settings: in use or "Use it", its key's last four, its model, Replace and Remove.
-function ConnectedProvider({ info, onChange }: { info: ProviderInfo; onChange: (state?: ProvidersState) => void }) {
+// Gemini also has the paid-plan switch (and its hint, from `state`).
+function ConnectedProvider({ info, state, onChange }:
+  { info: ProviderInfo; state: ProvidersState; onChange: (state?: ProvidersState) => void }) {
   const [mode, setMode] = useState<"view" | "replace" | "remove">("view");
   const use = async () => {
     const r = await keyApi.choose(info.provider);
@@ -139,7 +183,8 @@ function ConnectedProvider({ info, onChange }: { info: ProviderInfo; onChange: (
       {info.last4 && <p className="hint">{PROVIDERS.endingIn(info.last4)}</p>}
       {info.last_error === "rejected" && <div className="notice error" role="alert">{PROVIDERS.needsReplacing}</div>}
       {info.last_error === "unchecked" && <p className="hint">{PROVIDERS.unchecked}</p>}
-      <p className="hint">{PROVIDERS.cost[info.provider]}</p>
+      <p className="hint">{info.provider === "gemini" && info.paid_tier ? PROVIDERS.geminiPaidCost : PROVIDERS.cost[info.provider]}</p>
+      {info.provider === "gemini" && <GeminiPaidSwitch paid={!!info.paid_tier} hint={!!state.gemini_paid_hint} onChange={onChange} />}
       <ModelPicker info={info} onChosen={onChange} />
       {mode === "view" && (
         <div className="key-actions">
@@ -174,7 +219,7 @@ export function ProviderSettings({ heading = true }: { heading?: boolean } = {})
   return (
     <div className="provider-settings">
       {heading && <h4>{PROVIDERS.section}</h4>}
-      {connected.map((info) => <ConnectedProvider key={info.provider} info={info} onChange={changed} />)}
+      {connected.map((info) => <ConnectedProvider key={info.provider} info={info} state={state} onChange={changed} />)}
       {others.length > 0 && (<>
         <h5>{PROVIDERS.addAnother}</h5>
         {adding ? <ProviderCard provider={adding} onConnected={() => { setAdding(null); load(); }} />

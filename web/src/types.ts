@@ -147,8 +147,11 @@ export interface KeySaved extends KeyStatus { check: "ok" | "unavailable"; warni
 export type ProviderId = "gemini" | "anthropic" | "openai";
 export interface ProviderInfo { provider: ProviderId; connected: boolean; active: boolean; last4: string | null;
   added_at: string | null; last_ok_at: string | null; last_error: "rejected" | "unchecked" | null;
-  model: string | null; fast_model: string | null; models: string[] }
-export interface ProvidersState { active: ProviderId; providers: ProviderInfo[]; daily_token_cap: number | null }
+  model: string | null; fast_model: string | null; models: string[]; paid_tier?: boolean }
+// gemini_paid: the user's "I'm on a paid Gemini plan"; gemini_paid_hint: their free-setting key went past the free-tier
+// daily count today with no 429 from Google (a hint only: LORE never switches it on).
+export interface ProvidersState { active: ProviderId; providers: ProviderInfo[]; daily_token_cap: number | null;
+  gemini_paid?: boolean; gemini_paid_hint?: boolean }
 export interface TokenTotals { requests: number; input_tokens: number; output_tokens: number;
   estimated_cost_usd: number | null; models: Record<string, { provider: ProviderId; requests: number;
     input_tokens: number; output_tokens: number; estimated_cost_usd: number | null }> }
@@ -158,7 +161,7 @@ export interface UsageSummary { day: string; month: string; today: TokenTotals; 
 export interface ProcessEstimate { provider: ProviderId; model: string | null; chunks: number; input_tokens: number;
   output_tokens: number; estimated_cost_usd: number | null; needs_confirm: boolean; is_estimate: true }
 export interface UsageToday { day: string; requests: number; limit: number; models: Record<string, number>;
-  provider?: ProviderId; tokens?: UsageSummary }
+  provider?: ProviderId; tokens?: UsageSummary; gemini_paid?: boolean }
 export interface NewInvite { code: string; link: string; expires_at: string }
 // A world's reading position: where the reader is, so the graph, panels and answers stay within what they have read.
 // `order` is each book against the one being read: "before"/"after" in its series, "unknown" (it has its own read toggle).

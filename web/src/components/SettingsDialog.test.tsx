@@ -10,7 +10,7 @@ import { SettingsDialog, type SettingsDialogProps } from "./SettingsDialog";
 // ---- a fake server ------------------------------------------------------------------------------------------------
 
 type Info = { provider: string; connected: boolean; active: boolean; last4: string | null; added_at: null; last_ok_at: null;
-  last_error: string | null; model: string | null; fast_model: string | null; models: string[] };
+  last_error: string | null; model: string | null; fast_model: string | null; models: string[]; paid_tier?: boolean };
 const row = (provider: string, over: Partial<Info> = {}): Info => ({ provider, connected: false, active: false, last4: null,
   added_at: null, last_ok_at: null, last_error: null, model: null, fast_model: null, models: [], ...over });
 const claude = row("anthropic", { connected: true, active: true, last4: "AAAA", model: "claude-sonnet-5-5",
@@ -37,9 +37,11 @@ const quotaBody = { provider: "gemini", resets_at: "2026-11-08T08:00:00Z",
   models: [{ model: "gemini-flash", count: 40, limit: 500, remaining: 460 }, { model: "gemini-lite", count: 0, limit: 500, remaining: 500 }] };
 
 type Call = { url: string; method: string; body?: string };
-function serve({ role = "user", providers = [gemini, claude, row("openai")] as Info[], name = "Ada" as string | null } = {}) {
+function serve({ role = "user", providers = [gemini, claude, row("openai")] as Info[], name = "Ada" as string | null,
+  usage = usageBody as Record<string, unknown>, hint = false } = {}) {
   const calls: Call[] = [];
-  let state = { active: providers.find((p) => p.active)?.provider ?? "gemini", providers, daily_token_cap: null };
+  let state = { active: providers.find((p) => p.active)?.provider ?? "gemini", providers, daily_token_cap: null,
+    gemini_paid: providers.some((p) => p.provider === "gemini" && p.paid_tier), gemini_paid_hint: hint };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     calls.push({ url, method, body: init.body as string | undefined });
@@ -50,10 +52,15 @@ function serve({ role = "user", providers = [gemini, claude, row("openai")] as I
     if (url === "/api/me/sessions") return json(sessionsBody);
     if (url.startsWith("/api/me/sessions/") && method === "DELETE") return json({ revoked: 1 });
     if (url === "/api/me/sessions/sign-out-others") return json({ revoked: 1 });
-    if (url === "/api/me/usage") return json(usageBody);
+    if (url === "/api/me/usage") return json(usage);
     if (url === "/api/me/providers") return json(state);
     if (url === "/api/me/provider" && method === "PUT") {
       const body = JSON.parse(init.body as string);
+      if (body.provider === undefined && typeof body.gemini_paid === "boolean") {
+        state = { ...state, gemini_paid: body.gemini_paid, providers: state.providers.map((p) => p.provider === "gemini"
+          ? { ...p, paid_tier: body.gemini_paid } : p) };
+        return json(state);
+      }
       state = { ...state, active: body.provider, providers: state.providers.map((p) => p.provider === body.provider
         ? { ...p, active: true, model: body.model ?? p.model } : { ...p, active: false }) };
       return json(state);
@@ -283,7 +290,91 @@ test("AI providers: Remove asks first, then deletes that provider's key; a refus
   expect(calls.some((c) => c.url === "/api/me/key?provider=anthropic" && c.method === "DELETE")).toBe(true);
 });
 
+test("AI providers: the paid Gemini plan switch is off by default and turns on through the API", async () => {
+  markMulti();
+  const calls = serve();
+  await openAt("providers");
+  const sw = await screen.findByRole("switch", { name: PROVIDERS.geminiPaid });
+  expect(sw).not.toBeChecked();
+  expect(screen.getByText(PROVIDERS.geminiPaidHelp)).toBeInTheDocument();
+  expect(screen.getByText(PROVIDERS.cost.gemini)).toBeInTheDocument();
+  await userEvent.click(sw);
+  expect(JSON.parse(calls.find((c) => c.url === "/api/me/provider")!.body!)).toEqual({ gemini_paid: true });
+  await waitFor(() => expect(screen.getByRole("switch", { name: PROVIDERS.geminiPaid })).toBeChecked());
+  expect(screen.getByText(PROVIDERS.geminiPaidCost)).toBeInTheDocument();
+  expect(screen.getByText(PROVIDERS.endingIn("AAAA"))).toBeInTheDocument();  // Claude still listed; nothing else switched
+  await userEvent.click(screen.getByRole("switch", { name: PROVIDERS.geminiPaid }));
+  expect(JSON.parse(calls.filter((c) => c.url === "/api/me/provider")[1].body!)).toEqual({ gemini_paid: false });
+});
+
+test("AI providers: no paid-plan switch on Claude or OpenAI", async () => {
+  markMulti();
+  serve({ providers: [claude] });
+  await openAt("providers");
+  await screen.findByText(PROVIDERS.endingIn("AAAA"));
+  expect(screen.queryByRole("switch")).toBeNull();
+});
+
+test("AI providers: the paid-plan hint shows only when the server says so, and can be dismissed", async () => {
+  markMulti();
+  serve({ hint: true });
+  await openAt("providers");
+  expect(await screen.findByText(PROVIDERS.geminiPaidHint)).toBeInTheDocument();
+  expect(screen.getByRole("switch", { name: PROVIDERS.geminiPaid })).not.toBeChecked();  // never switched for them
+  await userEvent.click(screen.getByRole("button", { name: PROVIDERS.dismiss }));
+  expect(screen.queryByText(PROVIDERS.geminiPaidHint)).toBeNull();
+});
+
+test("AI providers: a dismissed hint stays dismissed for the rest of the day", async () => {
+  markMulti();
+  localStorage.setItem("lore-gemini-paid-hint-dismissed-v1", new Date().toISOString().slice(0, 10));
+  serve({ hint: true });
+  await openAt("providers");
+  await screen.findByRole("switch", { name: PROVIDERS.geminiPaid });
+  expect(screen.queryByText(PROVIDERS.geminiPaidHint)).toBeNull();
+});
+
+test("AI providers: no hint when the condition is not met, or when the switch is already on", async () => {
+  markMulti();
+  serve({ hint: false });
+  await openAt("providers");
+  await screen.findByRole("switch", { name: PROVIDERS.geminiPaid });
+  expect(screen.queryByText(PROVIDERS.geminiPaidHint)).toBeNull();
+});
+
+test("AI providers: the hint is not shown while the paid plan is on", async () => {
+  markMulti();
+  serve({ hint: true, providers: [{ ...gemini, active: true, paid_tier: true }] });
+  await openAt("providers");
+  expect(await screen.findByRole("switch", { name: PROVIDERS.geminiPaid })).toBeChecked();
+  expect(screen.queryByText(PROVIDERS.geminiPaidHint)).toBeNull();
+});
+
 // ---- Usage --------------------------------------------------------------------------------------------------------
+
+const geminiUsage = (paid: boolean) => ({ ...usageBody, provider: "gemini", requests: 960, gemini_paid: paid });
+
+test("Usage (multi, Gemini free): the request count and the reset, no tokens or cap", async () => {
+  markMulti();
+  serve({ usage: geminiUsage(false) });
+  await openAt("usage");
+  expect(await screen.findByText(USAGE.requestsToday(960, 1000))).toBeInTheDocument();
+  expect(screen.getByText(USAGE.resets)).toBeInTheDocument();
+  expect(screen.queryByText(/Today: 1,500 tokens/)).toBeNull();
+  expect(screen.queryByLabelText(USAGE.capLabel)).toBeNull();
+});
+
+test("Usage (multi, Gemini paid): tokens, an estimated cost and the cap, no request limit", async () => {
+  markMulti();
+  serve({ usage: geminiUsage(true) });
+  await openAt("usage");
+  expect(await screen.findByText(/Today: 1,500 tokens/)).toBeInTheDocument();
+  expect(screen.getByText(new RegExp(USAGE.cost(0.007).replace(/[$().]/g, "\\$&")))).toBeInTheDocument();
+  expect(screen.getByLabelText(USAGE.capLabel)).toBeInTheDocument();
+  expect(screen.queryByText(USAGE.requestsToday(960, 1000))).toBeNull();
+  expect(screen.queryByText(USAGE.resets)).toBeNull();
+});
+
 
 test("Usage (multi): tokens, an estimated cost, and the daily cap", async () => {
   markMulti();

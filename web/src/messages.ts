@@ -528,12 +528,19 @@ export const PROVIDERS = {
   removeConfirm: (name: string) => `Remove your ${name} key? If it is the one in use, LORE switches to another connected provider, or stops until you add one.`,
   removeYes: "Remove key",
   addAnother: "Add another provider",
+  // Gemini: the paid-plan switch and the hint.
+  geminiPaid: "I'm on a paid Gemini plan",
+  geminiPaidHelp: "Removes LORE's free-tier daily limit and shows token usage and estimated cost instead. Google bills you for usage.",
+  geminiPaidCost: "Paid plan: Google bills your account for usage. No LORE daily limit.",
+  geminiPaidHint: "Your key seems to be on a paid plan. Turn on 'I'm on a paid Gemini plan' to remove LORE's daily limit.",
+  dismiss: "Dismiss",
 };
 
 // Settings: what the user has used, and their own optional daily token cap (Claude and OpenAI).
 export const USAGE = {
   section: "Usage",
   requestsToday: (used: number, limit: number) => `Gemini requests today: ${used.toLocaleString("en")} / about ${limit.toLocaleString("en")}`,
+  resets: "The free tier resets at midnight Pacific.",
   tokens: (label: string, tokens: number) => `${label}: ${tokens.toLocaleString("en")} tokens`,
   today: "Today", month: "This month",
   cost: (usd: number) => `about $${usd > 0 && usd < 0.01 ? "0.01" : usd.toFixed(2)} (estimate)`,

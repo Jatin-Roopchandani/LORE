@@ -451,6 +451,10 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .provider-row{border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
 .provider-row h5,.provider-settings h5{margin:0;font-size:13px;display:flex;gap:8px;align-items:center}
 .provider-row .badge{font:600 10px var(--f-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+.gemini-paid{display:flex;flex-direction:column;gap:6px}
+.gemini-paid .switch-row{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink);cursor:pointer}
+.gemini-paid .switch-row input{accent-color:var(--accent);width:16px;height:16px;margin:0}
+.gemini-paid .notice .tbtn{margin-left:6px}
 .model-picker{display:flex;flex-direction:column;gap:6px}
 .model-picker select{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:4px 8px;font:inherit;font-size:13px;max-width:100%}
 .price-table{border-collapse:collapse;font-size:13px}

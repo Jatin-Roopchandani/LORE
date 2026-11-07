@@ -235,6 +235,8 @@ export const keyApi = {
   choose: (provider: ProviderId, model?: string | null, fastModel?: string | null) =>
     sendJson<ProvidersState>("PUT", "/api/me/provider",
       { provider, ...(model ? { model } : {}), ...(fastModel !== undefined ? { fast_model: fastModel ?? "" } : {}) }, true),
+  // "I'm on a paid Gemini plan": on the user's Gemini key; never switches the active provider.
+  setGeminiPaid: (paid: boolean) => sendJson<ProvidersState>("PUT", "/api/me/provider", { gemini_paid: paid }, true),
   setTokenCap: (cap: number | null) => sendJson<UsageSummary>("PUT", "/api/me/token-cap", { cap }, true),
   estimate: (bookId: string) => getJson<ProcessEstimate>(`/api/books/${encodeURIComponent(bookId)}/estimate`, true),
 };

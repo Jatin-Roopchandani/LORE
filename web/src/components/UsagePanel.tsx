@@ -3,8 +3,9 @@ import { isError, keyApi } from "../api";
 import { USAGE } from "../messages";
 import type { TokenTotals, UsageToday } from "../types";
 
-// Self-contained (no page or route): requests and tokens today and this month, an estimated cost where the model has a
-// known price, and the user's own optional daily token cap.
+// Self-contained (no page or route). Gemini on the free tier: today's request count and when it resets. Claude, OpenAI
+// and a paid Gemini plan: tokens today and this month, an estimated cost where the model has a known price, and the
+// user's own optional daily token cap.
 function Totals({ label, totals }: { label: string; totals: TokenTotals }) {
   const tokens = totals.input_tokens + totals.output_tokens;
   return (
@@ -28,6 +29,7 @@ export function UsagePanel({ heading = true }: { heading?: boolean } = {}) {
   useEffect(load, []);
   if (!usage) return null;
   const tokens = usage.tokens;
+  const freeGemini = (usage.provider ?? "gemini") === "gemini" && !usage.gemini_paid;
   const save = async (value: number | null) => {
     setProblem("");
     const r = await keyApi.setTokenCap(value);
@@ -43,8 +45,11 @@ export function UsagePanel({ heading = true }: { heading?: boolean } = {}) {
   return (
     <div className="usage-panel">
       {heading && <h4>{USAGE.section}</h4>}
-      {(usage.provider ?? "gemini") === "gemini" && <p className="hint">{USAGE.requestsToday(usage.requests, usage.limit)}</p>}
-      {tokens && (<>
+      {freeGemini && (<>
+        <p className="hint">{USAGE.requestsToday(usage.requests, usage.limit)}</p>
+        <p className="hint">{USAGE.resets}</p>
+      </>)}
+      {tokens && !freeGemini && (<>
         <Totals label={USAGE.today} totals={tokens.today} />
         <Totals label={USAGE.month} totals={tokens.month_total} />
         {tokens.cap_reached && <div className="notice error" role="alert">{USAGE.capReached}</div>}
