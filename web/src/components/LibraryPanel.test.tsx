@@ -48,6 +48,13 @@ test("paused: Continue is disabled until the time passes, then the timer enables
   expect(screen.getByRole("button", { name: "Continue Book a" })).toBeEnabled();
 });
 
+test("a running job names the provider it runs on", async () => {
+  status = { gemini, books: [book("a", job({ provider: "anthropic" }), "ingested")] };
+  await open();
+  expect(screen.getByText("Reading passages · Claude")).toBeInTheDocument();
+  vi.clearAllTimers();
+});
+
 test("processing shows the stage and an accessible progress bar", async () => {
   status = { gemini, books: [book("a", job({}), "ingested")] };
   await open();

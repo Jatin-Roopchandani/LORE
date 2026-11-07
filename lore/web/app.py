@@ -203,12 +203,14 @@ def _quota(config: LoreConfig) -> dict:
     return {"provider": "gemini", "models": models, "resets_at": midnight.isoformat()}
 
 
-def _job_out(job: jobs.BookJob | None, now: datetime) -> dict | None:
+def _job_out(job: jobs.BookJob | None, now: datetime,
+             provider: str | None = None) -> dict | None:
+    """`provider`: what the book's latest run used (the Library row names it)."""
     if job is None:
         return None
     ok, why = jobs.can_continue(job, now)
     return {
-        "stage": job.stage, "state": job.state,
+        "stage": job.stage, "state": job.state, "provider": provider,
         "done": job.done_items, "total": job.total_items,
         "stopped_reason": job.stopped_reason,
         "resumable_at": job.resumable_at.isoformat() if job.resumable_at else None,
@@ -510,6 +512,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         conn = open_db(config.sqlite_path)
         try:
             by_book = {j.book_id: j for j in jobs.list_jobs(conn)}
+            used = jobs.providers_of(conn)
             rows = list_books(conn)
             gemini = _gemini_use(conn, config, now)
         finally:
@@ -518,7 +521,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             {"id": b["id"], "title": b["title"], "author": b["author"],
              "status": b["status"], "world": b["world"], "series": b["series"],
              "series_index": b["series_index"],
-             "job": _job_out(by_book.get(b["id"]), now)}
+             "job": _job_out(by_book.get(b["id"]), now, used.get(b["id"]))}
             for b in rows], "gemini": gemini}
 
     def _process(config: LoreConfig, book_id: str,

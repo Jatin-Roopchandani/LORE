@@ -144,6 +144,22 @@ def finish(session: Session, job_id: int, worker_id: str, *, outcome: str,
     return res.rowcount == 1
 
 
+def requeue(session: Session, job_id: int, worker_id: str) -> bool:
+    """The holder gives a claimed job back to the queue (it stopped at a safe
+    point and should run again, e.g. on the user's new provider). Not an
+    attempt that failed: `attempts` is given back too. Commits; False when
+    the claim was lost."""
+    res = session.execute(
+        sa.update(Job)
+        .where(Job.id == job_id, Job.state == CLAIMED, Job.claimed_by == worker_id)
+        .values(state=QUEUED, claimed_by=None, claimed_at=None, heartbeat_at=None,
+                attempts=sa.case((Job.attempts > 0, Job.attempts - 1), else_=0))
+        .execution_options(synchronize_session=False))
+    session.commit()
+    session.expire_all()
+    return res.rowcount == 1
+
+
 def requeue_stale(session: Session, *, now: datetime | None = None,
                   max_age: timedelta = STALE_AFTER,
                   max_attempts: int = MAX_ATTEMPTS) -> list[int]:

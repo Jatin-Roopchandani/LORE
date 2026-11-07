@@ -113,7 +113,7 @@ def test_migration_v6_creates_book_jobs(tmp_path: Path) -> None:
     cols = [r[1] for r in conn.execute("PRAGMA table_info(book_jobs)")]
     assert cols == ["book_id", "stage", "state", "done_items", "total_items",
                     "stopped_reason", "resumable_at", "updated_at", "needs_reload",
-                    "move_world_id"]
+                    "move_world_id", "provider"]  # v16: the provider the run used
     conn.close()
 
 

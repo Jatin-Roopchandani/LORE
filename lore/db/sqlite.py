@@ -294,6 +294,9 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
         ],
     ),
+    # Which provider a book's processing runs on (2026-11-07): the Library
+    # row says it ("Reading passages · Claude"); set at each run's start.
+    (16, ["ALTER TABLE book_jobs ADD COLUMN provider TEXT"]),
 ]
 
 

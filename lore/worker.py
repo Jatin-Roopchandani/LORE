@@ -14,6 +14,12 @@ so every model client the stages build uses that key and that user's budget
 file is never used. A user with no key, or a key Gemini refuses mid-job,
 pauses that user's jobs (central `paused`, book row `waiting_key`) instead of
 failing them; saving a working key queues them again.
+
+A user who switches provider (or removes the key in use) while their book
+processes: the job stops at its next safe point (pipeline.ProviderSwitch),
+goes back to the queue and resumes where it stopped on the new provider; if
+that one is paid and the estimate for the rest needs confirming, the book
+waits for Continue instead.
 """
 from __future__ import annotations
 
@@ -38,7 +44,7 @@ from lore.orchestrator import jobs, runner
 from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.move import prepare_move
 from lore.inference.gemini import CREDIT_MESSAGE
-from lore.orchestrator.pipeline import KeyStop
+from lore.orchestrator.pipeline import SWITCH_REASON, KeyStop
 from lore.tenancy import config_for
 from lore.worlds import get_world
 
@@ -64,6 +70,8 @@ REJECTED_REASON = ("Paused: your AI provider refused your API key. Replace it in
                    " Settings, then this book continues.")
 # Gemini 402: the key's prepaid credit is used up (the key itself is fine).
 CREDIT_EXHAUSTED = "credit_exhausted"
+# The user switched to a paid provider mid-job and the rest needs confirming.
+NEEDS_CONFIRM = "needs_confirm"
 
 
 PURGE_EVERY = timedelta(hours=1)
@@ -74,6 +82,7 @@ class Outcome(NamedTuple):
     failed: bool = False
     error: str | None = None
     paused: bool = False
+    requeue: bool = False  # stopped at a safe point: run it again (new provider)
 
 
 class KeyGuard:
@@ -202,6 +211,11 @@ class Worker:
             stop.set()
             beat.join()
         try:
+            if result.requeue:
+                with self.sessions() as session:
+                    if not queue.requeue(session, job.id, self.worker_id):
+                        log.warning("job %s: claim was lost before it was requeued", job.id)
+                return
             if result.paused:
                 self._pause(job, result)
                 return
@@ -229,6 +243,8 @@ class Worker:
             if not queue.pause(session, job.id, self.worker_id,
                                outcome=result.outcome, error=result.error):
                 log.warning("job %s: claim was lost before it paused", job.id)
+        if result.outcome == NEEDS_CONFIRM:
+            return  # only this book waits for the user's Continue
         if result.outcome == KEY_INVALID and self.keys is not None:
             self.keys.mark_rejected(job.user_id)  # also pauses the queued ones
         else:
@@ -261,6 +277,36 @@ class Worker:
         except KeyDecryptError:
             log.warning("a stored key did not decrypt (user %s)", user_id)
             return Outcome(KEY_INVALID, error=REJECTED_REASON, paused=True)
+
+    def _after_switch(self, job: Job, config: LoreConfig, row: jobs.BookJob) -> Outcome:
+        """The user switched provider mid-job: requeue it to resume on the new
+        one, unless that one is paid and the estimate for the rest needs
+        their confirmation (then the book waits; Continue confirms)."""
+        if self.keys is None:
+            return Outcome(SKIPPED, requeue=True)
+        from lore.inference.providers import estimate as estimates
+        from lore.inference.providers.factory import label
+        state = self.keys.providers(job.user_id)
+        provider, model, paid = estimates.processing_model(state, config)
+        if provider == "gemini" and not paid:
+            return Outcome(SKIPPED, requeue=True)
+        conn = open_db(config.sqlite_path)
+        try:
+            chunks = estimates.chunk_count(conn, job.book_id)
+            left = estimates.remaining(chunks, row.stage, row.done_items, row.total_items,
+                                       provider, model, paid)
+            if not left["needs_confirm"]:
+                return Outcome(SKIPPED, requeue=True)
+            tokens = left["input_tokens"] + left["output_tokens"]
+            usd = left["estimated_cost_usd"]
+            reason = (f"Paused: you switched to {label(provider)}. The rest of this"
+                      f" book should use about {tokens / 1e6:.1f} million tokens"
+                      + (f", roughly ${usd:.2f}" if usd is not None else "")
+                      + ", billed to your own account (an estimate). Continue to go on.")
+            jobs.stop_switch(conn, job.book_id, reason, now=self._clock())
+        finally:
+            conn.close()
+        return Outcome(NEEDS_CONFIRM, error=reason, paused=True)
 
     def _execute(self, job: Job) -> Outcome:
         """Prepare the user's `book_jobs` row, run the stages. Returns the
@@ -309,6 +355,8 @@ class Worker:
                     self._make_move_stages(cfg, world)))
         if result is None:
             return Outcome(SKIPPED, error="another runner holds this book")
+        if result.state == jobs.IDLE and result.stopped_reason == SWITCH_REASON:
+            return self._after_switch(job, config, result)
         if result.state == jobs.WAITING_KEY and result.stopped_reason == CREDIT_MESSAGE:
             return Outcome(CREDIT_EXHAUSTED, error=CREDIT_MESSAGE, paused=True)
         if result.state == jobs.WAITING_KEY:

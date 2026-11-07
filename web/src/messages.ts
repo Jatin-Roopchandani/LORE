@@ -120,6 +120,8 @@ export const LIBRARY = {
   unreachable: "LORE isn't reachable. Check that `lore ui` is still running.",
   ready: "Ready", paused: "Paused", failed: "Failed", unprocessed: "Not processed yet",
   stage: (stage: string) => STAGE_LABEL[stage] ?? stage,
+  // A running job's stage and the provider it runs on: "Reading passages · Claude".
+  stageOn: (stage: string, provider: string) => `${STAGE_LABEL[stage] ?? stage} · ${provider}`,
   progress: (done: number, total: number) => `${done} / ${total}`,
   progressLabel: (stage: string) => `${STAGE_LABEL[stage] ?? stage} progress`,
   continuesAfter: (time: string, left: string) => `Continues after ${time} (your time) \u2014 in ${left}`,

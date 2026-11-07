@@ -584,6 +584,14 @@ class KeyService:
             return False
         return any(requests > limits_for(model).rpd for model, requests, _q, _c in rows)
 
+    def switched_from(self, user_id: str, provider: str) -> bool:
+        """True when `provider` is no longer what this user's work should run
+        on: they made another provider active, or removed its key."""
+        with self.sessions() as db:
+            user = db.get(User, user_id)
+            active = (user.active_provider if user is not None else None) or GEMINI
+            return active != provider or db.get(ApiKey, (user_id, provider)) is None
+
     def credentials_for(self, user_id: str) -> Credentials:
         """The active provider, its plaintext key and the chosen model(s), for
         one unit of work; KeyRequired if that provider has no key."""
@@ -804,6 +812,9 @@ class KeyService:
         def credit(model: str) -> None:
             self.record_credit_refusal(user_id, model)
 
+        def changed() -> bool:
+            return self.switched_from(user_id, creds.provider)
+
         gemini = creds.provider == GEMINI
         paid = gemini and creds.paid_tier
         # A free-tier Gemini key records requests only, exactly as before; a
@@ -813,4 +824,4 @@ class KeyService:
                         on_usage=usage if (paid or not gemini) else None,
                         over_cap=lambda: self.over_cap(user_id),
                         paid_tier=paid, on_refusal=refusal if gemini else None,
-                        on_credit=credit if gemini else None)
+                        on_credit=credit if gemini else None, changed=changed)

@@ -49,6 +49,19 @@ class KeyStop(Exception):
     """
 
 
+class ProviderSwitch(QuotaStop):
+    """The user switched provider (or removed the key in use) mid-job.
+
+    Raised at a safe point (JobCtl.spend_check, before a request, between
+    items); the runner parks the job as idle with SWITCH_REASON, and the
+    worker requeues it to resume on the new provider. A QuotaStop so every
+    path that halts cleanly on a spent allowance (extraction never retries
+    or dead-letters on one) halts the same way on this.
+    """
+
+
+SWITCH_REASON = "Paused: you switched AI provider. Continuing with your new choice."
+
 JobRefused = jobs.JobRefused  # run_book will not start (see jobs.py)
 
 
@@ -156,6 +169,8 @@ class JobCtl:
         """Call before each Gemini request; stops once only the answer
         reserve (or less) of today's requests remains."""
         cfg = self._ctx.config
+        if key_scope.provider_changed():
+            raise ProviderSwitch(SWITCH_REASON)
         if not providers.on_gemini(cfg):
             # Claude, OpenAI or a paid Gemini plan: billed to the user, so no
             # free-tier ledger and no reserve; only the user's own daily token
@@ -213,6 +228,7 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
     # later stamp is unguarded, and the row stays `running` between stages.
     if not claimed:
         jobs.claim_job(conn, book_id, now=clock())
+    jobs.set_provider(conn, book_id, providers.active_provider(config))
 
     ctx = StageContext(conn, config, book_id)
     ctl = JobCtl(ctx, clock)
@@ -228,6 +244,9 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
             jobs.stop_key(conn, book_id, str(stop), now=clock())
             return jobs.get_job(conn, book_id)
         except Exception as exc:  # noqa: BLE001 - sorted below
+            if caused_by(exc, ProviderSwitch):
+                jobs.stop_switch(conn, book_id, SWITCH_REASON, now=clock())
+                return jobs.get_job(conn, book_id)
             if caused_by(exc, GeminiCreditError):
                 # Gemini 402: the key's prepaid credit is used up. Paused with
                 # a fixed, friendly reason (never Google's JSON); Continue

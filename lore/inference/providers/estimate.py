@@ -60,5 +60,53 @@ def estimate(chunks: int, provider: str, model: str | None,
             "needs_confirm": needs_confirm, "is_estimate": True}
 
 
+def remaining(chunks: int, stage: str, done: int, total: int, provider: str,
+              model: str | None, gemini_paid: bool = False) -> dict:
+    """The estimate for what is LEFT of a book's processing (after a switch
+    of provider mid-job): the extraction still to do (none past `extract`)
+    plus the later stages, which have not started before `load`."""
+    if stage in ("chunk", "extract"):
+        left = (max(0, total - done) / total) if (stage == "extract" and total) else 1.0
+        extract_part = chunks * left
+    else:
+        extract_part = 0.0
+    later = chunks * (LATER_STAGES - 1)
+    # `estimate` multiplies by LATER_STAGES; pass the chunk-equivalent count.
+    out = estimate(0, provider, model, gemini_paid)
+    scaled = (extract_part + later) / LATER_STAGES
+    tokens_in = int(scaled * INPUT_PER_CHUNK * LATER_STAGES)
+    tokens_out = int(scaled * OUTPUT_PER_CHUNK * LATER_STAGES)
+    if provider == ANTHROPIC and model:
+        cost = roles.anthropic_cost(model, tokens_in, tokens_out)
+    elif provider == GEMINI and gemini_paid and model:
+        cost = roles.gemini_cost(model, tokens_in, tokens_out)
+    else:
+        cost = None
+    if provider == GEMINI and not gemini_paid:
+        needs_confirm = False
+    elif cost is not None:
+        needs_confirm = cost > CONFIRM_ABOVE_USD
+    else:
+        needs_confirm = tokens_in + tokens_out > CONFIRM_ABOVE_TOKENS
+    out.update(chunks=chunks, input_tokens=tokens_in, output_tokens=tokens_out,
+               estimated_cost_usd=None if cost is None else round(cost, 2),
+               needs_confirm=needs_confirm)
+    return out
+
+
+def processing_model(state: dict, config) -> tuple[str, str | None, bool]:
+    """(provider, the model processing mostly uses, paid Gemini plan) from a
+    user's KeyService.providers() state, as the web app chooses them."""
+    provider = state["active"]
+    row = next((p for p in state["providers"] if p["provider"] == provider), {})
+    model = row.get("fast_model") or row.get("model")
+    if provider == ANTHROPIC and model not in roles.ANTHROPIC_MODELS:
+        model = roles.ANTHROPIC_DEFAULT
+    paid = provider == GEMINI and bool(state.get("gemini_paid"))
+    if paid:
+        model = (config.extraction.gemini_models or [None])[0]
+    return provider, model, paid
+
+
 def typical_novel(provider: str, model: str | None, gemini_paid: bool = False) -> dict:
     return estimate(TYPICAL_NOVEL_CHUNKS, provider, model, gemini_paid)

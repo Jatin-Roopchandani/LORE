@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, isError } from "../api";
-import { LIBRARY, WORLDS } from "../messages";
+import { LIBRARY, PROVIDERS, WORLDS } from "../messages";
 import type { LibraryBook, LibraryStatus, World } from "../types";
 
 const POLL_MS = 3000;
@@ -21,7 +21,8 @@ function Row({ book, now, busy, error, focus = false, onGo, onMove, children }: 
   if (job?.state === "running") {
     const pct = job.total > 0 ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0;
     body = (<>
-      <span className="lib-state">{LIBRARY.stage(job.stage)}</span>
+      <span className="lib-state">{job.provider
+        ? LIBRARY.stageOn(job.stage, PROVIDERS.names[job.provider] ?? job.provider) : LIBRARY.stage(job.stage)}</span>
       <div className="lib-bar" role="progressbar" aria-label={LIBRARY.progressLabel(job.stage)} aria-valuemin={0} aria-valuemax={job.total} aria-valuenow={job.done}>
         <span style={{ width: `${pct}%` }} />
       </div>

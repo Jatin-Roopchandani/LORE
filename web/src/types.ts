@@ -95,7 +95,9 @@ export interface SubgraphData { nodes: SubgraphNode[]; edges: SubgraphLink[]; tr
 export const edgeKey = (e: Edge) => `${e.subject_id}|${e.predicate}|${e.object_id}|${e.chunk_id}`;
 export interface BookJob { stage: string; state: "running" | "waiting_quota" | "waiting_key" | "failed" | "done" | "idle";
   done: number; total: number; stopped_reason: string | null; resumable_at: string | null;
-  can_continue: boolean; continue_reason: string }
+  can_continue: boolean; continue_reason: string;
+  // The provider the book's latest run used (multi mode: the user's choice at the time); absent from older servers.
+  provider?: ProviderId | null }
 export interface LibraryBook { id: string; title: string; author: string | null; status: string;
   world: string | null; series: string | null; series_index: number | null; job: BookJob | null }
 export type MoveResult = { started: true; world: WorldRef } | { started: false };

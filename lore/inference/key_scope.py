@@ -65,12 +65,14 @@ class KeyScope:
     plan, so Gemini is metered like Claude and OpenAI (tokens through
     `on_usage`, the token cap) instead of LORE's free-tier ledger.
     `on_refusal(model)` is told of each 429 Gemini answers, `on_credit(model)`
-    of each 402 (the key's prepaid credit is used up).
+    of each 402 (the key's prepaid credit is used up). `changed()` says the
+    user has since switched provider or removed this key (a long job stops
+    at its next safe point and resumes on the new choice).
     """
 
     __slots__ = ("user_id", "_key", "_on_request", "rejected", "provider",
                  "model", "fast_model", "_on_usage", "_over_cap", "paid_tier",
-                 "_on_refusal", "_on_credit")
+                 "_on_refusal", "_on_credit", "_changed")
 
     def __init__(self, user_id: str, key: str | None,
                  on_request: Callable[[str], None] | None = None, *,
@@ -80,7 +82,8 @@ class KeyScope:
                  over_cap: Callable[[], bool] | None = None,
                  paid_tier: bool = False,
                  on_refusal: Callable[[str], None] | None = None,
-                 on_credit: Callable[[str], None] | None = None) -> None:
+                 on_credit: Callable[[str], None] | None = None,
+                 changed: Callable[[], bool] | None = None) -> None:
         self.user_id = user_id
         self._key = key
         self._on_request = on_request
@@ -93,6 +96,7 @@ class KeyScope:
         self.paid_tier = paid_tier
         self._on_refusal = on_refusal
         self._on_credit = on_credit
+        self._changed = changed
 
     @property
     def key(self) -> str | None:
@@ -186,6 +190,15 @@ def note_credit_exhausted(model: str) -> None:
     scope = _BOUND.get()
     if scope is not None and scope._on_credit is not None:
         scope._on_credit(model)
+
+
+def provider_changed() -> bool:
+    """True when the bound user switched provider (or removed the key in use)
+    after this unit of work bound it."""
+    scope = _BOUND.get()
+    if scope is None or scope._changed is None:
+        return False
+    return bool(scope._changed())
 
 
 def over_token_cap() -> bool:

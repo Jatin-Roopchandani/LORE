@@ -152,6 +152,33 @@ def claim_job(conn: sqlite3.Connection, book_id: str, *,
     return get_job(conn, book_id)
 
 
+def provider_of(conn: sqlite3.Connection, book_id: str) -> str | None:
+    """The provider the book's latest run used (gemini, anthropic, openai)."""
+    r = conn.execute("SELECT provider FROM book_jobs WHERE book_id = ?",
+                     (book_id,)).fetchone()
+    return r[0] if r else None
+
+
+def providers_of(conn: sqlite3.Connection) -> dict[str, str | None]:
+    return dict(conn.execute("SELECT book_id, provider FROM book_jobs"))
+
+
+def set_provider(conn: sqlite3.Connection, book_id: str, provider: str | None) -> None:
+    with conn:
+        conn.execute("UPDATE book_jobs SET provider = ? WHERE book_id = ?",
+                     (provider, book_id))
+
+
+def stop_switch(conn: sqlite3.Connection, book_id: str, reason: str, *,
+                now: datetime | None = None) -> None:
+    """Stopped at a safe point because the user switched provider: idle, so
+    Continue (or the worker's requeue) resumes it with no reset to wait for."""
+    _write(conn, book_id,
+           "UPDATE book_jobs SET state = 'idle', stopped_reason = ?,"
+           " resumable_at = NULL, updated_at = ? WHERE book_id = ?",
+           (reason, _iso(_aware(now)), book_id))
+
+
 def needs_reload(conn: sqlite3.Connection, book_id: str) -> bool:
     """True when disambiguation answers were saved but not yet loaded."""
     r = conn.execute("SELECT needs_reload FROM book_jobs WHERE book_id = ?",
