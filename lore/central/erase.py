@@ -35,7 +35,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from lore.auth import ratelimit
 from lore.central.models import (
     CLAIMED, QUEUED, AdminEvent, ApiKey, AuthSession, Chat, Identity, InflightSlot, Invite,
-    Job, LoginToken, McpToken, Message, RateHit, Report, Trace, Usage, User, Waitlist,
+    Job, LoginToken, McpToken, Message, OAuthCode, OAuthGrant, OAuthToken, RateHit, Report,
+    Trace, Usage, User, Waitlist,
 )
 from lore.tenancy import validate_user_id
 
@@ -125,6 +126,10 @@ def erase_user(sessions: sessionmaker[Session], root: Path, user_id: str, *,
         gone("identities", sa.delete(Identity).where(Identity.user_id == user_id))
         gone("sessions", sa.delete(AuthSession).where(AuthSession.user_id == user_id))
         gone("mcp_tokens", sa.delete(McpToken).where(McpToken.user_id == user_id))
+        grants = sa.select(OAuthGrant.id).where(OAuthGrant.user_id == user_id)
+        gone("oauth_tokens", sa.delete(OAuthToken).where(OAuthToken.grant_id.in_(grants)))
+        gone("oauth_codes", sa.delete(OAuthCode).where(OAuthCode.user_id == user_id))
+        gone("oauth_grants", sa.delete(OAuthGrant).where(OAuthGrant.user_id == user_id))
         gone("jobs", sa.delete(Job).where(Job.user_id == user_id))
         gone("inflight_slots", sa.delete(InflightSlot).where(InflightSlot.user_id == user_id))
         gone("rate_hits", sa.delete(RateHit).where(RateHit.key.in_(

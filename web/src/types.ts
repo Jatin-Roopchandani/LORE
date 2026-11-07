@@ -90,6 +90,10 @@ export interface McpHosted { hosted: true; base_url: string; mcp_url: string; ma
 // One personal access token as listed (never the token itself; `token` only in the reply that made it).
 export interface McpToken { id: string; name: string; prefix: string; created_at: string; last_used_at: string | null }
 export interface McpTokenMade extends McpToken { token: string }
+// An app connected through OAuth (one per consent), revocable in Settings.
+export interface McpConnection { id: string; client_name: string; created_at: string; last_used_at: string | null }
+// What the consent page shows: the client's own name (shown as text) and where it sends the browser back to.
+export interface ConsentInfo { client_name: string | null; redirect_host: string }
 export interface DeviceSession { id: string; device: string; created_at: string; last_active: string; current: boolean }
 export interface EntityCardData { id: string; name: string; kind: string; aliases: string[]; books: string[]; world?: WorldRef;
   edges_out: Edge[]; edges_in: Edge[]; edges_out_total: number; edges_in_total: number; truncated: boolean }

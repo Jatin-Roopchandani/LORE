@@ -268,6 +268,14 @@ class _Releasing:
         self._done()
 
 
+def _oauth_origin_ok(origin: str) -> bool:
+    """OAuth needs an https issuer (RFC 8414); loopback http is allowed for
+    development, as the SDK allows it."""
+    parts = urlparse(origin)
+    return parts.scheme == "https" or (
+        parts.scheme == "http" and parts.hostname in ("localhost", "127.0.0.1", "::1"))
+
+
 def _api_error(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse({"error": {"code": code, "message": message}},
                         status_code=status)
@@ -288,7 +296,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                master_keys: "MasterKeys | None" = None,
                key_checker: "KeyChecker | None" = None,
                upload_settings: "UploadSettings | None" = None,
-               rate_settings: "RateSettings | None" = None):
+               rate_settings: "RateSettings | None" = None,
+               oauth_clock: Callable[[], datetime] | None = None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing.
 
@@ -324,6 +333,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     Multi mode limits questions, entity intros, reports and parses per user
     and overall (lore.web.throttle), with `rate_settings` (default: from the
     environment).
+
+    Multi mode also serves the hosted MCP endpoint, /mcp (lore.mcp.hosted):
+    personal access tokens, and OAuth for MCP clients (lore.mcp.oauth) when
+    the public address is https (or loopback, for development).
+    `oauth_clock` is a test seam: the OAuth server's wall clock.
     """
     multi = multi_user_enabled() if multi_user is None else multi_user
     auth_ctx = None
@@ -335,9 +349,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             central_sessions=central_sessions, clock=auth_clock)
         central_sessions = auth_ctx.sessions
         from lore.central.keys import KeyService, MasterKeys
-        key_service = KeyService(
-            central_sessions, master_keys or MasterKeys.from_env(),  # or no start
-            key_checker, clock=auth_ctx.now)
+        master = master_keys or MasterKeys.from_env()  # or no start
+        key_service = KeyService(central_sessions, master, key_checker, clock=auth_ctx.now)
     # Multi mode serves the hosted MCP endpoint (/mcp, lore.mcp.hosted) beside
     # the API; its SDK session manager lives for the app's lifetime.
     hosted_mcp: list = [None]
@@ -438,6 +451,18 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         api.include_router(build_key_router(auth_ctx, key_service))
         from lore.web.mcp_tokens import build_mcp_token_router
         api.include_router(build_mcp_token_router(auth_ctx))
+        oauth_provider = None
+        if _oauth_origin_ok(auth_ctx.settings.origin):
+            from lore.mcp.oauth import LoreOAuthProvider
+            from lore.web.mcp_oauth import build_oauth_router
+            oauth_provider = LoreOAuthProvider(
+                lambda: sessions[0], master, auth_ctx.settings, auth_now=auth_ctx.now,
+                now=oauth_clock)
+            api.include_router(build_oauth_router(auth_ctx, oauth_provider))
+        else:
+            logging.getLogger(__name__).warning(
+                "MCP OAuth is off: LORE_BASE_URL must be https (or loopback);"
+                " personal access tokens still work")
 
     def needs_key(user: CurrentUser) -> JSONResponse | None:
         """Multi mode: 409 key_required for a user with no Gemini key yet."""
@@ -1236,6 +1261,23 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             # Already signed in: straight to the app.
             return _redirect("/app") if session_user(request) else _spa_page()
 
+        # An MCP client's consent page (lore.mcp.oauth): signed in, the page;
+        # signed out, sign in first and come back here (lore.auth.next). The
+        # address holds the signed request: no cache, no Referer elsewhere.
+        @api.get("/oauth/consent", include_in_schema=False)
+        def consent_page(request: Request):
+            from lore.auth import next as next_page
+            if session_user(request):
+                page = _spa_page()
+                page.headers["Referrer-Policy"] = "same-origin"
+                return page
+            back = _redirect("/signin")
+            remembered = next_page.remember(auth_ctx.settings,
+                                            f"{request.url.path}?{request.url.query}")
+            if remembered is not None:
+                back.headers.append(remembered[0].decode(), remembered[1].decode())
+            return back
+
         # The app and the admin page need a session; without one, sign in.
         # (The API behind them checks again: this is only the front door.)
         @api.get("/app", include_in_schema=False)
@@ -1267,7 +1309,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         hosted_mcp[0] = HostedMcp(
             base, sessions=lambda: sessions[0], key_service=key_service,
             throttle=throttle, origin=auth_ctx.settings.origin, hosts=hosts,
-            origins=origins, now=auth_ctx.now)
+            origins=origins, now=auth_ctx.now, provider=oauth_provider,
+            trust_proxy=auth_ctx.settings.trust_proxy)
         inner = McpMount(hosted_mcp[0], inner)
         # CSP, Referrer-Policy, nosniff, Permissions-Policy, frame refusal
         # and HSTS behind https, on every response (lore.web.headers).

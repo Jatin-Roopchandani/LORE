@@ -3,7 +3,7 @@ import { api, isError } from "../../api";
 import { hostedSnippets } from "../../mcpSnippets";
 import { SETTINGS, UI } from "../../messages";
 import { ago } from "../../settings";
-import type { McpCheck, McpHosted, McpInfo, McpToken, McpTokenMade } from "../../types";
+import type { McpCheck, McpConnection, McpHosted, McpInfo, McpToken, McpTokenMade } from "../../types";
 import { Snip } from "../Snip";
 
 // MCP connector. Local mode: what it does, the exact snippets for Claude Desktop, Claude Code and HTTP (built by the
@@ -83,6 +83,15 @@ function Hosted() {
         <Snip text={info.mcp_url} label={SETTINGS.mcpAddressLabel} />
       </section>
     )}
+    {info && (
+      <section className="set-section">
+        <h4>{SETTINGS.mcpClaudeAi}</h4>
+        {info.oauth
+          ? <ol className="mcp-steps">{SETTINGS.mcpClaudeAiSteps.map((s) => <li key={s} className="hint">{s}</li>)}</ol>
+          : <p className="hint">{SETTINGS.mcpClaudeAiOff}</p>}
+      </section>
+    )}
+    {info?.oauth && <Connections />}
     <section className="set-section" aria-labelledby="set-mcp-tokens">
       <h4 id="set-mcp-tokens">{SETTINGS.mcpTokens}</h4>
       <p className="hint">{SETTINGS.mcpTokensHint}</p>
@@ -134,6 +143,43 @@ function Hosted() {
     )}
     <Check hosted />
   </>);
+}
+
+// The apps connected through OAuth (claude.ai custom connectors and the like): one per consent, each disconnectable.
+function Connections() {
+  const [list, setList] = useState<McpConnection[] | null>(null);
+  const [problem, setProblem] = useState("");
+  const load = () => api.mcpConnections().then((r) => {
+    if (isError(r) || !Array.isArray(r.connections)) { setProblem(SETTINGS.mcpConnectionsFailed); return; }
+    setList(r.connections);
+  });
+  useEffect(() => { load(); }, []);
+  const disconnect = async (id: string) => {
+    setProblem("");
+    const r = await api.disconnectMcp(id);
+    if (isError(r)) setProblem(SETTINGS.mcpDisconnectFailed);
+    load();
+  };
+  return (
+    <section className="set-section" aria-labelledby="set-mcp-apps">
+      <h4 id="set-mcp-apps">{SETTINGS.mcpConnections}</h4>
+      <p className="hint">{SETTINGS.mcpConnectionsHint}</p>
+      {list && list.length === 0 && <p className="hint">{SETTINGS.mcpConnectionsNone}</p>}
+      {list && list.length > 0 && (
+        <ul className="set-list mcp-tokens">
+          {list.map((c) => (
+            <li key={c.id}>
+              <span className="set-row-main">{c.client_name}</span>
+              <span className="hint">{SETTINGS.mcpConnectionWhen(ago(c.created_at), c.last_used_at ? ago(c.last_used_at) : null)}</span>
+              <button className="tbtn" type="button" aria-label={SETTINGS.mcpDisconnectLabel(c.client_name)} onClick={() => disconnect(c.id)}>
+                {SETTINGS.mcpDisconnect}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {problem && <div className="notice error" role="alert">{problem}</div>}
+    </section>
+  );
 }
 
 function Check({ hosted = false }: { hosted?: boolean }) {

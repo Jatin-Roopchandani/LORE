@@ -83,6 +83,7 @@ MAX_REF_CHARS = 200         # a world's id or name, a book id
 VECTOR_LIMIT_MAX = 20       # passages per vector_search (local mode allows 50)
 MAX_RESULT_BYTES = 256 * 1024
 PRINCIPAL_CLAIM = "lore_principal"
+REGISTER_PER_HOUR = 20      # OAuth client registrations per address (lore.mcp.oauth)
 
 INSTRUCTIONS = (
     "LORE reads the signed-in reader's own library of e-books as a knowledge"
@@ -172,7 +173,8 @@ class HostedMcp:
 
     def __init__(self, base: LoreConfig, *, sessions: Callable, key_service, throttle,
                  origin: str, hosts: set[str], origins: set[str], now: Callable,
-                 provider=None, verifier: TokenVerifier | None = None) -> None:
+                 provider=None, verifier: TokenVerifier | None = None,
+                 trust_proxy: bool = False) -> None:
         self.base, self.key_service, self.throttle = base, key_service, throttle
         self.origin = origin.rstrip("/")
         self.provider = provider
@@ -193,6 +195,7 @@ class HostedMcp:
             enable_dns_rebinding_protection=True, allowed_hosts=sorted(hosts),
             allowed_origins=sorted(origins))
         self._register()
+        self._register_bare_resource_metadata(auth)
         self.app = self._build()
         self._live = False
         self._paths = {MCP_PATH, MCP_PATH + "/"}
@@ -200,6 +203,24 @@ class HostedMcp:
         if provider is not None:
             self._paths |= set(provider.paths())
             self._prefixes += ("/.well-known/oauth-authorization-server",)
+        # Dynamic client registration is open (the spec expects it), so it is
+        # rate limited per address: `register_limit` registrations an hour.
+        self._sessions, self._now = sessions, now
+        self.register_limit, self.trust_proxy = REGISTER_PER_HOUR, trust_proxy
+
+    def _register_bare_resource_metadata(self, auth: AuthSettings) -> None:
+        """RFC 9728 puts the metadata at /.well-known/oauth-protected-resource/mcp
+        (the SDK serves that); some clients ask at the bare path, so it is
+        served there too, the same document."""
+        from mcp.server.auth.handlers.metadata import ProtectedResourceMetadataHandler
+        from mcp.shared.auth import ProtectedResourceMetadata
+        handler = ProtectedResourceMetadataHandler(ProtectedResourceMetadata(
+            resource=auth.resource_server_url, authorization_servers=[auth.issuer_url],
+            scopes_supported=auth.required_scopes))
+
+        @self.server.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
+        async def bare_resource_metadata(request):
+            return await handler.handle(request)
 
     # --- serving ------------------------------------------------------------------
 
@@ -223,7 +244,28 @@ class HostedMcp:
             finally:
                 self._live = False
 
+    def _register_allowed(self, scope) -> bool:
+        from starlette.requests import Request
+
+        from lore.auth import ratelimit
+        from lore.auth.signin import client_ip
+        ip = client_ip(Request(scope), self.trust_proxy)
+        with self._sessions()() as db:
+            ok = ratelimit.allow(db, "oauth_register", ip, self.register_limit, self._now())
+            db.commit()
+        return ok
+
     async def __call__(self, scope, receive, send):
+        if (self.provider is not None and scope.get("path") == "/register"
+                and scope.get("method") == "POST"
+                and not await anyio.to_thread.run_sync(self._register_allowed, scope)):
+            body = (b'{"error": "invalid_client_metadata", "error_description":'
+                    b' "too many registrations from this address; try again later"}')
+            await send({"type": "http.response.start", "status": 429,
+                        "headers": [(b"content-type", b"application/json"),
+                                    (b"retry-after", b"3600")]})
+            await send({"type": "http.response.body", "body": body})
+            return
         if not self._live and scope.get("path", "").rstrip("/") == MCP_PATH:
             body = b'{"error": {"code": "unavailable", "message": "starting up"}}'
             await send({"type": "http.response.start", "status": 503,

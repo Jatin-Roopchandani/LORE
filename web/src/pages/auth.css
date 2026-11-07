@@ -113,6 +113,10 @@
 .au-link-btn:disabled{opacity:.6;cursor:progress}
 .au-ok{margin:0;font-size:14px;color:var(--ok)}
 
+/* The MCP consent page (/oauth/consent): what the connecting app may do. */
+.consent-can{margin:0;padding:0 0 0 20px;display:flex;flex-direction:column;gap:6px;color:var(--ink);font-size:15px;line-height:1.45}
+.au .au-secondary:disabled{opacity:.6;cursor:default}
+
 .au-fine{margin:0;font-size:13px;line-height:1.5;color:var(--muted)}
 .au .au-fine a{color:var(--ink);text-decoration:underline;text-decoration-color:var(--au-border);text-underline-offset:2px}
 .au .au-fine a:hover{text-decoration-color:currentColor}

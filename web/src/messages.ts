@@ -674,6 +674,26 @@ export const SIGNIN_LINK = {
   again: "Ask for a new link",
 };
 
+// The consent page an MCP client (claude.ai, Claude Desktop, Claude Code) sends the reader to (/oauth/consent).
+export const CONSENT = {
+  title: (name: string) => `${name} wants to read your LORE library`,
+  titleUnnamed: "An app wants to read your LORE library",
+  lead: "If you allow it, it can:",
+  can: [
+    "Search your books and read the characters, places and connections LORE found in them",
+    "Ask LORE questions, which uses your own AI provider key and allowance",
+  ],
+  cannot: "It can't change your library, and it can't see your account, your settings or your keys. Your reading position still applies.",
+  back: (host: string) => `Allowing sends you back to ${host}.`,
+  allow: "Allow",
+  allowing: "Connecting…",
+  cancel: "Cancel",
+  later: "You can disconnect it any time in Settings, under MCP connector.",
+  loading: "Loading the request…",
+  expired: "This connection request has expired or isn't valid. Start connecting again from your app.",
+  failed: "That didn't work. Try again.",
+};
+
 // Release step 6: deleting one's own account (account menu) and the admin's user controls.
 export const ACCOUNT_DELETE = {
   open: "Delete my account",
@@ -813,6 +833,22 @@ export const SETTINGS = {
   mcpSetupCursorHint: "Add this to ~/.cursor/mcp.json (or the project's .cursor/mcp.json).",
   mcpTokenPlaceholder: "<your token>",
   mcpCheckHosted: "LORE's MCP server is ready.",
+  mcpClaudeAi: "claude.ai and Claude Desktop",
+  mcpClaudeAiSteps: [
+    "In claude.ai, open Settings, then Connectors, and choose Add custom connector.",
+    "Name it LORE and paste the server address above. Leave the advanced settings empty.",
+    "Claude opens a LORE page: sign in if asked, then choose Allow.",
+    "Claude Desktop uses the same connectors as your claude.ai account.",
+  ],
+  mcpClaudeAiOff: "Connecting from claude.ai needs this LORE server on an https address. Access tokens work everywhere else.",
+  mcpConnections: "Connected apps",
+  mcpConnectionsHint: "Apps you allowed from a LORE consent page. Disconnecting one ends its access at once.",
+  mcpConnectionsNone: "No apps connected yet.",
+  mcpConnectionWhen: (created: string, used: string | null) => `Connected ${created}, ${used ? `last used ${used}` : "not used yet"}`,
+  mcpDisconnect: "Disconnect",
+  mcpDisconnectLabel: (name: string) => `Disconnect ${name}`,
+  mcpConnectionsFailed: "Your connected apps couldn't be loaded. Try again.",
+  mcpDisconnectFailed: "That app couldn't be disconnected. Try again.",
   copy: "Copy", copied: "Copied",
   // Your data
   download: "Download my data",

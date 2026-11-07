@@ -383,3 +383,28 @@ def test_the_concurrent_calls_of_two_users_never_cross(root, libraries, central,
             results = list(pool.map(one, ["alice", "bob"] * 10))
     for user, titles in results:
         assert titles == (["A Study in Scarlet"] if user == "alice" else ["Dracula"])
+
+
+# --- protocol revisions -------------------------------------------------------------
+
+@pytest.mark.parametrize("version", ["2025-06-18", "2025-11-25", "2026-07-28"])
+def test_every_protocol_revision_reaches_the_caller_s_own_library(client, tokens, version):
+    """The 2025 revisions take the SDK's legacy path, the 2026 one its modern
+    path: the caller's identity must reach the tool on both."""
+    head = {"MCP-Protocol-Version": version}
+    meta = {}
+    if version >= "2026":  # the stateless era carries its envelope in every request
+        meta = {"_meta": {"io.modelcontextprotocol/protocolVersion": version,
+                          "io.modelcontextprotocol/clientCapabilities": {}}}
+    routed = (lambda method, name=None: {**head, "Mcp-Method": method,
+                                         **({"Mcp-Name": name} if name else {})}
+              ) if meta else (lambda method, name=None: head)
+    listed = rpc(client, tokens["bob"], "tools/list", meta, headers=routed("tools/list"))
+    assert listed.status_code == 200, listed.text
+    r = rpc(client, tokens["bob"], "tools/call", {"name": "library", "arguments": {}, **meta},
+            headers=routed("tools/call", "library"))
+    assert r.status_code == 200, r.text
+    result = r.json()["result"]
+    out = result.get("structuredContent") or json.loads(result["content"][0]["text"])
+    assert [b["title"] for b in out["books"]] == ["Dracula"]
+    assert rpc(client, None, "tools/list", headers=head).status_code == 401

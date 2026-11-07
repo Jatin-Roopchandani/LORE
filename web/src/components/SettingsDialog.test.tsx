@@ -34,7 +34,13 @@ const mcpBody = { stdio_command: "claude mcp add lore -- /opt/lore/bin/lore mcp"
 const hostedBody = { hosted: true, base_url: "https://lore.example.org", mcp_url: "https://lore.example.org/mcp", max_tokens: 2, oauth: false };
 type Tok = { id: string; name: string; prefix: string; created_at: string; last_used_at: string | null };
 let mcpTokens: Tok[] = [];
-beforeEach(() => { mcpTokens = [{ id: "t0", name: "Old laptop", prefix: "lore_ZzZzZzZ", created_at: new Date(now - 864e5).toISOString(), last_used_at: null }]; });
+let oauthOn = false;
+let mcpApps: { id: string; client_name: string; created_at: string; last_used_at: string | null }[] = [];
+beforeEach(() => {
+  mcpTokens = [{ id: "t0", name: "Old laptop", prefix: "lore_ZzZzZzZ", created_at: new Date(now - 864e5).toISOString(), last_used_at: null }];
+  oauthOn = false;
+  mcpApps = [{ id: "g1", client_name: "Claude", created_at: new Date(now - 864e5).toISOString(), last_used_at: new Date(now - 6e4 * 10).toISOString() }];
+});
 const checkBody = { ok: true, lore_found: true, problem: null, library_found: true,
   tools: [{ name: "lore_search", summary: "Answer a question from the knowledge graph." }, { name: "entity", summary: "One entity's card." }] };
 const quotaBody = { provider: "gemini", resets_at: "2026-11-08T08:00:00Z",
@@ -74,7 +80,12 @@ function serve({ role = "user", providers = [gemini, claude, row("openai")] as I
     if (url === "/api/me/export") return new Response(new Blob(["PK"]), { headers: { "content-disposition": 'attachment; filename="lore-data-2026-11-07.zip"' } });
     if (url === "/api/me/delete") return json({ deleted: true });
     const multiDoc = document.querySelector('meta[name="lore-multi"]') !== null;
-    if (url === "/api/mcp") return json(multiDoc ? hostedBody : mcpBody);
+    if (url === "/api/mcp") return json(multiDoc ? { ...hostedBody, oauth: oauthOn } : mcpBody);
+    if (url === "/api/me/mcp-connections") return json({ connections: mcpApps });
+    if (url.startsWith("/api/me/mcp-connections/") && method === "DELETE") {
+      mcpApps = mcpApps.filter((a) => !url.endsWith(`/${a.id}`));
+      return json({ revoked: true });
+    }
     if (url === "/api/me/mcp-tokens" && method === "GET") return json({ tokens: mcpTokens, max_tokens: 2 });
     if (url === "/api/me/mcp-tokens" && method === "POST") {
       const made = { id: `t${mcpTokens.length + 1}`, name: JSON.parse(init.body as string).name, prefix: "lore_AbCdEfG",
@@ -559,6 +570,28 @@ test("MCP (multi): a token needs a name", async () => {
   await userEvent.click(within(panel()).getByRole("button", { name: SETTINGS.mcpCreate }));
   expect(within(panel()).getByRole("alert")).toHaveTextContent(SETTINGS.mcpTokenNameNeeded);
   expect(calls.some((c) => c.url === "/api/me/mcp-tokens" && c.method === "POST")).toBe(false);
+});
+
+test("MCP (multi, OAuth on): claude.ai steps and the connected apps, each disconnectable", async () => {
+  markMulti();
+  oauthOn = true;
+  const calls = serve();
+  await openAt("mcp");
+  expect(await within(panel()).findByText(SETTINGS.mcpClaudeAiSteps[0])).toBeInTheDocument();
+  expect(within(panel()).queryByText(SETTINGS.mcpClaudeAiOff)).toBeNull();
+  const apps = await within(panel()).findByRole("button", { name: SETTINGS.mcpDisconnectLabel("Claude") });
+  await userEvent.click(apps);
+  expect(await within(panel()).findByText(SETTINGS.mcpConnectionsNone)).toBeInTheDocument();
+  expect(calls.some((c) => c.url === "/api/me/mcp-connections/g1" && c.method === "DELETE")).toBe(true);
+});
+
+test("MCP (multi, OAuth off): says claude.ai needs https, and lists no connected apps", async () => {
+  markMulti();
+  const calls = serve();
+  await openAt("mcp");
+  expect(await within(panel()).findByText(SETTINGS.mcpClaudeAiOff)).toBeInTheDocument();
+  expect(within(panel()).queryByText(SETTINGS.mcpConnections)).toBeNull();
+  expect(calls.some((c) => c.url === "/api/me/mcp-connections")).toBe(false);
 });
 
 test("MCP (multi): Check lists the hosted tools", async () => {

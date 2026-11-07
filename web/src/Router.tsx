@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Admin } from "./pages/Admin";
+import { Consent } from "./pages/Consent";
 import { ContinueSignIn } from "./pages/ContinueSignIn";
 import { PageShell } from "./pages/PageShell";
 import { SignIn } from "./pages/SignIn";
@@ -19,6 +20,7 @@ export default function Router({ pathname = window.location.pathname, multi = is
     case "home": return <Suspense fallback={null}><Home /></Suspense>;
     case "signin": return <SignIn />;
     case "verify": return <ContinueSignIn />;
+    case "consent": return <Consent />;
     case "waitlist": return <Waitlist />;
     case "admin": return <Admin />;
     case "privacy": return <Suspense fallback={null}><Legal kind="privacy" /></Suspense>;

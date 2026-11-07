@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from lore.auth import accounts, ratelimit
+from lore.auth import next as next_page
 from lore.auth.accounts import Outcome
 from lore.auth.cookies import (
     FLOW_COOKIE, SESSION_COOKIE, cleared_headers, cookie_header, session_headers,
@@ -85,14 +86,17 @@ def build_signin_router(ctx: AuthContext) -> APIRouter:
 
     def finish(request: Request, db, user_id: str) -> RedirectResponse:
         """A fresh session for the user (any old one for this browser goes, so
-        a session id planted before sign-in is never promoted), then /app."""
+        a session id planted before sign-in is never promoted), then /app, or
+        the MCP consent page that sent them to sign in (lore.auth.next)."""
         delete_session(db, request.cookies.get(SESSION_COOKIE))
         token = create_session(db, user_id, ctx.now(), request.headers.get("user-agent"))
         db.commit()
         csrf = csrf_token(settings.csrf_secret, token)
-        return _redirect("/app", [
+        target = next_page.take(request, settings)
+        extra = [next_page.cleared(settings)] if request.cookies.get(next_page.NEXT_COOKIE) else []
+        return _redirect(target or "/app", [
             *session_headers(settings, token, csrf, int(LIFETIME.total_seconds())),
-            *cleared_headers(settings, FLOW_COOKIE)])
+            *cleared_headers(settings, FLOW_COOKIE), *extra])
 
     def sign_in(db, provider: str, subject: str, email: str, name: str | None,
                 invite_hash: str | None) -> accounts.SignIn:
