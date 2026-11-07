@@ -71,7 +71,7 @@ class FakeKuzu:
     def execute(self, cypher, params=None):
         if "e.aliases" in cypher or "b:Book" in cypher:  # Task 10d's reads
             return []
-        if "ALIAS_OF" in cypher:
+        if "ALIAS_OF" in cypher or "IDENTIFIED_AS" in cypher:
             return []
         if "count(r)" in cypher:
             return [["e1", 3]]
@@ -756,7 +756,7 @@ class EntityKuzu:
             return [list(r) for r in self._names]
         if "b:Book" in cypher:
             return [["A Study in Scarlet"]]
-        if "ALIAS_OF" in cypher:
+        if "ALIAS_OF" in cypher or "IDENTIFIED_AS" in cypher:
             return []
         if "count(r)" in cypher:
             return [[i, 1] for i in params["ids"] if self._edges.get(i)]

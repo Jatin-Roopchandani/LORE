@@ -99,7 +99,9 @@ from lore.resolve.entityhood import (
 )
 from lore.resolve.narrator import ResolveFirstPerson, rewrite_first_person
 from lore.resolve.normalize import entity_id, normalize_name
+from lore.resolve import resolver as resolver_module
 from lore.resolve.predicates import normalize_predicates
+from lore.resolve.unify import find_equivalences
 from lore.resolve.resolver import (
     Adjudicate,
     Mention,
@@ -261,16 +263,59 @@ def _mentions_from(
     which evidences happened to land inside the window.
     """
     contexts: dict[tuple[str, str], str] = {}
+    weights: dict[tuple[str, str], int] = {}
     for row in rows:
         evidence = str(row.get("evidence") or "")
         for pair in _named_kinds(row, on_reject):
+            weights[pair] = weights.get(pair, 0) + 1
             current = contexts.get(pair)
             if current is None or evidence < current:
                 contexts[pair] = evidence
     return [
-        Mention(name=name, kind=kind, book_id=book_id, context=context)
+        Mention(name=name, kind=kind, book_id=book_id, context=context,
+                weight=weights[(name, kind)])
         for (name, kind), context in sorted(contexts.items())
     ]
+
+
+# A believed identity (lore/resolve/unify.py): "“Ba'alzamon is the Dark
+# One,” Rand said." Never a merge, since a later book may prove the
+# character wrong; an edge with its sentence and chapter, which retrieval
+# follows from either end (lore/query/seed.py `identified_with`).
+IDENTIFIED_AS = "IDENTIFIED_AS"
+
+
+def _equivalences(triplets: list[dict], chunks) -> list:
+    """The book's stated equivalences between two names its rows mention."""
+    names = {name for row in triplets for name, _ in _named_kinds(row)}
+    return find_equivalences(((c.id, c.text) for c in chunks), names)
+
+
+def _identity_rows(equivalences, triplets: list[dict]) -> list[dict]:
+    """One triplet row per believed identity: alias IDENTIFIED_AS name."""
+    kind_of: dict[str, str] = {}
+    for row in triplets:
+        for name, kind in _named_kinds(row):
+            kind_of.setdefault(normalize_name(name), kind)
+    raw_of: dict[str, str] = {}
+    for row in triplets:
+        for name, _ in _named_kinds(row):
+            raw_of.setdefault(normalize_name(name), name)
+    rows = []
+    for eq in equivalences:
+        if not eq.believed:
+            continue
+        name, alias = raw_of.get(normalize_name(eq.name)), raw_of.get(normalize_name(eq.alias))
+        if name is None or alias is None:
+            continue
+        rows.append({
+            "subject": alias, "predicate": IDENTIFIED_AS, "object": name,
+            "evidence": eq.evidence, "confidence": 1.0, "chunk_id": eq.chunk_id,
+            "run_id": "equivalence",
+            "entity_names": [alias, name],
+            "entity_kinds": [kind_of[normalize_name(alias)], kind_of[normalize_name(name)]],
+        })
+    return rows
 
 
 def _centroid(vectors: list[list[float]]) -> list[float]:
@@ -872,6 +917,15 @@ async def load_book(
         nonlocal dropped_mentions
         dropped_mentions += 1
 
+    # The text's own equivalences (lore/resolve/unify.py): namings go to the
+    # resolver as disambiguation questions, believed identities become
+    # IDENTIFIED_AS edges.
+    # Namings are read from the whole book, a glossary included; a believed
+    # identity is an edge, so it comes from the story only.
+    equivalences = (_equivalences(triplets, chunks_for_book(conn, book_id, story_only=False))
+                    if resolver_module.UNIFY else [])
+    triplets = triplets + _identity_rows(
+        [e for e in equivalences if e.chunk_id in chapter_of], triplets)
     mentions = _mentions_from(triplets, book_id, _count_rejected)
     resolution = await resolve_mentions(
         mentions, embed, adjudicate,
@@ -879,10 +933,13 @@ async def load_book(
         decide_ambiguous=(
             None if disambiguation is None else disambiguation.answer_for
         ),
+        equivalences=[e for e in equivalences if not e.believed],
     )
     predicate_map = await normalize_predicates(
-        [str(row.get("predicate") or "") for row in triplets], embed
+        [str(row.get("predicate") or "") for row in triplets
+         if row.get("predicate") != IDENTIFIED_AS], embed
     )
+    predicate_map[IDENTIFIED_AS] = IDENTIFIED_AS
 
     # A representative context per entity, for adjudicating it against a
     # node another book persisted. Picked in the resolver's own canonical
