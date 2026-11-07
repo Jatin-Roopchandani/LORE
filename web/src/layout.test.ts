@@ -105,3 +105,107 @@ test("the overview puts linked entities near each other: two clusters stay apart
   }
   expect(crossings).toBeLessThanOrEqual(2);
 });
+
+// ---- answer graphs by size, on recorded answers (src/fixtures) ----
+import { denseLayout } from "./layout";
+import { replay } from "./fixtures/replay";
+import { measureGraph } from "./graphMetrics";
+import { nodeSizes, LARGE_GRAPH } from "./graphSizing";
+import golden from "./fixtures/small-answer-layout.golden.json";
+import single from "./fixtures/single-part.json";
+import twoPart from "./fixtures/two-part.json";
+import darkOne from "./fixtures/answer-graph-dark-one.json";
+import battle from "./fixtures/answer-graph-battle.json";
+import type { AskEvent } from "./types";
+
+// The graph pane at 1440x900.
+const PANE = { width: 954, height: 714 };
+
+test("a small answer is laid out and sized exactly as before the density layout", () => {
+  for (const [name, events] of Object.entries({ one: single, two: twoPart })) {
+    const { view, positions } = replay(events as AskEvent[]);
+    expect(view.nodes.length).toBeLessThan(LARGE_GRAPH);
+    const want = (golden as Record<string, { positions: Record<string, { x: number; y: number }>; sizes: Record<string, number> }>)[name];
+    expect(Object.fromEntries(positions)).toEqual(want.positions);
+    expect(Object.fromEntries(nodeSizes(view))).toEqual(want.sizes);
+  }
+});
+
+for (const [name, events] of Object.entries({ "dark one": darkOne, battle })) {
+  test(`a large answer (${name}) fits the pane with no dot or name on another, and every cited label drawn`, () => {
+    const { view, positions } = replay(events as AskEvent[]);
+    expect(view.nodes.length).toBeGreaterThanOrEqual(100);
+    const m = measureGraph(view, positions, PANE);
+    expect(m.nodeOverlaps).toBe(0);
+    expect(m.labelOverlaps).toBe(0);
+    expect(m.labelOnNode).toBeLessThanOrEqual(2);
+    expect(m.offCanvas).toBe(0);
+    expect(m.citedLabelsDrawn).toBe(m.citedLabels);
+    // Bounded: about one pane of layout, so the fitted camera barely shrinks it (and names keep their room).
+    expect(m.scale).toBeGreaterThan(0.85);
+    expect(m.extent.width).toBeLessThan(1400);
+    expect(m.extent.height).toBeLessThan(1000);
+  });
+}
+
+test("the density layout is deterministic, and every link is long enough to see", () => {
+  const { view } = replay(darkOne as AskEvent[]);
+  const a = denseLayout(view), b = denseLayout(view);
+  expect(b).toEqual(a);
+  const sizes = nodeSizes(view);
+  for (const l of view.links) {
+    const p = a.get(l.source)!, q = a.get(l.target)!;
+    expect(Math.hypot(p.x - q.x, p.y - q.y)).toBeGreaterThanOrEqual(sizes.get(l.source)! + sizes.get(l.target)! + 16 - 1e-6);
+  }
+});
+
+test("a hub's satellites ring it, and two hubs keep apart", () => {
+  const { view, positions } = replay(darkOne as AskEvent[]);
+  const hub = view.nodes.find((n) => n.label === "The Dark One")!.id, other = view.nodes.find((n) => n.label === "Rand al'Thor")!.id;
+  const deg = new Map<string, number>();
+  for (const l of view.links) for (const e of [l.source, l.target]) deg.set(e, (deg.get(e) ?? 0) + 1);
+  const sats = view.links.filter((l) => l.source === hub || l.target === hub).map((l) => (l.source === hub ? l.target : l.source)).filter((id) => deg.get(id) === 1);
+  expect(sats.length).toBeGreaterThan(20);
+  const h = positions.get(hub)!, o = positions.get(other)!;
+  const dist = (id: string) => Math.hypot(positions.get(id)!.x - h.x, positions.get(id)!.y - h.y);
+  // Nearer their hub than the other hub, all round it.
+  expect(sats.filter((s) => dist(s) < Math.hypot(positions.get(s)!.x - o.x, positions.get(s)!.y - o.y)).length).toBeGreaterThan(sats.length * 0.8);
+  const sides = new Set(sats.map((s) => Math.floor((Math.atan2(positions.get(s)!.y - h.y, positions.get(s)!.x - h.x) + Math.PI) / (Math.PI / 2)) % 4));
+  expect(sides.size).toBeGreaterThanOrEqual(3);              // round it, except where the other hub is
+  expect(Math.hypot(h.x - o.x, h.y - o.y)).toBeGreaterThan(150);
+});
+
+test("a synthetic answer of 300 nodes and three hubs stays bounded (no explosion)", () => {
+  const ids = Array.from({ length: 300 }, (_, i) => `n${i}`);
+  const hubs = ["n0", "n1", "n2"];
+  const links = ids.slice(3).map((id, i) => link(hubs[i % 3], id));
+  links.push(link("n0", "n1"), link("n1", "n2"));
+  const v: GraphView = { nodes: ids.map((id, i) => node(id, i < 3 ? 0 : null)), links, shownEdges: 0, totalEdges: 0 };
+  const p = place(new Map(), v);
+  const xs = [...p.values()].map((q) => q.x), ys = [...p.values()].map((q) => q.y);
+  expect(xs.every(Number.isFinite) && ys.every(Number.isFinite)).toBe(true);
+  expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(4000);
+  expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(4000);
+});
+
+test("a large answer is laid out again as it grows, but never once pinned by an expansion", () => {
+  const { view, positions } = replay(darkOne as AskEvent[]);
+  expect(place(positions, view)).toBe(positions);                       // nothing new: nothing moves
+  const grown: GraphView = { ...view, nodes: [...view.nodes, node("zz-new")], links: [...view.links, link(view.nodes[0].id, "zz-new")] };
+  const pinned = place(positions, grown, view.nodes[0].id, false, true);
+  for (const [id, pt] of positions) expect(pinned.get(id)).toEqual(pt);
+  expect(pinned.has("zz-new")).toBe(true);
+  const free = place(positions, grown);
+  expect(free.has("zz-new")).toBe(true);
+});
+
+test("hiding nodes of a large answer with a filter moves nothing, and they come back where they were", () => {
+  const { view, positions } = replay(darkOne as AskEvent[]);
+  const hiddenIds = new Set(view.nodes.slice(50, 60).map((n) => n.id));
+  const fewer: GraphView = { ...view, nodes: view.nodes.filter((n) => !hiddenIds.has(n.id)),
+    links: view.links.filter((l) => !hiddenIds.has(l.source) && !hiddenIds.has(l.target)) };
+  const p1 = place(positions, fewer);
+  for (const n of fewer.nodes) expect(p1.get(n.id)).toEqual(positions.get(n.id));
+  const p2 = place(p1, view);
+  for (const n of view.nodes) expect(p2.get(n.id)).toEqual(positions.get(n.id));
+});

@@ -4,7 +4,9 @@ import Sigma from "sigma";
 import { nearestEdge, nodeAt, type PickNode } from "../edgePick";
 import { EDGE_LABEL_PX, frame, makeDrawEdgeLabel } from "../edgeLabel";
 import { createNodeBorderProgram } from "@sigma/node-border";
-import { nodeLabel, type GraphView } from "../graphView";
+import type { GraphView } from "../graphView";
+import { drawnLabel, edgeOrder, estimateWidth, isLarge, NODE_LABEL_PX, nodeSizes } from "../graphSizing";
+import { contentBounds } from "../graphMetrics";
 import { worldSlot } from "../worlds";
 import { prefersReducedMotion } from "../settings";
 import type { Positions } from "../layout";
@@ -21,6 +23,15 @@ const RingedNode = createNodeBorderProgram({
     { size: { fill: true }, color: { attribute: "color" } },
   ],
 });
+
+// A colour token at a lower opacity, for sigma (which takes rgba); a colour it can't read is returned as is.
+export function withAlpha(color: string, alpha: number): string {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return color;
+  const h = m[1].length === 3 ? m[1].split("").map((c) => c + c).join("") : m[1];
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 export function palette() {
   const css = getComputedStyle(document.documentElement);
@@ -90,6 +101,26 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
   const focusNodes = useRef(new Set<string>());
   const hoverNode = useRef<string | null>(null);
   const hotEdge = useRef<string | null>(null);
+  // A large answer, and the colours its focus uses: the edges of the node in focus in the edge colour, the rest dimmed.
+  const largeGraph = useRef(false);
+  const edgeInk = useRef("#888888");
+  const edgeDim = useRef("rgba(136,136,136,0.35)");
+  const focusing = () => largeGraph.current && (focusNodes.current.size > 0 || hoverNode.current !== null);
+  const inFocus = (node: string) => focusNodes.current.has(node) || hoverNode.current === node;
+  // While focusing, the nodes in focus and their neighbours; every other node steps back (its name muted).
+  const focusNear = useRef<Set<string> | null>(null);
+  const labelMuted = useRef("#888888");
+  const updateFocus = () => {
+    if (!focusing()) { focusNear.current = null; return; }
+    const g = graph.current, near = new Set<string>();
+    for (const f of [...focusNodes.current, ...(hoverNode.current ? [hoverNode.current] : [])]) {
+      if (!g.hasNode(f)) continue;
+      near.add(f);
+      g.forEachNeighbor(f, (m) => { near.add(m); });
+    }
+    focusNear.current = near;
+  };
+  const dimmed = (node: string) => !!focusNear.current && !focusNear.current.has(node);
   const graph = useRef(new Graph({ multi: false, type: "directed" }));
   const click = useRef(onNodeClick);
   click.current = onNodeClick;
@@ -97,6 +128,20 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
   edgeClick.current = onEdgeClick;
   const latest = useRef({ view, positions, pinned });
   latest.current = { view, positions, pinned };
+
+  const measureCtx = useRef<CanvasRenderingContext2D | null>(null);
+  const contentBox = () => {
+    const s = sigma.current;
+    if (!s) return null;
+    measureCtx.current ??= document.createElement("canvas").getContext("2d");
+    const ctx = measureCtx.current;
+    if (ctx) ctx.font = `${NODE_LABEL_PX}px Public Sans`;
+    const items: { x: number; y: number; r: number; w: number }[] = [];
+    graph.current.forEachNode((_id, a) => items.push({ x: a.x, y: a.y, r: a.size, w: ctx ? ctx.measureText(String(a.label ?? "")).width : estimateWidth(String(a.label ?? "")) }));
+    if (!items.length) return null;
+    const b = contentBounds(items, s.getDimensions());
+    return { x: [b.x0, b.x1] as [number, number], y: [b.y0, b.y1] as [number, number] };
+  };
 
   const paint = () => {
     const g = graph.current;
@@ -110,10 +155,7 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
     // The world suffix and ring tell same-named entities apart only when the view really
     // shows two or more worlds; with one world they are noise.
     const manyWorlds = new Set(v.nodes.map((n) => n.world?.id).filter((w) => w != null)).size > 1;
-    // In the overview, plain nodes grow with their number of links (7 to 12), so the main cast stands out.
-    const degree = new Map<string, number>();
-    if (v.overview) for (const l of v.links) for (const e of [l.source, l.target]) degree.set(e, (degree.get(e) ?? 0) + 1);
-    const maxDegree = Math.max(1, ...degree.values());
+    const sizes = nodeSizes(v);
     for (const raw of v.nodes) {
       const n = manyWorlds ? raw : { ...raw, world: undefined };
       const at = pos.get(n.id) ?? { x: 500, y: 350 };
@@ -126,34 +168,55 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       const ringed = seed || !!n.world || marked;
       const ringColor = n.selected ? p.ink : n.onPath ? p.v("--accent") : dim ? p.faint : seed ? p.v(`--part-${n.seedPart! % 4}`)
         : n.world ? p.v(`--world-${worldSlot(n.world.id)}`) : p.faint;
-      const attrs = { x: at.x, y: -at.y, size: seed || marked ? 11 : 7 + 5 * Math.sqrt((degree.get(n.id) ?? 0) / maxDegree), label: nodeLabel({ ...n, label: n.label.replace(/^Mr\. /, "") }), color,
+      const attrs = { x: at.x, y: -at.y, size: sizes.get(n.id) ?? 7, label: drawnLabel(n), color,
         ring: seed || marked ? 0.3 : n.world ? 0.28 : 0, gap: ringed ? 0.12 : 0, gapColor: p.panel,
         ringColor, zIndex: marked ? 5 : dim ? 0 : 1 };
       if (g.hasNode(n.id)) g.mergeNodeAttributes(n.id, attrs); else g.addNode(n.id, attrs);
     }
     const keepEdges = new Set(v.links.map((l) => l.id));
     g.forEachEdge((id) => { if (!keepEdges.has(id)) g.dropEdge(id); });
-    for (const l of v.links) {
+    // A large answer's quiet edges are thinner, and their labels wait for room (edgeLabel.ts: tidy).
+    const large = isLarge(v);
+    const edgeAttrs = new Map<string, Record<string, unknown>>();
+    for (const l of edgeOrder(v)) {
       if (!g.hasNode(l.source) || !g.hasNode(l.target)) continue;
       const lit = !!l.onPath || !!l.picked;
       const color = l.onPath ? p.v("--accent") : l.picked || l.hot || l.state === "cited" ? p.glow
         : l.state === "shown" ? (l.part !== null ? p.v(`--part-${l.part % 4}`) : p.edge) : p.faint;
       const quiet = !lit && (l.state === "faint" || l.state === "cut");
-      const attrs = { type: l.both ? "line" : "arrow", label: l.label, quiet, color,
-        size: lit ? 4.5 : l.hot ? 4 : l.state === "cited" ? 2.6 : v.overview && l.state === "faint" ? 1 : 1.4,
+      const attrs = { type: l.both ? "line" : "arrow", label: l.label, quiet, tidy: large && quiet, dense: large, color,
+        size: lit ? 4.5 : l.hot ? 4 : l.state === "cited" ? 2.6 : (v.overview || large) && quiet ? 1 : 1.4,
         zIndex: lit ? 4 : l.hot ? 3 : l.state === "cited" ? 2 : l.state === "shown" ? 1 : 0 };
+      edgeAttrs.set(l.id, attrs);
       if (g.hasEdge(l.id)) g.mergeEdgeAttributes(l.id, attrs);
       else if (!g.hasDirectedEdge(l.source, l.target)) g.addEdgeWithKey(l.id, l.source, l.target, attrs);
     }
+    // Sigma draws edge labels in the graph's edge order, so a large graph keeps its edges in edgeOrder: the
+    // cited ones' labels are placed first and get the best spots.
+    if (large) {
+      const want = [...edgeAttrs.keys()].filter((id) => g.hasEdge(id));
+      if (g.edges().join("\n") !== want.join("\n")) {
+        const ends = new Map(want.map((id) => [id, g.extremities(id)]));
+        g.clearEdges();
+        for (const id of want) { const [a, b] = ends.get(id)!; g.addEdgeWithKey(id, a, b, edgeAttrs.get(id)); }
+      }
+    }
+    largeGraph.current = large;
+    edgeInk.current = p.edge;
+    edgeDim.current = withAlpha(p.faint, 0.35);
+    // A large answer is framed on its dots and names, not just the node centres, so no name runs off the edge.
+    if (s && !pin) s.setCustomBBox(isLarge(v) ? contentBox() : null);
     // Sigma's label grid hides labels that share a cell, and Sigma labels an edge only when both its ends
     // are labelled, so a hidden name also hid relationships: every view names every node.
     sigma.current?.setSetting("labelDensity", 100);
     sigma.current?.setSetting("labelGridCellSize", 30);
-    sigma.current?.setSetting("labelColor", { color: p.ink });
+    sigma.current?.setSetting("labelColor", { attribute: "labelColor", color: p.ink });
     sigma.current?.setSetting("edgeLabelColor", { color: p.ink });
     pillColor.current = p.panel;
     pillBorder.current = p.v("--line");
     focusNodes.current = new Set(v.nodes.filter((n) => n.selected).map((n) => n.id));
+    labelMuted.current = p.muted;
+    updateFocus();
     sigma.current?.refresh();
   };
 
@@ -164,9 +227,20 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       edgeLabelFont: "Public Sans", edgeLabelWeight: "500", defaultDrawEdgeLabel: makeDrawEdgeLabel({
         pill: () => pillColor.current, border: () => pillBorder.current,
         zoom: () => sigma.current?.getCamera().ratio ?? 1,
-        focus: (node) => focusNodes.current.has(node) || hoverNode.current === node,
+        focus: inFocus, focusing, dimmed,
         hot: (edge) => hotEdge.current === edge }),
-      labelRenderedSizeThreshold: 0, labelColor: { color: p.ink }, edgeLabelColor: { color: p.ink }, zIndex: true,
+      // In a large answer, a node in focus (open, or under the pointer) brings its edges forward and dims the
+      // other quiet ones; cited edges keep their glow.
+      nodeReducer: (node, data) => (dimmed(node) ? { ...data, labelColor: labelMuted.current, zIndex: 0 } : data),
+      edgeReducer: (edge, data) => {
+        if (!focusing()) return data;
+        const g = graph.current;
+        if (!g.hasEdge(edge)) return data;
+        if (inFocus(g.source(edge)) || inFocus(g.target(edge)))
+          return { ...data, zIndex: 6, color: data.quiet ? edgeInk.current : data.color, size: Math.max(data.size ?? 1, 1.8) };
+        return data.quiet ? { ...data, color: edgeDim.current, size: 0.6 } : data;
+      },
+      labelRenderedSizeThreshold: 0, labelColor: { attribute: "labelColor", color: p.ink }, edgeLabelColor: { color: p.ink }, zIndex: true,
       allowInvalidContainer: true, defaultDrawNodeHover: drawThemedHover, enableEdgeEvents: true,
     });
     sigma.current.on("clickNode", ({ node }) => click.current(node));
@@ -187,11 +261,11 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
         if (!d) return;
         const at = s.framedGraphToViewport({ x: d.x, y: d.y });
         const r = s.scaleSize(d.size);
-        frame.obstacles.push({ x0: at.x - r - 3, y0: at.y - r - 3, x1: at.x + r + 3, y1: at.y + r + 3 });
+        frame.obstacles.push({ x0: at.x - r - 3, y0: at.y - r - 3, x1: at.x + r + 3, y1: at.y + r + 3, owner: id });
         if (measure && attrs.label) {
           measure.font = "12px Public Sans";
           const w = measure.measureText(String(attrs.label)).width;
-          frame.obstacles.push({ x0: at.x + r, y0: at.y - 9, x1: at.x + r + 10 + w * 1.08, y1: at.y + 9 });
+          frame.obstacles.push({ x0: at.x + r, y0: at.y - 9, x1: at.x + r + 10 + w * 1.08, y1: at.y + 9, owner: id });
         }
       });
     });
@@ -247,8 +321,8 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
       if (nearNode(event.x, event.y)) { setHover(null); if (box.current) box.current.style.cursor = "pointer"; return; }
       setHover(near(event.x, event.y));
     });
-    sigma.current.on("enterNode", ({ node }) => { hoverNode.current = node; sigma.current?.refresh(); });
-    sigma.current.on("leaveNode", () => { hoverNode.current = null; sigma.current?.refresh(); });
+    sigma.current.on("enterNode", ({ node }) => { hoverNode.current = node; updateFocus(); sigma.current?.refresh(); });
+    sigma.current.on("leaveNode", () => { hoverNode.current = null; updateFocus(); sigma.current?.refresh(); });
     sigma.current.on("enterNode", () => { setHover(null); if (box.current) box.current.style.cursor = "pointer"; });
     sigma.current.on("leaveNode", () => { if (box.current) box.current.style.cursor = ""; });
     paint();
@@ -263,10 +337,10 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
   useEffect(() => {
     const s = sigma.current;
     if (!s || fitRequest === 0) return;
-    s.setCustomBBox(null);
+    s.setCustomBBox(isLarge(latest.current.view) ? contentBox() : null);
     s.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1, angle: 0 });
     s.refresh();
-    if (latest.current.pinned) s.setCustomBBox(s.getBBox());
+    if (latest.current.pinned && !s.getCustomBBox()) s.setCustomBBox(s.getBBox());
   }, [fitRequest]);
   useEffect(() => {
     const s = sigma.current;

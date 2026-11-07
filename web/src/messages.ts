@@ -165,6 +165,14 @@ export const LIBRARY = {
         + (cap ? ` \u00b7 daily cap ${cap.toLocaleString("en")}` : ""),
 };
 
+// A graph link's label (graphView.ts): each relationship with its count, the rest as "+k", and both directions.
+export const EDGE_LABEL = {
+  one: (name: string, n: number) => (n > 1 ? `${name} ×${n}` : name),
+  top: (named: string, rest: number) => named + (rest > 0 ? ` +${rest}` : ""),
+  mutual: (name: string, there: number, back: number) => `${name} ×${there} · ×${back}`,
+  ways: (there: string, back: string) => `${there} / ${back}`,
+};
+
 export const UI = {
   askPlaceholder: "Ask about your books…",
   noBooks: "Pick at least one book to see its part of the graph.",
