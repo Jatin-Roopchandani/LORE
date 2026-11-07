@@ -691,9 +691,14 @@ with one word per question:
   claimed   - a character believes, suspects or says one is the other, but
               the book does not establish it as fact
   different - they are different things: relatives, allies, a leader and
-              those they lead, an individual and a group or kind it belongs
+              those they lead, a being and its followers, servants or
+              worshippers, an individual and a group or kind it belongs
               to, a place and a place inside it, or anything you are not sure
               of
+
+Judge each question on its own two names. If a character only believes or
+says that one of the names is the other, answer claimed for every question
+that pairs that name with the other one's names.
 
 Answer with one line per question and nothing else, in exactly this form:
 
@@ -833,8 +838,38 @@ def plan(answers: Iterable[tuple[SynonymQuestion, str]], edges: Iterable[Edge],
     members: dict[str, set[str]] = {}
     result = Applied()
     ordered = sorted(answers, key=lambda qa: (qa[0].a.id, qa[0].b.id))
-    for q, verdict in ordered:
-        if verdict != SAME:
+    # A claim outranks a "same" that would join the claimant to that group by
+    # another of its names: Ba'alzamon is only *claimed* to be the Dark One,
+    # so "Ba'alzamon / Father of Lies: same" must not pull him in. The
+    # claimant is the less-used name (as in the claimed links below). A
+    # dry run of every "same" finds the group each claim's other side ends
+    # in; the claimant's "same" answers into that group are dropped.
+    same = [qa for qa in ordered if qa[1] == SAME]
+    claims = [tuple(sorted((q.a.id, q.b.id), key=lambda e: (weight.get(e, 0), e)))
+              for q, v in ordered if v == CLAIMED]
+    trial: dict[str, str] = {}
+
+    def trial_find(x: str) -> str:
+        trial.setdefault(x, x)
+        while trial[x] != x:
+            trial[x] = trial[trial[x]]
+            x = trial[x]
+        return x
+
+    for q, _v in same:
+        trial[trial_find(q.a.id)] = trial_find(q.b.id)
+    blocked: set[frozenset] = set()
+    for claimant, other in claims:
+        root = trial_find(other)
+        for q, _v in same:
+            ids = {q.a.id, q.b.id}
+            if claimant in ids:
+                partner = (ids - {claimant}).pop() if len(ids) == 2 else claimant
+                if trial_find(partner) == root:
+                    blocked.add(frozenset(ids))
+    for q, _verdict in same:
+        if frozenset({q.a.id, q.b.id}) in blocked:
+            result.refused.append((q.a.id, q.b.id))
             continue
         ra, rb = find(q.a.id), find(q.b.id)
         if ra == rb:

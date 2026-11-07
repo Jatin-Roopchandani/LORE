@@ -269,3 +269,12 @@ def test_unreadable_synonym_answers_never_stop_the_stage() -> None:
 
     assert asyncio.run(_ask_synonyms_softly(Mumbler(), _two_questions())) == {}
     assert Mumbler.calls == 2  # asked again once, then gave up without raising
+
+
+def test_the_stage_asks_synonyms_through_its_own_client_when_given_one() -> None:
+    from lore.orchestrator.stages import DisambiguateStage
+    names, synonyms = object(), object()
+    stage = DisambiguateStage(client_factory=lambda c: names, synonym_client_factory=lambda c: synonyms)
+    assert stage._client_factory(None) is names and stage._synonym_client_factory(None) is synonyms
+    shared = DisambiguateStage(client_factory=lambda c: names)
+    assert shared._synonym_client_factory is shared._client_factory

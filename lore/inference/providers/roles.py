@@ -45,6 +45,9 @@ SITES: dict[str, Site] = {
     "adjudicate": Site(FAST, "low"),
     "narrator": Site(FAST, "low"),
     "disambiguate": Site(FAST, "low"),
+    # Whether two names are one thing: a few requests per book, and a wrong
+    # "same" merges two things for good, so the writer model answers.
+    "synonyms": Site(WRITER, "low"),
     "beats": Site(FAST, "medium"),
     "codex": Site(FAST, "medium"),
     "intro": Site(FAST, "low"),

@@ -201,8 +201,13 @@ class DisambiguateStage:
     name = "disambiguate"
 
     def __init__(self, client_factory: Callable | None = None,
-                 reload: Callable[[StageContext], None] | None = None) -> None:
+                 reload: Callable[[StageContext], None] | None = None,
+                 synonym_client_factory: Callable | None = None) -> None:
         self._client_factory = client_factory or _gemini_client
+        # Synonym questions go to the "synonyms" site (the writer model); a
+        # test that passes one client_factory gets it for both kinds.
+        self._synonym_client_factory = (synonym_client_factory or client_factory
+                                        or _synonym_client)
         self._reload = reload
 
     @staticmethod
@@ -244,10 +249,11 @@ class DisambiguateStage:
             return
         store = self._store(ctx)
         client = self._client_factory(ctx.config)
+        synonym_client = None
         got_new = False
 
         async def _run() -> None:
-            nonlocal got_new
+            nonlocal got_new, synonym_client
             # One loop for the requests and the close: httpx binds its
             # sockets to the loop that opened them.
             try:
@@ -257,7 +263,11 @@ class DisambiguateStage:
                         answers = await ask_disambiguation(client, batch)
                         store.save_answers(answers)
                     else:
-                        answers = await _ask_synonyms_softly(client, batch)
+                        if synonym_client is None:
+                            synonym_client = (client if self._synonym_client_factory
+                                              is self._client_factory
+                                              else self._synonym_client_factory(ctx.config))
+                        answers = await _ask_synonyms_softly(synonym_client, batch)
                         store.save_synonym_answers(answers)
                     if answers and self._reload is not None:
                         # Durable before anything else can stop the run.
@@ -266,6 +276,8 @@ class DisambiguateStage:
                     job_ctl.advance(already + index + 1)
             finally:
                 await client.aclose()
+                if synonym_client is not None and synonym_client is not client:
+                    await synonym_client.aclose()
 
         try:
             asyncio.run(_run())
@@ -311,6 +323,12 @@ def _site_client(config, site: str, models, missing: str):
     gemini = creds.provider == providers.GEMINI
     return providers.build(creds, config, site, gemini_models=models,
                            recorder=recorder_for(config.sqlite_path) if gemini else None)
+
+
+def _synonym_client(config):
+    return _site_client(config, "synonyms", config.disambiguation.models,
+                        "disambiguation needs a Gemini API key (GEMINI_API_KEY or"
+                        " ~/.config/lore/gemini.env)")
 
 
 def _gemini_client(config) -> GeminiClient:

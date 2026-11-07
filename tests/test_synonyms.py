@@ -316,3 +316,28 @@ def test_a_bare_answer_with_a_missing_number_is_still_refused() -> None:
 
 def _two_questions():
     return [_question("Myrddraal", "Fade"), _question("Trollocs", "Myrddraal")]
+
+
+def test_a_claim_keeps_the_claimant_out_of_the_group_another_same_answer_would_join() -> None:
+    # Ba'alzamon is only claimed to be the Dark One; "same" for one of the Dark One's
+    # epithets must not pull him into the Dark One's group by that back door.
+    weight = {"id:Dark One": 400, "id:Father of Lies": 10, "id:Shai'tan": 12, "id:Ba'alzamon": 120}
+    applied = syn.plan([
+        (_question("Ba'alzamon", "Father of Lies"), "same"),
+        (_question("Dark One", "Father of Lies"), "same"),
+        (_question("Dark One", "Shai'tan"), "same"),
+        (_question("Ba'alzamon", "Dark One", together="He is the Dark One", chunk="b:9:1"), "claimed"),
+    ], [], weight)
+    assert applied.merged == {"id:Dark One": ["id:Father of Lies", "id:Shai'tan"]}
+    assert ("id:Ba'alzamon", "id:Father of Lies") in applied.refused
+    assert applied.claimed == [("id:Ba'alzamon", "id:Dark One", "He is the Dark One", "b:9:1")]
+
+
+def test_the_prompt_says_followers_are_not_their_master() -> None:
+    prompt = syn.synonym_prompt([_question("Darkfriends", "Great Lord of the Dark")])
+    assert "followers" in prompt and "claimed for every question" in prompt
+
+
+def test_synonym_questions_use_the_writer_site() -> None:
+    from lore.inference.providers import roles
+    assert roles.SITES["synonyms"].role == roles.WRITER
