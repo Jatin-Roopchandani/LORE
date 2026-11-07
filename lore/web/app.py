@@ -650,6 +650,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             model = roles.ANTHROPIC_DEFAULT
         return provider, model
 
+    def gemini_paid_for(user: CurrentUser, cfg: LoreConfig) -> bool:
+        """The user's "I'm on a paid Gemini plan" (multi), or [lore.llm] gemini_paid."""
+        if not multi:
+            return cfg.llm.provider == "gemini" and cfg.llm.gemini_paid
+        return key_service.gemini_paid(user.id)
+
     def book_estimate(user: CurrentUser, cfg: LoreConfig, book_id: str) -> dict:
         from lore.inference.providers import estimate as estimates
         provider, model = processing_choice(user, cfg)
@@ -658,6 +664,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             chunks = estimates.chunk_count(conn, book_id)
         finally:
             conn.close()
+        if provider == "gemini" and gemini_paid_for(user, cfg):
+            # Priced on the extraction cascade's first model: what processing
+            # mostly uses. The free tier's estimate is unchanged.
+            first = (cfg.extraction.gemini_models or [None])[0]
+            return estimates.estimate(chunks, provider, first, gemini_paid=True)
         return estimates.estimate(chunks, provider, model)
 
     @api.get("/api/books/{book_id}/estimate")
@@ -678,14 +689,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         never past the user's Gemini budget. Spent: the book waits for the
         reset (Continue then), as a run stopped by the allowance would.
 
-        On Claude or OpenAI (billed to the user) there is no free-tier ledger:
+        On Claude, OpenAI or a paid Gemini plan (billed to the user) there is
+        no free-tier ledger:
         the book waits when the user's own daily token cap is reached, and
         when the estimate is above the confirmation threshold it does not
         start at all: the reply carries the estimate, and Continue (the
         user's confirmation) starts it."""
         now = now_utc()
         provider, _model = processing_choice(user, cfg)
-        if provider != "gemini":
+        if provider != "gemini" or gemini_paid_for(user, cfg):
             if multi and key_service.over_cap(user.id):
                 conn = open_db(cfg.sqlite_path)
                 try:

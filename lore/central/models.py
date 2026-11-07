@@ -275,6 +275,10 @@ class ApiKey(Base):
     model: Mapped[str | None] = mapped_column(sa.String(64))
     fast_model: Mapped[str | None] = mapped_column(sa.String(64))
     models: Mapped[list | None] = mapped_column(sa.JSON)
+    # Gemini only: the user says this key is on a paid plan (migration 0011):
+    # no free-tier request cap or answer reserve; tokens and cost are shown.
+    paid_tier: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=False,
+                                            server_default=sa.false())
 
     __table_args__ = (
         sa.CheckConstraint("provider IN ('gemini', 'anthropic', 'openai')",
@@ -304,6 +308,10 @@ class Usage(Base):
                                               server_default="0")
     output_tokens: Mapped[int] = mapped_column(sa.BigInteger, nullable=False, default=0,
                                                server_default="0")
+    # Gemini 429s ("out of allowance") Google answered today (migration 0011):
+    # the paid-plan hint needs to know there were none.
+    quota_refusals: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0,
+                                                server_default="0")
 
     __table_args__ = (sa.Index("ix_usage_day", "day"),)
 

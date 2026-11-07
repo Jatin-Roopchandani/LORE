@@ -238,6 +238,24 @@ def _strip_fence(text: str) -> str:
     return stripped.strip()
 
 
+def _note_tokens(model: str, payload: object) -> None:
+    """The response's token counts (usageMetadata) to the bound user's scope,
+    which records them only for a paid Gemini plan. Output includes thinking
+    tokens: Google bills them as output. Nothing when the counts are absent."""
+    usage = payload.get("usageMetadata") if isinstance(payload, dict) else None
+    if not isinstance(usage, dict):
+        return
+
+    def count(name: str) -> int:
+        value = usage.get(name)
+        return value if isinstance(value, int) and value > 0 else 0
+
+    tokens_in = count("promptTokenCount")
+    tokens_out = count("candidatesTokenCount") + count("thoughtsTokenCount")
+    if tokens_in or tokens_out:
+        key_scope.note_usage("gemini", model, tokens_in, tokens_out)
+
+
 class GeminiClient:
     """A cascade of free-tier models behind one `generate` call.
 
@@ -364,6 +382,10 @@ class GeminiClient:
                 f" {' or '.join(_KEY_VARIABLES)} in your environment, or"
                 " ~/.config/lore/gemini.env."
             )
+        if response.status_code == 429:
+            # Counted for the bound user (the paid-plan hint needs to know
+            # whether Google ever said "out of allowance" today).
+            key_scope.note_quota_refusal(model)
         if response.status_code in _CASCADE_STATUSES:
             limits = limits_for(model)
             raise GeminiQuotaError(
@@ -378,6 +400,7 @@ class GeminiClient:
             )
 
         payload = response.json()
+        _note_tokens(model, payload)
         candidates = payload.get("candidates") or []
         if not candidates:
             raise GeminiOutputError(

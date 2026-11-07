@@ -144,8 +144,9 @@ class JobCtl:
         reserve (or less) of today's requests remains."""
         cfg = self._ctx.config
         if not providers.on_gemini(cfg):
-            # Claude or OpenAI: billed to the user, so no free-tier ledger and
-            # no reserve; only the user's own daily token cap stops processing.
+            # Claude, OpenAI or a paid Gemini plan: billed to the user, so no
+            # free-tier ledger and no reserve; only the user's own daily token
+            # cap stops processing.
             if key_scope.over_token_cap():
                 raise QuotaStop("your daily token cap is reached (Account settings);"
                                 " processing continues after midnight Pacific")

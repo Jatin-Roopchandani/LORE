@@ -328,6 +328,7 @@ class Credentials:
     key: str = field(repr=False)
     model: str | None = None
     fast_model: str | None = None
+    paid_tier: bool = False  # Gemini: the user's "I'm on a paid Gemini plan"
 
 
 def _iso(moment: datetime | None) -> str | None:
@@ -343,10 +344,18 @@ def default_model(provider: str, models: list[str] | None) -> str | None:
     return None
 
 
-def _cost(provider: str, model: str, tokens_in: int, tokens_out: int) -> float | None:
+def _cost(provider: str, model: str, tokens_in: int, tokens_out: int,
+          day: str | None = None) -> float | None:
     if provider == ANTHROPIC:
         return roles.anthropic_cost(model, tokens_in, tokens_out)
-    return None  # Gemini: free tier; OpenAI: no price list LORE can read
+    if provider == GEMINI:
+        # Tokens are recorded only on a paid Gemini plan: a free-tier day (no
+        # tokens) has no cost to show, not a cost of $0. A model without a
+        # verified price (roles.GEMINI_PRICES) shows tokens only.
+        if not (tokens_in or tokens_out):
+            return None
+        return roles.gemini_cost(model, tokens_in, tokens_out, day)
+    return None  # OpenAI: no price list LORE can read
 
 
 class KeyService:
@@ -425,9 +434,15 @@ class KeyService:
                 "model": row.model if row else None,
                 "fast_model": row.fast_model if row else None,
                 "models": list(row.models or []) if row else [],
+                "paid_tier": bool(row.paid_tier) if row and provider == GEMINI else False,
             })
+        gemini = rows.get(GEMINI)
+        paid = bool(gemini is not None and gemini.paid_tier)
         return {"active": active, "providers": out,
-                "daily_token_cap": user.daily_token_cap if user is not None else None}
+                "daily_token_cap": user.daily_token_cap if user is not None else None,
+                "gemini_paid": paid,
+                "gemini_paid_hint": (gemini is not None and not paid
+                                     and self.paid_hint(user_id))}
 
     def has_key(self, user_id: str) -> bool:
         """True when the ACTIVE provider has a key."""
@@ -535,6 +550,36 @@ class KeyService:
             queue.resume_user(db, user_id)  # commits
         return self.providers(user_id)
 
+    def set_gemini_paid(self, user_id: str, paid: bool) -> dict:
+        """The user's "I'm on a paid Gemini plan" switch, on their Gemini key.
+        ProviderChoiceError without a Gemini key. Never switches the active
+        provider; LORE never turns it on by itself (see `paid_hint`)."""
+        if not isinstance(paid, bool):
+            raise ProviderChoiceError("say on or off")
+        with self.sessions() as db:
+            row = db.get(ApiKey, (user_id, GEMINI))
+            if row is None:
+                raise ProviderChoiceError("connect a Gemini key first")
+            row.paid_tier = paid
+            # Turning the free-tier cap off can let a user's waiting jobs go on.
+            queue.resume_user(db, user_id)  # commits
+        return self.providers(user_id)
+
+    def paid_hint(self, user_id: str) -> bool:
+        """True when the user's Gemini key seems to be on a paid plan: today
+        (Pacific) some Gemini model took more requests than its free-tier
+        daily count and Google never answered 429. Only a hint: the switch
+        stays the user's (`set_gemini_paid`)."""
+        from lore.inference.gemini import limits_for
+        day = self._day()
+        with self.sessions() as db:
+            rows = db.execute(sa.select(Usage.model, Usage.requests, Usage.quota_refusals)
+                              .where(Usage.user_id == user_id, Usage.day == day,
+                                     Usage.provider == GEMINI)).all()
+        if any(refusals for _m, _r, refusals in rows):
+            return False
+        return any(requests > limits_for(model).rpd for model, requests, _ in rows)
+
     def credentials_for(self, user_id: str) -> Credentials:
         """The active provider, its plaintext key and the chosen model(s), for
         one unit of work; KeyRequired if that provider has no key."""
@@ -543,11 +588,12 @@ class KeyService:
             if row is None:
                 raise KeyRequired()
             provider, model, fast = row.provider, row.model, row.fast_model
+            paid = provider == GEMINI and bool(row.paid_tier)
             sealed = Sealed(row.ciphertext, row.nonce, row.key_version)
         key = unseal(self._master, user_id, sealed, provider)
         if provider == ANTHROPIC and model not in roles.ANTHROPIC_MODELS:
             model = roles.ANTHROPIC_DEFAULT
-        return Credentials(provider, key, model, fast)
+        return Credentials(provider, key, model, fast, paid)
 
     def key_for(self, user_id: str) -> str:
         """The active provider's plaintext key; KeyRequired if none."""
@@ -576,7 +622,7 @@ class KeyService:
         return today(self._now())
 
     def _bump(self, user_id: str, provider: str, model: str, requests: int,
-              tokens_in: int, tokens_out: int) -> None:
+              tokens_in: int, tokens_out: int, refusals: int = 0) -> None:
         day = self._day()
         with self.sessions() as db:
             for _ in range(2):
@@ -586,14 +632,15 @@ class KeyService:
                            Usage.model == model)
                     .values(requests=Usage.requests + requests,
                             input_tokens=Usage.input_tokens + tokens_in,
-                            output_tokens=Usage.output_tokens + tokens_out)
+                            output_tokens=Usage.output_tokens + tokens_out,
+                            quota_refusals=Usage.quota_refusals + refusals)
                     .execution_options(synchronize_session=False))
                 if hit.rowcount:
                     db.commit()
                     return
                 db.add(Usage(user_id=user_id, day=day, model=model, provider=provider,
                              requests=requests, input_tokens=tokens_in,
-                             output_tokens=tokens_out))
+                             output_tokens=tokens_out, quota_refusals=refusals))
                 try:
                     db.commit()
                     return
@@ -619,6 +666,13 @@ class KeyService:
         except Exception:  # noqa: BLE001 - display and the cap; never fails a request
             log.exception("could not record tokens in the usage table")
 
+    def record_quota_refusal(self, user_id: str, model: str) -> None:
+        """Gemini answered 429 on `model` for this user (central `usage`)."""
+        try:
+            self._bump(user_id, GEMINI, model, 0, 0, 0, refusals=1)
+        except Exception:  # noqa: BLE001 - only the paid-plan hint reads it
+            log.exception("could not record a quota refusal in the usage table")
+
     def usage_today(self, user_id: str) -> dict:
         day = self._day()
         with self.sessions() as db:
@@ -626,7 +680,14 @@ class KeyService:
                 Usage.user_id == user_id, Usage.day == day)).all()
         return {"day": day, "requests": sum(r for _, r in rows),
                 "limit": DAILY_ALLOWANCE,
-                "models": {m: r for m, r in sorted(rows)}}
+                "models": {m: r for m, r in sorted(rows)},
+                "gemini_paid": self.gemini_paid(user_id)}
+
+    def gemini_paid(self, user_id: str) -> bool:
+        """The user's "I'm on a paid Gemini plan" switch (False with no Gemini key)."""
+        with self.sessions() as db:
+            row = db.get(ApiKey, (user_id, GEMINI))
+            return bool(row is not None and row.paid_tier)
 
     def tokens_today(self, user_id: str) -> int:
         day = self._day()
@@ -650,16 +711,22 @@ class KeyService:
 
         def total(selected) -> dict:
             models: dict[str, dict] = {}
-            for _d, provider, model, requests, tin, tout in selected:
+            costs: dict[str, float | None] = {}
+            for d, provider, model, requests, tin, tout in selected:
                 entry = models.setdefault(model, {"provider": provider, "requests": 0,
                                                   "input_tokens": 0, "output_tokens": 0})
                 entry["requests"] += requests
                 entry["input_tokens"] += tin
                 entry["output_tokens"] += tout
+                # Priced per day: a price can change on a given day (Gemini).
+                c = _cost(provider, model, tin, tout, d)
+                if c is not None:
+                    costs[model] = (costs.get(model) or 0.0) + c
+                else:
+                    costs.setdefault(model, None)
             cost, priced = 0.0, False
             for model, entry in models.items():
-                c = _cost(entry["provider"], model, entry["input_tokens"],
-                          entry["output_tokens"])
+                c = costs.get(model)
                 entry["estimated_cost_usd"] = None if c is None else round(c, 4)
                 if c is not None:
                     cost, priced = cost + c, True
@@ -717,6 +784,15 @@ class KeyService:
         def usage(provider: str, model: str, tokens_in: int, tokens_out: int) -> None:
             self.record_tokens(user_id, provider, model, tokens_in, tokens_out)
 
+        def refusal(model: str) -> None:
+            self.record_quota_refusal(user_id, model)
+
+        gemini = creds.provider == GEMINI
+        paid = gemini and creds.paid_tier
+        # A free-tier Gemini key records requests only, exactly as before; a
+        # paid one is metered like Claude and OpenAI (tokens, cost, the cap).
         return KeyScope(user_id, creds.key, request, provider=creds.provider,
                         model=creds.model, fast_model=creds.fast_model,
-                        on_usage=usage, over_cap=lambda: self.over_cap(user_id))
+                        on_usage=usage if (paid or not gemini) else None,
+                        over_cap=lambda: self.over_cap(user_id),
+                        paid_tier=paid, on_refusal=refusal if gemini else None)

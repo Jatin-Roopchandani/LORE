@@ -147,6 +147,10 @@ class LlmConfig(BaseModel):
     structured steps (lore.inference.providers.roles). `effort`: per call
     site, Claude's effort ("low" ... "max"), e.g. {write = "high"}.
 
+    `gemini_paid`: true when the Gemini key is on a paid plan: LORE's
+    free-tier daily request cap and the answer reserve then do not apply
+    (Google bills the usage). Off by default.
+
     In multi mode each user's own choice (Account settings) applies instead.
     """
 
@@ -155,6 +159,7 @@ class LlmConfig(BaseModel):
     provider: Literal["gemini", "anthropic", "openai"] = "gemini"
     model: str = ""
     fast_model: str = ""
+    gemini_paid: bool = False
     effort: dict[str, Literal["low", "medium", "high", "xhigh", "max"]] = Field(
         default_factory=dict)
 

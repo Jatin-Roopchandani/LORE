@@ -10,6 +10,8 @@ Multi mode only. Routes (every PUT/DELETE is behind the app-wide CSRF guard):
   SDK's models list; no generation), then stored sealed; returns the models.
   `provider` defaults to gemini. 10 a user an hour, every attempt counted.
 - PUT /api/me/provider {provider, model?, fast_model?}: switch provider/model.
+  {gemini_paid: bool} (with or without a provider) sets the "I'm on a paid
+  Gemini plan" switch on the user's Gemini key; it never switches provider.
 - DELETE /api/me/key?provider=: remove one provider's key (default: active).
 - GET /api/me/usage: today's requests (Gemini's ~1,000), plus tokens today and
   this month with an estimated cost (Claude prices), and the token cap.
@@ -127,10 +129,21 @@ def build_key_router(ctx: AuthContext, keys: K.KeyService) -> APIRouter:
         body = body_of(await request.body())
         provider = body.get("provider")
         model, fast = body.get("model"), body.get("fast_model")
+        paid = body.get("gemini_paid")
+        if "gemini_paid" in body and not isinstance(paid, bool):
+            return _error(400, "bad_request", "Turn the paid Gemini plan on or off.")
+        if provider is None and isinstance(paid, bool) and model is None and fast is None:
+            try:
+                out = keys.set_gemini_paid(uid, paid)
+            except K.ProviderChoiceError as exc:
+                return _error(400, "bad_request", str(exc).capitalize() + ".")
+            return JSONResponse(out, headers={"Cache-Control": "no-store"})
         if (not isinstance(provider, str)
                 or not all(v is None or isinstance(v, str) for v in (model, fast))):
             return _error(400, "bad_request", "Choose a provider and a model.")
         try:
+            if isinstance(paid, bool):
+                keys.set_gemini_paid(uid, paid)
             out = keys.choose(uid, provider, model or None, fast)
         except K.ProviderChoiceError as exc:
             return _error(400, "bad_request", str(exc).capitalize() + ".")

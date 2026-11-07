@@ -60,17 +60,25 @@ class KeyScope:
     cascades come from the configuration. `on_usage(provider, model, input,
     output)` receives each Claude or OpenAI response's token counts, and
     `over_cap()` says whether the user's own daily token cap is reached.
+
+    `paid_tier` (Gemini only): the user says their Gemini key is on a paid
+    plan, so Gemini is metered like Claude and OpenAI (tokens through
+    `on_usage`, the token cap) instead of LORE's free-tier ledger.
+    `on_refusal(model)` is told of each 429 Gemini answers.
     """
 
     __slots__ = ("user_id", "_key", "_on_request", "rejected", "provider",
-                 "model", "fast_model", "_on_usage", "_over_cap")
+                 "model", "fast_model", "_on_usage", "_over_cap", "paid_tier",
+                 "_on_refusal")
 
     def __init__(self, user_id: str, key: str | None,
                  on_request: Callable[[str], None] | None = None, *,
                  provider: str = "gemini", model: str | None = None,
                  fast_model: str | None = None,
                  on_usage: Callable[[str, str, int, int], None] | None = None,
-                 over_cap: Callable[[], bool] | None = None) -> None:
+                 over_cap: Callable[[], bool] | None = None,
+                 paid_tier: bool = False,
+                 on_refusal: Callable[[str], None] | None = None) -> None:
         self.user_id = user_id
         self._key = key
         self._on_request = on_request
@@ -80,6 +88,8 @@ class KeyScope:
         self.fast_model = fast_model
         self._on_usage = on_usage
         self._over_cap = over_cap
+        self.paid_tier = paid_tier
+        self._on_refusal = on_refusal
 
     @property
     def key(self) -> str | None:
@@ -154,10 +164,18 @@ def note_request(model: str) -> None:
 
 
 def note_usage(provider: str, model: str, input_tokens: int, output_tokens: int) -> None:
-    """Called by the Claude and OpenAI models with each response's token counts."""
+    """Called with each response's token counts (Claude, OpenAI; Gemini too,
+    recorded only for a user on a paid Gemini plan: see KeyService.scope)."""
     scope = _BOUND.get()
     if scope is not None and scope._on_usage is not None:
         scope._on_usage(provider, model, input_tokens, output_tokens)
+
+
+def note_quota_refusal(model: str) -> None:
+    """Called by GeminiClient when Gemini answers 429 (out of allowance)."""
+    scope = _BOUND.get()
+    if scope is not None and scope._on_refusal is not None:
+        scope._on_refusal(model)
 
 
 def over_token_cap() -> bool:

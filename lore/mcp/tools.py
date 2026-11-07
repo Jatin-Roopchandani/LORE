@@ -997,8 +997,9 @@ def _check_synthesis_budget(config: LoreConfig) -> str | None:
     if config.synthesis.provider != "gemini":
         return None  # the local model spends no Gemini budget
     if not providers.on_gemini(config):
-        # Claude or OpenAI: billed to the user, so no free-tier ledger. Only
-        # the user's own daily token cap (multi mode, off by default) stops it.
+        # Claude, OpenAI or a paid Gemini plan: billed to the user, so no
+        # free-tier ledger. Only the user's own daily token cap (multi mode,
+        # off by default) stops it.
         if key_scope.over_token_cap():
             return ("You have used today's token cap set in Account settings."
                     " It resets at midnight Pacific.")

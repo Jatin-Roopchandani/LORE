@@ -89,9 +89,21 @@ def active_provider(config) -> str:
     return config.llm.provider
 
 
+def gemini_paid(config) -> bool:
+    """True when the current unit of work's Gemini key is on a paid plan: the
+    bound user's switch (multi mode), else `[lore.llm] gemini_paid` (local)."""
+    scope = key_scope.current()
+    if scope is not None:
+        return scope.provider == GEMINI and bool(scope.paid_tier)
+    if key_scope.multi_user_enabled():
+        return False
+    return config.llm.provider == GEMINI and bool(config.llm.gemini_paid)
+
+
 def on_gemini(config) -> bool:
-    """True when Gemini's free-tier ledger and answer reserve apply."""
-    return active_provider(config) == GEMINI
+    """True when Gemini's free-tier ledger and answer reserve apply: Gemini,
+    and not a paid Gemini plan (which is metered like Claude and OpenAI)."""
+    return active_provider(config) == GEMINI and not gemini_paid(config)
 
 
 def credentials(config, explicit: str | None = None, *,

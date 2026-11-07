@@ -303,13 +303,17 @@ def _intro_model(config: LoreConfig):
     if config.selection.provider != "gemini" or not config.selection.models:
         return None
     if not providers.on_gemini(config):
-        # Claude or OpenAI: no free-tier ledger, only the user's own token cap.
+        # Claude, OpenAI or a paid Gemini plan: no free-tier cap, only the
+        # user's own token cap. A paid Gemini key still counts its requests
+        # in the ledger (never checked while the plan is paid).
         if key_scope.over_token_cap():
             return None
         try:
             creds = providers.credentials(config)
-            client = providers.build(creds, config, "intro",
-                                     gemini_models=config.selection.models)
+            client = providers.build(
+                creds, config, "intro", gemini_models=config.selection.models,
+                recorder=recorder_for(config.sqlite_path)
+                if creds.provider == providers.GEMINI else None)
         except Exception:  # noqa: BLE001 -- no usable key means no model intro
             return None
     else:

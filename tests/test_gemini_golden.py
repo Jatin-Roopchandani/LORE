@@ -145,3 +145,13 @@ def test_multi_mode_gemini_requests_are_unchanged(tmp_path, monkeypatch, recorde
     with key_scope.bound(KeyScope("alice", KEY)):
         asyncio.run(_drive(cfg))
     _check(recorded)
+
+
+def test_a_paid_gemini_plan_sends_the_same_requests(tmp_path, monkeypatch, recorded):
+    # The switch changes LORE's budgeting, never what is sent to Google.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LORE_MULTI_USER", "1")
+    cfg = _config(tmp_path)
+    with key_scope.bound(KeyScope("alice", KEY, paid_tier=True)):
+        asyncio.run(_drive(cfg))
+    _check(recorded)

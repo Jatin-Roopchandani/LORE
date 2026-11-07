@@ -94,6 +94,53 @@ def anthropic_cost(model: str, input_tokens: int, output_tokens: int) -> float |
     return (input_tokens * price[0] + output_tokens * price[1]) / 1_000_000
 
 
+# --- Gemini (paid plan) -------------------------------------------------------------
+
+# US dollars per million tokens (input text, output including thinking), Google's
+# Standard paid tier, from https://ai.google.dev/gemini-api/docs/pricing (now
+# served at aistudio.google.com/docs/pricing), read on 2026-11-07. Each model
+# lists (first day the price applies, input, output); "" is "since before
+# LORE read it". Only the models LORE's cascades use (lore.inference.gemini);
+# a model with no verified price (gemini-3.7-flash is not on the page) is left
+# out, so its usage shows tokens only. Never guess a price here. A free-tier
+# key is not billed at all: these apply only to a user on a paid Gemini plan.
+GEMINI_PRICES: dict[str, tuple[tuple[str, float, float], ...]] = {
+    "gemini-3.1-flash-lite": (("", 0.25, 1.50),),
+    "gemini-3.5-flash-lite": (("", 0.30, 2.50),),
+    # Announced on the page: the launch price through 2026-12-31, then double.
+    "gemini-3.8-flash": (("", 0.75, 3.75), ("2027-01-01", 1.50, 7.50)),
+    "gemini-3.6-flash": (("", 0.75, 3.75), ("2027-01-01", 1.50, 7.50)),
+}
+
+
+def _pacific_day() -> str:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
+
+
+def gemini_price(model: str, day: str | None = None) -> tuple[float, float] | None:
+    """(input, output) dollars per million tokens on `day` (YYYY-MM-DD, Pacific;
+    default today), or None when LORE has no verified price for `model`."""
+    schedule = GEMINI_PRICES.get(model)
+    if schedule is None:
+        return None
+    day = day or _pacific_day()
+    price = None
+    for since, tokens_in, tokens_out in schedule:
+        if since <= day:
+            price = (tokens_in, tokens_out)
+    return price
+
+
+def gemini_cost(model: str, input_tokens: int, output_tokens: int,
+                day: str | None = None) -> float | None:
+    price = gemini_price(model, day)
+    if price is None:
+        return None
+    return (input_tokens * price[0] + output_tokens * price[1]) / 1_000_000
+
+
 # --- OpenAI ----------------------------------------------------------------------
 
 # Not general chat models: embeddings, speech, images, moderation, search

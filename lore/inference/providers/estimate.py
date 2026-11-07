@@ -37,12 +37,18 @@ def chunk_count(conn: sqlite3.Connection, book_id: str) -> int:
     return int(row[0]) if row else 0
 
 
-def estimate(chunks: int, provider: str, model: str | None) -> dict:
+def estimate(chunks: int, provider: str, model: str | None,
+             gemini_paid: bool = False) -> dict:
+    """`gemini_paid`: a paid Gemini plan is estimated and confirmed like the
+    other paid providers (priced from roles.GEMINI_PRICES where verified);
+    the free tier is never asked about (the ledger and reserve apply)."""
     tokens_in = int(chunks * INPUT_PER_CHUNK * LATER_STAGES)
     tokens_out = int(chunks * OUTPUT_PER_CHUNK * LATER_STAGES)
     cost = (roles.anthropic_cost(model, tokens_in, tokens_out)
             if provider == ANTHROPIC and model else None)
-    if provider == GEMINI:
+    if provider == GEMINI and gemini_paid and model:
+        cost = roles.gemini_cost(model, tokens_in, tokens_out)
+    if provider == GEMINI and not gemini_paid:
         needs_confirm = False  # free tier: the ledger and the reserve apply instead
     elif cost is not None:
         needs_confirm = cost > CONFIRM_ABOVE_USD
@@ -54,5 +60,5 @@ def estimate(chunks: int, provider: str, model: str | None) -> dict:
             "needs_confirm": needs_confirm, "is_estimate": True}
 
 
-def typical_novel(provider: str, model: str | None) -> dict:
-    return estimate(TYPICAL_NOVEL_CHUNKS, provider, model)
+def typical_novel(provider: str, model: str | None, gemini_paid: bool = False) -> dict:
+    return estimate(TYPICAL_NOVEL_CHUNKS, provider, model, gemini_paid)
