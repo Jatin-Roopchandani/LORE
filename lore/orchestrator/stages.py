@@ -40,6 +40,7 @@ from lore.resolve.disambiguation import (
     DisambiguationStore,
     ask as ask_disambiguation,
 )
+from lore.resolve.synonyms import SYNONYM_BATCH, ask_synonyms
 
 
 def quota_stop_from(exc: GeminiQuotaError) -> QuotaStop:
@@ -210,14 +211,23 @@ class DisambiguateStage:
         return bool(config.disambiguation.enabled)
 
     def _counts(self, ctx: StageContext):
-        """(unanswered questions, total batches, batches already answered)."""
+        """(unanswered batches, total batches, batches already answered).
+
+        A batch is ("names", bare-name questions) or ("synonyms", synonym
+        questions, lore/resolve/synonyms.py): the two kinds have their own
+        prompt and cache, so they never share a request."""
         if not ctx.config.disambiguation.enabled:
             return [], 0, 0
         store = self._store(ctx)
         pending = store.pending()
         todo = store.unanswered(pending)
-        total = -(-len(pending) // MAX_BATCH)
-        return todo, total, total - (-(-len(todo) // MAX_BATCH))
+        synonyms = store.pending_synonyms()
+        synonyms_todo = store.unanswered_synonyms(synonyms)
+        batches = ([("names", todo[i:i + MAX_BATCH]) for i in range(0, len(todo), MAX_BATCH)]
+                   + [("synonyms", synonyms_todo[i:i + SYNONYM_BATCH])
+                      for i in range(0, len(synonyms_todo), SYNONYM_BATCH)])
+        total = -(-len(pending) // MAX_BATCH) + -(-len(synonyms) // SYNONYM_BATCH)
+        return batches, total, total - len(batches)
 
     def total(self, ctx: StageContext) -> int:
         return self._counts(ctx)[1]
@@ -238,16 +248,19 @@ class DisambiguateStage:
             # One loop for the requests and the close: httpx binds its
             # sockets to the loop that opened them.
             try:
-                for start in range(0, len(todo), MAX_BATCH):
+                for index, (kind, batch) in enumerate(todo):
                     job_ctl.spend_check()
-                    answers = await ask_disambiguation(
-                        client, todo[start:start + MAX_BATCH])
-                    store.save_answers(answers)
+                    if kind == "names":
+                        answers = await ask_disambiguation(client, batch)
+                        store.save_answers(answers)
+                    else:
+                        answers = await ask_synonyms(client, batch)
+                        store.save_synonym_answers(answers)
                     if answers and self._reload is not None:
                         # Durable before anything else can stop the run.
                         jobs.set_needs_reload(ctx.conn, ctx.book_id)
                     got_new = got_new or bool(answers)
-                    job_ctl.advance(already + start // MAX_BATCH + 1)
+                    job_ctl.advance(already + index + 1)
             finally:
                 await client.aclose()
 

@@ -90,6 +90,7 @@ from lore.config import LoreConfig
 from lore.db.kuzu_store import KuzuStore
 from lore.db.lance_store import LanceStore
 from lore.graph.artifacts import completed_unit_dirs, read_embeddings, read_triplets
+from lore.ingest.models import chunk_story_key
 from lore.ingest.registry import chunks_for_book
 from lore.resolve.disambiguation import DisambiguationStore
 from lore.resolve.entityhood import (
@@ -100,6 +101,7 @@ from lore.resolve.entityhood import (
 from lore.resolve.narrator import ResolveFirstPerson, rewrite_first_person
 from lore.resolve.normalize import entity_id, normalize_name
 from lore.resolve import resolver as resolver_module
+from lore.resolve import synonyms
 from lore.resolve.predicates import normalize_predicates
 from lore.resolve.unify import find_equivalences
 from lore.resolve.resolver import (
@@ -316,6 +318,79 @@ def _identity_rows(equivalences, triplets: list[dict]) -> list[dict]:
             "entity_kinds": [kind_of[normalize_name(alias)], kind_of[normalize_name(name)]],
         })
     return rows
+
+
+def _synonym_inputs(book_id: str, triplets: list[dict], resolution):
+    """The resolved entities (with every name they answer to) and edges."""
+    names: dict[str, set[str]] = {}
+    for (name, _kind, book), target in resolution.mention_map.items():
+        if book == book_id:
+            names.setdefault(target, set()).add(name)
+    entities = [synonyms.Entity(e.id, e.name, e.kind,
+                                tuple(sorted(names.get(e.id, set()) | set(e.aliases))))
+                for e in resolution.entities]
+    edges = []
+    for row in triplets:
+        per_row: dict[str, str] = {}
+        for name, kind in _named_kinds(row):
+            target = resolution.mention_map.get((name, kind, book_id))
+            if target is not None:
+                per_row.setdefault(name, target)
+        subject = per_row.get(str(row.get("subject") or ""))
+        obj = per_row.get(str(row.get("object") or ""))
+        if subject is not None and obj is not None:
+            edges.append(synonyms.Edge(subject, str(row.get("predicate") or ""), obj,
+                                       str(row.get("evidence") or ""),
+                                       str(row.get("chunk_id") or "")))
+    return entities, edges
+
+
+def _apply_synonyms(book_id: str, triplets: list[dict], resolution, chunks, vectors,
+                    store: DisambiguationStore, story: set[str]):
+    """Record this book's synonym questions; apply the answers already cached.
+
+    Returns the resolution with "same" groups merged and one IDENTIFIED_AS
+    row per "claimed" pair, hung on a story chunk (the linking sentence's, or
+    one where both appear, or the claimed name's first)."""
+    entities, edges = _synonym_inputs(book_id, triplets, resolution)
+    pairs = synonyms.candidate_pairs(entities, edges, chunks, vectors)
+    answered = []
+    for question in synonyms.questions_for(book_id, pairs, entities, edges):
+        store.record_synonym(question)
+        verdict = store.synonym_verdict(question)
+        if verdict is not None:
+            answered.append((question, verdict))
+    if not answered:
+        return resolution, []
+    weight: dict[str, int] = {}
+    chunks_of: dict[str, list[str]] = {}
+    for edge in edges:
+        for eid in (edge.subject, edge.object):
+            weight[eid] = weight.get(eid, 0) + 1
+            chunks_of.setdefault(eid, []).append(edge.chunk_id)
+    applied = synonyms.plan(answered, edges, weight)
+    surface: dict[str, tuple[str, str]] = {}
+    for (name, kind, book), target in sorted(resolution.mention_map.items()):
+        if book == book_id:
+            surface.setdefault(target, (name, kind))
+    rows = []
+    for alias, name, sentence, chunk_id in applied.claimed:
+        if alias not in surface or name not in surface:
+            continue
+        if chunk_id not in story:
+            shared = sorted(set(chunks_of.get(alias, ())) & set(chunks_of.get(name, ())),
+                            key=chunk_story_key)
+            chunk_id = (shared or sorted(chunks_of.get(alias, ()), key=chunk_story_key)
+                        or [""])[0]
+        (alias_name, alias_kind), (target_name, target_kind) = surface[alias], surface[name]
+        rows.append({
+            "subject": alias_name, "predicate": IDENTIFIED_AS, "object": target_name,
+            "evidence": sentence, "confidence": 1.0, "chunk_id": chunk_id,
+            "run_id": "synonym",
+            "entity_names": [alias_name, target_name],
+            "entity_kinds": [alias_kind, target_kind],
+        })
+    return synonyms.merge_resolution(resolution, applied.merged), rows
 
 
 def _centroid(vectors: list[list[float]]) -> list[float]:
@@ -940,6 +1015,17 @@ async def load_book(
          if row.get("predicate") != IDENTIFIED_AS], embed
     )
     predicate_map[IDENTIFIED_AS] = IDENTIFIED_AS
+
+    # Synonyms the text never states as "also called" (lore/resolve/synonyms.py):
+    # candidate pairs become questions in the disambiguation store; a cached
+    # "same" merges, a cached "claimed" is an IDENTIFIED_AS edge. Only with a
+    # store, so a load without disambiguation is as before.
+    if config.resolver.synonyms and disambiguation is not None:
+        resolution, claimed_rows = _apply_synonyms(
+            book_id, triplets, resolution,
+            [(c.id, c.text) for c in chunks_for_book(conn, book_id, story_only=False)],
+            embeddings, disambiguation, set(chapter_of))
+        triplets = triplets + claimed_rows
 
     # A representative context per entity, for adjudicating it against a
     # node another book persisted. Picked in the resolver's own canonical

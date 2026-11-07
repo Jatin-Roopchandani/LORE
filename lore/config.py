@@ -65,6 +65,21 @@ class DisambiguationConfig(BaseModel):
     models: list[str] = Field(default_factory=lambda: list(DEFAULT_MODELS))
 
 
+class ResolverConfig(BaseModel):
+    """Ingest-time entity resolution switches (an eval compares a book loaded
+    with and without them; they change a graph only when a book is loaded).
+
+    `synonyms`: names for one thing that share no word ("Myrddraal", "Fade",
+    "Halfman") become candidate pairs, asked with the disambiguation questions
+    and merged only on a "same" answer; "claimed" becomes an IDENTIFIED_AS
+    edge (lore/resolve/synonyms.py). Needs `[lore.disambiguation] enabled`
+    to ask anything. Off: names are resolved as before it existed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    synonyms: bool = True
+
+
 class SynthesisConfig(BaseModel):
     """Who writes `lore ask`'s answers. Local by default; Gemini is opt-in.
 
@@ -214,6 +229,7 @@ class LoreConfig(BaseModel):
     disambiguation: DisambiguationConfig = Field(
         default_factory=DisambiguationConfig
     )
+    resolver: ResolverConfig = Field(default_factory=ResolverConfig)
     selection: SelectionConfig = Field(default_factory=SelectionConfig)
     synthesis: SynthesisConfig = Field(default_factory=SynthesisConfig)
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
