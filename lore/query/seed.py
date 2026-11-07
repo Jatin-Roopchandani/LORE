@@ -166,8 +166,38 @@ async def seed_entities(
     # in Q3, sat at live rank 9 and was cut.
     taken = {seed.id for seed in named}
     vector_seeds = _entities(kuzu, [i for i in resolved if i not in taken], best,
-                             exclude_names, book_ids)
-    return [*named, *vector_seeds[:max_seeds]]
+                             exclude_names, book_ids)[:max_seeds]
+    return [*named, *vector_seeds, *_linked_seeds(kuzu, vector_seeds, taken,
+                                                   exclude_names, book_ids)]
+
+
+# A vector-found seed brings the entities an IDENTIFIED_AS edge ties it to, as
+# a named one does (named_seeds): a question that names neither Ba'alzamon nor
+# the Dark One but lands on one still sees the other. Off for an eval arm.
+FOLLOW_IDENTITY_LINKS = True
+# At most this many linked seeds per question part, beyond the vector cap.
+MAX_LINKED_SEEDS = 4
+
+
+def _linked_seeds(kuzu: _Kuzu, seeds: Sequence[SeedEntity], taken: Collection[str],
+                  exclude_names: frozenset[str],
+                  book_ids: Collection[str] | None) -> list[SeedEntity]:
+    """Entities linked by IDENTIFIED_AS to these vector seeds, not already
+    seeds. Each scores as the best seed it is linked from, so it ranks beside
+    that seed; in that order, capped at MAX_LINKED_SEEDS."""
+    if not FOLLOW_IDENTITY_LINKS or not seeds:
+        return []
+    have = set(taken) | {s.id for s in seeds}
+    score: dict[str, float] = {}
+    for seed in seeds:  # best first, so the first source to reach a link wins
+        for other in identified_with(kuzu, [seed.id]):
+            if other not in have and other not in score:
+                score[other] = seed.score
+    if not score:
+        return []
+    live = live_entity_ids(kuzu, list(score))
+    ordered = sorted(live, key=lambda i: (score[i], i))[:MAX_LINKED_SEEDS]
+    return _entities(kuzu, ordered, score, exclude_names, book_ids)
 
 
 def _entities(kuzu: _Kuzu, entity_ids: list[str], best: dict[str, float],

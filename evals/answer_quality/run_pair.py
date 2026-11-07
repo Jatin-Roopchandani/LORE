@@ -112,6 +112,10 @@ ARM_SETTINGS = {
     # question asks about join the part's ranking (hubselect.CUE_FUSION).
     "cue_fusion": ("lore.query.hubselect", "CUE_FUSION",
                    lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Vector-found seeds bring what an IDENTIFIED_AS edge ties them to, as
+    # named seeds already do (seed.FOLLOW_IDENTITY_LINKS).
+    "identity_links": ("lore.query.seed", "FOLLOW_IDENTITY_LINKS",
+                       lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
 
 

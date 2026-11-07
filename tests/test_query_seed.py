@@ -375,3 +375,71 @@ def test_load_name_index_reads_names_and_aliases_from_a_real_graph(tmp_path: Pat
     assert len(queries) == 1, "one batched read per ask"
     assert named_entity_ids("Did jefferson hope know John Ferrier?", index) == ["h", "f"]
     store.close()
+
+
+# --- vector seeds follow IDENTIFIED_AS links -----------------------------------
+
+class LinkedKuzu(FakeKuzu):
+    """FakeKuzu plus IDENTIFIED_AS edges, undirected, as identified_with reads them."""
+
+    def __init__(self, entities: dict[str, tuple], links: list[tuple[str, str]]) -> None:
+        super().__init__({}, entities)
+        self._links = links
+
+    def execute(self, cypher: str, params: dict | None = None):
+        if "IDENTIFIED_AS" in cypher:
+            ids = set((params or {})["ids"])
+            out = sorted({b for a, b in self._links if a in ids} | {a for a, b in self._links if b in ids})
+            return [[i] for i in out]
+        return super().execute(cypher, params)
+
+
+def _wot_kuzu() -> LinkedKuzu:
+    return LinkedKuzu({
+        "baal": ("baal", "Ba'alzamon", "Character", ["b"]),
+        "dark": ("dark", "The Dark One", "Character", ["b"]),
+        "rand": ("rand", "Rand al'Thor", "Character", ["b"]),
+    }, [("baal", "dark")])
+
+
+async def _embed(texts: list[str]) -> list[list[float]]:
+    return [[0.1] * 4]
+
+
+@pytest.mark.asyncio
+async def test_a_vector_seed_brings_the_entity_its_identity_link_points_at() -> None:
+    lance = FakeLance([{"chunk_id": "b:50:1", "entity_ids": ["baal", "rand"], "_distance": 0.3}])
+    seeds = await seed_entities("who was Rand fighting at the Eye?", lance, _wot_kuzu(), _embed)
+    names = [s.name for s in seeds]
+    assert names[:2] == ["Ba'alzamon", "Rand al'Thor"]
+    assert "The Dark One" in names  # linked, beyond the vector seeds
+    assert next(s for s in seeds if s.name == "The Dark One").score == 0.3
+
+
+@pytest.mark.asyncio
+async def test_a_linked_entity_already_a_seed_is_not_added_twice() -> None:
+    lance = FakeLance([{"chunk_id": "b:50:1", "entity_ids": ["baal", "dark"], "_distance": 0.3}])
+    seeds = await seed_entities("q", lance, _wot_kuzu(), _embed)
+    assert sorted(s.id for s in seeds) == ["baal", "dark"]
+
+
+@pytest.mark.asyncio
+async def test_following_identity_links_can_be_switched_off(monkeypatch) -> None:
+    from lore.query import seed as seed_module
+    monkeypatch.setattr(seed_module, "FOLLOW_IDENTITY_LINKS", False)
+    lance = FakeLance([{"chunk_id": "b:50:1", "entity_ids": ["baal"], "_distance": 0.3}])
+    seeds = await seed_entities("q", lance, _wot_kuzu(), _embed)
+    assert [s.id for s in seeds] == ["baal"]
+
+
+@pytest.mark.asyncio
+async def test_linked_seeds_are_capped(monkeypatch) -> None:
+    from lore.query import seed as seed_module
+    monkeypatch.setattr(seed_module, "MAX_LINKED_SEEDS", 1)
+    kuzu = LinkedKuzu({
+        "a": ("a", "A", "Character", ["b"]), "x": ("x", "X", "Character", ["b"]),
+        "y": ("y", "Y", "Character", ["b"]),
+    }, [("a", "x"), ("a", "y")])
+    lance = FakeLance([{"chunk_id": "b:1:1", "entity_ids": ["a"], "_distance": 0.2}])
+    seeds = await seed_entities("q", lance, kuzu, _embed)
+    assert [s.id for s in seeds] == ["a", "x"]
