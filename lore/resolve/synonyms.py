@@ -838,43 +838,29 @@ def plan(answers: Iterable[tuple[SynonymQuestion, str]], edges: Iterable[Edge],
     members: dict[str, set[str]] = {}
     result = Applied()
     ordered = sorted(answers, key=lambda qa: (qa[0].a.id, qa[0].b.id))
-    # A claim outranks a "same" that would join the claimant to that group by
-    # another of its names: Ba'alzamon is only *claimed* to be the Dark One,
-    # so "Ba'alzamon / Father of Lies: same" must not pull him in. The
-    # claimant is the less-used name (as in the claimed links below). A
-    # dry run of every "same" finds the group each claim's other side ends
-    # in; the claimant's "same" answers into that group are dropped.
-    same = [qa for qa in ordered if qa[1] == SAME]
-    claims = [tuple(sorted((q.a.id, q.b.id), key=lambda e: (weight.get(e, 0), e)))
-              for q, v in ordered if v == CLAIMED]
-    trial: dict[str, str] = {}
+    # A claim is a cannot-link: the two names it pairs never end up in one
+    # group, by any route. Ba'alzamon is only *claimed* to be the Dark One, so
+    # "Ba'alzamon / Father of Lies: same" must not pull him in through an
+    # epithet. Order decides who keeps a contested name: answers that touch
+    # no claimed name join first, then those touching the most-used claimed
+    # name (the Dark One's own epithets join him), down to the least used,
+    # whose answers into the other side's group are then refused.
+    claims = [(q.a.id, q.b.id) for q, v in ordered if v == CLAIMED]
+    in_claim = {x for pair in claims for x in pair}
 
-    def trial_find(x: str) -> str:
-        trial.setdefault(x, x)
-        while trial[x] != x:
-            trial[x] = trial[trial[x]]
-            x = trial[x]
-        return x
+    def claim_rank(qa) -> tuple:
+        ids = {qa[0].a.id, qa[0].b.id} & in_claim
+        heaviest = max((weight.get(x, 0) for x in ids), default=None)
+        return (heaviest is not None, -(heaviest or 0), qa[0].a.id, qa[0].b.id)
 
-    for q, _v in same:
-        trial[trial_find(q.a.id)] = trial_find(q.b.id)
-    blocked: set[frozenset] = set()
-    for claimant, other in claims:
-        root = trial_find(other)
-        for q, _v in same:
-            ids = {q.a.id, q.b.id}
-            if claimant in ids:
-                partner = (ids - {claimant}).pop() if len(ids) == 2 else claimant
-                if trial_find(partner) == root:
-                    blocked.add(frozenset(ids))
-    for q, _verdict in same:
-        if frozenset({q.a.id, q.b.id}) in blocked:
-            result.refused.append((q.a.id, q.b.id))
-            continue
+    for q, _verdict in sorted((qa for qa in ordered if qa[1] == SAME), key=claim_rank):
         ra, rb = find(q.a.id), find(q.b.id)
         if ra == rb:
             continue
         ga, gb = members.get(ra, {ra}), members.get(rb, {rb})
+        if any((x in ga and y in gb) or (y in ga and x in gb) for x, y in claims):
+            result.refused.append((q.a.id, q.b.id))
+            continue
         if acts_on(sum(links[frozenset({x, y})] for x in ga for y in gb),
                    sum(weight.get(x, 0) for x in ga), sum(weight.get(y, 0) for y in gb)):
             result.refused.append((q.a.id, q.b.id))

@@ -341,3 +341,21 @@ def test_the_prompt_says_followers_are_not_their_master() -> None:
 def test_synonym_questions_use_the_writer_site() -> None:
     from lore.inference.providers import roles
     assert roles.SITES["synonyms"].role == roles.WRITER
+
+
+def test_the_heavier_claimed_name_keeps_its_epithets_when_the_lighter_one_also_claims_one() -> None:
+    # Two claims (Ba'alzamon is the Dark One; Ba'alzamon is the Great Lord of the Dark)
+    # and stray "same" answers from Ba'alzamon to the Dark One's epithets.
+    weight = {"id:Dark One": 225, "id:Ba'alzamon": 128, "id:Great Lord": 5,
+              "id:Father of Lies": 10, "id:Sightblinder": 3}
+    applied = syn.plan([
+        (_question("Dark One", "Great Lord"), "same"),
+        (_question("Dark One", "Father of Lies"), "same"),
+        (_question("Dark One", "Sightblinder"), "same"),
+        (_question("Ba'alzamon", "Father of Lies"), "same"),
+        (_question("Ba'alzamon", "Sightblinder"), "same"),
+        (_question("Ba'alzamon", "Dark One"), "claimed"),
+        (_question("Ba'alzamon", "Great Lord"), "claimed"),
+    ], [], weight)
+    assert applied.merged == {"id:Dark One": ["id:Father of Lies", "id:Great Lord", "id:Sightblinder"]}
+    assert "id:Ba'alzamon" not in str(applied.merged)
