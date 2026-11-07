@@ -253,6 +253,10 @@ class LoreConfig(BaseModel):
         cfg = cls.model_validate(raw)
         if env_dir := os.environ.get("LORE_DATA_DIR"):
             cfg = cfg.model_copy(update={"data_dir": Path(env_dir)})
+        # In a container Ollama is another service (deploy/compose.yaml).
+        if ollama_host := os.environ.get("LORE_OLLAMA_HOST"):
+            cfg = cfg.model_copy(update={
+                "ollama": cfg.ollama.model_copy(update={"host": ollama_host})})
         return cfg
 
     @property

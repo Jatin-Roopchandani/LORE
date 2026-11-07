@@ -1285,6 +1285,23 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         def private_page(request: Request):
             return _spa_page() if session_user(request) else _redirect("/signin")
 
+    @api.get("/healthz", include_in_schema=False)
+    def healthz():
+        """The container's health probe (deploy/): one `SELECT 1` on the
+        central database when one is open. No sign-in; never says why."""
+        ok = True
+        if sessions[0] is not None:
+            try:
+                from sqlalchemy import text
+                with sessions[0]() as session:
+                    session.execute(text("SELECT 1"))
+            except Exception:  # noqa: BLE001
+                logging.getLogger(__name__).warning("healthz: the central database"
+                                                    " did not answer", exc_info=True)
+                ok = False
+        return JSONResponse({"ok": ok}, status_code=200 if ok else 503,
+                            headers={"Cache-Control": "no-store"})
+
     api.mount("/", StaticFiles(directory=STATIC, html=True, check_dir=False),
               name="static")
     # Every request gets an id, on its log lines and in X-Request-Id; /api/ask
