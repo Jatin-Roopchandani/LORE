@@ -73,12 +73,6 @@ html:has(.lh){scroll-behavior:smooth;scroll-padding-top:calc(68px + 12px)}
 /* ---- pinned section: the whole view (heading, step text and card) holds still while the page scrolls through
    it; the scroll distance inside .h-pin only advances the step, then the page carries on. ---- */
 .h-pin{position:relative;height:calc(100svh * 5)}
-/* The hero holds still and the "how it answers" scene slides up over it, like the scenes after it. Only where the
-   hero fits in one screen: a sticky block taller than the view would hide its own bottom. */
-@media (min-width:901px) and (min-height:600px){
-  .lh header.h-band:has(.h-hero){position:sticky;top:0;z-index:0}
-  .h-pin{z-index:1;background:var(--night);box-shadow:0 -24px 48px rgb(0 0 0 / .45);border-top:1px solid var(--night-line)}
-}
 .h-pin-view{position:sticky;top:0;height:100svh;display:flex;align-items:center;padding-top:var(--nav-h);overflow:hidden}
 .h-pin-grid{width:100%;height:calc(100svh - var(--nav-h) - 48px);display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(24px,5vw,80px);align-items:stretch}
 .h-pin-text{display:flex;flex-direction:column;justify-content:center;min-height:0}

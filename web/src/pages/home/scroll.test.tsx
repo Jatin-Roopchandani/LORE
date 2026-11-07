@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { useRef } from "react";
-import { onScrollFrame, progressThrough, usePinProgress, useReducedMotion } from "./scroll";
+import { onScrollFrame, progressThrough, snapTarget, usePinProgress, useReducedMotion } from "./scroll";
 
 // Each test drives frames by hand: requestAnimationFrame queues, `frame()` runs what is queued.
 let queued: FrameRequestCallback[] = [];
@@ -76,4 +76,16 @@ test("reduced motion follows the system setting, and is off where matchMedia is 
   vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce"), addEventListener() {}, removeEventListener() {} }));
   render(<Motion />);
   expect(screen.getByTestId("m")).toHaveTextContent("reduced");
+});
+
+describe("snapTarget", () => {
+  it("settles on the scene when scrolling down into the gap, the top when scrolling up", () => {
+    expect(snapTarget(300, 900, 1)).toBe(900);
+    expect(snapTarget(300, 900, -1)).toBe(0);
+  });
+  it("leaves the page alone at the top, at the scene, and past it", () => {
+    expect(snapTarget(0, 900, 1)).toBeNull();
+    expect(snapTarget(900, 900, 1)).toBeNull();
+    expect(snapTarget(2000, 900, -1)).toBeNull();
+  });
 });

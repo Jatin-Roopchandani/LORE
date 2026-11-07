@@ -83,3 +83,36 @@ export function useMedia(query: string): boolean {
 export const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 export const NARROW = "(max-width: 900px)";
 export const useReducedMotion = () => useMedia(REDUCED_MOTION);
+
+// Where a scroll that came to rest between the top of the page and a pinned scene should settle: the scene when the
+// reader was scrolling down, the top when scrolling up; null when it rests outside that gap (nothing to do).
+export function snapTarget(y: number, sceneTop: number, direction: number): number | null {
+  if (y <= 1 || y >= sceneTop - 1) return null;
+  return direction > 0 ? sceneTop : 0;
+}
+
+// The hero and the first pinned scene never rest half-and-half: once scrolling stops in between, the page glides
+// to whichever one the reader was heading for. Only where the hero fits one screen (on a phone the hero is taller
+// than the view, and snapping would skip its lower part).
+export function useSnapToScene(ref: RefObject<HTMLElement>, reduced: boolean): void {
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const fits = window.matchMedia("(min-width: 901px) and (min-height: 600px)");
+    let last = window.scrollY, direction = 0, idle: number | undefined;
+    const settle = () => {
+      const el = ref.current;
+      if (!el || !fits.matches) return;
+      const to = snapTarget(window.scrollY, el.getBoundingClientRect().top + window.scrollY, direction);
+      if (to !== null) window.scrollTo({ top: to, behavior: reduced ? "instant" : "smooth" });
+    };
+    const moved = () => {
+      const y = window.scrollY;
+      if (y !== last) direction = y > last ? 1 : -1;
+      last = y;
+      window.clearTimeout(idle);
+      idle = window.setTimeout(settle, 140);
+    };
+    window.addEventListener("scroll", moved, { passive: true });
+    return () => { window.removeEventListener("scroll", moved); window.clearTimeout(idle); };
+  }, [ref, reduced]);
+}

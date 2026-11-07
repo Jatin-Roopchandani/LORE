@@ -1,6 +1,6 @@
 import { KeyboardEvent, useRef } from "react";
 import { HOME } from "../../messages";
-import { usePinProgress } from "./scroll";
+import { usePinProgress, useSnapToScene } from "./scroll";
 import { Segs } from "./Segs";
 
 const STEPS = HOME.steps.length;
@@ -14,6 +14,7 @@ export function HowScene({ reduced }: { reduced: boolean }) {
   const pin = useRef<HTMLElement>(null);
   const dots = useRef<(HTMLButtonElement | null)[]>([]);
   const step = stepAt(usePinProgress(pin));
+  useSnapToScene(pin, reduced);
   const go = (n: number) => {
     const el = pin.current;
     if (!el) return;
