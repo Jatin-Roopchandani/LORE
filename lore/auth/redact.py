@@ -4,9 +4,10 @@ Magic-link tokens, OAuth codes and state, and invite codes travel in query
 strings, and uvicorn's access log prints the whole request target. This filter
 blanks those values on `uvicorn.access` records before any handler sees them.
 
-Gemini keys (release step 3) never belong in a log line either. Nothing in
+Model API keys (Gemini since release step 3; Claude and OpenAI since the
+provider choice) never belong in a log line either. Nothing in
 LORE logs one, but as a second line of defence, multi mode installs a log
-record factory that blanks anything shaped like a Google API key, and the key
+record factory that blanks anything shaped like a Google, Anthropic or OpenAI API key, and the key
 bound for the current question or job whatever its shape, in every record's
 message, arguments and exception text, from any logger.
 """
@@ -16,8 +17,13 @@ import logging
 import re
 
 _SECRET_PARAMS = re.compile(r"([?&](?:token|code|state|invite)=)[^&\s\"]*")
-# Google API keys: "AIza" and 35 URL-safe characters.
-_GOOGLE_KEY = re.compile(r"AIza[0-9A-Za-z_\-]{35}")
+# Google API keys: "AIza" and 35 URL-safe characters. Anthropic keys:
+# "sk-ant-" then URL-safe characters (sk-ant-api03-..., sk-ant-admin01-...).
+# OpenAI keys: "sk-" (sk-proj-..., sk-svcacct-..., sk-...) and at least 20
+# more URL-safe characters. One pattern, longest shapes first.
+_GOOGLE_KEY = re.compile(r"AIza[0-9A-Za-z_\-]{35}"
+                         r"|sk-ant-[0-9A-Za-z_\-]{16,}"
+                         r"|sk-[0-9A-Za-z_\-]{20,}")
 KEY_MASK = "[redacted key]"
 
 
@@ -26,7 +32,8 @@ def redact(text: str) -> str:
 
 
 def redact_keys(text: str) -> str:
-    """`text` with every Google-key-shaped string, and the bound user key, blanked."""
+    """`text` with every Google-, Anthropic- or OpenAI-key-shaped string, and the
+    bound user key whatever its shape, blanked."""
     from lore.inference import key_scope
     scope = key_scope.current()
     if scope is not None and scope.key:

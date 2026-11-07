@@ -80,6 +80,11 @@ class User(Base):
     status: Mapped[str] = mapped_column(sa.String(16), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
                                                  default=utcnow)
+    # The model provider the user's questions and jobs run on, and their own
+    # optional daily token cap (Claude and OpenAI; None = off).
+    active_provider: Mapped[str] = mapped_column(sa.String(16), nullable=False,
+                                                 default="gemini", server_default="gemini")
+    daily_token_cap: Mapped[int | None] = mapped_column(sa.Integer)
 
     __table_args__ = (
         sa.CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
@@ -241,20 +246,23 @@ class RateHit(Base):
 
 
 class ApiKey(Base):
-    """A user's Gemini key, sealed with AES-256-GCM (lore.central.keys).
+    """A user's model-provider key, sealed with AES-256-GCM (lore.central.keys).
 
-    `ciphertext` and `nonce` open only with the master key `key_version`
-    names and only for this `user_id` (it is the associated data). `last4` is
-    the one part ever shown back. `last_error` is a fixed code, never provider
-    text: `rejected` (Gemini refused the key) or `unchecked` (it could not be
-    checked when it was saved).
+    One row per (user, provider): gemini, anthropic or openai. `ciphertext` and
+    `nonce` open only with the master key `key_version` names and only for
+    this user and provider (they are the associated data). `last4` is the one
+    part ever shown back. `last_error` is a fixed code, never provider text:
+    `rejected` (the provider refused the key) or `unchecked` (it could not be
+    checked when it was saved). `model` / `fast_model` are the user's choice
+    (Claude, OpenAI; unused for Gemini); `models` the ids the key's last check
+    listed.
     """
 
     __tablename__ = "api_keys"
 
     user_id: Mapped[str] = mapped_column(
         sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    provider: Mapped[str] = mapped_column(sa.String(16), nullable=False,
+    provider: Mapped[str] = mapped_column(sa.String(16), primary_key=True,
                                           default="gemini")
     ciphertext: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
     nonce: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
@@ -264,19 +272,24 @@ class ApiKey(Base):
                                                default=utcnow)
     last_ok_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     last_error: Mapped[str | None] = mapped_column(sa.String(32))
+    model: Mapped[str | None] = mapped_column(sa.String(64))
+    fast_model: Mapped[str | None] = mapped_column(sa.String(64))
+    models: Mapped[list | None] = mapped_column(sa.JSON)
 
     __table_args__ = (
-        sa.CheckConstraint("provider IN ('gemini')", name="ck_api_keys_provider"),
+        sa.CheckConstraint("provider IN ('gemini', 'anthropic', 'openai')",
+                           name="ck_api_keys_provider"),
     )
 
     def __repr__(self) -> str:  # the sealed bytes are not for log lines either
-        return f"ApiKey(user_id={self.user_id!r}, last4=..{self.last4})"
+        return f"ApiKey(user_id={self.user_id!r}, {self.provider}, last4=..{self.last4})"
 
 
 class Usage(Base):
-    """Model requests per user, Google's (Pacific) day and model: the account
-    menu's "used today" and the admin's view. The per-user budget itself is
-    enforced from the ledger in the user's own lore.db, as in local mode."""
+    """Model use per user, Google's (Pacific) day and model: the account
+    menu's "used today", the token totals and cost estimate for Claude and
+    OpenAI, the optional daily token cap, and the admin's view. The Gemini
+    budget itself is enforced from the ledger in the user's own lore.db."""
 
     __tablename__ = "usage"
 
@@ -285,6 +298,12 @@ class Usage(Base):
     day: Mapped[str] = mapped_column(sa.String(10), primary_key=True)  # YYYY-MM-DD
     model: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
     requests: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+    provider: Mapped[str] = mapped_column(sa.String(16), nullable=False, default="gemini",
+                                          server_default="gemini")
+    input_tokens: Mapped[int] = mapped_column(sa.BigInteger, nullable=False, default=0,
+                                              server_default="0")
+    output_tokens: Mapped[int] = mapped_column(sa.BigInteger, nullable=False, default=0,
+                                               server_default="0")
 
     __table_args__ = (sa.Index("ix_usage_day", "day"),)
 

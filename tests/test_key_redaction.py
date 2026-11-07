@@ -106,7 +106,7 @@ def test_reprs_never_show_a_key(central):
     svc = K.KeyService(central, master_keys(), FakeKeyChecker(), clock=lambda: NOW)
     svc.save("alice", FAKE_KEY)
     with central() as db:
-        row = db.get(ApiKey, "alice")
+        row = db.get(ApiKey, ("alice", "gemini"))
         assert FAKE_KEY not in repr(row)
     for obj in (svc, KeyScope("alice", FAKE_KEY), master_keys(), svc.status("alice"),
                 K.SaveOutcome(True, "ok")):

@@ -137,7 +137,7 @@ def test_a_saved_key_is_stored_encrypted_with_its_last_four(sessions):
     outcome = svc.save("alice", FAKE_KEY)
     assert outcome.stored and outcome.check == K.CHECK_OK
     with sessions() as db:
-        row = db.get(ApiKey, "alice")
+        row = db.get(ApiKey, ("alice", "gemini"))
         assert row.provider == "gemini" and row.last4 == FAKE_KEY[-4:]
         assert FAKE_KEY.encode() not in row.ciphertext
         assert row.added_at == NOW and row.last_ok_at == NOW and row.last_error is None
@@ -147,7 +147,8 @@ def test_a_saved_key_is_stored_encrypted_with_its_last_four(sessions):
 
 def test_the_status_never_carries_the_key(sessions):
     svc = service(sessions)
-    assert svc.status("alice") == {"present": False, "last4": None, "added_at": None,
+    assert svc.status("alice") == {"provider": "gemini", "present": False,
+                                   "last4": None, "added_at": None,
                                    "last_ok_at": None, "last_error": None}
     svc.save("alice", FAKE_KEY)
     st = svc.status("alice")
@@ -173,8 +174,8 @@ def test_a_ciphertext_moved_to_another_user_does_not_open(sessions):
     svc.save("alice", FAKE_KEY)
     svc.save("bob", OTHER_KEY)
     with sessions() as db:  # an attacker with DB write access swaps the rows
-        a = db.get(ApiKey, "alice")
-        b = db.get(ApiKey, "bob")
+        a = db.get(ApiKey, ("alice", "gemini"))
+        b = db.get(ApiKey, ("bob", "gemini"))
         a.ciphertext, a.nonce, b.ciphertext, b.nonce = b.ciphertext, b.nonce, a.ciphertext, a.nonce
         db.commit()
     with pytest.raises(K.KeyDecryptError):
@@ -263,7 +264,7 @@ def test_deleting_a_user_deletes_their_key(sessions):
     with sessions() as db:
         db.delete(db.get(User, "alice"))
         db.commit()
-        assert db.get(ApiKey, "alice") is None
+        assert db.get(ApiKey, ("alice", "gemini")) is None
 
 
 # --- usage ------------------------------------------------------------------------

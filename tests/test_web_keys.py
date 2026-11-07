@@ -68,8 +68,8 @@ def put(client, key=FAKE_KEY):
 def test_no_key_yet(alice):
     r = alice.get("/api/me/key")
     assert r.status_code == 200
-    assert r.json() == {"present": False, "last4": None, "added_at": None,
-                        "last_ok_at": None, "last_error": None}
+    assert r.json() == {"provider": "gemini", "present": False, "last4": None,
+                        "added_at": None, "last_ok_at": None, "last_error": None}
     assert r.headers["cache-control"] == "no-store"
 
 

@@ -605,11 +605,73 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             if not handed_off and not multi:
                 runner_slot.release()
 
+    def processing_choice(user: CurrentUser, cfg: LoreConfig) -> tuple[str, str | None]:
+        """(provider, the model processing mostly uses) for this user."""
+        from lore.inference.providers import roles
+        if not multi:
+            provider = cfg.llm.provider
+            model = cfg.llm.fast_model or cfg.llm.model or None
+        else:
+            state = key_service.providers(user.id)
+            provider = state["active"]
+            row = next(p for p in state["providers"] if p["provider"] == provider)
+            model = row["fast_model"] or row["model"]
+        if provider == "anthropic" and model not in roles.ANTHROPIC_MODELS:
+            model = roles.ANTHROPIC_DEFAULT
+        return provider, model
+
+    def book_estimate(user: CurrentUser, cfg: LoreConfig, book_id: str) -> dict:
+        from lore.inference.providers import estimate as estimates
+        provider, model = processing_choice(user, cfg)
+        conn = open_db(cfg.sqlite_path)
+        try:
+            chunks = estimates.chunk_count(conn, book_id)
+        finally:
+            conn.close()
+        return estimates.estimate(chunks, provider, model)
+
+    @api.get("/api/books/{book_id}/estimate")
+    def estimate_book(book_id: str, config: LoreConfig = Depends(user_config),
+                      user: CurrentUser = Depends(current_user)):
+        """What processing this book should cost on the user's provider (an
+        estimate; see lore.inference.providers.estimate)."""
+        conn = open_db(config.sqlite_path)
+        try:
+            if book_id not in {b["id"] for b in list_books(conn)}:
+                return _api_error(404, "not_found", f"no book with id {book_id!r}")
+        finally:
+            conn.close()
+        return book_estimate(user, config, book_id)
+
     def start_processing(user: CurrentUser, cfg: LoreConfig, book_id: str) -> dict:
         """A freshly uploaded book's processing: what Continue would do, but
         never past the user's Gemini budget. Spent: the book waits for the
-        reset (Continue then), as a run stopped by the allowance would."""
+        reset (Continue then), as a run stopped by the allowance would.
+
+        On Claude or OpenAI (billed to the user) there is no free-tier ledger:
+        the book waits when the user's own daily token cap is reached, and
+        when the estimate is above the confirmation threshold it does not
+        start at all: the reply carries the estimate, and Continue (the
+        user's confirmation) starts it."""
         now = now_utc()
+        provider, _model = processing_choice(user, cfg)
+        if provider != "gemini":
+            if multi and key_service.over_cap(user.id):
+                conn = open_db(cfg.sqlite_path)
+                try:
+                    jobs.claim_job(conn, book_id, now=now)
+                    jobs.stop_quota(conn, book_id, "your daily token cap is reached;"
+                                    " processing can start after midnight Pacific",
+                                    now=now)
+                    job = jobs.get_job(conn, book_id)
+                    return {"state": "waiting",
+                            "resumable_at": job.resumable_at.isoformat()}
+                finally:
+                    conn.close()
+            estimate = book_estimate(user, cfg, book_id)
+            if estimate["needs_confirm"]:
+                return {"state": "needs_confirm", "estimate": estimate}
+            return begin_processing(user, cfg, book_id)
         conn = open_db(cfg.sqlite_path)
         try:
             if processing_budget_left(conn, cfg, today(now)) <= cfg.processing.answer_reserve:
@@ -621,6 +683,9 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                         "resumable_at": job.resumable_at.isoformat()}
         finally:
             conn.close()
+        return begin_processing(user, cfg, book_id)
+
+    def begin_processing(user: CurrentUser, cfg: LoreConfig, book_id: str) -> dict:
         if multi:
             queued, _ = enqueue(user, book_id, KIND_PROCESS)
             return {"state": "queued", "job": queued.id}

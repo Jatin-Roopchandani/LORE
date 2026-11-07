@@ -152,13 +152,13 @@ def test_a_refused_key_pauses_that_users_jobs_only(base, sessions, keys):
                                 ("bob", "b1"): "queued"}
     row = book_job(base, "alice", "b1")
     assert row.state == jobs.WAITING_KEY
-    assert "Replace it in Account settings" in row.stopped_reason
+    assert "Replace it in Settings" in row.stopped_reason
     assert "Traceback" not in row.stopped_reason and ALICE not in row.stopped_reason
     assert "gemini.env" not in row.stopped_reason
     assert jobs.can_continue(row, NOW)[0] is True  # paused, not failed
     with sessions() as db:
-        assert db.get(ApiKey, "alice").last_error == K.ERR_REJECTED
-        assert db.get(ApiKey, "bob").last_error is None
+        assert db.get(ApiKey, ("alice", "gemini")).last_error == K.ERR_REJECTED
+        assert db.get(ApiKey, ("bob", "gemini")).last_error is None
         job = db.scalars(sa.select(Job).where(Job.user_id == "alice",
                                               Job.book_id == "b1")).one()
         assert job.outcome == "key_invalid" and job.claimed_by is None
@@ -230,4 +230,4 @@ def test_a_key_that_no_longer_decrypts_pauses_as_invalid(base, sessions, keys):
     make_worker(base, sessions, [GeminiStage()], keys=other).run_once()
     assert states(sessions) == {("alice", "b1"): "paused"}
     with sessions() as db:
-        assert db.get(ApiKey, "alice").last_error == K.ERR_REJECTED
+        assert db.get(ApiKey, ("alice", "gemini")).last_error == K.ERR_REJECTED

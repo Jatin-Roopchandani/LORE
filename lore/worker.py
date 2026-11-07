@@ -57,10 +57,10 @@ SKIPPED = "skipped"
 # Paused outcomes (the central job waits in `paused`, not failed).
 KEY_REQUIRED = "key_required"   # the user has not saved a key
 KEY_INVALID = "key_invalid"     # Gemini refused it (or it no longer decrypts)
-NO_KEY_REASON = ("Paused: add your Gemini API key in Account settings, then"
+NO_KEY_REASON = ("Paused: connect your AI provider's API key in Settings, then"
                  " this book continues.")
-REJECTED_REASON = ("Paused: Gemini refused your API key. Replace it in Account"
-                   " settings, then this book continues.")
+REJECTED_REASON = ("Paused: your AI provider refused your API key. Replace it in"
+                   " Settings, then this book continues.")
 
 
 PURGE_EVERY = timedelta(hours=1)
@@ -247,15 +247,14 @@ class Worker:
             return KeyScope(user_id, None)
         from lore.central.keys import KeyDecryptError
         try:
-            key = self.keys.key_for(user_id)
+            # The user's active provider (Gemini, Claude or OpenAI), its key,
+            # model choice, usage counting and their own token cap.
+            return self.keys.scope(user_id)
         except KeyRequired:
             return Outcome(KEY_REQUIRED, error=NO_KEY_REASON, paused=True)
         except KeyDecryptError:
             log.warning("a stored key did not decrypt (user %s)", user_id)
             return Outcome(KEY_INVALID, error=REJECTED_REASON, paused=True)
-        keys = self.keys
-        return KeyScope(user_id, key,
-                        on_request=lambda model: keys.record_request(user_id, model))
 
     def _execute(self, job: Job) -> Outcome:
         """Prepare the user's `book_jobs` row, run the stages. Returns the
