@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web (tsc, vitest, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npx vitest run
+      - run: npm run build
+      # The Python tests serve the built UI (static files, headers on them).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-static
+          path: lore/web/static/
+          retention-days: 1
+
+  python:
+    name: Python tests (shard ${{ matrix.shard }}/2)
+    needs: web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.21"
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-static
+          path: lore/web/static/
+      - name: pytest -m "not live" (every other test file)
+        run: |
+          files=$(ls tests/test_*.py | sort | awk -v s=${{ matrix.shard }} 'NR % 2 == s % 2')
+          uv run pytest -q -m "not live" $files
+
+  postgres:
+    name: Migrations on Postgres
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.21"
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --frozen
+      - run: docker pull postgres:16
+      # tests/postgres_fixtures.py starts a throwaway postgres:16 per test.
+      - run: uv run pytest -q -m postgres tests/
+        env:
+          LORE_TEST_POSTGRES: "1"
+
+  image:
+    name: Image builds for linux/arm64
+    # QEMU builds are slow: only for the release branch and tags.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/arm64
+          push: false
+          tags: lore:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # No deploy from CI: the server pulls (deploy/update.sh). docs/deploy/server.md
+  # ("Deploy on push, later") describes the SSH job that would go here.

@@ -1,0 +1,24 @@
+# Build context for deploy/Dockerfile: only what the image needs.
+.git
+.github
+.claude
+.superpowers
+.venv
+.pytest_cache
+.ruff_cache
+**/__pycache__
+*.pyc
+.env
+**/.env
+data
+graft
+docs
+evals
+tests
+scripts
+kaggle
+deploy
+web/node_modules
+web/test-results
+web/playwright-report
+lore/web/static
