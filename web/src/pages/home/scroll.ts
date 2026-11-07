@@ -1,4 +1,4 @@
-import { RefObject, useEffect, useState } from "react";
+import { RefObject, useEffect, useRef, useState } from "react";
 
 // The homepage's scroll scenes share ONE passive scroll listener (and one resize listener), throttled to a frame:
 // every subscriber is called at most once per animation frame, however many scroll events arrive.
@@ -115,4 +115,30 @@ export function useSnapToScene(ref: RefObject<HTMLElement>, reduced: boolean): v
     window.addEventListener("scroll", moved, { passive: true });
     return () => { window.removeEventListener("scroll", moved); window.clearTimeout(idle); };
   }, [ref, reduced]);
+}
+
+// A value that follows `target` smoothly: each frame it closes a fixed share of the gap, so a mouse wheel's coarse
+// steps become one continuous glide. It starts AT the target (no animation on first paint) and, with reduced
+// motion, simply is the target. `close` is the gap small enough to finish on: half a pixel for pixels, much less
+// for a 0-to-1 fraction.
+export function useEased(target: number, reduced: boolean, share = 0.14, close = 0.5): number {
+  const [value, setValue] = useState(target);
+  const current = useRef(target);
+  const goal = useRef(target);
+  const running = useRef(false);
+  useEffect(() => {
+    goal.current = target;
+    if (reduced) { current.current = target; setValue(target); return; }
+    if (running.current) return;
+    running.current = true;
+    const step = () => {
+      const gap = goal.current - current.current;
+      current.current = Math.abs(gap) < close ? goal.current : current.current + gap * share;
+      setValue(current.current);
+      if (current.current === goal.current) { running.current = false; return; }
+      nextFrame(step);
+    };
+    nextFrame(step);
+  }, [target, reduced, share, close]);
+  return value;
 }

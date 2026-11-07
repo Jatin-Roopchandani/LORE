@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
 import { HOME } from "../../messages";
-import { onScrollFrame, usePinProgress } from "./scroll";
+import { onScrollFrame, useEased, usePinProgress } from "./scroll";
 import { Segs } from "./Segs";
 
 // Line icons, 24 x 24: a book with a check, a bulb, a graph, an eye struck through, a lock.
@@ -41,7 +41,8 @@ export function Features({ reduced }: { reduced: boolean }) {
     measure();
     return onScrollFrame(measure);
   }, []);
-  const k = reduced ? 0 : glideAt(progress);
+  // The scroll picks where the track should be; the track eases there, so wheel steps glide instead of jumping.
+  const k = useEased(reduced ? 0 : glideAt(progress), reduced, 0.14, 0.0002);
   return (
     <section className="h-scene h-glide" id="why" aria-labelledby="why-title" ref={scene}>
       <div className="h-scene-view">

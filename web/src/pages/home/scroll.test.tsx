@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { useRef } from "react";
-import { onScrollFrame, progressThrough, snapTarget, usePinProgress, useReducedMotion } from "./scroll";
+import { onScrollFrame, progressThrough, snapTarget, useEased, usePinProgress, useReducedMotion } from "./scroll";
 
 // Each test drives frames by hand: requestAnimationFrame queues, `frame()` runs what is queued.
 let queued: FrameRequestCallback[] = [];
@@ -88,4 +88,39 @@ describe("snapTarget", () => {
     expect(snapTarget(900, 900, 1)).toBeNull();
     expect(snapTarget(2000, 900, -1)).toBeNull();
   });
+});
+
+function Eased({ to, reduced }: { to: number; reduced: boolean }) {
+  return <div data-testid="eased" data-v={useEased(to, reduced)} />;
+}
+
+test("an eased value starts at its target, then glides to a new one over several frames", () => {
+  const { rerender } = render(<Eased to={0} reduced={false} />);
+  const v = () => Number(screen.getByTestId("eased").dataset.v);
+  expect(v()).toBe(0);
+  rerender(<Eased to={100} reduced={false} />);
+  frame();
+  expect(v()).toBeGreaterThan(0);
+  expect(v()).toBeLessThan(50); // one frame closes only a share of the gap
+  for (let i = 0; i < 200; i++) frame();
+  expect(v()).toBe(100);
+});
+
+test("with reduced motion an eased value jumps straight to its target", () => {
+  const { rerender } = render(<Eased to={0} reduced />);
+  rerender(<Eased to={100} reduced />);
+  expect(Number(screen.getByTestId("eased").dataset.v)).toBe(100);
+});
+
+function EasedFraction({ to }: { to: number }) {
+  return <div data-testid="frac" data-v={useEased(to, false, 0.14, 0.0002)} />;
+}
+
+test("a 0-to-1 fraction glides too (it is not finished just because the whole gap is under half a unit)", () => {
+  const { rerender } = render(<EasedFraction to={0} />);
+  rerender(<EasedFraction to={0.3} />);
+  frame();
+  const v = Number(screen.getByTestId("frac").dataset.v);
+  expect(v).toBeGreaterThan(0);
+  expect(v).toBeLessThan(0.3);
 });
