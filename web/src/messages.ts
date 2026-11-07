@@ -417,6 +417,7 @@ export const AUTH = {
   brandLine: "Ask your books anything.",
   brandLineGlow: "Every answer checked against the page.",
   brandCaption: "Spoiler-free: A Study in Scarlet, chapters 1–2 only.",
+  graphBookOfLife: "The Book of Life",
   signInTitle: "Welcome back",
   signInLead: "Sign in to pick up your reading where you left off.",
   invitedTitle: "You've been invited",
