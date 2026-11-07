@@ -473,6 +473,34 @@ class AdminEvent(Base):
     __table_args__ = (sa.Index("ix_admin_events_at", "at"),)
 
 
+class McpToken(Base):
+    """A personal access token for the hosted MCP endpoint (lore.central.mcp_tokens).
+
+    The token itself (`lore_` + 256 random bits) is shown once, when it is
+    made; only its SHA-256 is stored, with `prefix` (its first characters) to
+    tell tokens apart in a list. A revoked token keeps its row (`revoked_at`)
+    so a lookup of it fails the same way as an unknown one.
+    """
+
+    __tablename__ = "mcp_tokens"
+
+    id: Mapped[str] = mapped_column(sa.String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(sa.String(100), nullable=False)
+    token_hash: Mapped[str] = mapped_column(sa.String(64), nullable=False, unique=True)
+    prefix: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    __table_args__ = (sa.Index("ix_mcp_tokens_user", "user_id"),)
+
+    def __repr__(self) -> str:  # never the hash either
+        return f"McpToken(id={self.id!r}, user_id={self.user_id!r}, prefix={self.prefix!r})"
+
+
 class InflightSlot(Base):
     """One unit of work in flight (release step 6): a question being answered,
     an upload being parsed. A limit of N for `kind` is N possible rows

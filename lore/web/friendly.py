@@ -85,6 +85,7 @@ PASS = {
     "confirm_mismatch": "The confirmation didn't match.",
     "self_action": "You can't do that to your own account.",
     "current_session": "Use Sign out to sign this device out.",
+    "too_many_tokens": "You have the most tokens allowed. Revoke one first.",
 }
 
 # FastAPI's {"detail": ...} errors (HTTPException, validation) by status.

@@ -8,6 +8,7 @@ MCP; 4xx only for a malformed request to this API).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import shlex
@@ -337,7 +338,19 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         key_service = KeyService(
             central_sessions, master_keys or MasterKeys.from_env(),  # or no start
             key_checker, clock=auth_ctx.now)
-    api = FastAPI(title="LORE", docs_url=None, redoc_url=None,
+    # Multi mode serves the hosted MCP endpoint (/mcp, lore.mcp.hosted) beside
+    # the API; its SDK session manager lives for the app's lifetime.
+    hosted_mcp: list = [None]
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        if hosted_mcp[0] is None:
+            yield
+            return
+        async with hosted_mcp[0].running():
+            yield
+
+    api = FastAPI(title="LORE", docs_url=None, redoc_url=None, lifespan=lifespan,
                   dependencies=[Depends(csrf_guard)] if multi else None)
     # `create_app(multi_user=True)` must mean sessions even when the env flag
     # is not set (the default resolver reads the env), so name the resolver.
@@ -423,6 +436,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         api.include_router(build_auth_router(auth_ctx))
         from lore.web.keys import build_key_router
         api.include_router(build_key_router(auth_ctx, key_service))
+        from lore.web.mcp_tokens import build_mcp_token_router
+        api.include_router(build_mcp_token_router(auth_ctx))
 
     def needs_key(user: CurrentUser) -> JSONResponse | None:
         """Multi mode: 409 key_required for a user with no Gemini key yet."""
@@ -1001,8 +1016,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     @api.get("/api/mcp")
     def mcp(config: LoreConfig = Depends(user_config)):
-        if multi:  # MCP is local-only (lore.mcp.server refuses multi mode)
-            return _api_error(404, "not_found", "MCP is not available here")
+        if multi:  # the hosted endpoint: its address; the page builds the snippets
+            from lore.central.mcp_tokens import MAX_TOKENS_PER_USER
+            origin = auth_ctx.settings.origin
+            hosted = hosted_mcp[0]
+            return JSONResponse({"hosted": True, "base_url": origin,
+                                 "mcp_url": f"{origin}/mcp",
+                                 "max_tokens": MAX_TOKENS_PER_USER,
+                                 "oauth": hosted is not None and hosted.provider is not None},
+                                headers={"Cache-Control": "no-store"})
         out = mcp_setup(config, _lore_executable(), _port_open(MCP_PORT))
         # Where the library lives, for the Your data tab's backup advice: the
         # data directory and, when it is a file, the central database (chats).
@@ -1015,9 +1037,14 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     @api.get("/api/mcp/check")
     async def mcp_check(config: LoreConfig = Depends(user_config)):
         """Can the MCP server start here? Builds it as `lore mcp` would (no
-        transport, nothing served) and lists the tools it exposes."""
+        transport, nothing served) and lists the tools it exposes. Multi mode:
+        the hosted endpoint's tools (lore.mcp.hosted)."""
         if multi:
-            return _api_error(404, "not_found", "MCP is not available here")
+            listed = await hosted_mcp[0].server.list_tools()
+            return {"ok": True, "hosted": True, "lore_found": True, "problem": None,
+                    "tools": [{"name": t.name, "summary": " ".join(
+                        (t.description or "").strip().split("\n\n")[0].split())}
+                        for t in listed]}
         exe = _lore_executable()
         found = Path(exe).is_file() or shutil.which(exe) is not None
         try:
@@ -1233,6 +1260,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         public = urlparse(auth_ctx.settings.origin)
         hosts, origins = hosts | {public.netloc}, origins | {auth_ctx.settings.origin}
         inner = SessionRefresh(api, auth_ctx.settings)
+        # The hosted MCP endpoint: bearer tokens only, never the session
+        # cookie. Inside the origin guard, so a page on another origin is
+        # refused; an MCP client sends no Origin header and passes.
+        from lore.mcp.hosted import HostedMcp, McpMount
+        hosted_mcp[0] = HostedMcp(
+            base, sessions=lambda: sessions[0], key_service=key_service,
+            throttle=throttle, origin=auth_ctx.settings.origin, hosts=hosts,
+            origins=origins, now=auth_ctx.now)
+        inner = McpMount(hosted_mcp[0], inner)
         # CSP, Referrer-Policy, nosniff, Permissions-Policy, frame refusal
         # and HSTS behind https, on every response (lore.web.headers).
         return SecurityHeaders(OriginGuard(inner, hosts, origins),

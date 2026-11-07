@@ -200,10 +200,11 @@ def test_show_internals_is_forced_off(root, central):
     assert r.json() == {"show_internals": False}
 
 
-def test_the_quota_names_no_models_and_mcp_is_off(alice):
+def test_the_quota_names_no_models_and_mcp_names_no_paths(alice):
     q = alice.get("/api/quota").json()
     assert q["models"] == []
-    assert alice.get("/api/mcp").status_code == 404
+    mcp = alice.get("/api/mcp").json()  # the hosted endpoint's address, nothing local
+    assert mcp["hosted"] is True and "env" not in mcp and "library" not in mcp
 
 
 def test_the_mcp_server_refuses_multi_user_mode(monkeypatch, tmp_path):

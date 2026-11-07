@@ -23,6 +23,11 @@ Retry-After header) and a friendly message.
 | entity intro model calls per user per hour | 60 | LORE_INTRO_PER_HOUR |
 | answer reports per user per hour | 20 | LORE_REPORTS_PER_HOUR |
 | uploads being parsed at once, all users | 2 | LORE_PARSES_IN_FLIGHT |
+| MCP tool calls per token per minute | 30 | LORE_MCP_PER_MINUTE |
+| MCP tool calls per user per minute (all their tokens) | 60 | LORE_MCP_PER_MINUTE_PER_USER |
+
+An MCP `lore_search` also takes the user's question slots and counts against
+their questions a minute, exactly as a question asked in the web app does.
 
 0 switches that limit off. A value that is not a whole number, or is
 negative, stops start-up.
@@ -58,11 +63,15 @@ ENV = {
     "intro_per_hour": "LORE_INTRO_PER_HOUR",
     "reports_per_hour": "LORE_REPORTS_PER_HOUR",
     "parses_in_flight": "LORE_PARSES_IN_FLIGHT",
+    "mcp_per_minute": "LORE_MCP_PER_MINUTE",
+    "mcp_per_minute_per_user": "LORE_MCP_PER_MINUTE_PER_USER",
 }
 
 ASK_RATE, INTRO_RATE, REPORT_RATE = "ask", "intro", "report"
+# MCP calls: per token (keyed by the token's id, never the token) and per user.
+MCP_RATE, MCP_USER_RATE = "mcp", "mcp_user"
 # The rate_hits kinds keyed by user id (lore.central.erase deletes them).
-USER_RATE_KINDS = (ASK_RATE, INTRO_RATE, REPORT_RATE)
+USER_RATE_KINDS = (ASK_RATE, INTRO_RATE, REPORT_RATE, MCP_USER_RATE)
 
 
 def _env_int(env, name: str, default: int) -> int:
@@ -86,6 +95,8 @@ class RateSettings:
     intro_per_hour: int = 60
     reports_per_hour: int = 20
     parses_in_flight: int = 2
+    mcp_per_minute: int = 30
+    mcp_per_minute_per_user: int = 60
 
     @classmethod
     def from_env(cls, env=None) -> "RateSettings":
@@ -253,6 +264,24 @@ class Throttle:
             return too_many("busy", "LORE is reading other books right now."
                             " Try again in a moment.", GLOBAL_RETRY)
         return holder
+
+    def mcp_wait(self, token_key: str, user_id: str) -> float | None:
+        """Count one MCP tool call for the token and its user and return None,
+        or return the seconds to wait (and count nothing)."""
+        s, now = self.settings, self._now()
+        with self._sessions()() as db:
+            waits = [w for w in (
+                wait_for(db, MCP_RATE, token_key, s.mcp_per_minute, now, MINUTE),
+                wait_for(db, MCP_USER_RATE, user_id, s.mcp_per_minute_per_user, now, MINUTE),
+            ) if w is not None]
+            if waits:
+                return max(waits)
+            if s.mcp_per_minute > 0:
+                record(db, MCP_RATE, token_key, now)
+            if s.mcp_per_minute_per_user > 0:
+                record(db, MCP_USER_RATE, user_id, now)
+            db.commit()
+        return None
 
     def end_parse(self, holder: str) -> None:
         self.slots.release("parse:all", holder)

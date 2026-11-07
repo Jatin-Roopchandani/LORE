@@ -6,13 +6,13 @@ Streamable HTTP instead.
 
 In stdio mode stdout is the protocol channel: nothing here may print to it.
 
-Tenancy: MCP is LOCAL-MODE ONLY for the beta (release spec §6). It serves the
-one `LoreConfig` it is given, i.e. the local user's library, and has no notion
-of a request's user: never expose it from a multi-user deployment. A per-user
-token (resolving to `lore.tenancy.config_for(base, user)`) can come later.
-Release step 6 enforces it: `build_server` (so `lore mcp`, stdio and HTTP)
-refuses to start while LORE_MULTI_USER is set (`MultiUserRefused`), and the
-web app's /api/mcp panel is 404 in multi mode.
+Tenancy: THIS server is local-mode only (release spec §6). It serves the one
+`LoreConfig` it is given, i.e. the local user's library, and has no notion of
+a request's user: never expose it from a multi-user deployment. `build_server`
+(so `lore mcp`, stdio and HTTP) refuses to start while LORE_MULTI_USER is set
+(`MultiUserRefused`). A multi-user deployment serves its own endpoint instead,
+/mcp inside the web app, where every request carries a user's bearer token
+and every tool works on that user's library (lore.mcp.hosted).
 
 Operational note: an engine crash takes the whole process down. Kuzu 0.11.3
 segfaults on `CALL read_csv_serial('<path>')`; the cypher guard rejects that
@@ -104,7 +104,7 @@ def build_server(config: LoreConfig) -> MCPServer:
         """Run a read-only Cypher query against the graph, capped at 200 rows.
 
         Any query containing COPY, LOAD, EXPORT, IMPORT, ATTACH, INSTALL,
-        CREATE, MERGE, SET, DELETE, DROP or ALTER as a whole word is rejected,
+        CREATE, MERGE, SET, DELETE, REMOVE, DROP or ALTER as a whole word is rejected,
         even inside a string literal. CALL is rejected the same way, except
         for the three allowlisted procedures show_tables, table_info and
         db_version. A question about a book titled "The Call of the Wild"

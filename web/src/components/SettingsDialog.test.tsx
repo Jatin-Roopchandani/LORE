@@ -31,6 +31,10 @@ const mcpBody = { stdio_command: "claude mcp add lore -- /opt/lore/bin/lore mcp"
   claude_code: "claude mcp add --scope user lore -e LORE_DATA_DIR=/home/r/LORE/data -- /opt/lore/bin/lore mcp",
   claude_code_http: "claude mcp add --scope user --transport http lore http://127.0.0.1:8765/mcp",
   library: { data_dir: "/home/r/LORE/data", central_db: "/home/r/LORE/data/central.db" } };
+const hostedBody = { hosted: true, base_url: "https://lore.example.org", mcp_url: "https://lore.example.org/mcp", max_tokens: 2, oauth: false };
+type Tok = { id: string; name: string; prefix: string; created_at: string; last_used_at: string | null };
+let mcpTokens: Tok[] = [];
+beforeEach(() => { mcpTokens = [{ id: "t0", name: "Old laptop", prefix: "lore_ZzZzZzZ", created_at: new Date(now - 864e5).toISOString(), last_used_at: null }]; });
 const checkBody = { ok: true, lore_found: true, problem: null, library_found: true,
   tools: [{ name: "lore_search", summary: "Answer a question from the knowledge graph." }, { name: "entity", summary: "One entity's card." }] };
 const quotaBody = { provider: "gemini", resets_at: "2026-11-08T08:00:00Z",
@@ -69,7 +73,19 @@ function serve({ role = "user", providers = [gemini, claude, row("openai")] as I
     if (url === "/api/me/token-cap") return json({ ...usageBody.tokens, daily_token_cap: 5000 });
     if (url === "/api/me/export") return new Response(new Blob(["PK"]), { headers: { "content-disposition": 'attachment; filename="lore-data-2026-11-07.zip"' } });
     if (url === "/api/me/delete") return json({ deleted: true });
-    if (url === "/api/mcp") return json(mcpBody);
+    const multiDoc = document.querySelector('meta[name="lore-multi"]') !== null;
+    if (url === "/api/mcp") return json(multiDoc ? hostedBody : mcpBody);
+    if (url === "/api/me/mcp-tokens" && method === "GET") return json({ tokens: mcpTokens, max_tokens: 2 });
+    if (url === "/api/me/mcp-tokens" && method === "POST") {
+      const made = { id: `t${mcpTokens.length + 1}`, name: JSON.parse(init.body as string).name, prefix: "lore_AbCdEfG",
+        created_at: new Date(now).toISOString(), last_used_at: null };
+      mcpTokens = [...mcpTokens, made];
+      return json({ ...made, token: "lore_AbCdEfGsecretsecretsecret" }, 201);
+    }
+    if (url.startsWith("/api/me/mcp-tokens/") && method === "DELETE") {
+      mcpTokens = mcpTokens.filter((t) => !url.endsWith(`/${t.id}`));
+      return json({ revoked: true });
+    }
     if (url === "/api/mcp/check") return json(checkBody);
     if (url === "/api/quota") return json(quota);
     return json({ ok: true });
@@ -179,7 +195,7 @@ test("#settings/<tab> opens that tab, and a change of hash switches tabs", async
   expect(await screen.findByRole("tab", { name: "AI providers" })).toHaveAttribute("aria-selected", "true");
   await act(async () => { history.replaceState(null, "", "#settings/mcp"); window.dispatchEvent(new HashChangeEvent("hashchange")); });
   expect(screen.getByRole("tab", { name: "MCP connector" })).toHaveAttribute("aria-selected", "true");
-  expect(within(panel()).getByText(SETTINGS.mcpSoon)).toBeInTheDocument();
+  expect(within(panel()).getByText(SETTINGS.mcpWhatHosted)).toBeInTheDocument();
 });
 
 test("a link to a tab that doesn't apply here opens the first tab instead", async () => {
@@ -498,13 +514,59 @@ test("MCP (local): the exact snippets with copy buttons, and Check lists the too
   expect(screen.getByText("lore_search")).toBeInTheDocument();
 });
 
-test("MCP (multi): coming soon, the rest disabled, and no MCP call", async () => {
+test("MCP (multi): the server address, the token list and snippets with a placeholder; no coming-soon line", async () => {
+  markMulti();
+  serve();
+  await openAt("mcp");
+  expect(await within(panel()).findByText(hostedBody.mcp_url)).toBeInTheDocument();
+  expect(await within(panel()).findByText("Old laptop")).toBeInTheDocument();
+  expect(within(panel()).getByText(SETTINGS.mcpTokenPrefix("lore_ZzZzZzZ"))).toBeInTheDocument();
+  expect(within(panel()).getByText(
+    'claude mcp add --transport http lore https://lore.example.org/mcp --header "Authorization: Bearer <your token>"')).toBeInTheDocument();
+  expect(panel().textContent).not.toMatch(/coming soon/i);
+  expect(within(panel()).getByRole("button", { name: SETTINGS.mcpCheck })).toBeEnabled();
+});
+
+test("MCP (multi): Create token shows it once, fills the snippets, and lists it; Revoke removes it", async () => {
   markMulti();
   const calls = serve();
   await openAt("mcp");
-  expect(within(panel()).getByText(SETTINGS.mcpSoon)).toBeInTheDocument();
-  expect(within(panel()).getByRole("button", { name: SETTINGS.mcpCheck })).toBeDisabled();
-  expect(calls.some((c) => c.url.startsWith("/api/mcp"))).toBe(false);
+  await within(panel()).findByText("Old laptop");
+  await userEvent.type(within(panel()).getByLabelText(SETTINGS.mcpTokenName), "Work laptop");
+  await userEvent.click(within(panel()).getByRole("button", { name: SETTINGS.mcpCreate }));
+  expect(await within(panel()).findByText(SETTINGS.mcpTokenOnce)).toBeInTheDocument();
+  expect(within(panel()).getByText("lore_AbCdEfGsecretsecretsecret")).toBeInTheDocument();
+  expect(within(panel()).getByRole("button", { name: `${SETTINGS.copy} ${SETTINGS.mcpTokenLabel}` })).toBeInTheDocument();
+  expect(within(panel()).getByText(
+    'claude mcp add --transport http lore https://lore.example.org/mcp --header "Authorization: Bearer lore_AbCdEfGsecretsecretsecret"')).toBeInTheDocument();
+  expect(await within(panel()).findByText("Work laptop")).toBeInTheDocument();
+  const post = calls.find((c) => c.url === "/api/me/mcp-tokens" && c.method === "POST")!;
+  expect(JSON.parse(post.body!)).toEqual({ name: "Work laptop" });
+  // Two tokens is this fake server's cap: the form says so and is disabled.
+  expect(within(panel()).getByText(SETTINGS.mcpTokenMax(2))).toBeInTheDocument();
+  expect(within(panel()).getByRole("button", { name: SETTINGS.mcpCreate })).toBeDisabled();
+  await userEvent.click(within(panel()).getByRole("button", { name: SETTINGS.mcpTokenRevokeLabel("Work laptop") }));
+  await waitFor(() => expect(within(panel()).queryByText("Work laptop")).toBeNull());
+  expect(within(panel()).queryByText(SETTINGS.mcpTokenOnce)).toBeNull();  // the revoked token's secret is gone too
+  expect(calls.some((c) => c.url === "/api/me/mcp-tokens/t2" && c.method === "DELETE")).toBe(true);
+});
+
+test("MCP (multi): a token needs a name", async () => {
+  markMulti();
+  const calls = serve();
+  await openAt("mcp");
+  await within(panel()).findByText("Old laptop");
+  await userEvent.click(within(panel()).getByRole("button", { name: SETTINGS.mcpCreate }));
+  expect(within(panel()).getByRole("alert")).toHaveTextContent(SETTINGS.mcpTokenNameNeeded);
+  expect(calls.some((c) => c.url === "/api/me/mcp-tokens" && c.method === "POST")).toBe(false);
+});
+
+test("MCP (multi): Check lists the hosted tools", async () => {
+  markMulti();
+  serve();
+  await openAt("mcp");
+  await userEvent.click(within(panel()).getByRole("button", { name: SETTINGS.mcpCheck }));
+  expect(await within(panel()).findByText(SETTINGS.mcpCheckHosted)).toBeInTheDocument();
 });
 
 // ---- Your data ----------------------------------------------------------------------------------------------------

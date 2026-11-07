@@ -2,7 +2,7 @@
 
 `erase_user` removes everything LORE holds for one user:
 - their library, `<root>/users/<id>/` (books, SQLite, Kuzu, LanceDB, caches);
-- every central row: sessions, identities, the encrypted Gemini key, chats,
+- every central row: sessions, MCP access tokens, identities, the encrypted Gemini key, chats,
   messages, traces, reports, usage, jobs, in-flight slots, the rate counters
   keyed by them, their unspent sign-in links, and the user row itself;
 - waitlist rows with their email are anonymised (address and note blanked).
@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from lore.auth import ratelimit
 from lore.central.models import (
     CLAIMED, QUEUED, AdminEvent, ApiKey, AuthSession, Chat, Identity, InflightSlot, Invite,
-    Job, LoginToken, Message, RateHit, Report, Trace, Usage, User, Waitlist,
+    Job, LoginToken, McpToken, Message, RateHit, Report, Trace, Usage, User, Waitlist,
 )
 from lore.tenancy import validate_user_id
 
@@ -43,7 +43,8 @@ log = logging.getLogger("lore.erase")
 
 DELETING = "deleting"
 # Every rate counter keyed by a user id (lore.auth.ratelimit keys are hashed).
-USER_RATE_KINDS = ("key_put", "upload", "upload_added", "ask", "intro", "report")
+USER_RATE_KINDS = ("key_put", "upload", "upload_added", "ask", "intro", "report",
+                   "mcp_token", "mcp_user")
 ANONYMISED = "anonymised@deleted.invalid"
 
 
@@ -88,6 +89,9 @@ def lock_user(db: Session, user_id: str) -> str | None:
         return None
     user.status = DELETING
     db.execute(sa.delete(AuthSession).where(AuthSession.user_id == user_id))
+    # MCP access: every token stops working now (the user is no longer active
+    # either, which every bearer lookup checks).
+    db.execute(sa.delete(McpToken).where(McpToken.user_id == user_id))
     db.execute(sa.update(Job).where(Job.user_id == user_id, Job.state == QUEUED)
                .values(state="paused", outcome="deleting")
                .execution_options(synchronize_session=False))
@@ -120,6 +124,7 @@ def erase_user(sessions: sessionmaker[Session], root: Path, user_id: str, *,
         gone("api_keys", sa.delete(ApiKey).where(ApiKey.user_id == user_id))
         gone("identities", sa.delete(Identity).where(Identity.user_id == user_id))
         gone("sessions", sa.delete(AuthSession).where(AuthSession.user_id == user_id))
+        gone("mcp_tokens", sa.delete(McpToken).where(McpToken.user_id == user_id))
         gone("jobs", sa.delete(Job).where(Job.user_id == user_id))
         gone("inflight_slots", sa.delete(InflightSlot).where(InflightSlot.user_id == user_id))
         gone("rate_hits", sa.delete(RateHit).where(RateHit.key.in_(
