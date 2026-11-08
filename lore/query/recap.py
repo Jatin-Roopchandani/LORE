@@ -582,7 +582,8 @@ async def draft_stretch(stretch: Stretch, span: Span, *, question: str, models,
                        focus=stretch.focus, covered=tuple(covered), skip=unseen)
     answer = await synthesize(f"What happens in {stretch.focus}?", evidence, models.synthesize,
                               mode="graph", check=models.check, write=models.write,
-                              book_titles=dict(titles), books=dict(books), section=spec)
+                              book_titles=dict(titles), books=dict(books), section=spec,
+                              spend_ok=getattr(models, "spend_ok", None))
     return (answer if answer.claims else None), evidence
 
 
@@ -658,6 +659,12 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
     models = replace(models, synthesize=spend.counted(models.synthesize),
                      write=spend.counted(models.write) if models.write else None,
                      check=spend.counted(models.check) if models.check else None)
+    day_ok = models.spend_ok  # starting a section asks the day's reserve alone
+
+    def repair_ok() -> bool:  # an ORPHAN_REPAIR round: two requests, the tail kept back
+        return (spend.n + 2 + deep_module.TAIL_REQUESTS <= RECAP_MAX_REQUESTS
+                and (day_ok is None or bool(day_ok())))
+    models = replace(models, spend_ok=repair_ok)
     emit(on_event, "step", name="recap", state="start", part=None, detail=None)
     span = await gather_span(conn, lance, recap, scope=scope, question=question, titles=titles,
                              books=books, embed=models.embed, book_ids=book_ids)
@@ -697,7 +704,7 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
         async with gate:
             if spend.n + deep_module.SECTION_REQUESTS + deep_module.TAIL_REQUESTS > RECAP_MAX_REQUESTS:
                 return ("skipped", "budget")
-            if models.spend_ok is not None and not models.spend_ok():
+            if day_ok is not None and not day_ok():
                 return ("skipped", "reserve")
             emit(on_event, "step", name="section", state="start", part=index, detail=None)
             emit(on_event, "section", index=index, state="start", kind="section",

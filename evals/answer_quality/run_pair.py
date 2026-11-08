@@ -73,6 +73,19 @@ ARM_SETTINGS = {
     # inference_in_fact and its repair (write.FACT_FIDELITY).
     "fact_fidelity": ("lore.query.write", "FACT_FIDELITY",
                       lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A kept sentence that leans on one the check removed ("He ran ..."), or a
+    # removed opening: one repair round, else the claim list (write.ORPHAN_REPAIR).
+    "orphan_repair": ("lore.query.write", "ORPHAN_REPAIR",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # The writer writes for a reader: connected paragraphs, fuller sentences,
+    # depth, no "The facts show", sentences that stand if the one before is cut,
+    # and a section opening that names its subject (write.READER_PROSE).
+    "reader_prose": ("lore.query.write", "READER_PROSE",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # The check judges an introduction or summary sentence against the union of
+    # the claims it cites (synthesize.SUMMARY_CHECK).
+    "summary_check": ("lore.query.synthesize", "SUMMARY_CHECK",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),

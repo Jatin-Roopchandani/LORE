@@ -290,6 +290,7 @@ def test_an_answer_of_facts_alone_is_checked_exactly_as_before():
 def test_the_check_prompt_is_unchanged_when_off(monkeypatch):
     monkeypatch.setattr(w, "READINGS", False)
     monkeypatch.setattr(w, "COVERAGE", False)
+    monkeypatch.setattr(synth, "SUMMARY_CHECK", False)  # pinned before it existed
     sents = [S("Rin met a teacher and trained.", [1, 2]), S("Rin trained.", [3])]
     assert faithfulness_prompt(CS, PS, TITLES, books=BOOKS) == GOLDEN["check_plain"]
     assert faithfulness_prompt(CS, PS, TITLES, sents, books=BOOKS, gaps=["x"]) == GOLDEN["check_sentences"]
@@ -302,6 +303,7 @@ def test_the_check_prompt_is_unchanged_when_off(monkeypatch):
 def test_switch_off_is_byte_identical_to_the_previous_release(monkeypatch):
     """tests/golden_readings_off.json was dumped from e9471a1 (STORY_ORDER on)."""
     monkeypatch.setattr(w, "READINGS", False)
+    monkeypatch.setattr(w, "READER_PROSE", False)  # pinned before it existed
     assert writer_prompt("How did Rin grow?", ["How did Rin grow?", "Who taught Rin?"], CS, PS, TITLES,
                          books=BOOKS) == GOLDEN["writer"]
     assert writer_prompt("Q?", [], CS, PS, None, books=BOOKS) == GOLDEN["writer_one_part"]

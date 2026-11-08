@@ -16,7 +16,7 @@ from lore.query import decompose as decompose_module, deep, interpret
 from lore.query.decompose import Decomposition, PartSpec
 from lore.query.deep import DeepPlan, PlanSection
 from lore.query.synthesize import Synthesis
-from lore.query.write import COVERED_LEAD, LENS_LENGTH_RULE, Prose, Sentence
+from lore.query.write import COVERED_LEAD, LENS_LENGTH_RULE, READER_LENGTH_RULES, Prose, Sentence
 from tests.deep_fixtures import Scripted, build_deep_library, run_scenario
 from tests.test_query_interpret_agent import (
     LENS_A, LENS_B, QUESTION, Models, plan_of,
@@ -258,7 +258,9 @@ async def test_a_lens_section_opens_by_saying_how_its_facts_bear_on_the_question
     scripted = LensModels(ONE_PART, READING, quotes=QUOTE_OF)
     await ask(config, scripted)
     section = [p for p in scripted.prompts("write") if "Evidence for:" not in p][0]
-    assert " ".join(LENS_LENGTH_RULE.split()) in " ".join(section.split())
+    # READER_PROSE (orphan-repair) replaces the opening with a topic sentence.
+    assert " ".join(READER_LENGTH_RULES["lens"].split()) in " ".join(section.split())
+    assert "topic sentence that introduces the subject" in section
     assert f"Question: {LENS_A} (one aspect of the larger question: {QUESTION})" in section
     flat = " ".join(LENS_LENGTH_RULE.split())
     assert "Open with one sentence that says how these facts bear on the question" in flat
