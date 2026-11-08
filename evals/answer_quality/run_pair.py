@@ -115,6 +115,12 @@ ARM_SETTINGS = {
     # Vector-found seeds bring what an IDENTIFIED_AS edge ties them to, as
     # named seeds already do (seed.FOLLOW_IDENTITY_LINKS).
     # A template from an entity also walks from what IDENTIFIED_AS ties it to.
+    # Multi-part factual answers: drop a later part's claim that cites the
+    # same quote as an earlier part's; show a list answer in reading order.
+    "cross_part_quote": ("lore.query.synthesize", "CROSS_PART_SAME_QUOTE",
+                         lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "story_order_list": ("lore.query.synthesize", "STORY_ORDER_LIST",
+                         lambda v: v.lower() in ("1", "true", "yes", "on")),
     "identity_search": ("lore.query.hubselect", "SEARCH_IDENTITY_LINKS",
                         lambda v: v.lower() in ("1", "true", "yes", "on")),
     "identity_links": ("lore.query.seed", "FOLLOW_IDENTITY_LINKS",

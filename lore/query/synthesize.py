@@ -331,6 +331,24 @@ def _near_duplicate(a: Claim, b: Claim) -> bool:
             and _overlap(a.text, b.text) >= NEAR_DUPLICATE_OVERLAP)
 
 
+# Across sub-questions, a claim citing the very quote an earlier part's claim
+# cites (same passage, same words, same numbers) restates that fact, however
+# differently it is worded: Claude rewords far more than the 0.6 overlap above
+# allows ("offered him a choice" vs "told him he had to choose"). Inside one
+# part two claims may still draw two facts from one quote. Off: an eval arm.
+CROSS_PART_SAME_QUOTE = True
+# A list answer (no prose) shows its claims in reading order (passages are
+# numbered in story order), not part by part, so a second part that goes back
+# to the start of a scene does not make the story jump backwards. Off: an arm.
+STORY_ORDER_LIST = True
+
+
+def _restates(earlier: Claim, claim: Claim) -> bool:
+    return (CROSS_PART_SAME_QUOTE and earlier.passage == claim.passage
+            and _normalise(earlier.quote) == _normalise(claim.quote)
+            and _numbers(earlier.text) == _numbers(claim.text))
+
+
 def _sentence(claim: Claim) -> str:
     return f"{claim.text.strip()} [{claim.passage}]"
 
@@ -1357,12 +1375,16 @@ async def synthesize_parts(
             _build_prompt(part, own, book_titles, part_of=question, books=books), Synthesis)
         verified, _ = verify_claims(_capped(result), passages)
         per_part.append(verified)
-        kept.extend(c for c in verified if c not in kept)
+        earlier = [c for claims in per_part[:-1] for c in claims]
+        kept.extend(c for c in verified
+                    if c not in kept and not any(_restates(e, c) for e in earlier))
 
     kept = _collapse(kept)
     kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         question, sub_questions, kept, evidence, check, write, book_titles,
         part_claims=per_part, books=books)
+    if STORY_ORDER_LIST and not prose:
+        kept = sorted(kept, key=lambda c: c.passage)  # stable: one passage keeps its order
     missing = [part for part, claims in zip(sub_questions, per_part)
                if not claims or all(c in cut for c in claims)]
 
