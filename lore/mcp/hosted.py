@@ -61,6 +61,7 @@ from typing import Any, Literal
 import anyio
 from fastapi.responses import JSONResponse
 from mcp.server import MCPServer
+from mcp_types import Icon
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
@@ -121,6 +122,14 @@ def pat_access_token(row) -> AccessToken:
     pid = f"pat:{row.id}"
     return AccessToken(token=pid, client_id=pid, scopes=[SCOPE], subject=row.user_id,
                        claims={PRINCIPAL_CLAIM: pid})
+
+
+def server_icons(origin: str) -> list[Icon]:
+    """LORE's logo for MCP clients, served from web/public at the site root."""
+    origin = origin.rstrip("/")
+    return [Icon(src=f"{origin}/icon-192.png", mimeType="image/png", sizes=["192x192"]),
+            Icon(src=f"{origin}/icon-512.png", mimeType="image/png", sizes=["512x512"]),
+            Icon(src=f"{origin}/favicon.svg", mimeType="image/svg+xml", sizes=["any"])]
 
 
 class PatVerifier(TokenVerifier):
@@ -185,12 +194,15 @@ class HostedMcp:
             # personal access tokens have no audience but this one.
             validate_token_resource=False,
             **(provider.auth_options() if provider is not None else {}))
+        # How a client names and pictures the connector (claude.ai shows the icon).
+        identity = dict(title="LORE", website_url=self.origin, icons=server_icons(self.origin))
         if provider is not None:
             self.server = MCPServer("lore", instructions=INSTRUCTIONS,
-                                    auth_server_provider=provider, auth=auth)
+                                    auth_server_provider=provider, auth=auth, **identity)
         else:
             self.server = MCPServer("lore", instructions=INSTRUCTIONS, auth=auth,
-                                    token_verifier=verifier or PatVerifier(sessions, now))
+                                    token_verifier=verifier or PatVerifier(sessions, now),
+                                    **identity)
         self._security = TransportSecuritySettings(
             enable_dns_rebinding_protection=True, allowed_hosts=sorted(hosts),
             allowed_origins=sorted(origins))

@@ -408,3 +408,21 @@ def test_every_protocol_revision_reaches_the_caller_s_own_library(client, tokens
     out = result.get("structuredContent") or json.loads(result["content"][0]["text"])
     assert [b["title"] for b in out["books"]] == ["Dracula"]
     assert rpc(client, None, "tools/list", headers=head).status_code == 401
+
+
+def test_initialize_names_lore_with_its_title_site_and_icons(client, tokens):
+    r = rpc(client, tokens["alice"], "initialize", {
+        "protocolVersion": "2025-11-25", "capabilities": {},
+        "clientInfo": {"name": "test", "version": "1"}})
+    info = r.json()["result"]["serverInfo"]
+    assert info["title"] == "LORE"
+    srcs = [i["src"] for i in info["icons"]]
+    assert any(s.endswith("/icon-192.png") for s in srcs)
+    assert all(s.startswith(info["websiteUrl"]) for s in srcs)
+
+
+def test_the_icon_files_exist_in_the_web_public_folder():
+    from pathlib import Path
+    public = Path(__file__).resolve().parents[1] / "web" / "public"
+    for name in ("favicon.ico", "icon-192.png", "icon-512.png", "apple-touch-icon.png"):
+        assert (public / name).stat().st_size > 1000, name
