@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
-import { PROVIDERS } from "./messages";
+import { ONBOARD, PROVIDERS } from "./messages";
 
 const quota = vi.fn(() => Promise.resolve({ provider: "gemini", models: [], resets_at: "2026-10-08T07:00:00Z" }));
 const overview = vi.fn((_world?: string) => Promise.resolve({ nodes: [{ id: "h", name: "Holmes", kind: "Character", books: [] }], edges: [], truncated: false, depth: 0 }));
@@ -27,7 +27,7 @@ vi.mock("./chatsApi", async (importOriginal) => ({ ...(await importOriginal<type
 vi.mock("./api", () => ({
   authApi: { me: () => me() },
   keyApi: { get: () => keyStatus(), save: (k: string, p?: string) => keySave(k, p), usage: () => Promise.resolve({ error: { code: "x", message: "" } }),
-    remove: () => Promise.resolve({ deleted: true }) },
+    remove: () => Promise.resolve({ deleted: true }), providers: () => Promise.resolve({ error: { code: "x", message: "" } }) },
   onKeyProblem: (l: (p: string) => void) => { keyListeners.add(l); return () => { keyListeners.delete(l); }; },
   reportKeyProblem: (c: string) => fireKeyProblem(c),
   api: {
@@ -148,12 +148,14 @@ test("a signed-in user without a key sees the onboarding screen, and saving one 
   render(<App />);
   expect(await screen.findByRole("heading", { name: PROVIDERS.connectTitle })).toBeInTheDocument();
   expect(screen.queryByPlaceholderText("Ask about your books…")).toBeNull();
-  expect(screen.getByRole("link", { name: PROVIDERS.getKey.gemini })).toHaveAttribute("href", "https://aistudio.google.com/app/apikey");
   expect(screen.getByText(/about 1,000 requests a day/)).toBeInTheDocument();
-  expect(screen.getByText(/sent to the provider you choose, under your own key/)).toBeInTheDocument();
+  expect(screen.getByText(ONBOARD.footer)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: ONBOARD.continue })); // Gemini is chosen to start with
+  expect(screen.getByRole("link", { name: new RegExp(ONBOARD.getKeyAt.gemini) })).toHaveAttribute("href", "https://aistudio.google.com/app/apikey");
   await userEvent.type(screen.getByLabelText(PROVIDERS.fieldLabel("Gemini")), "AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake123");
-  await userEvent.click(screen.getAllByRole("button", { name: PROVIDERS.save })[0]);
+  await userEvent.click(screen.getByRole("button", { name: ONBOARD.check }));
   expect(keySave).toHaveBeenCalledWith("AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake123", "gemini");
+  await userEvent.click(await screen.findByRole("button", { name: PROVIDERS.startReading }));
   expect(await screen.findByPlaceholderText("Ask about your books…")).toBeInTheDocument();
 });
 

@@ -1,0 +1,168 @@
+/* The key onboarding screen (KeyOnboarding): a full page, centred, in the app's theme tokens so it follows light, dark
+   and any theme chosen in the app. Classes are prefixed ob- because theme.css styles bare header, footer and .mark for
+   the reading app. Its look follows the sign-in page (auth.css): the same field, button, alert and focus ring. */
+.ob{
+  --ob-night:#0B1117;
+  --ob-border:color-mix(in srgb,var(--line) 55%,var(--muted));
+  --ob-ring:0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent);
+  min-height:100%;display:flex;flex-direction:column;color:var(--ink);font:15px/1.55 var(--f-ui);
+  background:radial-gradient(900px 420px at 50% -120px,color-mix(in srgb,var(--accent) 10%,transparent),transparent 70%),var(--bg);
+}
+.ob *{box-sizing:border-box}
+.ob :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ob a{color:var(--accent)}
+.ob-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ---- the top bar: the mark on the left, the two steps on the right ---- */
+.ob-top{display:flex;align-items:center;gap:24px;padding:20px clamp(16px,4vw,48px)}
+.ob .ob-brand{display:inline-flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;border-radius:8px}
+.ob-brand b{font:600 20px/1 var(--f-book);letter-spacing:.06em}
+.ob-logo{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--ob-night);
+  box-shadow:0 1px 2px rgb(0 0 0 / .12),0 0 0 1px var(--line)}
+.ob-steps{margin:0 0 0 auto;padding:0;list-style:none;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.ob-step{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.ob-step + .ob-step::before{content:"";width:32px;height:1px;background:var(--ob-border);margin-right:2px}
+.ob-step-dot{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;border:1px solid var(--ob-border);
+  font:600 11.5px/1 var(--f-ui);color:var(--muted);background:var(--panel)}
+.ob-step.is-now{color:var(--ink);font-weight:600}
+.ob-step.is-now .ob-step-dot{border-color:var(--accent);background:var(--accent);color:var(--panel)}
+.ob-step.is-done .ob-step-dot{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+/* ---- the column ---- */
+.ob-main{flex:1 0 auto;display:flex;justify-content:center;align-items:center;padding:24px 16px clamp(32px,8vh,96px)}
+.ob-col{width:100%;max-width:460px}
+.ob-col.is-wide{max-width:900px}
+.ob-form{display:flex;flex-direction:column;gap:22px}
+.ob-col.is-wide .ob-head{text-align:center;align-items:center}
+.ob-head{display:flex;flex-direction:column;gap:8px}
+.ob-eyebrow{margin:0;font:600 12px/1 var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.ob h1{margin:0;font:600 30px/1.2 var(--f-ui);letter-spacing:-.02em;color:var(--ink)}
+.ob h1:focus{outline:none}
+.ob-sub{margin:0;max-width:52ch;color:var(--muted);font-size:15.5px}
+
+/* ---- step 1: the provider cards ---- */
+.ob-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:6px}
+.ob-card{position:relative;display:flex;flex-direction:column;gap:18px;min-height:168px;padding:20px;border-radius:14px;cursor:pointer;
+  background:var(--panel);border:1px solid var(--ob-border);box-shadow:0 1px 2px rgb(0 0 0 / .04);
+  transition:border-color .15s,box-shadow .15s,transform .15s}
+.ob-card:hover{border-color:var(--muted);box-shadow:0 6px 18px rgb(0 0 0 / .07)}
+.ob-card.is-on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 8px 24px color-mix(in srgb,var(--accent) 14%,transparent)}
+.ob-card:has(.ob-radio:focus-visible){box-shadow:0 0 0 1px var(--accent),var(--ob-ring)}
+.ob-radio{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.ob-card-top{display:flex;align-items:center;gap:10px}
+.ob-glyph{display:grid;place-items:center;width:40px;height:40px;border-radius:11px;flex:none;
+  font:600 19px/1 var(--f-book);color:var(--ink);background:var(--sunk);border:1px solid var(--line)}
+.ob-card.is-on .ob-glyph{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
+.ob-badge{font:600 11.5px/1 var(--f-ui);letter-spacing:.01em;padding:5px 9px;border-radius:999px;color:var(--ok);
+  background:color-mix(in srgb,var(--ok) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--ok) 26%,transparent)}
+.ob-tick{margin-left:auto;flex:none;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--ob-border);background:var(--panel);
+  transition:border-color .15s,background-color .15s}
+.ob-card.is-on .ob-tick{border:6px solid var(--accent)}
+.ob-card-text{display:flex;flex-direction:column;gap:4px}
+.ob-card-name{font:600 18px/1.25 var(--f-ui);letter-spacing:-.01em;color:var(--ink)}
+.ob-card-pitch{font-size:14px;line-height:1.45;color:var(--muted)}
+.ob-actions{display:flex;justify-content:center}
+.ob-actions .ob-primary{width:min(320px,100%)}
+
+/* ---- buttons, fields and messages (as on the sign-in page) ---- */
+.ob-primary{display:inline-flex;align-items:center;justify-content:center;gap:10px;width:100%;height:46px;padding:0 18px;border-radius:9px;
+  border:1px solid var(--accent);background:var(--accent);color:var(--panel);font:600 15px/1 var(--f-ui);cursor:pointer;
+  box-shadow:0 1px 2px rgb(0 0 0 / .12),inset 0 1px 0 rgb(255 255 255 / .12);transition:filter .15s,box-shadow .15s,opacity .15s}
+.ob-primary:hover:not(:disabled){filter:brightness(1.08)}
+.ob-primary:active:not(:disabled){filter:brightness(.96)}
+.ob .ob-primary:focus-visible{outline:none;box-shadow:var(--ob-ring)}
+.ob-primary:disabled{cursor:not-allowed;opacity:.5}
+.ob-primary[aria-busy="true"]{cursor:progress;opacity:.85}
+.ob .au-spin{animation:ob-spin .8s linear infinite}
+@keyframes ob-spin{to{transform:rotate(360deg)}}
+
+.ob-back{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;margin:0 0 -6px -8px;padding:6px 8px;border:0;border-radius:6px;
+  background:none;color:var(--muted);font:500 14px/1 var(--f-ui);cursor:pointer}
+.ob-back:hover{color:var(--ink);background:var(--sunk)}
+
+.ob-key{gap:16px}
+.ob-panel{display:flex;flex-direction:column;gap:22px;padding:32px;border:1px solid var(--line);border-radius:16px;background:var(--panel);
+  box-shadow:0 1px 2px rgb(0 0 0 / .04),0 12px 32px rgb(0 0 0 / .06)}
+.ob-panel .ob-models{background:var(--bg)}
+.ob-field{display:flex;flex-direction:column;gap:8px}
+.ob-label-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px}
+.ob-label-row label{font:600 14px/1.3 var(--f-ui);color:var(--ink)}
+.ob .ob-getkey{display:inline-flex;align-items:center;gap:5px;font:600 13.5px/1.3 var(--f-ui);text-decoration:none}
+.ob .ob-getkey:hover{text-decoration:underline;text-underline-offset:3px}
+.ob-input-wrap{position:relative}
+.ob .ob-input{width:100%;height:46px;padding:0 48px 0 14px;border:1px solid var(--ob-border);border-radius:9px;background:var(--panel);color:var(--ink);
+  font:14.5px/1.4 var(--f-mono);box-shadow:0 1px 2px rgb(0 0 0 / .04);transition:border-color .15s,box-shadow .15s}
+.ob .ob-input::placeholder{font-family:var(--f-ui);color:var(--muted);opacity:.75}
+.ob .ob-input:hover{border-color:var(--muted)}
+.ob .ob-input:focus{outline:none;border-color:var(--accent);box-shadow:var(--ob-ring)}
+.ob .ob-input[aria-invalid="true"]{border-color:var(--danger)}
+.ob-reveal{position:absolute;top:5px;right:5px;display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:7px;
+  background:none;color:var(--muted);cursor:pointer}
+.ob-reveal:hover{color:var(--ink);background:var(--sunk)}
+
+.ob-alert,.ob-done{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.45;color:var(--ink)}
+.ob-alert{border:1px solid color-mix(in srgb,var(--danger) 40%,transparent);background:color-mix(in srgb,var(--danger) 8%,var(--panel))}
+.ob-alert svg{flex:none;color:var(--danger);margin-top:1px}
+.ob-done{border:1px solid color-mix(in srgb,var(--ok) 38%,transparent);background:color-mix(in srgb,var(--ok) 9%,var(--panel))}
+.ob-done svg{flex:none;color:var(--ok)}
+.ob-done.is-warn{border-color:color-mix(in srgb,var(--glow) 40%,transparent);background:color-mix(in srgb,var(--glow) 9%,var(--panel))}
+.ob-done.is-warn svg{color:var(--glow)}
+.ob-done b{font-weight:600}
+
+/* After the check: the model picker or the paid-plan switch (shared with Settings, restyled here). */
+.ob-models{display:flex;flex-direction:column;gap:10px;padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.ob .model-picker{gap:8px}
+.ob .model-picker label{display:flex;flex-direction:column;gap:7px;font:600 14px/1.3 var(--f-ui);color:var(--ink)}
+.ob .model-picker select{height:42px;padding:0 12px;border:1px solid var(--ob-border);border-radius:9px;background:var(--panel);color:var(--ink);
+  font:500 14.5px var(--f-ui);cursor:pointer}
+.ob .model-picker select:focus{outline:none;border-color:var(--accent);box-shadow:var(--ob-ring)}
+.ob .model-picker .hint{margin:-2px 0 6px}
+.ob .hint{font-size:13px;line-height:1.5;color:var(--muted);margin:0}
+.ob .gemini-paid .switch-row{font-size:14px;font-weight:500}
+.ob .notice{border:1px solid var(--line);background:var(--sunk);border-radius:8px;padding:10px 12px;color:var(--ink);font-size:13px}
+.ob .notice.error{border-color:var(--danger);color:var(--danger)}
+
+/* "See prices" */
+.ob-prices{border-top:1px solid var(--line);padding-top:14px}
+.ob-prices summary{display:inline-flex;align-items:center;gap:6px;cursor:pointer;list-style:none;font:600 13.5px/1 var(--f-ui);color:var(--muted);border-radius:4px}
+.ob-prices summary::-webkit-details-marker{display:none}
+.ob-prices summary::after{content:"";width:6px;height:6px;border:solid currentColor;border-width:0 1.5px 1.5px 0;transform:translateY(-2px) rotate(45deg);transition:transform .15s}
+.ob-prices[open] summary::after{transform:translateY(1px) rotate(-135deg)}
+.ob-prices summary:hover{color:var(--ink)}
+.ob-prices-body{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.ob .price-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.ob .price-table caption{display:none}
+.ob .price-table th,.ob .price-table td{padding:8px 0;border-bottom:1px solid var(--line);text-align:left;font-weight:500}
+.ob .price-table th{white-space:nowrap;padding-right:16px}
+.ob .price-table td{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* ---- the quiet footer ---- */
+.ob-foot{display:flex;flex-direction:column;align-items:center;gap:6px;padding:20px 16px 28px;text-align:center;font-size:13px;color:var(--muted)}
+.ob-foot p{margin:0;max-width:60ch}
+.ob-foot-links{display:flex;gap:16px}
+.ob .ob-foot a{color:var(--muted);text-decoration:underline;text-decoration-color:var(--ob-border);text-underline-offset:2px}
+.ob .ob-foot a:hover{color:var(--ink)}
+
+/* ---- phones: the cards stack and turn sideways ---- */
+@media (max-width:720px){
+  .ob-top{padding:14px 16px;gap:12px}
+  .ob-step:not(.is-now) .ob-step-label{display:none}
+  .ob-step + .ob-step::before{width:16px}
+  .ob-main{padding-top:28px}
+  .ob h1{font-size:25px}
+  .ob-cards{grid-template-columns:minmax(0,1fr);gap:10px}
+  .ob-card{min-height:0;flex-direction:row;align-items:center;gap:14px;padding:16px}
+  .ob-card-top{display:contents}
+  .ob-glyph{order:0}
+  .ob-card-text{order:1;flex:1;min-width:0;margin-top:0}
+  .ob-badge{order:2;position:absolute;top:-9px;right:14px}
+  .ob-tick{order:3;margin-left:0}
+  .ob-actions .ob-primary{width:100%}
+  .ob-main{align-items:flex-start}
+  .ob-panel{padding:0;border:0;background:none;box-shadow:none}
+  .ob-panel .ob-models{background:var(--panel)}
+}
+@media (prefers-reduced-motion:reduce){
+  .ob *{transition:none!important}
+  .ob .au-spin{animation-duration:1.6s}
+}

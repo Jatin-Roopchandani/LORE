@@ -517,9 +517,7 @@ export const AUTH = {
 export const PROVIDERS = {
   connectTitle: "Connect your AI provider",
   replaceTitle: "Your AI provider needs a new key",
-  lead: "LORE reads your books and answers your questions with an AI model, under your own key. Pick one provider to start; you can add another or switch later in Settings.",
   rejected: "Your provider refused your saved key. It may have been deleted or expired. Paste a new one to carry on; your paused books continue once it works.",
-  privacy: "The passages LORE finds and your questions are sent to the provider you choose, under your own key. Your key is stored encrypted and is never shown in full again.",
   names: { gemini: "Gemini", anthropic: "Claude", openai: "OpenAI" } as Record<string, string>,
   makers: { gemini: "Google", anthropic: "Anthropic", openai: "OpenAI" } as Record<string, string>,
   getKey: { gemini: "Get a free key from Google AI Studio", anthropic: "Get a key: console.anthropic.com → API Keys",
@@ -575,6 +573,38 @@ export const PROVIDERS = {
   geminiPaidCost: "Paid plan: Google bills your account for usage. No LORE daily limit.",
   geminiPaidHint: "Your key seems to be on a paid plan. Turn on 'I'm on a paid Gemini plan' to remove LORE's daily limit.",
   dismiss: "Dismiss",
+};
+
+// The two-step onboarding screen (KeyOnboarding): choose a provider, then add its key. Titles, errors, the model
+// picker and the prices come from PROVIDERS above, so onboarding and Settings say the same things.
+export const ONBOARD = {
+  progressLabel: "Progress",
+  stepOf: (n: number, total: number) => `Step ${n} of ${total}`,
+  steps: ["Choose a provider", "Add your key"],
+  chooseLead: "LORE answers from your books with an AI model, using your own key. Pick one to start.",
+  providersLabel: "AI provider",
+  marks: { gemini: "G", anthropic: "C", openai: "O" } as Record<string, string>,
+  pitch: { gemini: "Free tier, about 1,000 requests a day", anthropic: "Best answers · billed by Anthropic",
+    openai: "Use your OpenAI account" } as Record<string, string>,
+  freeBadge: "Free to start",
+  continue: "Continue",
+  changeProvider: "Change provider",
+  keyTitle: (name: string) => `Add your ${name} key`,
+  keyLead: { gemini: "Create a free key in Google AI Studio, then paste it below.",
+    anthropic: "Create a key in the Anthropic Console, then paste it below.",
+    openai: "Create a key on the OpenAI platform, then paste it below." } as Record<string, string>,
+  getKeyAt: { gemini: "Get a key at aistudio.google.com", anthropic: "Get a key at console.anthropic.com",
+    openai: "Get a key at platform.openai.com" } as Record<string, string>,
+  newTab: "(opens in a new tab)",
+  showKey: "Show key", hideKey: "Hide key",
+  check: "Check and continue",
+  connected: (name: string) => `Your ${name} key works.`,
+  savedUnchecked: "Key saved.",
+  chooseHint: "You can change this anytime in Settings.",
+  seePrices: "See prices",
+  geminiPrices: "Gemini's free tier allows about 1,000 requests a day, resetting at midnight Pacific. On a paid Google plan, Google bills your account for usage.",
+  openaiPrices: "OpenAI bills your own account at its published prices for the model you pick. Searching and checking can run on a cheaper model.",
+  footer: "Your key is encrypted and only used for your requests. You can change provider anytime in Settings.",
 };
 
 // Settings: what the user has used, and their own optional daily token cap (Claude and OpenAI).
@@ -897,6 +927,9 @@ export const HOME = {
   signIn: "Sign in",
   requestInvite: "Request an invite",
   openLore: "Open LORE",
+  githubUrl: "https://github.com/Jatin-Roopchandani/LORE",
+  githubLabel: "LORE on GitHub",
+  github: "GitHub",
   eyebrow: "Private beta",
   headline: "Every story is a web.",
   headlineGlow: "LORE draws it.",

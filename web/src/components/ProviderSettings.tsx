@@ -9,6 +9,15 @@ import type { KeySaved, ProviderId, ProviderInfo, ProvidersState } from "../type
 export const PROVIDER_IDS: ProviderId[] = ["gemini", "anthropic", "openai"];
 const name = (p: ProviderId) => PROVIDERS.names[p] ?? p;
 
+// Sends a pasted key to the server to be checked and saved. On a refusal, the friendly message to show and whether
+// to keep what was typed (only a rate limit keeps it: the key itself may be fine). Shared with the onboarding screen.
+export async function checkKey(key: string, provider: ProviderId):
+  Promise<{ saved: KeySaved } | { problem: string; keep: boolean }> {
+  const r = await keyApi.save(key.trim(), provider);
+  if (isError(r)) return { problem: PROVIDERS.errors[r.error.code] ?? PROVIDERS.saveFailed, keep: r.error.code === "rate_limited" };
+  return { saved: r };
+}
+
 // The paste field and "Check and save" for one provider. The key lives only in this field until the server answers.
 export function ProviderKeyForm({ provider, onSaved, onCancel }:
   { provider: ProviderId; onSaved: (saved: KeySaved) => void; onCancel?: () => void }) {
@@ -18,15 +27,15 @@ export function ProviderKeyForm({ provider, onSaved, onCancel }:
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true); setProblem("");
-    const r = await keyApi.save(key.trim(), provider);
+    const r = await checkKey(key, provider);
     setBusy(false);
-    if (isError(r)) {
-      setProblem(PROVIDERS.errors[r.error.code] ?? PROVIDERS.saveFailed);
-      if (r.error.code !== "rate_limited") setKey("");
+    if ("problem" in r) {
+      setProblem(r.problem);
+      if (!r.keep) setKey("");
       return;
     }
     setKey("");
-    onSaved(r);
+    onSaved(r.saved);
   };
   return (
     <form className="key-form" onSubmit={submit}>
@@ -59,11 +68,13 @@ export function ClaudePrices() {
 }
 
 // The model picker for a connected Claude or OpenAI key (Gemini runs its own measured cascade: nothing to pick).
-export function ModelPicker({ info, onChosen }: { info: ProviderInfo; onChosen: (state: ProvidersState) => void }) {
+// `compact` (onboarding): model names only, no price notes; the prices sit behind that screen's "See prices".
+export function ModelPicker({ info, onChosen, compact = false }:
+  { info: ProviderInfo; onChosen: (state: ProvidersState) => void; compact?: boolean }) {
   const [problem, setProblem] = useState("");
   if (info.provider === "gemini") return null;
   const options = info.provider === "anthropic"
-    ? PROVIDERS.claudeModels.map((m) => ({ id: m.id, label: `${m.name} (${m.price})` }))
+    ? PROVIDERS.claudeModels.map((m) => ({ id: m.id, label: compact ? m.name : `${m.name} (${m.price})` }))
     : info.models.map((m) => ({ id: m, label: m }));
   const choose = async (model: string | null, fast?: string | null) => {
     setProblem("");
@@ -87,7 +98,7 @@ export function ModelPicker({ info, onChosen }: { info: ProviderInfo; onChosen: 
         </select>
       </label>
       <p className="hint">{PROVIDERS.fastModelHint}</p>
-      {info.provider === "anthropic" && <p className="hint">{PROVIDERS.priceExplain}</p>}
+      {info.provider === "anthropic" && !compact && <p className="hint">{PROVIDERS.priceExplain}</p>}
       {problem && <div className="notice error" role="alert">{problem}</div>}
     </div>
   );
