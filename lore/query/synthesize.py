@@ -734,7 +734,7 @@ wording.
 "{supported}": those claims, together, support what the sentence means.
 - Paraphrase, summary and combining claims are supported when they add
   nothing.
-- An order word ("at first", "earlier", "later", "by the end", "in the next
+{summary}- An order word ("at first", "earlier", "later", "by the end", "in the next
   book") is supported when the positions of the cited claims show that
   order.
 - Contrast and addition words ("also", "however", "although", "in
@@ -751,6 +751,24 @@ Return these in sentence_judgements, one per sentence, numbered 1 to
 {count} in the claim field, with a verdict and a reason of at most
 {max_words} words.
 """
+
+# SUMMARY_CHECK (2026-11-08, spec orphan-repair): an introduction or summary
+# sentence cites several claims and says in general words what they show
+# together. Measured on a deep answer: the check rejected such openings ("adds
+# ordering", "beyond"), so sections began with a stray detail. With this on,
+# the sentence rule says outright that such a sentence is judged against the
+# union of its claims; what it still refuses is a real addition. Needs
+# STORY_ORDER (it lives in the story block). Off gives the prompt before it.
+SUMMARY_CHECK = True
+_SUMMARY_RULE = """- A sentence that introduces or sums up, citing several claims, is judged
+  against all of them together, as one body of evidence. It is supported when
+  everything it says is stated by at least one of its cited claims, or is
+  what they show together put in general words (several claims describing
+  the same place, person or event may be summed up in one phrase). It is
+  "{not_supported}" only when it adds a fact, cause, order or evaluation that
+  none of its cited claims states.
+"""
+
 
 # READINGS: a sentence marked "(reading)" interprets its claims instead of
 # restating them, so it gets this test in place of the one above.
@@ -870,9 +888,16 @@ def faithfulness_prompt(
             f"{i}. sentence{label(s)}: {s.text.strip()}\n"
             f"   uses claims {', '.join(str(k) for k in s.claims)}"
             for i, s in enumerate(sentences, start=1))
-        prompt += (_STORY_SENTENCES_BLOCK if story else _SENTENCES_BLOCK).format(
-            sentences=lines, count=len(sentences), supported=SUPPORTED,
-            not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+        summary = (_SUMMARY_RULE.format(not_supported=NOT_SUPPORTED)
+                   if story and SUMMARY_CHECK else "")
+        prompt += (_STORY_SENTENCES_BLOCK.format(summary=summary, sentences=lines,
+                                                 count=len(sentences), supported=SUPPORTED,
+                                                 not_supported=NOT_SUPPORTED,
+                                                 max_words=MAX_REASON_WORDS)
+                   if story else
+                   _SENTENCES_BLOCK.format(sentences=lines, count=len(sentences),
+                                           supported=SUPPORTED, not_supported=NOT_SUPPORTED,
+                                           max_words=MAX_REASON_WORDS))
         if readings:
             prompt += _READINGS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
         if shape is not None:
@@ -957,6 +982,9 @@ class CheckOutcome:
     # FACT_FIDELITY, per sentence: True when the check says it is a fact
     # stating an interpretation its claims do not. None when not asked.
     inference: list[bool] | None = None
+    # Per sentence, the check's reason (shown to the writer in a repair, never
+    # parsed). None when the sentence verdicts are None.
+    sentence_reasons: list[str] | None = None
 
 
 async def check_answer(
@@ -980,7 +1008,7 @@ async def check_answer(
     if not claims:
         return CheckOutcome([], [], True, [], None)
     passages = list(passages)
-    gap_ok = restated = inference = None
+    gap_ok = restated = inference = reasons = None
     try:
         result = await check(
             faithfulness_prompt(claims, passages, book_titles, sentences, books, gaps, shape),
@@ -996,6 +1024,9 @@ async def check_answer(
         if sentence_ok is not None and write_module.fidelity_on():
             inference = [getattr(j, "inference_in_fact", False) is True
                          for j in result.sentence_judgements]
+        if sentence_ok is not None:
+            reasons = [" ".join(str(getattr(j, "reason", "") or "").split())
+                       for j in result.sentence_judgements]
     except Exception:  # noqa: BLE001 -- see check_claims
         verdicts, sentence_ok = None, None
     if verdicts is None:
@@ -1005,7 +1036,7 @@ async def check_answer(
     for claim, (supported, reason) in zip(claims, verdicts):
         (kept.append(claim) if supported else dropped.append((claim, reason)))
     return CheckOutcome(kept, dropped, True, [ok for ok, _ in verdicts], sentence_ok, gap_ok,
-                        restated, inference)
+                        restated, inference, reasons)
 
 
 def _sentence_number(value, count: int) -> int:
@@ -1043,7 +1074,8 @@ PROSE_FALLBACK_NOTE = "the written answer did not pass verification; showing the
 
 
 async def _finish(question, sub_questions, kept, evidence, check, write, book_titles,
-                  part_claims=None, books=None, shape=None, length=None, covered=()):
+                  part_claims=None, books=None, shape=None, length=None, covered=(),
+                  spend_ok=None):
     """Writer (when it applies) and the faithfulness check, in one place for
     all synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note,
     unanswered part texts, gaps -- both set only when the prose is shown).
@@ -1054,7 +1086,10 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     and so are not returned separately.
 
     `length` ("section", "short", "lens" or "recap"): the writer sizes the prose for a deep
-    answer's section or its short answer (write.py) instead of the default cap."""
+    answer's section or its short answer (write.py) instead of the default cap.
+
+    `spend_ok`: asked before an ORPHAN_REPAIR round (False: no round, and an
+    orphaned prose falls back to its claim list). None: always allowed."""
     needs_writer = (write_module.PROSE_FACTUAL or length is not None
                     or (shape is not None and (shape.interpretive or bool(shape.beyond))))
     try_prose = (write_module.PROSE_ANSWERS and needs_writer and write is not None
@@ -1091,19 +1126,31 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     # FACT_FIDELITY: a fact sentence stating an interpretation is repaired, or not shown.
     fix_facts = write_module.fidelity_on()
 
-    def build(sents, n_written, outc):
+    def prepare(sents, n_written, outc):
         sents, ok = list(sents), list(outc.sentence_ok or [])
         if enforce:
             sents = cite_restated(sents, outc.claim_ok, ok, outc.restated)
         if fix_facts and outc.inference and len(outc.inference) == len(sents) == len(ok):
             # Not shown, and not counted against the prose: its claims are
-            # true, and COVERAGE places them in their own words.
+            # true, and COVERAGE places them in their own words. For
+            # ORPHAN_REPAIR it is a removed sentence like any other.
             flagged = [flag and getattr(s, "kind", "fact") == "fact"
                        for s, flag in zip(sents, outc.inference)]
             n_written -= sum(flagged)
-            sents = [s for s, f in zip(sents, flagged) if not f]
-            ok = [g for g, f in zip(ok, flagged) if not f]
-        return assemble(sents, n_written, outc.claim_ok, ok, passage_of)
+            ok = [g and not f for g, f in zip(ok, flagged)]
+            sents = [s if not f else s.model_copy(update={"kind": "removed"})
+                     for s, f in zip(sents, flagged)]
+        return sents, ok, n_written
+
+    def build(sents, n_written, outc):
+        sents, ok, n_written = prepare(sents, n_written, outc)
+        shown = [(s, g) for s, g in zip(sents, ok) if getattr(s, "kind", "fact") != "removed"]
+        return assemble([s for s, _ in shown], n_written, outc.claim_ok, [g for _, g in shown],
+                        passage_of)
+
+    def kept_mask(sents, n_written, outc):
+        sents, ok, _ = prepare(sents, n_written, outc)
+        return sents, write_module.kept_flags(sents, outc.claim_ok, ok)
 
     if sentences is not None:
         ready = bool(sentences) and outcome.ran and outcome.sentence_ok is not None
@@ -1135,7 +1182,24 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
                 if outcome2.ran and outcome2.sentence_ok is not None:
                     built = build(second, len(split_items(again)), outcome2)
                     if built:
+                        sentences, written = second, len(split_items(again))
                         outcome, gaps = outcome2, []
+        if built and write_module.orphan_repair_on():
+            # ORPHAN_REPAIR: no shown sentence leans on one the check removed,
+            # and a section whose opening was removed gets a new one.
+            prepared, keep = kept_mask(sentences, written, outcome)
+            orphaned = write_module.orphans(prepared, keep)
+            intro = (length in INTRO_LENGTHS and shape is None
+                     and write_module.opener_cut(keep))
+            if orphaned or intro:
+                fixed = await _orphan_repair(
+                    question, sub_questions, kept, evidence.passages, check, write, book_titles,
+                    books, shape, length, covered, prepared, keep, outcome, gaps, intro, spend_ok)
+                better = build(*fixed) if fixed is not None else None
+                if better and not write_module.orphans(*kept_mask(*fixed)):
+                    built, (sentences, written, outcome) = better, fixed
+                elif orphaned:
+                    built = None  # never shown with an orphaned opening: the claim list is
         if built and enforce:
             built = place_uncited(built, [c.text for c in outcome.kept],
                                   [c.passage for c in outcome.kept])
@@ -1216,6 +1280,80 @@ async def _repair(question, sub_questions, kept, evidence, check, write, book_ti
     return second, len(split_items(again)), outcome2
 
 
+# ORPHAN_REPAIR: the parts whose opening sentence, removed by the check, is
+# written again (an introduction). A short answer, a recap section (which opens
+# with its first event) and an interpretive answer (whose opening is its
+# readings) are left as they are; their orphans are still repaired.
+INTRO_LENGTHS = (None, "section", "lens")
+
+
+async def _orphan_repair(question, sub_questions, kept, passages, check, write, book_titles,
+                         books, shape, length, covered, sentences, keep, outcome, gaps, intro,
+                         spend_ok=None):
+    """ORPHAN_REPAIR's one round: (sentences, written, outcome) of the writer's
+    revised draft, checked once, in the numbering of `kept`; or None when the
+    spend check says no or the round failed.
+
+    The writer sees only the claims the check kept (renumbered for it), the
+    sentences that were shown (the orphans among them marked), the sentences
+    the check removed with its reasons, and, with `intro`, that the opening was
+    removed. `sentences`/`keep`: the draft as shown, and which were kept."""
+    if write is None or check is None or (spend_ok is not None and not spend_ok()):
+        return None
+    idx = [i for i, ok in enumerate(outcome.claim_ok) if ok]
+    if not idx:
+        return None
+    sub_claims = [kept[i] for i in idx]
+    to_sub = {i + 1: j + 1 for j, i in enumerate(idx)}
+    orphaned = set(write_module.orphans(sentences, keep))
+    shown = [i for i, k in enumerate(keep) if k]
+    draft = tuple(sentences[i].model_copy(update={"claims": [to_sub[k] for k in sentences[i].claims]})
+                  for i in shown)
+    reasons, verdicts = outcome.sentence_reasons or [], outcome.sentence_ok or []
+
+    def why(i: int) -> str:
+        if getattr(sentences[i], "kind", "fact") == "removed":
+            return "states an interpretation its facts do not"
+        if i < len(verdicts) and not verdicts[i]:
+            return reasons[i] if i < len(reasons) else ""
+        return "rests on a fact that did not check out"
+
+    removed = tuple((s.text, why(i)) for i, s in enumerate(sentences)
+                    if not keep[i] and getattr(s, "kind", "fact") in ("fact", "removed"))
+    sub_shape = (shape.with_claims([shape.claim_parts[i] for i in idx])
+                 if shape is not None and len(shape.claim_parts) == len(kept) else shape)
+    repair = Repair(draft=draft, orphans=tuple(n for n, i in enumerate(shown, start=1)
+                                               if i in orphaned),
+                    intro=intro, removed=removed)
+    again = await write_answer(question, sub_questions, sub_claims, passages, write,
+                               book_titles=book_titles, books=books, shape=sub_shape,
+                               length=length, covered=covered, repair=repair)
+    second = (verify_prose(again, len(sub_claims), [c.text for c in sub_claims], sub_shape)
+              if again is not None else [])
+    if not second:
+        return None
+    checked = await check_answer(sub_claims, passages, check, book_titles=book_titles,
+                                 sentences=second, books=books, gaps=gaps or None, shape=sub_shape)
+    if not (checked.ran and checked.sentence_ok is not None):
+        return None
+    # Back to the numbering of `kept`: a claim cut before the round stays cut.
+    lifted = [s.model_copy(update={"claims": [idx[k - 1] + 1 for k in s.claims]}) for s in second]
+    claim_ok = [False] * len(kept)
+    for j, i in enumerate(idx):
+        claim_ok[i] = checked.claim_ok[j]
+    restated = None
+    if checked.restated is not None:
+        restated = [0] * len(kept)
+        for j, i in enumerate(idx):
+            restated[i] = checked.restated[j]
+    merged = CheckOutcome(
+        kept=[c for c, ok in zip(kept, claim_ok) if ok],
+        dropped=[*outcome.dropped, *checked.dropped], ran=True, claim_ok=claim_ok,
+        sentence_ok=checked.sentence_ok, gap_ok=checked.gap_ok, restated=restated,
+        inference=checked.inference, sentence_reasons=checked.sentence_reasons)
+    return lifted, len(split_items(again)), merged
+
+
 async def synthesize(
     question: str,
     evidence: Evidence,
@@ -1230,6 +1368,7 @@ async def synthesize(
     write: Generate | None = None,
     books: dict[str, BookInfo] | None = None,
     section: SectionSpec | None = None,
+    spend_ok=None,
 ) -> Answer:
     """`checklist`: the question's sub-questions; shown only when there are
     several, so a partial answer is visible as partial.
@@ -1268,7 +1407,7 @@ async def synthesize(
     kept, _cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         written_for, list(checklist) or [question], kept, evidence, check, write, book_titles,
         books=books, length=section.length if section is not None else None,
-        covered=section.covered if section is not None else ())
+        covered=section.covered if section is not None else (), spend_ok=spend_ok)
     if not kept:
         return answer(REFUSAL)
     # can_answer=false with verified claims is a partial answer, not a
@@ -1301,6 +1440,7 @@ async def synthesize_parts(
     plan: Sequence | None = None,
     retrieval: Sequence | None = None,
     viewpoint: str | None = None,
+    spend_ok=None,
 ) -> Answer:
     """One synthesis call per sub-question, over that part's share, merged.
 
@@ -1341,12 +1481,12 @@ async def synthesize_parts(
         return await synthesize_shaped(
             question, plan, retrieval, evidence, generate, mode=mode, template=template,
             note=note, book_titles=book_titles, check=check, write=write, books=books,
-            viewpoint=viewpoint)
+            viewpoint=viewpoint, spend_ok=spend_ok)
     if len(sub_questions) < 2 or len(evidence.shares) != len(sub_questions):
         return await synthesize(question, evidence, generate, mode=mode, template=template,
                                 note=note, book_titles=book_titles,
                                 checklist=sub_questions, check=check, write=write,
-                                books=books)
+                                books=books, spend_ok=spend_ok)
 
     def answer(text: str, *extra_notes: str | None,
               claims: tuple[Claim, ...] = ()) -> Answer:
@@ -1382,7 +1522,7 @@ async def synthesize_parts(
     kept = _collapse(kept)
     kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         question, sub_questions, kept, evidence, check, write, book_titles,
-        part_claims=per_part, books=books)
+        part_claims=per_part, books=books, spend_ok=spend_ok)
     if STORY_ORDER_LIST and not prose:
         kept = sorted(kept, key=lambda c: c.passage)  # stable: one passage keeps its order
     missing = [part for part, claims in zip(sub_questions, per_part)
@@ -1497,6 +1637,7 @@ async def synthesize_shaped(
     write: Generate | None = None,
     books: dict[str, BookInfo] | None = None,
     viewpoint: str | None = None,
+    spend_ok=None,
 ) -> Answer:
     """An answer with an interpretive or beyond part (interpret.py).
 
@@ -1522,7 +1663,7 @@ async def synthesize_shaped(
     shape, by_part = gathered.shape, gathered.by_part
     kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         question, list(shape.parts), gathered.kept, evidence, check, write, book_titles,
-        part_claims=by_part, books=books, shape=shape)
+        part_claims=by_part, books=books, shape=shape, spend_ok=spend_ok)
     missing = [part.question for part, claims in zip(plan, by_part)
                if part.kind != "beyond" and (not claims or all(c in cut for c in claims))]
     if not kept:

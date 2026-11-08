@@ -405,6 +405,8 @@ async def _synthesize(question, evidence, models: QueryModels, *,
         asked = True
         return await models.synthesize(prompt, schema)
 
+    # ORPHAN_REPAIR asks the day's reserve before its one extra round.
+    kwargs.setdefault("spend_ok", getattr(models, "spend_ok", None))
     if sub_questions is None:
         answer = await synthesize(question, evidence, generate, check=models.check,
                                   write=models.write, **kwargs)

@@ -76,6 +76,38 @@ COVERAGE = True
 # STORY_ORDER (`fidelity_on`). Off gives the code before it.
 FACT_FIDELITY = True
 
+# ORPHAN_REPAIR (2026-11-08, spec orphan-repair): no shown sentence leans on a
+# sentence that is not shown. When the check removes a sentence, the next kept
+# one may open with "He ..." or "Then ..." whose meaning was in the removed
+# one; a paragraph or section may also open that way. Code finds such a
+# sentence (`orphans`, a small word list per language, `CONTEXT_WORDS`), and a
+# section (or whole answer) whose opening sentence the check removed
+# (`opener_cut`). The writer gets ONE repair round for it, over the claims the
+# check kept only, told what was removed and why; the repair is checked once.
+# A repair that still leaves an orphan, or fails, makes that section (or
+# answer) fall back to its claim list: an orphaned opening is never shown. A
+# removed opening that the repair does not mend leaves the first draft. Needs
+# STORY_ORDER (`orphan_repair_on`). Off gives the code before it.
+ORPHAN_REPAIR = True
+
+# READER_PROSE (2026-11-08, spec orphan-repair): the writer writes for a reader
+# of the book. Connected paragraphs that group related facts into fuller
+# sentences and situate them in the story, depth over brevity, no remark about
+# "the facts" themselves, each sentence understandable if the one before it
+# were cut, and a section's opening a plain topic sentence that names its
+# subject (`READER_RULE`, the reader opening in `length_rule`). Citation rules
+# are unchanged. Needs STORY_ORDER (`reader_prose_on`). Off gives the prompts
+# before it, byte for byte.
+READER_PROSE = True
+
+
+def orphan_repair_on() -> bool:
+    return ORPHAN_REPAIR and STORY_ORDER
+
+
+def reader_prose_on() -> bool:
+    return READER_PROSE and STORY_ORDER
+
 
 def readings_on() -> bool:
     return READINGS and STORY_ORDER
@@ -256,6 +288,120 @@ LENGTH_RULES = {None: _LENGTH_RULE, "section": SECTION_LENGTH_RULE,
                 "short": SHORT_LENGTH_RULE, "lens": LENS_LENGTH_RULE,
                 "recap": RECAP_LENGTH_RULE, "recap_short": RECAP_SHORT_RULE}
 
+# READER_PROSE: how a section (or lens) opens. The rule it replaces asked for a
+# sentence saying "how these facts answer" the aspect, and the writer took that
+# literally ("The facts show ..."). The opening introduces the subject instead.
+_READER_OPENING = """- Open with a plain topic sentence that introduces the subject of this section by
+  name: who, what or where it is and where it stands in the story. Build it only
+  from the facts given and list every fact it draws on in `claims`. If no fact
+  can open that way, begin with the first fact, naming who or what it is about.
+"""
+_OLD_SECTION_OPENING = """- Open with one sentence that says how these facts answer that aspect. It must
+  itself state what the facts show and list those facts in `claims`; never open
+  with a remark that no fact supports. If no fact can open that way, leave the
+  opening out and begin with the first fact.
+"""
+_OLD_LENS_OPENING = """- Open with one sentence that says how these facts bear on the question. It must
+  itself state what the facts show (for example what a person does, chooses or
+  hides) and list those facts in `claims`; never open with a remark that no fact
+  supports. If no fact can open that way, leave the opening out and begin with
+  the first fact.
+"""
+READER_LENGTH_RULES = {
+    "section": SECTION_LENGTH_RULE.replace(_OLD_SECTION_OPENING, _READER_OPENING),
+    "lens": LENS_LENGTH_RULE.replace(_OLD_LENS_OPENING, _READER_OPENING),
+}
+assert all(READER_LENGTH_RULES[k] != LENGTH_RULES[k] for k in READER_LENGTH_RULES)
+
+# READER_PROSE: added to the story writer's rules (every answer it writes).
+READER_RULE = """- Write for a reader of the book, as a thoughtful companion to it: connected
+  paragraphs that carry the reader from one point to the next with
+  transitions, not a stack of one-fact sentences. Group related facts into
+  fuller sentences, and place events in the story (when they happen, who is
+  involved, why they matter) wherever the facts say so.
+{depth}- Write about the story, never about the facts: no "The facts show", "The
+  passages say", "According to the evidence" or the like.
+- Each sentence must still be understandable if the sentence before it were
+  removed. Name the person or thing at the start of every paragraph and in
+  any sentence whose subject only the sentence before names; never begin a
+  paragraph with "he", "she", "they", "it", "this" or "then".
+"""
+# Not for a short answer, which has its own length.
+READER_DEPTH_RULE = """- Prefer depth to brevity: give every fact its due, gracefully, rather than
+  tersely.
+"""
+
+
+def reader_rule(length: str | None) -> str:
+    return READER_RULE.format(
+        depth="" if length in ("short", "recap_short") else READER_DEPTH_RULE)
+
+
+def length_rule(length: str | None) -> str:
+    """The length rule for `length`, with the reader opening under READER_PROSE."""
+    if reader_prose_on() and length in READER_LENGTH_RULES:
+        return READER_LENGTH_RULES[length]
+    return LENGTH_RULES[length]
+
+
+# ORPHAN_REPAIR: words that, opening a sentence, lean on what came before it.
+# Per language (books are read in English today; another language adds its own
+# list). Personal and possessive pronouns, demonstratives, and sequencing or
+# contrast connectives. "There" followed by a form of "be" (or a modal) is the
+# existential "there is", which leans on nothing, so it is not counted.
+CONTEXT_WORDS = {
+    "en": frozenset("""he she they it his her their its him them hers theirs
+        this that these those
+        then later afterwards afterward also still but however meanwhile there
+        thereafter subsequently""".split()),
+}
+_EXISTENTIAL = {
+    "en": frozenset("""is are was were be been being has have had will would
+        may might must can could seems seemed seem appears appeared""".split()),
+}
+_LEAD_WORD = re.compile(r"[^\W\d_]+")
+
+
+def leans_back(text: str, language: str = "en") -> bool:
+    """Whether a sentence opens with a word whose meaning is in an earlier
+    sentence ("He ran ...", "Then the ...", "This village ...")."""
+    words = _LEAD_WORD.findall(text[:80])
+    if not words:
+        return False
+    first = words[0].lower()
+    if first not in CONTEXT_WORDS.get(language, frozenset()):
+        return False
+    return not (first == "there" and len(words) > 1
+                and words[1].lower() in _EXISTENTIAL.get(language, frozenset()))
+
+
+def kept_flags(sentences: Sequence, claim_ok: Sequence[bool],
+               sentence_ok: Sequence[bool]) -> list[bool]:
+    """Per sentence, whether `assemble` keeps it: the check passed it and every
+    claim it cites survived."""
+    return [bool(ok) and all(1 <= k <= len(claim_ok) and claim_ok[k - 1] for k in s.claims)
+            for s, ok in zip(sentences, sentence_ok)]
+
+
+def orphans(sentences: Sequence, keep: Sequence[bool], language: str = "en") -> list[int]:
+    """0-based indices of the kept sentences that lean on a sentence not shown:
+    one opening with a context word (`leans_back`) that is the first kept
+    sentence, opens a paragraph, or follows a sentence that was removed."""
+    out, any_kept = [], False
+    for i, (s, k) in enumerate(zip(sentences, keep)):
+        if not k:
+            continue
+        if (getattr(s, "kind", "fact") != "limit" and leans_back(s.text, language)
+                and (not any_kept or s.new_paragraph or not keep[i - 1])):
+            out.append(i)
+        any_kept = True
+    return out
+
+
+def opener_cut(keep: Sequence[bool]) -> bool:
+    """Whether the opening sentence was removed while others stand."""
+    return bool(keep) and not keep[0] and any(keep)
+
 
 STORY_WRITER_PROMPT = """Write the answer to the question from the numbered facts below.
 
@@ -378,6 +524,22 @@ REDUCE_RULE = """- Draft sentences {numbers} state an interpretation their facts
 AS_READING_RULE = """  If that interpretation is worth keeping, you may also give it as a sentence
   of kind "reading", worded visibly as one, as the reading rules above allow.
 """
+# ORPHAN_REPAIR: what was removed, a sentence that leaned on it, a lost opening.
+REMOVED_RULE = """- These sentences of an earlier draft were removed because the facts do not
+  support them; do not say again what made them fail:
+{sentences}
+"""
+ORPHAN_RULE = """- Draft sentences {numbers} begin with a word ("he", "she", "it", "they",
+  "this", "then" and the like) whose meaning was in a sentence that is gone,
+  or that opens a paragraph. Rewrite each so it stands on its own: name the
+  person, place or thing it is about, with the same facts in `claims`.
+"""
+INTRO_RULE = """- The draft's opening sentence was removed. Write a new first sentence that
+  introduces the subject by name: who, what or where it is and where it stands
+  in the story. Build it only from the facts listed above, and list every fact
+  it draws on in `claims`. Never begin with "The facts show" or any remark
+  about the facts.
+"""
 
 
 @dataclass(frozen=True)
@@ -392,6 +554,12 @@ class Repair:
     # and whether the writer may keep the interpretation as a reading instead.
     reduce: tuple[int, ...] = ()
     as_reading: bool = False
+    # ORPHAN_REPAIR: draft sentences (1-based) that lean on a removed sentence,
+    # whether the opening was removed and a new one is wanted, and the
+    # sentences the check removed, each with its reason.
+    orphans: tuple[int, ...] = ()
+    intro: bool = False
+    removed: tuple[tuple[str, str], ...] = ()
 
 
 def repair_block(repair: Repair, shown_number: dict[int, int]) -> str:
@@ -412,6 +580,14 @@ def repair_block(repair: Repair, shown_number: dict[int, int]) -> str:
         rules += REDUCE_RULE.format(numbers=", ".join(str(i) for i in repair.reduce))
         if repair.as_reading:
             rules += AS_READING_RULE
+    if repair.removed:
+        rules += REMOVED_RULE.format(sentences="\n".join(
+            f"  - {text.strip()}" + (f" ({reason.strip()})" if reason.strip() else "")
+            for text, reason in repair.removed))
+    if repair.orphans:
+        rules += ORPHAN_RULE.format(numbers=", ".join(str(i) for i in repair.orphans))
+    if repair.intro:
+        rules += INTRO_RULE
     return REPAIR_RULE.format(lead=REPAIR_LEAD, draft="\n".join(lines) or "  (no sentence passed)",
                               rules=rules)
 
@@ -497,13 +673,15 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
         if fidelity_on():
             rules += FACT_RULE + (READING_HOME_RULE if shape is not None and shape.interpretive
                                   else NO_READINGS_RULE)
+        if reader_prose_on():
+            rules += reader_rule(length)
         before = (COVERED_RULE.format(headings="\n".join(f"  - {h}" for h in covered))
                   if covered else "")
         after = (AVOID_RULE.format(sentences="\n".join(f"  - {t}" for t in avoid))
                  if avoid else "")
         prompt = STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
                                             order_note=note, readings=rules,
-                                            length=LENGTH_RULES[length] + before + after)
+                                            length=length_rule(length) + before + after)
         if repair is not None:
             prompt += repair_block(repair, {i + 1: shown for shown, i in enumerate(indices, start=1)})
         return prompt

@@ -375,12 +375,26 @@ async def test_each_sections_claims_step_gets_the_question_its_focus_and_the_rel
         assert "skip incidental plot detail" in flat
 
 
-async def test_each_section_writer_opens_with_how_the_section_answers_its_aspect(config):
+async def test_each_section_writer_opens_with_a_topic_sentence_naming_its_subject(config):
+    # READER_PROSE (orphan-repair): the opening introduces the subject; the rule
+    # before it ("says how these facts answer that aspect") gave "The facts show ...".
     scripted = deep_models()
     await ask(config, scripted)
     for prompt, focus in zip(scripted.prompts("write")[:2], (TRAVELLER, ROAD)):
         flat = " ".join(prompt.split())
         assert f"Question: {focus}" in flat and f"one aspect of the larger question: {GENERAL}" in flat
+        assert "Open with a plain topic sentence that introduces the subject of this section" in flat
+        assert "list every fact it draws on in `claims`" in flat
+        assert "says how these facts answer that aspect" not in flat
+
+
+async def test_with_reader_prose_off_the_section_opening_is_as_before(config, monkeypatch):
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "READER_PROSE", False)
+    scripted = deep_models()
+    await ask(config, scripted)
+    for prompt in scripted.prompts("write")[:2]:
+        flat = " ".join(prompt.split())
         assert "Open with one sentence that says how these facts answer that aspect" in flat
         assert "list those facts in `claims`" in flat and "leave the opening out" in flat
 
@@ -759,6 +773,9 @@ async def test_with_deep_off_everything_is_what_it_was(tmp_path, monkeypatch, na
     from lore.query import write as write_module
     monkeypatch.setattr(write_module, "COVERAGE", False)  # pinned before coverage existed
     monkeypatch.setattr(write_module, "FACT_FIDELITY", False)
+    monkeypatch.setattr(write_module, "READER_PROSE", False)  # pinned before orphan-repair
+    monkeypatch.setattr(write_module, "ORPHAN_REPAIR", False)
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "SUMMARY_CHECK", False)
     config = build_deep_library(tmp_path)
     scripted = Scripted(plan)
     answer, events = await run_scenario(config, scripted, depth="deep")

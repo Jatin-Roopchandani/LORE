@@ -1058,7 +1058,11 @@ def _new_prompt_texts() -> str:
                       write_module.REDUCE_RULE, write_module.AS_READING_RULE,
                       write_module.FACT_RULE, write_module.NO_READINGS_RULE,
                       write_module.READING_HOME_RULE, synthesize_module._RESTATED_BLOCK,
-                      synthesize_module._INFERENCE_BLOCK))
+                      synthesize_module._INFERENCE_BLOCK,
+                      write_module.READER_RULE, write_module.READER_DEPTH_RULE,
+                      write_module._READER_OPENING, write_module.REMOVED_RULE,
+                      write_module.ORPHAN_RULE, write_module.INTRO_RULE,
+                      synthesize_module._SUMMARY_RULE))
 
 
 def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:

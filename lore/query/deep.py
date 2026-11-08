@@ -64,7 +64,8 @@ from lore.query.scope import Scope
 from lore.query.seed import _entities, named_seeds
 from lore.query.subgraph import assemble_ranked, relevance
 from lore.query.synthesize import (
-    CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _content_words, _finish, _numbers,
+    CHECK_SKIPPED_NOTE, INTRO_LENGTHS, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _content_words, _finish,
+    _numbers, _orphan_repair,
     _normalise, _overlap, _same_evidence, check_answer, shaped_claims, synthesize,
 )
 from lore.query.viewpoint import load_viewpoint
@@ -491,6 +492,16 @@ class Spend:
         return call
 
 
+def repair_budget(spend: Spend, spend_ok, reserve: int):
+    """The `spend_ok` a deep answer's sections ask before an ORPHAN_REPAIR round
+    (write + check): the day's reserve (`spend_ok`, None for none) and room for
+    those two requests under DEEP_MAX_REQUESTS, `reserve` more kept back."""
+    def ok() -> bool:
+        return (spend.n + 2 + reserve <= DEEP_MAX_REQUESTS
+                and (spend_ok is None or bool(spend_ok())))
+    return ok
+
+
 @dataclass
 class Registry:
     """The answer's own numbering: passages and claims from every section,
@@ -669,7 +680,8 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
                        focus=section.focus, subject=tuple(s.name for s in subject),
                        covered=tuple(covered), skip=unseen)
     answer = await synthesize(ask, evidence, models.synthesize, mode="graph", check=models.check,
-                              write=models.write, book_titles=titles, books=dict(books), section=spec)
+                              write=models.write, book_titles=titles, books=dict(books), section=spec,
+                              spend_ok=getattr(models, "spend_ok", None))
     if not answer.claims:
         return SectionResult(None, [], [], list(evidence.edges), seeds, redundant=unseen.dropped > 0)
     # A section that also reads entities other than the subject is checked against
@@ -721,10 +733,32 @@ async def cited_prose(question: str, parts: Sequence[str], claims: Sequence[Clai
                                  sentences=sentences, books=books, shape=shape)
     if not outcome.ran or outcome.sentence_ok is None:
         return None
+    passage_of = [c.passage for c in claims]
     built = assemble(sentences, len(split_items(drafted)), outcome.claim_ok, outcome.sentence_ok,
-                     [c.passage for c in claims])
+                     passage_of)
     if not built:
         return None
+    if write_module.orphan_repair_on():
+        # ORPHAN_REPAIR, as in synthesize._finish: one round, else no orphan is shown.
+        keep = write_module.kept_flags(sentences, outcome.claim_ok, outcome.sentence_ok)
+        orphaned = write_module.orphans(sentences, keep)
+        intro = length in INTRO_LENGTHS and shape is None and write_module.opener_cut(keep)
+        if orphaned or intro:
+            fixed = await _orphan_repair(
+                question, list(parts), claims, passages, models.check, models.write, book_titles,
+                books, shape, length, covered, sentences, keep, outcome, (), intro,
+                getattr(models, "spend_ok", None))
+            better = None
+            if fixed is not None:
+                again, written, checked = fixed
+                better = assemble(again, written, checked.claim_ok, checked.sentence_ok, passage_of)
+                if better and write_module.orphans(
+                        again, write_module.kept_flags(again, checked.claim_ok, checked.sentence_ok)):
+                    better = None
+            if better:
+                built, outcome = better, checked
+            elif orphaned:
+                return None
     survivors = [k for k, ok in enumerate(outcome.claim_ok, start=1) if ok]
     return tuple(replace(s, claims=tuple(survivors[k - 1] for k in s.claims)) for s in built)
 
@@ -814,6 +848,9 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
     models = replace(models, synthesize=spend.counted(models.synthesize),
                      write=spend.counted(models.write) if models.write else None,
                      check=spend.counted(models.check) if models.check else None)
+    day_ok = models.spend_ok  # starting a section asks the day's reserve alone
+    repair_ok = repair_budget(spend, day_ok, TAIL_REQUESTS)
+    models = replace(models, spend_ok=repair_ok)
     scope_books = book_ids or scope.books
     focal = None
     subject: list[SeedEntity] = []
@@ -865,7 +902,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
         reason = None
         if spend.n + SECTION_REQUESTS + tail > DEEP_MAX_REQUESTS:
             reason = "budget"
-        elif models.spend_ok is not None and not models.spend_ok():
+        elif day_ok is not None and not day_ok():
             reason = "reserve"
         if reason:
             skipped.append(section.heading)
@@ -1079,6 +1116,8 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
     models = replace(models, synthesize=generate,
                      write=spend.counted(models.write) if models.write else None,
                      check=spend.counted(models.check) if models.check else None)
+    day_ok = models.spend_ok
+    models = replace(models, spend_ok=repair_budget(spend, day_ok, 0))
     books = dict(books or {})
 
     def answer(text: str, *extra: str | None, claims=(), **more) -> Answer:
@@ -1096,7 +1135,8 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
     # The reading phase: the writer sees every claim and the check judges them all.
     kept, _cut, prose, skipped, _prose_note, _unanswered, _gaps = await _finish(
         question, list(shape.parts), gathered.kept, evidence, models.check, models.write,
-        book_titles, part_claims=None, books=books, shape=shape)
+        book_titles, part_claims=None, books=books, shape=shape,
+        spend_ok=getattr(models, "spend_ok", None))
     if not kept:
         return answer(REFUSAL)
     at = [gathered.kept.index(c) for c in kept]  # position in `gathered.kept` of each survivor
@@ -1154,7 +1194,7 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
         reason = None
         if spend.n + SECTION_REQUESTS - 1 > DEEP_MAX_REQUESTS:
             reason = "budget"
-        elif models.spend_ok is not None and not models.spend_ok():
+        elif day_ok is not None and not day_ok():
             reason = "reserve"
         if reason:
             not_written.append(heading)
