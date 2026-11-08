@@ -106,12 +106,13 @@ def test_multi_mode_claude_user_gets_claude_at_every_site(clean_env, monkeypatch
             assert {b[0] for b in built} == {"AnthropicTextModel"}, name
             assert {b[1] for b in built} == {ALICE_CLAUDE}, name
             assert [b[3] for b in built] == EXPECTED_SITES[name], name
-    # roles: the writer sites on Opus, the fast ones on Haiku
+    # roles: the writer sites on Opus, the fast ones on Haiku (the faithfulness
+    # check is a writer site: the fast model refused verbatim-quoted claims)
     with key_scope.bound(scope):
         built.clear()
         _sites(cfg)["query models"]()
     assert [b[2] for b in built] == [roles.CLAUDE_HAIKU, roles.CLAUDE_OPUS,
-                                     roles.CLAUDE_HAIKU, roles.CLAUDE_HAIKU,
+                                     roles.CLAUDE_HAIKU, roles.CLAUDE_OPUS,
                                      roles.CLAUDE_OPUS]
 
 
@@ -300,5 +301,5 @@ def test_claude_answers_a_question_end_to_end(clean_env, monkeypatch):
         await models.aclose()
     asyncio.run(go())
     assert calls == [(roles.CLAUDE_HAIKU, "low"), (roles.CLAUDE_HAIKU, "low"),
-                     (roles.CLAUDE_HAIKU, "low"), (roles.CLAUDE_SONNET, "medium"),
+                     (roles.CLAUDE_SONNET, "low"), (roles.CLAUDE_SONNET, "medium"),
                      (roles.CLAUDE_SONNET, "medium")]
