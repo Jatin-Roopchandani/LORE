@@ -1,8 +1,7 @@
 """Write the four artifacts a unit produces, identically in both tiers.
 
-Takes primitives rather than a WorkUnit so the Kaggle kernel — which
-imports this module from the package shipped inside the work-unit
-dataset — never has to import lore.orchestrator.workunit too.
+The manifest keeps its `gpu_seconds` field (the unit's wall time) so every
+manifest already on disk and every new one read the same way.
 """
 from __future__ import annotations
 

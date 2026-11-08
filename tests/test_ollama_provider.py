@@ -42,8 +42,8 @@ async def test_generate_parses_structured_output() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_sends_an_explicit_output_cap() -> None:
-    # The Kaggle tier caps output; the local tier must cap it the same
-    # way or the same book dead-letters differently per provider. An
+    # The local tier caps output at MAX_OUTPUT_TOKENS, or the same book
+    # dead-letters differently per provider. An
     # uncapped local run also truncates at the model's own default,
     # which is invisible until the JSON fails to parse.
     sent: dict = {}

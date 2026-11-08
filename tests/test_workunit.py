@@ -10,7 +10,6 @@ from lore.orchestrator.workunit import (
     OutputError,
     pack_units,
     validate_output,
-    write_unit,
 )
 
 BOOK = "abcdef0123456789"
@@ -58,29 +57,6 @@ def test_pack_units_ids_change_when_the_chunk_set_at_an_index_changes() -> None:
 def test_pack_units_ids_are_unique_per_unit() -> None:
     units = pack_units(BOOK, _chunks(9), size=3)
     assert len({u.unit_id for u in units}) == len(units)
-
-
-def test_write_unit_emits_jsonl_and_manifest(tmp_path: Path) -> None:
-    unit = pack_units(BOOK, _chunks(3), size=10)[0]
-    unit_dir = write_unit(unit, tmp_path)
-    rows = [
-        json.loads(line)
-        for line in (unit_dir / "unit.jsonl").read_text().splitlines()
-        if line.strip()
-    ]
-    assert [r["chunk_id"] for r in rows] == [c.id for c in unit.chunks]
-    assert rows[0]["text"] == "chunk text 0"
-    manifest = json.loads((unit_dir / "unit-manifest.json").read_text())
-    assert manifest["unit_id"] == unit.unit_id
-    assert manifest["book_id"] == BOOK
-    assert manifest["chunk_count"] == 3
-
-
-def test_write_unit_ships_the_lore_package(tmp_path: Path) -> None:
-    unit = pack_units(BOOK, _chunks(1), size=10)[0]
-    unit_dir = write_unit(unit, tmp_path, package_root=Path("lore"))
-    assert (unit_dir / "lore" / "extract" / "runner.py").is_file()
-    assert (unit_dir / "lore" / "extract" / "prompts.py").is_file()
 
 
 def _write_outputs(

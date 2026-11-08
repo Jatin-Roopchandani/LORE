@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
-from lore.config import LoreConfig
+from lore.config import KAGGLE_REMOVED, LoreConfig
 from lore.orchestrator.local import make_gemini_tier, parts_done
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
 from lore.orchestrator.run import (
@@ -53,6 +53,8 @@ class ExtractStage:
 
     def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
         config = ctx.config
+        if config.extraction_provider == "kaggle":
+            raise ValueError(KAGGLE_REMOVED)
         if config.extraction_provider != "gemini":
             raise ValueError(
                 'resumable processing needs extraction_provider = "gemini"')
@@ -84,7 +86,7 @@ class ExtractStage:
                         job_ctl.advance(others + n)
 
                     try:
-                        ok, _, n_ok, n_dead = _run_unit_here(
+                        ok, n_ok, n_dead = _run_unit_here(
                             ctx.conn, unit,
                             lambda unit=unit, dest=dest, on_chunk=on_chunk, nxt=nxt:
                             loop.run(tier.run(unit, dest,

@@ -1,17 +1,15 @@
-"""Work units: the transport format between the local pipeline and Kaggle."""
+"""Work units: a book's chunks packed for extraction, and the check of what a
+unit wrote (lore/orchestrator/local.py)."""
 from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow.parquet as pq
 
-from lore import fs
 from lore.db.lance_store import EMBED_DIM
-from lore.extract.schemas import SCHEMA_VERSION
 from lore.ingest.models import Chunk
 
 _ARTIFACTS = (
@@ -56,46 +54,6 @@ def pack_units(book_id: str, chunks: list[Chunk], size: int) -> list[WorkUnit]:
             )
         )
     return units
-
-
-def write_unit(
-    unit: WorkUnit, dest: Path, package_root: Path | None = None
-) -> Path:
-    """Materialize a unit's upload directory: chunks, manifest, and the
-    `lore` package the kernel imports so both tiers share one runner."""
-    unit_dir = dest / unit.unit_id
-    unit_dir.mkdir(parents=True, exist_ok=True)
-    fs.atomic_write_text(unit_dir / "unit.jsonl", "".join(
-        json.dumps(
-            {
-                "chunk_id": chunk.id,
-                "text": chunk.text,
-                "chapter_seq": chunk.chapter_seq,
-            }
-        )
-        + "\n"
-        for chunk in unit.chunks
-    ))
-    fs.atomic_write_text(
-        unit_dir / "unit-manifest.json",
-        json.dumps(
-            {
-                "unit_id": unit.unit_id,
-                "book_id": unit.book_id,
-                "chunk_count": len(unit.chunks),
-                "schema_version": SCHEMA_VERSION,
-            },
-            indent=2,
-        )
-    )
-    root = package_root if package_root is not None else Path(__file__).resolve().parents[1]
-    shutil.copytree(
-        root,
-        unit_dir / "lore",
-        dirs_exist_ok=True,
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-    )
-    return unit_dir
 
 
 def validate_output(unit: WorkUnit, out_dir: Path) -> OutputSummary:

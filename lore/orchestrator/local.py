@@ -1,4 +1,4 @@
-"""Work units run from this machine rather than on Kaggle.
+"""Work units, run from this machine.
 
 Two tiers share one write-and-validate step:
 
@@ -7,8 +7,7 @@ Two tiers share one write-and-validate step:
     embeddings still local on Ollama (nomic-embed-text with
     DOCUMENT_PREFIX, the same embedder the query side uses).
 
-Both write the kernel-shaped artifacts and check them with the same
-`validate_output` the Kaggle path uses.
+Both write the same four artifacts and check them with `validate_output`.
 """
 from __future__ import annotations
 
@@ -422,7 +421,7 @@ def make_gemini_tier(config: LoreConfig, api_key: str | None = None) -> GeminiTi
     if not creds.key:
         raise ValueError(missing_gemini_key_message(
             ['extraction_provider = "gemini"'],
-            'set extraction_provider = "kaggle" or "ollama"',
+            'set extraction_provider = "ollama"',
         ))
     gemini = creds.provider == providers.GEMINI
     return GeminiTier(

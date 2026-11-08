@@ -16,7 +16,6 @@ docs
 evals
 tests
 scripts
-kaggle
 deploy
 web/node_modules
 web/test-results

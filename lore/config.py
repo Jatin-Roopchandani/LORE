@@ -16,28 +16,25 @@ class OllamaConfig(BaseModel):
     model: str = "qwen2.5:3b-instruct-q4_K_M"
 
 
-class KaggleConfig(BaseModel):
-    username: str = ""
-    kernel_slug: str = "lore-hello"
-    dataset_slug: str = "lore-hello-data"
-    poll_interval_s: int = 30
-    poll_timeout_s: int = 1800
-    extract_kernel_slug: str = "lore-extract"
-    extract_dataset_slug: str = "lore-extract-data"
+# The extraction tier that ran on Kaggle's free GPUs was removed. An old
+# lore.toml still loads (its `[lore.kaggle]` section and the kernel's
+# `[lore.extraction]` keys are ignored, as any unknown key is); a run with
+# `extraction_provider = "kaggle"` is refused with this message instead.
+KAGGLE_REMOVED = (
+    'extraction_provider = "kaggle" is no longer supported (the Kaggle tier was'
+    ' removed). Set extraction_provider = "gemini" in lore.toml (the remote model'
+    ' [lore.llm] picks: Gemini, Claude or OpenAI) or "ollama" (fully local).'
+)
 
 
 class ExtractionConfig(BaseModel):
-    model: str = "Qwen/Qwen2.5-7B-Instruct-AWQ"
-    embed_model: str = "nomic-ai/nomic-embed-text-v1.5"
     embed_model_ollama: str = "nomic-embed-text"
-    work_unit_size: int = 10  # 10 verified on a Kaggle T4; 40 crashes vLLM's engine
-    vllm_version: str = ""  # empty = install latest on the kernel
-    # The cascade for `extraction_provider = "gemini"`. A field here rather
-    # than a new section: `extraction_provider` is a top-level string, and
-    # this section already holds each tier's model (`model` for Kaggle,
-    # `embed_model_ollama` for the local embedder). Lite only: 500
-    # requests/day each, and one chunk is one request. Measured on 22 chunks
-    # (extraction-eval-report.md), 3.1-flash-lite beat the Kaggle 7B on
+    # 10: a unit stopped mid-way re-embeds whole on resume, and each chunk's
+    # extraction is saved as it returns (lore/orchestrator/local.py).
+    work_unit_size: int = 10
+    # The cascade for `extraction_provider = "gemini"` on Gemini. Lite only:
+    # 500 requests/day each, and one chunk is one request. Measured on 22
+    # chunks (extraction-eval-report.md), 3.1-flash-lite beat a local 7B on
     # relationship precision (81% vs 61%) and entity kinds (1 wrong vs 56).
     gemini_models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
 
@@ -229,12 +226,14 @@ class AnswersConfig(BaseModel):
 
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
-    # "kaggle": free T4 burst. "ollama": fully local, zero egress.
+    # "ollama" (the default, like every other step's): fully local, zero
+    # egress, so a checkout with no key still works.
     # "gemini": each chunk's text goes to Google, one request per chunk;
     # embeddings stay local on Ollama.
-    extraction_provider: Literal["kaggle", "ollama", "gemini"] = "kaggle"
+    # "kaggle" is the removed tier: accepted only so an old lore.toml still
+    # loads; extraction refuses it with KAGGLE_REMOVED.
+    extraction_provider: Literal["ollama", "gemini", "kaggle"] = "ollama"
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
-    kaggle: KaggleConfig = Field(default_factory=KaggleConfig)
     extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
     disambiguation: DisambiguationConfig = Field(
         default_factory=DisambiguationConfig
