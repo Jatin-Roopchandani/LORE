@@ -17,6 +17,14 @@ dependencies = [
     "mcp>=2.2",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "sqlalchemy>=2",
+    "alembic>=1.20.1",
+    "psycopg[binary]>=3.3.7",
+    "authlib>=1.9.3",
+    "itsdangerous>=2.2.0",
+    "cryptography>=46",
+    "anthropic>=2.6.0",
+    "openai>=3.46.0",
 ]
 
 [project.scripts]
@@ -24,7 +32,6 @@ lore = "lore.cli:app"
 
 [dependency-groups]
 dev = [
-    "kaggle>=2.2.4",
     "pytest>=8.0",
     "pytest-asyncio",
 ]
@@ -41,6 +48,7 @@ artifacts = ["lore/web/static/**"]
 markers = [
     "live: tests that hit real local services (ollama); deselect with -m 'not live'",
     "network: tests allowed to reach non-local hosts (opts out of the socket guard)",
+    "postgres: runs migrations against a throwaway postgres container; needs docker and LORE_TEST_POSTGRES=1",
     "factual_default: run with the shipped write.PROSE_FACTUAL default (conftest pins it on otherwise)",
 ]
 asyncio_mode = "auto"

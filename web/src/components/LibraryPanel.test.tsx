@@ -1,7 +1,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LibraryPanel } from "./LibraryPanel";
-import { STAGE_LABEL } from "../messages";
+import { LIBRARY, STAGE_LABEL } from "../messages";
 
 const gemini = { used_today: 120, limit: 500, answer_reserve: 50 };
 const job = (o: object) => ({ stage: "extract", state: "running", done: 3, total: 10, stopped_reason: null, resumable_at: null,
@@ -9,7 +9,7 @@ const job = (o: object) => ({ stage: "extract", state: "running", done: 3, total
 const book = (id: string, j: object | null, status = "graphed", world: string | null = "Alpha Saga", series: string | null = null, series_index: number | null = null) =>
   ({ id, title: `Book ${id}`, author: null, status, world, series, series_index, job: j });
 const worldRow = (id: number, name: string, books: object[] = []) => ({ id, name, books });
-let status: { books: object[]; gemini: object };
+let status: { books: object[]; gemini: object; usage?: object };
 let worlds: object[];
 let posts: string[];
 let sent: { url: string; method: string; body: unknown }[];
@@ -46,6 +46,116 @@ test("paused: Continue is disabled until the time passes, then the timer enables
   expect(btn).toBeDisabled();
   await tick(30000 * 41);
   expect(screen.getByRole("button", { name: "Continue Book a" })).toBeEnabled();
+});
+
+test("footer, Gemini free tier: today's requests (as before)", async () => {
+  status = { gemini, usage: { mode: "free", provider: "gemini" }, books: [book("a", null)] };
+  await open();
+  expect(screen.getByText(/Question allowance today: 120 of 500 used · 50 kept/)).toBeInTheDocument();
+  vi.clearAllTimers();
+});
+
+test("footer, Claude: today's tokens, the estimated cost and the cap; no Gemini allowance", async () => {
+  status = { gemini, books: [book("a", null)],
+    usage: { mode: "metered", provider: "anthropic", tokens_today: 1234567, cost_usd: 4.2, daily_token_cap: 5000000 } };
+  await open();
+  expect(screen.getByText("Claude · today: 1,234,567 tokens (about $4.20) · daily cap 5,000,000")).toBeInTheDocument();
+  expect(screen.queryByText(/allowance/)).toBeNull();
+  vi.clearAllTimers();
+});
+
+test("footer, Gemini paid or OpenAI: tokens, and no cost where no price is known", async () => {
+  status = { gemini, books: [book("a", null)],
+    usage: { mode: "metered", provider: "openai", tokens_today: 900, cost_usd: null, daily_token_cap: null } };
+  await open();
+  expect(screen.getByText("OpenAI · today: 900 tokens")).toBeInTheDocument();
+  vi.clearAllTimers();
+});
+
+test("footer, local mode on a billed provider: no token count kept", async () => {
+  status = { gemini, books: [book("a", null)],
+    usage: { mode: "metered", provider: "gemini", tokens_today: null, cost_usd: null, daily_token_cap: null } };
+  await open();
+  expect(screen.getByText("Gemini · billed to your own account")).toBeInTheDocument();
+  vi.clearAllTimers();
+});
+
+test("a running step with no real count shows an indeterminate bar, not a frozen 0 / 1", async () => {
+  status = { gemini, books: [book("a", job({ stage: "load", done: 0, total: 1 }), "ingested")] };
+  await open();
+  expect(screen.getByText("Building the graph")).toBeInTheDocument();
+  const bar = screen.getByRole("progressbar");
+  expect(bar).toHaveClass("indeterminate");
+  expect(bar).not.toHaveAttribute("aria-valuenow");
+  expect(screen.getByText(LIBRARY.slowStep)).toBeInTheDocument();
+  expect(screen.queryByText("0 / 1")).toBeNull();
+  vi.clearAllTimers();
+});
+
+test("the load's real counts show as a bar and a grouped count", async () => {
+  status = { gemini, books: [book("a", job({ stage: "load", done: 340, total: 2900 }), "ingested")] };
+  await open();
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "340");
+  expect(screen.getByText("340 / 2,900")).toBeInTheDocument();
+  vi.clearAllTimers();
+});
+
+const plan = {
+  step: 4, of: 6, seconds_left: 3000, unknown_left: false,
+  steps: [
+    { stage: "extract", state: "done", seconds_left: 0 }, { stage: "load", state: "done", seconds_left: 0 },
+    { stage: "beats", state: "done", seconds_left: 0 },
+    { stage: "codex", state: "current", done: 120, total: 2400, seconds_left: 2700 },
+    { stage: "disambiguate", state: "upcoming", seconds_left: 300 },
+    { stage: "ready", state: "upcoming", seconds_left: null },
+  ],
+};
+
+test("a running book shows where it is in the whole pipeline, collapsed, with time left", async () => {
+  status = { gemini, books: [book("a", job({ stage: "codex", done: 120, total: 2400, plan }), "ingested")] };
+  await open();
+  const summary = screen.getByText("Step 4 of 6 · Writing entity profiles · ~50 min left");
+  const details = summary.closest("details")!;
+  expect(details).not.toHaveAttribute("open");
+  await userEvent.click(summary);
+  expect(details).toHaveAttribute("open");
+  const items = within(screen.getByRole("list", { name: LIBRARY.stepsLabel })).getAllByRole("listitem");
+  expect(items.map((li) => li.className)).toEqual(["step done", "step done", "step done", "step current", "step upcoming", "step upcoming"]);
+  expect(items[3]).toHaveAttribute("aria-current", "step");
+  expect(within(items[3]).getByText("120 / 2,400")).toBeInTheDocument();
+  expect(within(items[3]).getByText("~45 min")).toBeInTheDocument();
+  expect(within(items[0]).getByText(LIBRARY.stepDone)).toBeInTheDocument();
+  expect(within(items[4]).getByText("~5 min")).toBeInTheDocument();
+  expect(within(items[5]).getByText("a few minutes")).toBeInTheDocument();  // nothing measured: no invented precision
+  vi.clearAllTimers();
+});
+
+test("the total says when some step has no estimate, and no list without a plan", async () => {
+  status = { gemini, books: [
+    book("a", job({ plan: { ...plan, seconds_left: 5400, unknown_left: true } }), "ingested"),
+    book("b", job({}), "ingested")] };
+  await open();
+  expect(screen.getByText("Step 4 of 6 · Writing entity profiles · ~1.5 h left (plus a few minutes)")).toBeInTheDocument();
+  expect(screen.getAllByText(/^Step \d of \d/)).toHaveLength(1);
+  vi.clearAllTimers();
+});
+
+test("durations are rounded to friendly values", () => {
+  expect(LIBRARY.duration(null)).toBe("a few minutes");
+  expect(LIBRARY.duration(20)).toBe("under a minute");
+  expect(LIBRARY.duration(70)).toBe("~1 min");
+  expect(LIBRARY.duration(7 * 60 + 20)).toBe("~7 min");
+  expect(LIBRARY.duration(23 * 60)).toBe("~25 min");
+  expect(LIBRARY.duration(58 * 60)).toBe("~1 h");
+  expect(LIBRARY.duration(100 * 60)).toBe("~1.5 h");
+  expect(LIBRARY.left(null, true)).toBeNull();
+});
+
+test("a running job names the provider it runs on", async () => {
+  status = { gemini, books: [book("a", job({ provider: "anthropic" }), "ingested")] };
+  await open();
+  expect(screen.getByText("Reading passages · Claude")).toBeInTheDocument();
+  vi.clearAllTimers();
 });
 
 test("processing shows the stage and an accessible progress bar", async () => {
@@ -278,5 +388,31 @@ test("the codex stage has its own label and progress bar, beside remove and reas
   expect(STAGE_LABEL.codex).toBe("Writing entity profiles");
   expect(STAGE_LABEL.remove).toBe("Taking it out of the graph");
   expect(STAGE_LABEL.reassign).toBe("Changing its world");
+  vi.clearAllTimers();
+});
+
+test("paused for the Gemini key: the reason shows and Continue is enabled at once", async () => {
+  status = { gemini, books: [book("a", job({ state: "waiting_key", stopped_reason: "Paused: Gemini refused your API key. Replace it in Account settings, then this book continues.",
+    can_continue: true }))] };
+  await open();
+  expect(screen.getByText(/Gemini refused your API key/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Continue Book a" })).toBeEnabled();
+});
+
+test("opened at a book just uploaded: that row is marked and the panel keeps polling until it runs", async () => {
+  status = { gemini, books: [book("a", null, "graphed"), book("new1", null, "chunked")] };
+  render(<LibraryPanel open onClose={() => {}} showInternals={false} focusBook="new1" />);
+  await act(async () => {});
+  const rows = screen.getAllByRole("listitem");
+  const marked = rows.filter((r) => r.getAttribute("aria-current") === "true");
+  expect(marked).toHaveLength(1);
+  expect(within(marked[0]).getByText("Book new1")).toBeInTheDocument();
+  const gets = () => (fetch as unknown as { mock: { calls: [string, { method?: string }?][] } }).mock.calls
+    .filter(([url, init]) => url === "/api/books" && !init?.method).length;
+  const before = gets();
+  status = { gemini, books: [book("a", null, "graphed"), book("new1", job({ stage: "chunk", done: 0, total: 1 }), "chunked")] };
+  await tick(3000);
+  expect(gets()).toBeGreaterThan(before);
+  expect(screen.getByText("Splitting into passages")).toBeInTheDocument();
   vi.clearAllTimers();
 });

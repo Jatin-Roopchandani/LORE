@@ -38,9 +38,13 @@ def build_store_triple(
     edges: Sequence[tuple] = (),
     aliases: Sequence[tuple] = (),
     jobs: Sequence[tuple] = (),
+    data_dir: Path | None = None,
 ) -> LoreConfig:
-    """A real Kuzu + LanceDB + SQLite triple, built the way the CLI builds them."""
-    config = LoreConfig(data_dir=tmp_path / "data")
+    """A real Kuzu + LanceDB + SQLite triple, built the way the CLI builds them.
+
+    `data_dir` places it somewhere other than `<tmp_path>/data` (a user's own
+    library, in the tenancy tests)."""
+    config = LoreConfig(data_dir=data_dir or tmp_path / "data")
     graph = KuzuStore(config.kuzu_dir / "graph")
     for entity_id, name, kind, entity_books, entity_aliases in entities:
         graph.execute(

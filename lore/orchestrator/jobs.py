@@ -22,6 +22,9 @@ class JobRefused(Exception):
 
 RUNNING = "running"
 WAITING_QUOTA = "waiting_quota"
+# Multi mode: the user's Gemini key is missing or was refused. Paused, not
+# failed: Continue resumes it (no reset to wait for) once a key works.
+WAITING_KEY = "waiting_key"
 FAILED = "failed"
 DONE = "done"
 IDLE = "idle"
@@ -31,7 +34,7 @@ IDLE = "idle"
 class BookJob:
     book_id: str
     stage: str
-    state: str  # running, waiting_quota, failed, done or idle
+    state: str  # running, waiting_quota, waiting_key, failed, done or idle
     done_items: int
     total_items: int
     stopped_reason: str | None
@@ -149,6 +152,33 @@ def claim_job(conn: sqlite3.Connection, book_id: str, *,
     return get_job(conn, book_id)
 
 
+def provider_of(conn: sqlite3.Connection, book_id: str) -> str | None:
+    """The provider the book's latest run used (gemini, anthropic, openai)."""
+    r = conn.execute("SELECT provider FROM book_jobs WHERE book_id = ?",
+                     (book_id,)).fetchone()
+    return r[0] if r else None
+
+
+def providers_of(conn: sqlite3.Connection) -> dict[str, str | None]:
+    return dict(conn.execute("SELECT book_id, provider FROM book_jobs"))
+
+
+def set_provider(conn: sqlite3.Connection, book_id: str, provider: str | None) -> None:
+    with conn:
+        conn.execute("UPDATE book_jobs SET provider = ? WHERE book_id = ?",
+                     (provider, book_id))
+
+
+def stop_switch(conn: sqlite3.Connection, book_id: str, reason: str, *,
+                now: datetime | None = None) -> None:
+    """Stopped at a safe point because the user switched provider: idle, so
+    Continue (or the worker's requeue) resumes it with no reset to wait for."""
+    _write(conn, book_id,
+           "UPDATE book_jobs SET state = 'idle', stopped_reason = ?,"
+           " resumable_at = NULL, updated_at = ? WHERE book_id = ?",
+           (reason, _iso(_aware(now)), book_id))
+
+
 def needs_reload(conn: sqlite3.Connection, book_id: str) -> bool:
     """True when disambiguation answers were saved but not yet loaded."""
     r = conn.execute("SELECT needs_reload FROM book_jobs WHERE book_id = ?",
@@ -180,10 +210,30 @@ def set_move_target(conn: sqlite3.Connection, book_id: str,
 
 def advance(conn: sqlite3.Connection, book_id: str, done: int, *,
             now: datetime | None = None) -> None:
-    """Record progress within the stage (an absolute count); also a heartbeat."""
+    """Record progress within the stage (an absolute count); also a heartbeat.
+    The stage's first report also starts its clock (lore.orchestrator.plan)."""
+    ts = _iso(_aware(now))
     _write(conn, book_id,
-           "UPDATE book_jobs SET done_items = ?, updated_at = ? WHERE book_id = ?",
-           (done, _iso(_aware(now)), book_id))
+           "UPDATE book_jobs SET done_items = ?, updated_at = ?,"
+           " stage_started_at = COALESCE(stage_started_at, ?),"
+           " stage_base = COALESCE(stage_base, ?) WHERE book_id = ?",
+           (done, ts, ts, done, book_id))
+
+
+def reset_stage_clock(conn: sqlite3.Connection, book_id: str) -> None:
+    """A stage starts (or resumes): its clock starts at its first report."""
+    _write(conn, book_id,
+           "UPDATE book_jobs SET stage_started_at = NULL, stage_base = NULL"
+           " WHERE book_id = ?", (book_id,))
+
+
+def set_progress(conn: sqlite3.Connection, book_id: str, done: int, total: int, *,
+                 now: datetime | None = None) -> None:
+    """A stage that learns its item count only once under way (the load):
+    both counts at once."""
+    _write(conn, book_id,
+           "UPDATE book_jobs SET done_items = ?, total_items = ?, updated_at = ?"
+           " WHERE book_id = ?", (done, total, _iso(_aware(now)), book_id))
 
 
 def heartbeat(conn: sqlite3.Connection, book_id: str, *,
@@ -216,12 +266,28 @@ def stop_quota(conn: sqlite3.Connection, book_id: str, reason: str, *,
            (reason, _iso(next_reset_utc(moment)), _iso(moment), book_id))
 
 
+def stop_key(conn: sqlite3.Connection, book_id: str, reason: str, *,
+             now: datetime | None = None) -> None:
+    _write(conn, book_id,
+           "UPDATE book_jobs SET state = 'waiting_key', stopped_reason = ?,"
+           " resumable_at = NULL, updated_at = ? WHERE book_id = ?",
+           (reason, _iso(_aware(now)), book_id))
+
+
 def fail(conn: sqlite3.Connection, book_id: str, reason: str, *,
          now: datetime | None = None) -> None:
     _write(conn, book_id,
            "UPDATE book_jobs SET state = 'failed', stopped_reason = ?,"
            " resumable_at = NULL, updated_at = ? WHERE book_id = ?",
            (reason, _iso(_aware(now)), book_id))
+
+
+def set_stage(conn: sqlite3.Connection, book_id: str, stage: str) -> None:
+    """Move a stopped job back to `stage`: Continue resumes there. Used when
+    a later stage found extraction units that must be redone."""
+    _write(conn, book_id,
+           "UPDATE book_jobs SET stage = ?, done_items = 0, total_items = 0"
+           " WHERE book_id = ?", (stage, book_id))
 
 
 def done(conn: sqlite3.Connection, book_id: str, *,

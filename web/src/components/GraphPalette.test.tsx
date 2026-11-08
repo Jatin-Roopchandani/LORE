@@ -22,3 +22,10 @@ test("palette() reads the selected theme's colours from the computed style", () 
     expect(palette().ink).not.toBe(p.ink);
   } finally { spy.mockRestore(); document.documentElement.removeAttribute("data-theme"); }
 });
+
+test("withAlpha turns a hex token into rgba for sigma, and leaves anything else alone", async () => {
+  const { withAlpha } = await import("./GraphCanvas");
+  expect(withAlpha("#CBD3DA", 0.35)).toBe("rgba(203,211,218,0.35)");
+  expect(withAlpha("#abc", 0.5)).toBe("rgba(170,187,204,0.5)");
+  expect(withAlpha("rgb(1, 2, 3)", 0.5)).toBe("rgb(1, 2, 3)");
+});

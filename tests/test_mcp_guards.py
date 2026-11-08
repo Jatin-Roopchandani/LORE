@@ -429,3 +429,47 @@ def test_run_guarded_closes_the_result_when_reading_raises():
     with pytest.raises(RuntimeError):
         run_guarded(_FakeKuzu(result), "MATCH (e:Entity) RETURN e.id")
     assert result.closed is True
+
+
+# --- case and comment tricks (hosted review) -------------------------------------
+# Write clauses hidden by letter case, comments, odd whitespace or a second
+# statement. Every one is refused by the token guard alone, before Kuzu.
+@pytest.mark.parametrize("query", [
+    "match (e:Entity) delete e",
+    "MATCH (e:Entity) DeLeTe e",
+    "MaTcH (e:Entity) dEtAcH dElEtE e",
+    "match (e:Entity) set e.name = 'x'",
+    "MATCH (e:Entity) /* harmless */ SET e.name = 'x'",
+    "MATCH (e:Entity) /*SET*/ RETURN e",          # even a commented-out write word
+    "MATCH (e:Entity) // tidy up\nDELETE e",
+    "MATCH (e:Entity)\n\t-- \nDETACH\tDELETE\te",
+    "MATCH (e:Entity) CREATE/**/(x:Entity {id: 'x'})",
+    "MATCH (e:Entity) MERGE(x:Entity {id: 'x'})",
+    "WITH 1 AS one CREATE (:Entity {id: 'x'})",
+    "UNWIND [1] AS n MERGE (:Entity {id: 'x'})",
+    "OPTIONAL MATCH (e:Entity) REMOVE e.name SET e.kind = 'x'",
+    "MATCH (e:Entity) REMOVE e.name RETURN e",
+    "MATCH (e:Entity) rEmOvE e:Entity",
+    "RETURN 1; DROP TABLE Entity",
+    "RETURN 1 ;\n create (:Entity {id: 'x'})",
+    "/* MATCH */ CREATE (:Entity {id: 'x'})",
+    "// MATCH\nCREATE (:Entity {id: 'x'})",
+    "MATCH (e) WITH e cOpY (MATCH (x) RETURN x) TO '/tmp/x.csv' RETURN 1",
+    "MATCH (e:Entity) RETURN e UNION MATCH (e:Entity) SET e.x = 1 RETURN e",
+    "MATCH (e:Entity) CALL\nread_csv_serial('/etc/passwd') RETURN *",
+])
+def test_case_and_comment_tricks_cannot_smuggle_a_write(query):
+    with pytest.raises(CypherRejected):
+        validate_cypher(query)
+
+
+def test_a_write_that_slips_past_nothing_still_fails_on_the_read_only_connection(tmp_path):
+    """The backstop: even run directly, Kuzu's read-only mode refuses a write."""
+    path = tmp_path / "kuzu"
+    KuzuStore(path).close()
+    ro = KuzuStore(path, read_only=True)
+    try:
+        with pytest.raises(RuntimeError):
+            ro.execute("CREATE (:Entity {id: 'x', name: 'x', kind: 'x'})")
+    finally:
+        ro.close()

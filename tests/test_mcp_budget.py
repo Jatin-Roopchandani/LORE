@@ -352,3 +352,17 @@ async def test_ollama_down_is_upstream_unavailable_naming_ollama(live_config):
     assert "Ollama" in message and "Connection refused" in message
     assert "CUDA_VISIBLE_DEVICES=-1" in message
     assert closed == [True]
+
+
+async def test_lore_search_records_its_model_calls_in_the_bound_trace(live_config, fake_models):
+    """The capture point: lore_search wraps its models for the bound trace
+    (lore.tracing), and leaves them alone when none is bound."""
+    from lore import tracing
+    trace = tracing.Trace()
+    search = tracing.traced_search(lore_search, trace)
+    await search(live_config, "Who?", models=fake_models)
+    (call,) = trace.calls_out()
+    assert call["stage"] == "synthesize" and call["prompt"] == "prompt" and call["ok"]
+    assert trace.answer is not None and trace.error is None
+    await lore_search(live_config, "Who?", models=_models(live_config))  # unbound: no capture
+    assert len(trace.calls_out()) == 1

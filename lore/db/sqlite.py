@@ -294,6 +294,31 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             """,
         ],
     ),
+    # Which provider a book's processing runs on (2026-11-07): the Library
+    # row says it ("Reading passages · Claude"); set at each run's start.
+    (16, ["ALTER TABLE book_jobs ADD COLUMN provider TEXT"]),
+    # The step list's time estimates (2026-11-07, lore/orchestrator/plan.py):
+    # when the current stage started reporting and from which count, and the
+    # seconds per chunk each completed stage took, per provider and model.
+    (
+        17,
+        [
+            "ALTER TABLE book_jobs ADD COLUMN stage_started_at TEXT",
+            "ALTER TABLE book_jobs ADD COLUMN stage_base INTEGER",
+            """
+            CREATE TABLE stage_timings (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                stage       TEXT NOT NULL,
+                provider    TEXT,
+                model       TEXT,
+                seconds     REAL NOT NULL,
+                chunks      REAL NOT NULL,
+                recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """,
+            "CREATE INDEX idx_stage_timings_stage ON stage_timings(stage, provider, model)",
+        ],
+    ),
 ]
 
 

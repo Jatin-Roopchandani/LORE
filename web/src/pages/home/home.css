@@ -1,0 +1,223 @@
+/* The public homepage, privacy and terms (release step 7), ported from docs/design/homepage.html ("Constellation").
+   Everything sits under .lh and every class is prefixed h-, because the app's theme.css (always loaded) styles
+   .steps, .prose, .chip, .q, .node and bare <header> for the reading app. The tokens are set on .lh, so the app's
+   saved theme never reaches these pages: the night sections are always dark, and the rest follows the system
+   light or dark setting. There is no theme switcher. */
+.lh{
+  --bg:#ECEFF2;--panel:#F8FAFB;--sunk:#E3E8EC;--ink:#17212B;--muted:#5A6774;--line:#D3DAE0;
+  --accent:#1E5AA0;--accent-soft:#DCE7F4;--glow:#B97808;--glow-soft:#F6E7C8;--ok:#2E7D4F;--cut:#B3261E;
+  --night:#0B1117;--night-2:#111922;--night-line:#26323D;--night-ink:#E3E9EF;--night-muted:#9AA7B4;
+  --star:#78AEEA;--spark:#EBAA3C;--n-char:#6FA4E4;--n-place:#6CC1A0;--n-group:#BC8AD3;
+  --f-ui:"Public Sans",system-ui,sans-serif;--f-book:"Newsreader",Georgia,serif;--f-mono:"JetBrains Mono",ui-monospace,monospace;
+  --gutter:clamp(20px,5vw,88px);--nav-h:68px;
+  color-scheme:light;
+  min-height:100%;background:var(--bg);color:var(--ink);font:16px/1.55 var(--f-ui);overflow-x:clip;
+}
+@media (prefers-color-scheme:dark){.lh{
+  --bg:#0E141A;--panel:#151D25;--sunk:#1B252F;--ink:#E3E9EF;--muted:#8C99A6;--line:#26323D;
+  --accent:#78AEEA;--accent-soft:#1D3047;--glow:#EBAA3C;--glow-soft:#3A2D14;--ok:#6CC596;--cut:#F2867E;color-scheme:dark}}
+html:has(.lh){scroll-behavior:smooth;scroll-padding-top:calc(68px + 12px)}
+@media (prefers-reduced-motion:reduce){html:has(.lh){scroll-behavior:auto}}
+.lh *{box-sizing:border-box}
+.lh a{color:var(--accent)}
+.lh :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.lh .h-nav :focus-visible,.lh .h-night :focus-visible{outline-color:var(--star)}
+.h-sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.h-band{padding-inline:var(--gutter)}
+.h-inner{width:100%}
+
+/* ---- sticky nav: see-through over the night hero, solid once the page scrolls ---- */
+.h-nav{position:sticky;top:0;z-index:50;height:var(--nav-h);display:flex;align-items:center;gap:14px;padding-inline:var(--gutter);
+  background:transparent;border-bottom:1px solid transparent;transition:background .25s,border-color .25s,backdrop-filter .25s;color:var(--night-ink)}
+.h-nav.is-solid{background:color-mix(in srgb,var(--night) 86%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom-color:var(--night-line)}
+.h-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
+.lh .h-brand{color:inherit}
+.h-brand b{font:600 22px/1 var(--f-book);letter-spacing:.06em}
+.h-brand small{font:600 10px/1 var(--f-ui);letter-spacing:.16em;text-transform:uppercase;color:var(--night-muted)}
+.h-nav .h-sp{flex:1}
+.lh .h-nav .h-link{color:var(--night-muted);text-decoration:none;font-size:15px}
+.lh .h-nav .h-link:hover{color:var(--night-ink)}
+.lh .h-btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:11px 18px;font:600 15px/1 var(--f-ui);text-decoration:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.lh .h-btn:hover{border-color:var(--accent)}
+.lh .h-btn.is-primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.lh .h-btn:disabled{cursor:default}
+.lh .h-night .h-btn,.lh .h-nav .h-btn{background:var(--night-2);border-color:var(--night-line);color:var(--night-ink)}
+.lh .h-night .h-btn.is-primary,.lh .h-nav .h-btn.is-primary{background:var(--star);border-color:var(--star);color:var(--night)}
+.h-cite{display:inline-block;font:500 11px/1 var(--f-mono);color:var(--accent);background:var(--accent-soft);border-radius:5px;padding:3px 5px;vertical-align:2px;margin-left:2px}
+.h-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 24px 60px rgb(0 0 0 / .16);color:var(--ink)}
+
+/* ---- the night: hero + story band share one sky ---- */
+.h-night{background:radial-gradient(1200px 600px at 78% 30%,rgb(120 174 234 / .10),transparent 60%),radial-gradient(900px 500px at 10% 90%,rgb(235 170 60 / .07),transparent 60%),var(--night);color:var(--night-ink);margin-top:calc(-1 * var(--nav-h))}
+.lh header.h-band{display:block;padding-block:0}
+.h-hero{min-height:100svh;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);grid-template-rows:1fr auto;gap:clamp(12px,2vw,32px) clamp(20px,4vw,64px);align-items:center;padding-top:calc(var(--nav-h) + 24px);padding-bottom:24px}
+.h-eyebrow{display:inline-block;font:600 11px/1 var(--f-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--spark);border:1px solid rgb(235 170 60 / .4);border-radius:999px;padding:6px 11px;margin-bottom:22px}
+.lh h1{font:700 clamp(40px,5.4vw,84px)/1.03 var(--f-ui);letter-spacing:-.025em;margin:0 0 22px}
+.lh h1 span{color:var(--spark)}
+.h-lede{font-size:clamp(17px,1.35vw,21px);color:var(--night-muted);max-width:42ch;margin:0 0 30px}
+.h-ctas{display:flex;gap:10px;flex-wrap:wrap}
+.h-hero-art{position:relative;display:flex;justify-content:center}
+.h-hero-art .ag{max-width:620px;max-height:min(72vh,620px)}
+@keyframes h-draw{to{stroke-dashoffset:0}}@keyframes h-fade{to{opacity:1}}
+@keyframes h-pulse{0%,100%{filter:none}50%{filter:drop-shadow(0 0 8px rgb(235 170 60 / .8))}}
+@keyframes h-rise{to{opacity:1;transform:none}}
+.h-q{font:600 13px/1.3 var(--f-ui);color:var(--muted);display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.h-q span{background:var(--accent-soft);color:var(--ink);border-radius:8px;padding:6px 10px;font-weight:500}
+.h-q.h-flush{margin:0}
+.h-written .h-q{margin:0 0 4px}
+.h-prose{font:16.5px/1.6 var(--f-book);margin:0}
+.lh .h-scroll-cue{grid-column:1/-1;align-self:end;display:flex;justify-content:center;text-decoration:none;color:var(--night-muted);font-size:13px;gap:8px;align-items:center}
+.h-scroll-cue i{width:18px;height:28px;border:1.5px solid var(--night-muted);border-radius:10px;position:relative}
+.h-scroll-cue i::after{content:"";position:absolute;left:50%;top:6px;width:3px;height:6px;margin-left:-1.5px;border-radius:2px;background:var(--night-muted);animation:h-cue 1.6s ease-in-out infinite}
+@keyframes h-cue{0%{opacity:0;transform:translateY(-2px)}40%{opacity:1}100%{opacity:0;transform:translateY(8px)}}
+
+/* ---- pinned section: the whole view (heading, step text and card) holds still while the page scrolls through
+   it; the scroll distance inside .h-pin only advances the step, then the page carries on. ---- */
+.h-pin{position:relative;height:calc(100svh * 5)}
+.h-pin-view{position:sticky;top:0;height:100svh;display:flex;align-items:center;padding-top:var(--nav-h);overflow:hidden}
+.h-pin-grid{width:100%;height:calc(100svh - var(--nav-h) - 48px);display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(24px,5vw,80px);align-items:stretch}
+.h-pin-text{display:flex;flex-direction:column;justify-content:center;min-height:0}
+.h-pin-text h2{font:700 clamp(28px,2.8vw,44px)/1.1 var(--f-ui);letter-spacing:-.02em;margin:0 0 10px}
+.h-pin-text .h-intro{color:var(--night-muted);font-size:17px;margin:0 0 clamp(24px,5vh,56px);max-width:42ch}
+.h-pin-steps{display:grid}
+.h-pin-steps .h-step{grid-area:1/1;opacity:0;transform:translateY(14px);transition:opacity .45s,transform .45s;pointer-events:none}
+.h-pin-steps .h-step.is-on{opacity:1;transform:none;pointer-events:auto}
+.h-step .h-n{font:600 12px/1 var(--f-mono);color:var(--spark);letter-spacing:.08em;margin-bottom:12px}
+.h-step h3{font:700 clamp(22px,2vw,32px)/1.2 var(--f-ui);margin:0 0 10px}
+.h-step p{color:var(--night-muted);font-size:17px;max-width:40ch;margin:0}
+.h-pin-dots{display:flex;gap:8px;margin-top:clamp(20px,4vh,40px)}
+/* Each dot is a 34 x 4 bar, as drawn, inside a taller button so it is easy to hit. */
+.h-pin-dots button{width:34px;height:20px;margin-block:-8px;border:0;background:none;cursor:pointer;padding:0;display:flex;align-items:center}
+.h-pin-dots button::before{content:"";display:block;width:100%;height:4px;border-radius:2px;background:var(--night-line);transition:background .35s}
+.h-pin-dots button.is-on::before{background:var(--spark)}
+.h-stage{height:100%;min-height:0}
+.h-stage .h-card{position:relative;height:100%;padding:clamp(16px,1.6vw,24px);display:grid;grid-template-rows:auto auto minmax(0,1.1fr) auto auto;gap:clamp(8px,1.2vh,14px);overflow:hidden}
+.h-progress{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:0;padding:0;list-style:none;counter-reset:p}
+.h-progress li{counter-increment:p;font:600 11px/1 var(--f-ui);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:9px;border-top:3px solid var(--line);transition:border-color .35s,color .35s}
+.h-progress li::before{content:"0" counter(p) " ";font-family:var(--f-mono)}
+.h-stage[data-step="1"] .h-progress li:nth-child(-n+1),.h-stage[data-step="2"] .h-progress li:nth-child(-n+2),
+.h-stage[data-step="3"] .h-progress li:nth-child(-n+3),.h-stage[data-step="4"] .h-progress li:nth-child(-n+4),.h-stage[data-step="5"] .h-progress li{border-top-color:var(--glow);color:var(--ink)}
+.h-stage .h-phase{transition:opacity .45s,filter .45s;opacity:.18;filter:grayscale(1);min-height:0}
+.h-stage .h-p2{display:flex;flex-direction:column;min-height:0}
+.h-stage .h-p2 .h-mini{flex:1;min-height:0;width:100%;height:100%}
+.h-stage[data-step="1"] .h-p1,.h-stage[data-step="2"] .h-p1,.h-stage[data-step="3"] .h-p1,.h-stage[data-step="4"] .h-p1,
+.h-stage[data-step="2"] .h-p2,.h-stage[data-step="3"] .h-p2,.h-stage[data-step="4"] .h-p2,
+.h-stage[data-step="3"] .h-p3,.h-stage[data-step="4"] .h-p3,
+.h-stage[data-step="4"] .h-p4{opacity:1;filter:none}
+.h-stage[data-step="4"] .h-p4 .h-checked:not(.is-cut) b{animation:h-tick .5s ease both}
+@keyframes h-tick{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+/* Step 5: the working parts make way for the finished answer, shown as the app shows it. */
+.h-written{position:absolute;inset:calc(clamp(16px,1.6vw,24px) + 36px) clamp(16px,1.6vw,24px) clamp(16px,1.6vw,24px);overflow:auto;opacity:0;transform:translateY(12px);transition:opacity .5s,transform .5s;pointer-events:none;font:clamp(15px,1.15vw,17.5px)/1.65 var(--f-book)}
+.h-written p{margin:0 0 12px}
+.h-written .h-short{font-size:1.06em;padding:10px 14px;background:var(--accent-soft);border-radius:10px}
+.h-written .h-reading{border-left:3px solid var(--glow);padding:2px 0 2px 14px;margin-top:4px}
+.h-written .h-reading em{display:block;font:600 11px/1 var(--f-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--glow);font-style:normal;margin-bottom:6px}
+.h-stage[data-step="5"] .h-written{opacity:1;transform:none;pointer-events:auto}
+.h-stage[data-step="5"] .h-phase{opacity:0!important;transition:opacity .35s}
+.h-label{font:600 11px/1 var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.h-mini{width:100%;height:auto;display:block;background:var(--sunk);border-radius:10px}
+.h-mini .h-e{stroke:var(--line);stroke-width:1.5;transition:stroke .5s,stroke-width .5s}
+.h-mini text{font:500 12px var(--f-ui);fill:var(--ink)}
+.h-stage[data-step="2"] .h-mini .h-path,.h-stage[data-step="3"] .h-mini .h-path,.h-stage[data-step="4"] .h-mini .h-path{stroke:var(--glow);stroke-width:3}
+.h-src{font:italic clamp(13px,1.05vw,15px)/1.5 var(--f-book);padding:7px 12px;border-left:3px solid var(--accent);background:var(--sunk);border-radius:0 8px 8px 0;margin-bottom:8px}
+.h-src mark{background:var(--glow-soft);color:inherit;padding:0 2px;border-radius:3px;border-bottom:0}
+.h-src small{display:block;font:500 11px var(--f-mono);font-style:normal;color:var(--muted);margin-top:4px}
+.h-checked{font:clamp(14px,1.1vw,16px)/1.5 var(--f-book);display:grid;grid-template-columns:22px 1fr;gap:6px;margin-bottom:6px}
+.h-checked b{font:700 13px/1.6 var(--f-ui);color:var(--ok)}
+.h-checked.is-cut{color:var(--muted)}
+.h-checked.is-cut > span{text-decoration:line-through;text-decoration-color:var(--cut)}
+.h-checked.is-cut b{color:var(--cut)}
+.h-checked.is-cut small{grid-column:2;text-decoration:none;display:inline-block;font:500 12px var(--f-ui);color:var(--cut);margin-top:-2px}
+
+/* ---- the day: two more pinned scenes (features gliding across, then the beta beside its form) ---- */
+.h-scene{position:relative}
+.h-scene-view{position:sticky;top:0;height:100svh;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding-top:var(--nav-h)}
+.h-section-title{font:700 clamp(28px,3vw,46px)/1.12 var(--f-ui);letter-spacing:-.02em;margin:0 0 10px}
+.h-section-sub{color:var(--muted);margin:0;max-width:60ch;font-size:18px}
+.h-glide{height:calc(100svh * 3)}
+.h-glide-head{margin-bottom:clamp(24px,5vh,56px)}
+.h-glide-rail{overflow:visible}
+.h-glide-track{display:flex;gap:clamp(16px,2vw,28px);padding-inline:var(--gutter);will-change:transform}
+.h-feature{flex:0 0 clamp(300px,34vw,560px);min-height:clamp(300px,44vh,440px);padding:clamp(22px,2.2vw,34px);background:var(--panel);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;position:relative}
+.h-feature .h-ico{width:48px;height:48px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;margin-bottom:20px}
+.h-feature .h-ico svg{width:27px;height:27px}
+.h-feature .h-num{position:absolute;top:clamp(22px,2.2vw,34px);right:clamp(22px,2.2vw,34px);font:600 13px var(--f-mono);color:var(--muted)}
+.h-feature h3{margin:0 0 10px;font:700 clamp(22px,1.8vw,28px)/1.2 var(--f-ui)}
+.h-feature p{margin:0;color:var(--muted);font-size:clamp(15px,1.1vw,17px);line-height:1.6}
+.h-feature .h-eg{margin-top:auto;padding-top:18px;border-top:1px solid var(--line);font:15px/1.5 var(--f-book);color:var(--ink)}
+.h-feature .h-eg small{display:block;font:500 11px var(--f-mono);color:var(--muted);margin-top:4px}
+.h-feature .h-eg i{color:var(--glow);font-style:normal;font-family:var(--f-ui);font-size:13px;font-weight:600}
+.h-glide-bar{margin-top:clamp(24px,5vh,48px)}
+.h-glide-bar::before{content:"";display:block;height:3px;border-radius:2px;background:var(--line)}
+.h-glide-bar i{display:block;height:3px;border-radius:2px;background:var(--glow);width:0;margin-top:-3px}
+.h-beta-scene{height:calc(100svh * 2.4)}
+.h-beta{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:clamp(24px,5vw,80px);align-items:center;width:100%}
+.h-beta .h-card{padding:clamp(22px,2.2vw,34px);box-shadow:0 24px 60px rgb(0 0 0 / .12)}
+.h-beta-text .h-section-sub{margin-bottom:clamp(24px,5vh,48px)}
+.h-beta-steps{counter-reset:s;display:grid;gap:clamp(14px,3vh,28px);margin:0;padding:0;position:relative}
+.h-beta-steps::before{content:"";position:absolute;left:17px;top:18px;bottom:18px;width:2px;background:var(--line)}
+.h-beta-steps li{list-style:none;counter-increment:s;display:grid;grid-template-columns:36px 1fr;gap:16px;opacity:.35;transition:opacity .4s;position:relative}
+.h-beta-steps li::before{content:counter(s);display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--panel);border:2px solid var(--line);color:var(--muted);font:700 14px/1 var(--f-ui);transition:all .4s}
+.h-beta-steps li.is-on{opacity:1}
+.h-beta-steps li.is-on::before{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.h-beta-steps b{display:block;font-size:clamp(18px,1.4vw,22px);margin-bottom:4px}.h-beta-steps span{color:var(--muted);font-size:16px}
+.h-form-title{margin:0 0 6px;font:700 22px/1.2 var(--f-ui)}
+.h-waitlist{display:grid;gap:10px;align-content:start;transition:box-shadow .4s,border-color .4s}
+.h-beta .h-waitlist.is-ready{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft),0 24px 60px rgb(0 0 0 / .12)}
+.h-waitlist label{font:600 13px/1.2 var(--f-ui)}
+.h-waitlist label .h-opt{font-weight:400;color:var(--muted)}
+.h-waitlist input[type=email],.h-waitlist input[type=text]{width:100%;padding:12px 13px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:15px var(--f-ui)}
+.h-waitlist input[aria-invalid=true]{border-color:var(--cut)}
+.h-waitlist .h-consent{display:flex;gap:8px;align-items:flex-start;font:400 13px/1.4 var(--f-ui);color:var(--muted)}
+.h-waitlist .h-problem{margin:0;font:500 13px/1.4 var(--f-ui);color:var(--cut)}
+.h-hp{position:absolute;left:-9999px}
+.lh footer{border-top:1px solid var(--line);padding-block:24px 40px;display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
+.lh footer a{color:var(--muted)}.lh footer .h-sp{flex:1}
+
+/* ---- privacy and terms: the same nav and footer, a short night band, then a readable column ---- */
+.h-legal-head{padding-top:calc(var(--nav-h) + clamp(32px,7vh,72px));padding-bottom:clamp(28px,5vh,48px)}
+.lh .h-legal-head h1{font-size:clamp(36px,4.4vw,60px);margin-bottom:14px}
+.h-legal-head .h-lede{margin:0 0 14px;max-width:56ch}
+.h-updated{font:500 12px/1 var(--f-mono);color:var(--night-muted);margin:0}
+.h-legal{padding-block:clamp(32px,6vh,64px);max-width:calc(72ch + 2 * var(--gutter))}
+.h-legal section + section{margin-top:clamp(28px,4vh,40px)}
+.h-legal h2{font:700 clamp(20px,1.8vw,24px)/1.25 var(--f-ui);margin:0 0 10px}
+.h-legal p,.h-legal li{font:17px/1.65 var(--f-book)}
+.h-legal p{margin:0 0 12px}
+.h-legal ul{margin:0 0 12px;padding-left:22px}
+.h-legal li{margin-bottom:8px}
+.h-legal li::marker{color:var(--glow)}
+
+@media (max-width:900px){
+  .h-hero,.h-beta{grid-template-columns:1fr}
+  .h-hero{min-height:auto;padding-top:calc(var(--nav-h) + 32px)}
+    .h-pin-grid{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);gap:14px;height:calc(100svh - var(--nav-h) - 24px)}
+  .h-pin-text .h-intro{display:none}
+  .h-pin-text h2{font-size:22px;margin-bottom:12px}
+  .h-step h3{font-size:19px}.h-step p{font-size:15px}
+  .h-pin-dots{margin-top:12px}
+  /* A phone's card holds the question and only the current step's part, so each one gets the room. */
+  .h-stage .h-card{grid-template-rows:auto auto minmax(0,1fr)}
+  .h-stage .h-phase:not(.h-p1){display:none}
+  .h-stage[data-step="2"] .h-p2,.h-stage[data-step="3"] .h-p3,.h-stage[data-step="4"] .h-p4{display:flex;flex-direction:column}
+  .h-stage .h-p2 .h-mini{flex:1;min-height:160px}
+  .h-progress li{font-size:0;padding-top:7px}.h-progress li::before{font-size:10px}
+  .h-feature{flex-basis:80vw}
+  /* On a phone the steps and the form don't fit one screen: the beta scrolls normally there. */
+  .h-beta-scene{height:auto}.h-beta-scene .h-scene-view{position:static;height:auto;padding-block:calc(var(--nav-h) + 24px) 48px}
+  .h-beta-steps li{opacity:1}
+  .lh .h-nav .h-link{display:none}
+}
+@media (max-width:560px){.lh .h-nav .h-invite{display:none}}
+@media (prefers-reduced-motion:reduce){
+  .h-pin-steps .h-step{transition:none}.h-stage .h-phase{transition:none}.h-beta-steps li{transition:none}.h-scroll-cue i::after{animation:none}
+  .h-progress li,.h-pin-dots button::before,.h-written,.h-mini .h-e,.h-waitlist,.h-beta-steps li::before,.h-nav{transition:none}
+  .h-stage[data-step="4"] .h-p4 .h-checked:not(.is-cut) b{animation:none}
+  /* No scroll-driven motion: the feature cards sit in a plain wrapped grid instead of gliding across. */
+  .h-glide{height:auto}.h-glide .h-scene-view{position:static;height:auto;overflow:visible;padding-block:calc(var(--nav-h) + 24px) 48px}
+  .h-glide-track{flex-wrap:wrap}.h-feature{flex:1 1 300px}.h-glide-bar{display:none}
+}
+
+/* The GitHub icon link in the nav (next to Sign in): a quiet round target, brighter on hover. */
+.lh .h-nav .h-gh{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;color:var(--night-muted);text-decoration:none;
+  transition:color .15s,background-color .15s}
+.lh .h-nav .h-gh:hover{color:var(--night-ink);background:var(--night-2)}

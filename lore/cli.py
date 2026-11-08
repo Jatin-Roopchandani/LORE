@@ -5,7 +5,6 @@ import asyncio
 import dataclasses
 import math
 import sqlite3
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,8 +42,6 @@ from lore.inference.gemini import (
     resolve_api_key,
 )
 from lore.inference.ollama import OllamaProvider
-from lore.kaggle_api.client import KaggleClient
-from lore.kaggle_api.hello import run_hello_roundtrip
 from lore.orchestrator.gemini_budget import day_report, recorder_for, today
 from lore.graph.remove import remove_book_from_graph
 from lore.orchestrator.jobs import (
@@ -61,7 +58,6 @@ from lore.orchestrator.move import prepare_move
 from lore.orchestrator.extract_stage import ExtractStage
 from lore.orchestrator.local import missing_gemini_key_message
 from lore.orchestrator.pipeline import JobRefused, QuotaStop, run_book
-from lore.orchestrator.quota import iso_week, week_report
 from lore.orchestrator.run import run_extraction
 from lore.orchestrator.stages import (
     BeatsStage,
@@ -81,6 +77,7 @@ from lore.resolve.disambiguation import (
 # Aliased: `ask` is also this CLI's query command below, and the later def
 # would silently shadow the import and break `lore disambiguate`.
 from lore.resolve.disambiguation import ask as ask_disambiguation
+from lore.resolve.synonyms import SYNONYM_BATCH, ask_synonyms
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -97,9 +94,8 @@ def main() -> None:
 
 
 @app.command()
-def doctor(kaggle: bool = typer.Option(False, "--kaggle",
-                                       help="also run the free-tier GPU round trip (slow)")) -> None:
-    """Verify every Phase 0 subsystem is alive."""
+def doctor() -> None:
+    """Verify every subsystem is alive."""
     ok = True
 
     try:
@@ -145,23 +141,6 @@ def doctor(kaggle: bool = typer.Option(False, "--kaggle",
                       config.ollama.model if healthy else f"no server at {config.ollama.host}")
     except Exception as exc:
         ok &= _report("ollama", False, str(exc))
-
-    client = KaggleClient(config.kaggle)
-    ok &= _report("kaggle-auth", client.authenticated(),
-                  "" if client.authenticated()
-                  else "no ~/.kaggle/kaggle.json, ~/.kaggle/access_token, or KAGGLE_API_TOKEN")
-
-    if kaggle:
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                result = run_hello_roundtrip(
-                    config.kaggle, Path(tmp),
-                    on_tick=lambda s: typer.echo(f"       kaggle kernel: {s}"),
-                )
-            ok &= _report("kaggle-roundtrip", True,
-                          f"sum={result['sum']} on {result['device_name']}")
-        except Exception as exc:
-            ok &= _report("kaggle-roundtrip", False, str(exc))
 
     raise typer.Exit(0 if ok else 1)
 
@@ -660,6 +639,16 @@ def _print_matter_plan(plan, dry_run: bool) -> None:
         typer.echo(f"    entity {entity_id} loses this book")
 
 
+def _llm_credentials(config: LoreConfig, command: str):
+    """[lore.llm]'s Claude or OpenAI credentials, or a clear exit."""
+    from lore.inference.providers import factory as providers
+    try:
+        return providers.credentials(config)
+    except (ValueError, GeminiKeyFileError) as exc:
+        typer.echo(f"{command} failed: {exc}")
+        raise typer.Exit(2)
+
+
 def _graph_build_key(
     config: LoreConfig, command: str, *, extracting: bool, loading: bool
 ) -> str | None:
@@ -673,11 +662,16 @@ def _graph_build_key(
     alternatives: list[str] = []
     if extracting and config.extraction_provider == "gemini":
         settings.append('extraction_provider = "gemini"')
-        alternatives.append('extraction_provider = "kaggle" or "ollama"')
+        alternatives.append('extraction_provider = "ollama"')
     if loading and config.adjudication.provider == "gemini":
         settings.append('[lore.adjudication] provider = "gemini"')
         alternatives.append('[lore.adjudication] provider = "ollama"')
     if not settings:
+        return None
+    if config.llm.provider != "gemini":
+        # [lore.llm] picks Claude or OpenAI: check its key now, before any
+        # unit is dispatched; each step then builds its model from it.
+        _llm_credentials(config, command)
         return None
     try:
         api_key = resolve_api_key(key_file=default_key_file())
@@ -717,8 +711,6 @@ def extract(
         f"{report.book_id}: {report.units_completed}/{report.units_total} units, "
         f"{report.chunks_ok} chunks extracted, {report.chunks_dead} dead-lettered"
     )
-    if config.extraction_provider == "kaggle":
-        summary += f", {report.gpu_hours:.2f} GPU-hours"
     typer.echo(summary)
     if report.stopped_reason:
         typer.echo(f"stopped early — {report.stopped_reason}")
@@ -731,20 +723,15 @@ def extract(
 
 @app.command()
 def quota() -> None:
-    """Show this week's Kaggle GPU-hour budget and today's Gemini requests."""
+    """Show today's Gemini requests against each model's daily budget."""
     config = LoreConfig.load()
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     try:
-        report = week_report(conn, iso_week())
         day = today()
         gemini = day_report(conn, day)
     finally:
         conn.close()
-    typer.echo(
-        f"{report['week']}: {report['used_hours']:.2f}h used, "
-        f"{report['remaining_hours']:.2f}h remaining across {report['runs']} run(s)"
-    )
     if not gemini:
         typer.echo(f"{day}: no Gemini requests recorded")
         return
@@ -814,8 +801,7 @@ class _RunExtractionStage:
 
     Used by `default_stages` until a purpose-built ExtractStage is passed in
     its place. A Gemini run that stopped early (quota, key, network) becomes
-    a QuotaStop so the job parks; any other stop (e.g. the weekly GPU quota)
-    only records the report, and `process` prints it as incomplete after the
+    a QuotaStop so the job parks; any other stop only records the report, and `process` prints it as incomplete after the
     load, as before.
     """
 
@@ -1175,31 +1161,44 @@ def disambiguate(
 
     pending = store.pending()
     todo = store.unanswered(pending)
-    if not todo:
+    # Synonym questions (lore/resolve/synonyms.py): their own prompt and cache.
+    pending_synonyms = store.pending_synonyms()
+    synonyms_todo = store.unanswered_synonyms(pending_synonyms)
+    if not todo and not synonyms_todo:
+        total = len(pending) + len(pending_synonyms)
         typer.echo(
-            f"nothing to ask — {len(pending)} pending question(s),"
-            f" {len(pending)} already answered (0 requests spent)"
+            f"nothing to ask — {total} pending question(s),"
+            f" {total} already answered (0 requests spent)"
         )
         return
+    batches = -(-len(todo) // MAX_BATCH) + -(-len(synonyms_todo) // SYNONYM_BATCH)
 
     if dry_run:
-        batches = -(-len(todo) // MAX_BATCH)
         typer.echo(
-            f"would ask {len(todo)} question(s) in {batches} request(s)"
-            " (0 requests spent):"
+            f"would ask {len(todo) + len(synonyms_todo)} question(s) in {batches}"
+            " request(s) (0 requests spent):"
         )
         for index, question in enumerate(todo, start=1):
             options = " | ".join(c.name for c in question.candidates)
             typer.echo(f"  {index}. {question.mention} ({question.kind})"
                        f" -> {options} | none")
             typer.echo(f"     {question.evidence}")
+        for index, question in enumerate(synonyms_todo, start=len(todo) + 1):
+            typer.echo(f"  {index}. {question.a.name} ({question.a.kind}) /"
+                       f" {question.b.name} ({question.b.kind}) ->"
+                       " same | claimed | different")
+            if question.together:
+                typer.echo(f"     {question.together}")
         return
+    todo_count = len(todo) + len(synonyms_todo)
 
     try:
-        api_key = resolve_api_key(key_file=default_key_file())
+        api_key = (_llm_credentials(config, "disambiguate").key
+                   if config.llm.provider != "gemini"
+                   else resolve_api_key(key_file=default_key_file()))
     except GeminiKeyFileError as exc:
         typer.echo(f"disambiguate failed: {exc}")
-        typer.echo(f"{len(todo)} question(s) still pending; 0 requests spent.")
+        typer.echo(f"{todo_count} question(s) still pending; 0 requests spent.")
         raise typer.Exit(2)
     if api_key is None:
         typer.echo(
@@ -1210,27 +1209,33 @@ def disambiguate(
             " lore.toml, so it cannot end up in git."
         )
         typer.echo(
-            f"{len(todo)} question(s) still pending; 0 requests spent."
+            f"{todo_count} question(s) still pending; 0 requests spent."
         )
         raise typer.Exit(2)
 
-    batches = -(-len(todo) // MAX_BATCH)
     # A cascade, not one model: a 429/503/404 moves to the next entry
     # instead of sleeping, which is what turns five per-model daily quotas
     # into aggregate capacity.
-    client = GeminiClient(api_key, models=config.disambiguation.models,
-                          recorder=recorder_for(config.sqlite_path))
+    if config.llm.provider != "gemini":
+        from lore.inference.providers import factory as providers
+        client = providers.build(_llm_credentials(config, "disambiguate"), config,
+                                 "disambiguate", gemini_models=config.disambiguation.models)
+    else:
+        client = GeminiClient(api_key, models=config.disambiguation.models,
+                              recorder=recorder_for(config.sqlite_path))
 
     async def _run():
         # Same loop for the request and the close: httpx binds its sockets
         # to the loop that opened them.
         try:
-            return await ask_disambiguation(client, todo)
+            names = await ask_disambiguation(client, todo) if todo else {}
+            same = await ask_synonyms(client, synonyms_todo) if synonyms_todo else {}
+            return names, same
         finally:
             await client.aclose()
 
     try:
-        answers = asyncio.run(_run())
+        answers, synonym_answers = asyncio.run(_run())
     except (GeminiError, AnswerMismatchError) as exc:
         typer.echo(f"disambiguate failed: {exc}")
         # Nothing is written until a complete, verified answer set is in
@@ -1242,10 +1247,13 @@ def disambiguate(
         )
         raise typer.Exit(1)
 
-    store.save_answers(answers)
+    if answers:
+        store.save_answers(answers)
+    if synonym_answers:
+        store.save_synonym_answers(synonym_answers)
     merges = sum(1 for value in answers.values() if value)
     typer.echo(
-        f"asked {len(todo)} question(s) in {batches} request(s);"
+        f"asked {todo_count} question(s) in {batches} request(s);"
         f" answered by {client.last_model}"
         f" ({client.requests_made} HTTP call(s) across the cascade)"
     )
@@ -1253,6 +1261,15 @@ def disambiguate(
         f"recorded {len(answers)} answer(s): {merges} merge(s),"
         f" {len(answers) - merges} refusal(s)"
     )
+    if synonym_answers:
+        verdicts = list(synonym_answers.values())
+        same = verdicts.count("same")
+        merges += same
+        typer.echo(
+            f"recorded {len(verdicts)} synonym verdict(s): {same} same,"
+            f" {verdicts.count('claimed')} claimed (linked, not merged),"
+            f" {verdicts.count('different')} different"
+        )
     typer.echo(f"cached in {store.answers_path} — a reload spends 0 requests")
     # Per model, because a cascade that fell through a 429 spent one
     # request against THAT model's budget, not against the one that
@@ -1334,10 +1351,14 @@ def ask(
     config = LoreConfig.load()
 
     api_key = None
+    creds = None
     remote = [f"[lore.{name}]" for name, section in (
         ("selection", config.selection), ("synthesis", config.synthesis))
         if section.provider == "gemini"]
-    if remote:
+    if remote and config.llm.provider != "gemini":
+        creds = _llm_credentials(config, "ask")
+        api_key = creds.key
+    elif remote:
         try:
             api_key = resolve_api_key(key_file=default_key_file())
         except GeminiKeyFileError as exc:
@@ -1390,8 +1411,11 @@ def ask(
         conn = sqlite3.connect(f"file:{config.sqlite_path}?mode=ro", uri=True)
         titles = {**graphed, **{b["id"]: b["title"] for b in list_books(conn)}}
         lance = LanceStore(config.lancedb_dir)
-        models = make_query_models(config, api_key,
-                                   recorder=recorder_for(config.sqlite_path))
+        if creds is not None:  # Claude or OpenAI: billed tokens, no Gemini ledger
+            models = make_query_models(config, api_key, credentials=creds)
+        else:
+            models = make_query_models(config, api_key,
+                                       recorder=recorder_for(config.sqlite_path))
         # A deep answer starts no further section once the ledger says every
         # synthesis model is spent: the same check lore_search gives it.
         from lore.mcp import tools as mcp_tools
@@ -1470,8 +1494,16 @@ def mcp_command(
     open and close per request, so `lore graph load` keeps working while
     this is running. --http binds loopback only: there is no authentication.
     """
-    from lore.mcp.server import NonLoopbackHost, _check_loopback, run_http, run_stdio
+    from lore.mcp.server import (
+        MultiUserRefused, NonLoopbackHost, _check_loopback, refuse_multi_user, run_http,
+        run_stdio,
+    )
 
+    try:  # local-only: build_server refuses too, this is the clean message
+        refuse_multi_user()
+    except MultiUserRefused as exc:
+        typer.echo(f"lore mcp: {exc}", err=True)
+        raise typer.Exit(2)
     config = LoreConfig.load()
     if http:
         # run_http checks this too (so nothing can bypass it); checking here
@@ -1493,7 +1525,8 @@ def mcp_command(
 def ui_command(
     host: str = typer.Option(
         "127.0.0.1",
-        help="bind address; loopback only (127.0.0.0/8, localhost, ::1)"),
+        help="bind address; loopback only (127.0.0.0/8, localhost, ::1),"
+             " except in multi mode (LORE_MULTI_USER=1)"),
     port: int | None = typer.Option(None, help="port (default: [lore.web] port, 8766)"),
     dev: bool = typer.Option(False, "--dev",
                              help="also accept the Vite dev server's origin (port 5173)"),
@@ -1501,21 +1534,173 @@ def ui_command(
     """Serve LORE's web app: ask questions, read cited answers, explore the graph.
 
     Read-only on your books, graph and vectors; asking a question spends
-    Gemini requests like `lore ask`. Loopback only: there is no
-    authentication.
+    Gemini requests like `lore ask`. Local mode is loopback only: there is no
+    authentication. Multi mode (LORE_MULTI_USER=1) signs every user in, so it
+    may bind any address, as its container does (deploy/compose.yaml).
     """
     import uvicorn
 
+    from lore.tenancy import multi_user_enabled
     from lore.web.app import create_app
     from lore.web.security import NonLoopbackHost, check_loopback
 
     config = LoreConfig.load()
     port = port or config.web.port
+    if not multi_user_enabled():
+        try:
+            check_loopback(host)
+        except NonLoopbackHost as exc:
+            typer.echo(f"lore ui: {exc}", err=True)
+            raise typer.Exit(2)
+    typer.echo(f"lore ui: http://{host}:{port}", err=True)
+    from lore.auth.settings import AuthConfigError
     try:
-        check_loopback(host)
-    except NonLoopbackHost as exc:
+        web = create_app(config, host=host, port=port, dev=dev)
+    except AuthConfigError as exc:  # LORE_MULTI_USER=1 without its secrets
         typer.echo(f"lore ui: {exc}", err=True)
         raise typer.Exit(2)
-    typer.echo(f"lore ui: http://{host}:{port}", err=True)
-    uvicorn.run(create_app(config, host=host, port=port, dev=dev),
-                host=host, port=port, log_level="warning")
+    uvicorn.run(web, host=host, port=port, log_level="warning")
+
+
+@app.command(name="migrate")
+def migrate_command() -> None:
+    """Apply the central database's migrations (LORE_DATABASE_URL; by default a
+    SQLite file beside the data root). Run it before `lore ui` or `lore worker`
+    in a multi-user deployment; safe to run again."""
+    from lore.central.db import database_url, upgrade
+
+    url = database_url(LoreConfig.load())
+    upgrade(url)
+    typer.echo("central database is up to date")
+
+
+@app.command(name="trace")
+def trace_command(
+    request_id: str = typer.Argument(help="the request id (X-Request-Id, or the report's)"),
+    as_json: bool = typer.Option(False, "--json", help="print the stored record as JSON"),
+) -> None:
+    """Print one question's trace: the question, its decomposition, every model
+    call (prompt, reply, attempts) and the answer. Traces are kept 30 days in
+    the central database (LORE_DATABASE_URL; by default beside the data root)."""
+    import json as _json
+
+    import sqlalchemy as sa
+
+    from lore.central import traces
+    from lore.central.db import database_url, make_engine, make_session_factory
+
+    engine = make_engine(database_url(LoreConfig.load()))
+    if "traces" not in sa.inspect(engine).get_table_names():
+        typer.echo("lore trace: no traces yet (the central database has no traces table;"
+                   " ask a question in lore ui, or run lore migrate)", err=True)
+        raise typer.Exit(1)
+    with make_session_factory(engine)() as session:
+        row = traces.get(session, request_id.strip())
+        if row is None:
+            typer.echo(f"lore trace: no trace {request_id!r} (traces are kept 30 days)",
+                       err=True)
+            raise typer.Exit(1)
+        typer.echo(_json.dumps(traces.trace_out(row), indent=2, ensure_ascii=False)
+                   if as_json else traces.render_text(row))
+
+
+admin_app = typer.Typer(help="Administer a multi-user deployment.", no_args_is_help=True)
+app.add_typer(admin_app, name="admin")
+
+
+@admin_app.command(name="grant")
+def admin_grant(email: str = typer.Argument(help="the person's email address")) -> None:
+    """Make the person with this email an admin (the admin page, /admin).
+
+    The only way to become one: nothing in the web app grants it. If they have
+    not signed in yet, their account is created now, so the first sign-in with
+    this verified email is the admin's. Run `lore migrate` first."""
+    from lore.auth.accounts import grant_admin, normalize_email
+    from lore.central.db import database_url, make_engine, make_session_factory
+
+    address = normalize_email(email)
+    if address is None:
+        typer.echo(f"lore admin: {email!r} is not an email address", err=True)
+        raise typer.Exit(2)
+    sessions = make_session_factory(make_engine(database_url(LoreConfig.load())))
+    with sessions() as db:
+        user, created = grant_admin(db, address)
+        db.commit()
+    typer.echo(f"{user.email} is now an admin" + (" (account created)" if created else ""))
+
+
+@admin_app.command(name="rotate-keys")
+def admin_rotate_keys() -> None:
+    """Re-encrypt every stored Gemini key under the current master key.
+
+    Set the new master key as LORE_KEY_ENCRYPTION_KEY and the previous one as
+    LORE_KEY_ENCRYPTION_KEY_OLD, run this, then remove the OLD variable."""
+    from lore.central.db import database_url, make_engine, make_session_factory
+    from lore.central.keys import KeyConfigError, KeyDecryptError, MasterKeys, rotate_all
+
+    try:
+        master = MasterKeys.from_env()
+    except KeyConfigError as exc:
+        typer.echo(f"lore admin: {exc}", err=True)
+        raise typer.Exit(2)
+    sessions = make_session_factory(make_engine(database_url(LoreConfig.load())))
+    try:
+        count = rotate_all(sessions, master)
+    except KeyDecryptError as exc:
+        typer.echo(f"lore admin: {exc}; nothing was changed", err=True)
+        raise typer.Exit(1)
+    from lore.mcp.oauth import rotate_client_secrets
+    clients = rotate_client_secrets(sessions, master)  # MCP clients' OAuth secrets
+    typer.echo(f"re-encrypted {count} key(s) and {clients} MCP client secret(s)"
+               " under the current master key")
+
+
+@admin_app.command(name="generate-master-key")
+def admin_generate_master_key() -> None:
+    """Print a new random master key for LORE_KEY_ENCRYPTION_KEY (keep it secret)."""
+    from lore.central.keys import generate_master_key
+
+    typer.echo(generate_master_key())
+
+
+@app.command(name="worker")
+def worker_command(
+    poll: float = typer.Option(2.0, help="seconds between looks at an empty queue"),
+    once: bool = typer.Option(False, "--once",
+                              help="run at most one job, then exit"),
+) -> None:
+    """Run book-processing jobs from the central queue, one at a time.
+
+    The multi-user web app (LORE_MULTI_USER=1) queues a job for each Continue
+    or Move; this claims them, runs each against its owner's own library, and
+    reports progress on that library's job row. Any number of workers can run;
+    a user's jobs never run at the same time, and a worker that dies has its
+    job requeued once its heartbeat goes stale. Needs `lore migrate` first.
+    """
+    from lore.central.db import database_url, make_engine, make_session_factory
+    from lore.central.keys import KeyConfigError, KeyService, MasterKeys
+    from lore.worker import Worker
+
+    config = LoreConfig.load()
+    try:  # each job runs with its user's own Gemini key, decrypted with this
+        master = MasterKeys.from_env()
+    except KeyConfigError as exc:
+        typer.echo(f"lore worker: {exc}", err=True)
+        raise typer.Exit(2)
+    from lore.auth.redact import install_key_redaction
+    install_key_redaction()  # no API key in any log line, as in the web app
+    sessions = make_session_factory(make_engine(database_url(config)))
+    worker = Worker(config, sessions, keys=KeyService(sessions, master))
+    typer.echo(f"lore worker {worker.worker_id}: waiting for jobs", err=True)
+    if once:
+        worker.run_once()
+        return
+    import signal
+
+    def _graceful(signum, frame):  # SIGTERM stops like Ctrl-C: the job is handed back
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, _graceful)
+    try:
+        worker.run_forever(poll_every=poll)
+    except KeyboardInterrupt:
+        typer.echo("lore worker: stopped", err=True)

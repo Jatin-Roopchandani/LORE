@@ -27,7 +27,7 @@ test("the cost note shows only when the toggle is On", () => {
   rerender(<AskBox onAsk={() => {}} busy={false} depth="deep" onDepth={() => {}} />);
   expect(screen.getByText(DEEP.costNote)).toBeInTheDocument();
   expect(screen.getByRole("group", { name: DEEP.toggleLabel })).toHaveAccessibleDescription(DEEP.costNote);
-  expect(DEEP.costNote).toBe("A deep answer can take a few dozen requests from the daily allowance.");
+  expect(DEEP.costNote).toBe("A deep answer can take a few dozen requests to your AI provider.");
 });
 
 test("asking still works with the toggle present", () => {

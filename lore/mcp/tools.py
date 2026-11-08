@@ -14,13 +14,18 @@ import math
 
 import httpx
 
+from lore import tracing
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.registry import book_rows, list_books
 from lore.inference.gemini import (
-    GeminiAuthError, GeminiError, GeminiKeyFileError, GeminiQuotaError,
-    default_key_file, resolve_api_key,
+    CREDIT_MESSAGE, GeminiAuthError, GeminiCreditError, GeminiError,
+    GeminiKeyFileError, GeminiQuotaError, default_key_file, resolve_api_key,
 )
+from lore.inference import key_scope
+from lore.inference.key_scope import gemini_api_key
+from lore.inference.providers import factory as providers
+from lore.inference.providers.base import ProviderRefusal
 from lore.mcp.guards import TIMEOUT_MS, CypherRejected, run_guarded
 from lore.mcp.shapes import (
     BookOut, ChunkHit, Citation, CypherResult, EdgeOut, EntityCard,
@@ -177,7 +182,7 @@ _EDGE_COLUMNS = (
 )
 # Every EdgeOut field, so two rows tie only when they would print identically.
 _EDGE_ORDER = (
-    "r.book_id, r.chapter_seq, r.chunk_id, r.predicate, r.predicate_raw,"
+    "r.book_id, r.chapter_seq, size(r.chunk_id), r.chunk_id, r.predicate, r.predicate_raw,"
     " r.evidence, r.confidence"
 )
 
@@ -991,6 +996,14 @@ def _check_synthesis_budget(config: LoreConfig) -> str | None:
     """
     if config.synthesis.provider != "gemini":
         return None  # the local model spends no Gemini budget
+    if not providers.on_gemini(config):
+        # Claude, OpenAI or a paid Gemini plan: billed to the user, so no
+        # free-tier ledger. Only the user's own daily token cap (multi mode,
+        # off by default) stops it.
+        if key_scope.over_token_cap():
+            return ("You have used today's token cap set in Account settings."
+                    " It resets at midnight Pacific.")
+        return None
     conn = open_db(config.sqlite_path)
     try:
         refusals = []
@@ -1007,7 +1020,7 @@ def _check_synthesis_budget(config: LoreConfig) -> str | None:
 
 
 class _KeyMissing(Exception):
-    pass
+    """No key for the chosen provider; the message (if any) says which."""
 
 
 def _build_models(config: LoreConfig) -> QueryModels:
@@ -1017,10 +1030,22 @@ def _build_models(config: LoreConfig) -> QueryModels:
     an empty model list also raises: that is a config error and propagates).
     """
     api_key = None
+    creds = None
     if "gemini" in (config.selection.provider, config.synthesis.provider):
-        api_key = resolve_api_key(key_file=default_key_file())
+        # Multi mode: the bound user's provider and key, never the server's.
+        # Local mode: [lore.llm]'s provider; Gemini's key from the environment
+        # or the key file, as ever.
+        try:
+            creds = providers.credentials(
+                config, local=lambda: resolve_api_key(key_file=default_key_file()))
+        except ValueError as exc:  # Claude or OpenAI chosen locally, no key
+            raise _KeyMissing(str(exc)) from None
+        api_key = creds.key
         if not api_key:
             raise _KeyMissing()
+    if creds is not None and creds.provider != providers.GEMINI:
+        # Billed tokens, not Gemini's free-tier ledger: no recorder.
+        return make_query_models(config, api_key=api_key, credentials=creds)
     return make_query_models(config, api_key=api_key,
                              recorder=recorder_for(config.sqlite_path))
 
@@ -1031,13 +1056,34 @@ def _upstream(exc: GeminiError) -> dict:
     GeminiAuthError gets fixed text rather than its own: the key is never
     in an exception message, but nothing here should depend on that.
     Never `budget_exhausted`: that sends the user to wait for midnight.
+
+    Claude and OpenAI failures (lore.inference.providers.base) name their
+    provider; a model's refusal is `model_refused`, not an outage.
     """
+    provider = getattr(exc, "provider", None)
+    if provider is not None:
+        name = providers.label(provider)
+        if isinstance(exc, ProviderRefusal):
+            return error("model_refused",
+                         f"{name} declined to answer this question. Try asking it"
+                         " another way.")
+        if isinstance(exc, GeminiAuthError):
+            return error("upstream_unavailable",
+                         f"{name} rejected the API key, so the key is missing or"
+                         " invalid.")
+        if isinstance(exc, GeminiQuotaError):
+            return error("upstream_unavailable",
+                         f"{exc} This is {name} declining or overloaded; try again"
+                         " shortly.")
+        return error("upstream_unavailable", f"{name} failed: {exc}. Try again shortly.")
     if isinstance(exc, GeminiAuthError):
         return error("upstream_unavailable",
                      "Gemini rejected the API key, so the key is missing or"
                      f" invalid. To fix it, {_KEY_HELP}.")
     if isinstance(exc, GeminiKeyFileError):
         return error("upstream_unavailable", str(exc))
+    if isinstance(exc, GeminiCreditError):  # 402: fixed, friendly text
+        return error("upstream_unavailable", CREDIT_MESSAGE)
     if isinstance(exc, GeminiQuotaError):
         return error("upstream_unavailable",
                      f"{exc} This is Gemini declining or cooling down, not"
@@ -1051,8 +1097,16 @@ def _upstream(exc: GeminiError) -> dict:
 async def lore_search(config: LoreConfig, query: str,
                       models: QueryModels | None = None, on_event=None,
                       world: int | str | None = None,
-                      depth: str | None = None, spoilers: bool = False) -> dict:
+                      depth: str | None = None, spoilers: bool = False,
+                      history=None) -> dict:
     """The full query agent: spends Gemini requests, so it is guarded.
+
+    `history` (the conversation's last turns, each {question, answer}: the
+    earlier question and its short answer or the start of its answer) makes
+    the question a follow-up: it is rewritten to stand alone, and the result
+    carries `standalone` when that rewrite differs from `query` (see
+    answer_question). At most decompose.MAX_HISTORY_TURNS turns and
+    MAX_HISTORY_CHARS characters are used. None: the result is what it was.
 
     `world` (an id or a name) answers from that world's books only; with
     none, a library of one world uses it and a library of several is
@@ -1088,7 +1142,9 @@ async def lore_search(config: LoreConfig, query: str,
                     models = _build_models(config)
                 except GeminiError as exc:
                     return _upstream(exc)
-                except _KeyMissing:
+                except _KeyMissing as missing:
+                    if str(missing):
+                        return error("upstream_unavailable", str(missing))
                     return error("upstream_unavailable",
                                  "the Gemini API key is missing or invalid:"
                                  f" {_KEY_HELP}.")
@@ -1097,6 +1153,9 @@ async def lore_search(config: LoreConfig, query: str,
                 if dataclasses.is_dataclass(models):
                     models = dataclasses.replace(
                         models, spend_ok=lambda: _check_synthesis_budget(config) is None)
+            # A question with a trace bound (the web app's /api/ask, the answer
+            # evals) records every model call it makes (lore.tracing).
+            models = tracing.maybe_traced(models)
             titles = {b["id"]: b["title"] for b in list_books(stores.conn)}
             # `world` only when given: nothing else changes for a caller without one.
             scope = {} if world is None else {"world": world}
@@ -1104,6 +1163,8 @@ async def lore_search(config: LoreConfig, query: str,
                 scope["depth"] = depth
             if spoilers:
                 scope["spoilers"] = True
+            if history:
+                scope["history"] = history
             answer = await answer_question(stores.conn, stores.kuzu,
                                            stores.lance, query, models,
                                            on_event=on_event, **scope)
@@ -1112,6 +1173,8 @@ async def lore_search(config: LoreConfig, query: str,
                 del out["position_note"]  # present only when a position limited it
             if out.get("coverage") is None:
                 del out["coverage"]  # present only on an answer with prose (write.answer_coverage)
+            if answer.standalone:  # present only when a follow-up was rewritten
+                out["standalone"] = answer.standalone
             return out
         except GeminiError as exc:
             return _upstream(exc)

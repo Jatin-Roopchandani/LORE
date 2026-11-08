@@ -73,3 +73,14 @@ test("an item round-trips without a duplicate answer; old items with one still r
   expect(answerOf({ ...item("old"), answer: result })).toEqual(result);
   expect(answerOf(item("none"))).toBeNull();
 });
+
+test("a stored message replays as its steps then its answer; a truncated one as a too_large error", async () => {
+  const { eventsOf } = await import("./history");
+  const result = { answer: "x" } as unknown as SearchResult;
+  const base = { id: 4, role: "assistant", question: "q", depth: null, world: null, created_at: "2026-11-04T00:00:00Z" };
+  const ev = eventsOf({ ...base, request_id: "r1", answer: { result, steps: [{ type: "parts", t: 0.5, sub_questions: ["a"] } as AskEvent] } });
+  expect(ev.map((e) => e.type)).toEqual(["request", "parts", "answer"]);
+  expect(ev[2]).toMatchObject({ t: 0.5, result });
+  const cut = eventsOf({ ...base, request_id: null, answer: { truncated: true, bytes: 2_000_000 } });
+  expect(cut).toEqual([{ type: "error", t: 0, error: { code: "too_large", message: "" } }]);
+});

@@ -164,6 +164,10 @@ class GeminiOutputError(GeminiError):
         self.model = model
 
 
+CREDIT_MESSAGE = ("Your Gemini key's prepaid credit has run out. Top it up in"
+                  " Google AI Studio, or switch provider in Settings → AI providers.")
+
+
 class GeminiQuotaError(GeminiError):
     """No model in the cascade could serve the request.
 
@@ -172,6 +176,16 @@ class GeminiQuotaError(GeminiError):
     when this escapes: a half-written cache would make the next run ask
     the wrong questions.
     """
+
+
+class GeminiCreditError(GeminiQuotaError):
+    """HTTP 402: the key's prepaid credit is used up (RESOURCE_EXHAUSTED,
+    "prepayment credits are depleted"). A quota error, so every handler sorts
+    it as "no capacity now", but never cascaded: every model bills the same
+    account. Its text is fixed (CREDIT_MESSAGE), never Google's."""
+
+    def __init__(self, message: str = CREDIT_MESSAGE) -> None:
+        super().__init__(message)
 
 
 def limits_for(model: str) -> ModelLimits:
@@ -184,6 +198,8 @@ def default_key_file() -> Path:
 
 
 def _key_from_file(path: Path) -> str | None:
+    if key_scope.server_key_forbidden():  # belt and braces: see resolve_api_key
+        raise key_scope.KeyRequired()
     try:
         info = path.stat()
     except FileNotFoundError:
@@ -214,6 +230,10 @@ def resolve_api_key(
     `default_key_file()`), so a caller that passes none reads the
     environment only. Raises GeminiKeyFileError for a file others can read.
     """
+    if key_scope.server_key_forbidden():
+        # Multi mode, or a user's key is bound: the server's own key (the
+        # environment or the key file) is never a fallback for anyone.
+        raise key_scope.KeyRequired()
     source = os.environ if env is None else env
     for name in _KEY_VARIABLES:
         value = (source.get(name) or "").strip()
@@ -230,6 +250,24 @@ def _strip_fence(text: str) -> str:
         stripped = stripped.split("\n", 1)[1] if "\n" in stripped else ""
         stripped = stripped.rsplit("```", 1)[0]
     return stripped.strip()
+
+
+def _note_tokens(model: str, payload: object) -> None:
+    """The response's token counts (usageMetadata) to the bound user's scope,
+    which records them only for a paid Gemini plan. Output includes thinking
+    tokens: Google bills them as output. Nothing when the counts are absent."""
+    usage = payload.get("usageMetadata") if isinstance(payload, dict) else None
+    if not isinstance(usage, dict):
+        return
+
+    def count(name: str) -> int:
+        value = usage.get(name)
+        return value if isinstance(value, int) and value > 0 else 0
+
+    tokens_in = count("promptTokenCount")
+    tokens_out = count("candidatesTokenCount") + count("thoughtsTokenCount")
+    if tokens_in or tokens_out:
+        key_scope.note_usage("gemini", model, tokens_in, tokens_out)
 
 
 class GeminiClient:
@@ -286,18 +324,43 @@ class GeminiClient:
         return limits_for(self.last_model or self.models[0]).rpd
 
     async def _throttle(self, model: str) -> None:
+        """Wait for this model's next free slot at its RPM.
+
+        The slot is reserved before sleeping, so requests in flight at once
+        on one client (processing's `llm_concurrency`) queue one interval
+        apart instead of all waking at the same moment. One request at a
+        time waits exactly as long as before."""
+        now = self._now()
         last = self._last_request_at.get(model)
         if last is None:
             return
-        remaining = (60.0 / max(limits_for(model).rpm, 1)) - (self._now() - last)
-        if remaining > 0:
-            await self._sleep(remaining)
+        slot = last + 60.0 / max(limits_for(model).rpm, 1)
+        if slot > now:
+            self._last_request_at[model] = slot
+            await self._sleep(slot - now)
 
     async def _generate_one(
         self, model: str, prompt: str, generation_config: dict
     ) -> str:
+        """One HTTP attempt; reported to the bound trace (lore.tracing), if any,
+        whether it answered or failed."""
+        started = time.monotonic()
+        try:
+            text = await self._attempt(model, prompt, generation_config)
+        except Exception as exc:
+            tracing.note_attempt(model, ok=False, latency_s=time.monotonic() - started,
+                                 error=exc)
+            raise
+        tracing.note_attempt(model, ok=True, latency_s=time.monotonic() - started)
+        return text
+
+    async def _attempt(
+        self, model: str, prompt: str, generation_config: dict
+    ) -> str:
         await self._throttle(model)
-        self._last_request_at[model] = self._now()
+        # Never move a slot another request reserved back to now.
+        self._last_request_at[model] = max(
+            self._now(), self._last_request_at.get(model, float("-inf")))
         self.requests_made += 1
         self.attempts[model] = self.attempts.get(model, 0) + 1
         if self._recorder is not None:
@@ -309,6 +372,8 @@ class GeminiClient:
             # gone; what could still raise here (permissions, a full disk)
             # is an environment broken enough that the caller should know.
             self._recorder(model)
+        # The bound user's daily count (multi mode); nothing in local mode.
+        key_scope.note_request(model)
         url = self._endpoint.format(model=model)
         try:
             response = await self._client.post(
@@ -325,6 +390,13 @@ class GeminiClient:
                 f"could not reach the Gemini API: {exc}"
             ) from exc
 
+        if response.status_code in (401, 403) or (
+                response.status_code == 400 and "API_KEY_INVALID" in response.text):
+            # Tell a bound user's scope its key was refused (multi mode: the
+            # key is marked and the user asked for a new one). The 400 is how
+            # Gemini answers a malformed or expired key; its error is raised
+            # below exactly as before.
+            key_scope.note_rejection()
         if response.status_code in (401, 403):
             # Fatal, and never cascaded: a rejected key will be rejected by
             # every model, so trying four more only wastes time.
@@ -334,6 +406,14 @@ class GeminiClient:
                 f" {' or '.join(_KEY_VARIABLES)} in your environment, or"
                 " ~/.config/lore/gemini.env."
             )
+        if response.status_code == 402:
+            # Prepaid credit used up: the same for every model on this key.
+            key_scope.note_credit_exhausted(model)
+            raise GeminiCreditError()
+        if response.status_code == 429:
+            # Counted for the bound user (the paid-plan hint needs to know
+            # whether Google ever said "out of allowance" today).
+            key_scope.note_quota_refusal(model)
         if response.status_code in _CASCADE_STATUSES:
             limits = limits_for(model)
             raise GeminiQuotaError(
@@ -348,6 +428,7 @@ class GeminiClient:
             )
 
         payload = response.json()
+        _note_tokens(model, payload)
         candidates = payload.get("candidates") or []
         if not candidates:
             raise GeminiOutputError(
@@ -374,6 +455,8 @@ class GeminiClient:
         for model in willing:
             try:
                 text = await self._generate_one(model, prompt, generation_config)
+            except GeminiCreditError:
+                raise  # the next model bills the same account: no cascade
             except GeminiQuotaError as exc:
                 refusals.append(str(exc))
                 self._cooling_until[model] = self._now() + COOLDOWN_SECONDS
@@ -455,3 +538,7 @@ class GeminiClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+from lore import tracing  # noqa: E402
+from lore.inference import key_scope  # noqa: E402 - it imports this module first

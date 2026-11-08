@@ -1,5 +1,12 @@
 # LORE — Local Orchestration & Relational Extraction
 
+> **Historical design document (August 2026).** It records the original plan.
+> Two things it describes have since changed: extraction now runs on a remote
+> model (Gemini, Claude or OpenAI, chosen in `[lore.llm]`) or fully locally on
+> Ollama, and the Kaggle free-GPU tier it centres on was removed in November
+> 2026 (no Kaggle code, kernels, configuration or dependency remain). The
+> README describes LORE as it is.
+
 **A local-first literary knowledge graph, powered by free-tier cloud burst compute.**
 
 LORE ingests your e-book library (EPUB, PDF), extracts entities, relationships, and narrative arcs across books using open-source LLMs running on **free Kaggle GPUs**, and compiles them into an **embedded graph + vector store on your laptop**. You then ask it questions no ordinary RAG system can answer — multi-hop, cross-book, structural questions — through an agentic query loop, a custom MCP server, and a graph UI. Serving is 100% local; heavy compute is batched to the cloud.

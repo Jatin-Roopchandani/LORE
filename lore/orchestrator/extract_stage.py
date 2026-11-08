@@ -1,8 +1,10 @@
 """The extraction stage of resumable processing (Gemini tier).
 
 Items are chunks. A unit saves each chunk as it returns (see
-`run_unit_gemini`), so a stop costs at most the request in flight and a
-resume requests only the chunks that have no saved part. A spent daily
+`run_unit_gemini`), so a stop costs at most the requests in flight (up to
+`llm_concurrency`, which finish and are saved) and a resume requests only
+the chunks that have no saved part. The next unit is embedded while this
+one extracts (GeminiTier). A spent daily
 allowance becomes `QuotaStop`, which the runner parks as waiting_quota.
 """
 from __future__ import annotations
@@ -10,10 +12,16 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
-from lore.config import LoreConfig
+from lore.config import KAGGLE_REMOVED, LoreConfig
 from lore.orchestrator.local import make_gemini_tier, parts_done
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
-from lore.orchestrator.run import RunReport, _run_unit_here, _UnitHalted, book_units, unit_state
+from lore.orchestrator.run import (
+    RunReport,
+    _run_unit_here,
+    _UnitHalted,
+    book_units,
+    heal_completed,
+)
 from lore.orchestrator.workunit import WorkUnit
 
 
@@ -45,12 +53,14 @@ class ExtractStage:
 
     def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
         config = ctx.config
+        if config.extraction_provider == "kaggle":
+            raise ValueError(KAGGLE_REMOVED)
         if config.extraction_provider != "gemini":
             raise ValueError(
                 'resumable processing needs extraction_provider = "gemini"')
         units = self._units(ctx)
-        completed = {u.unit_id for u in units
-                     if unit_state(ctx.conn, u.unit_id) == "completed"}
+        # Completed units whose files a crash damaged are demoted and redone.
+        completed = heal_completed(ctx.conn, config, ctx.book_id, units)
         report = self.report = RunReport(
             ctx.book_id, units_total=len(units), units_completed=len(completed))
         base = sum(len(u.chunks) for u in units if u.unit_id in completed)
@@ -66,20 +76,22 @@ class ExtractStage:
         tier = make(config)
         with asyncio.Runner() as loop:
             try:
-                for unit in pending:
+                for index, unit in enumerate(pending):
                     dest = dests[unit.unit_id]
+                    # Embedded in the background while this unit extracts.
+                    nxt = pending[index + 1] if index + 1 < len(pending) else None
                     others = done_now - parts_done(dest, unit)
 
                     def on_chunk(n: int, others: int = others) -> None:
                         job_ctl.advance(others + n)
 
                     try:
-                        ok, _, n_ok, n_dead = _run_unit_here(
+                        ok, n_ok, n_dead = _run_unit_here(
                             ctx.conn, unit,
-                            lambda unit=unit, dest=dest, on_chunk=on_chunk: loop.run(
-                                tier.run(unit, dest,
-                                         before_request=job_ctl.spend_check,
-                                         on_chunk=on_chunk)),
+                            lambda unit=unit, dest=dest, on_chunk=on_chunk, nxt=nxt:
+                            loop.run(tier.run(unit, dest,
+                                              before_request=job_ctl.spend_check,
+                                              on_chunk=on_chunk, next_unit=nxt)),
                             self._on_event,
                         )
                     except _UnitHalted as halt:

@@ -41,6 +41,15 @@ DEEP = True
 # agent answers it from the stretch's story beats (lore/query/recap.py). Off,
 # the prompt and the schema are byte for byte what they were before.
 RECAP = True
+# FOLLOWUPS (2026-11-04): given the last turns of the conversation, the
+# decomposer also returns the question rewritten to stand alone
+# (`standalone`), and that rewrite drives retrieval, routing and the answer.
+# Part of the decompose call: no extra request. Without history (or off) the
+# prompt and the schema are byte for byte what they were before.
+FOLLOWUPS = True
+MAX_HISTORY_TURNS = 3
+MAX_HISTORY_CHARS = 3000
+HISTORY_ANSWER_CHARS = 600
 
 KINDS = ("factual", "interpretive", "beyond")
 STANCES = ("verdict", "analysis")
@@ -149,6 +158,71 @@ thing, fact or theme. A recap is one "factual" part. "recap" is an object:
   - "none": the question is not a recap.
 When unsure, use "none".
 """
+
+
+# Shown just before the question; each turn is an earlier question and the
+# start of the answer it got.
+_HISTORY_BLOCK = """
+Earlier in this conversation (oldest first; context for the question below,
+not something to answer again):
+{turns}
+"""
+# One general rule: what points back is resolved from the earlier turns, and
+# nothing else changes.
+_STANDALONE_RULE = """
+Also return "standalone": the question rewritten so that it stands alone, for
+a reader who has not seen the earlier conversation.
+- Use the earlier questions and answers only to resolve what the question
+  points back to: "he", "she", "it", "they", "this", "that", "there", "then",
+  "next", "after that", "the other one", "the same" and similar words become
+  the people, things, places, events or times they refer to, by name.
+- Keep the question's own words, scope and intent otherwise, and add nothing
+  it does not ask. Do not answer it.
+- If the question already stands alone, return it unchanged, word for word.
+Write "sub_questions" (and everything else above) for the standalone question.
+"""
+
+
+@dataclass(frozen=True)
+class Turn:
+    """One earlier turn of the conversation: the question and (the start of)
+    the answer it was given."""
+
+    question: str
+    answer: str = ""
+
+
+def _clip(text: str, limit: int) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= limit else text[:limit].rstrip() + "\u2026"
+
+
+def clip_history(turns: Sequence[Turn | dict] | None) -> tuple[Turn, ...]:
+    """The turns the decomposer sees: the last MAX_HISTORY_TURNS, each answer cut
+    to HISTORY_ANSWER_CHARS, and the oldest dropped until question and answer
+    text together fit MAX_HISTORY_CHARS (the newest turn is always kept, cut to
+    fit). A turn is a Turn or a {question, answer} dict; one with no question
+    is skipped."""
+    kept: list[Turn] = []
+    for turn in turns or ():
+        if isinstance(turn, dict):
+            question, answer = turn.get("question"), turn.get("answer")
+        else:
+            question, answer = turn.question, turn.answer
+        question = _clip(question, MAX_HISTORY_CHARS // 2)
+        if question:
+            kept.append(Turn(question, _clip(answer, HISTORY_ANSWER_CHARS)))
+    kept = kept[-MAX_HISTORY_TURNS:]
+    while len(kept) > 1 and sum(len(t.question) + len(t.answer) for t in kept) > MAX_HISTORY_CHARS:
+        kept.pop(0)
+    if kept and len(kept[0].question) + len(kept[0].answer) > MAX_HISTORY_CHARS:
+        kept[0] = Turn(kept[0].question,
+                       _clip(kept[0].answer, MAX_HISTORY_CHARS - len(kept[0].question)))
+    return tuple(kept)
+
+
+def _history_text(turns: Sequence[Turn]) -> str:
+    return "\n".join(f"Q: {t.question}\nA: {t.answer or '(no answer)'}" for t in turns)
 
 
 class SubQuestions(BaseModel):
@@ -264,6 +338,35 @@ class RecapDecomposition(Decomposition):
         return value if isinstance(value, (dict, RecapSpec)) else None
 
 
+class _Standalone(BaseModel):
+    """The field a follow-up adds (FOLLOWUPS, with history): the question
+    rewritten to stand alone. Read tolerantly: anything but text is ""."""
+
+    standalone: str = ""
+
+    @field_validator("standalone", mode="before")
+    @classmethod
+    def _standalone_text(cls, value: Any) -> str:
+        return _text(value)
+
+
+class FollowupSubQuestions(SubQuestions, _Standalone):
+    model_config = ConfigDict(title="SubQuestions")
+
+
+class FollowupDecomposition(Decomposition, _Standalone):
+    model_config = ConfigDict(title="Decomposition")
+
+
+class FollowupRecapDecomposition(RecapDecomposition, _Standalone):
+    model_config = ConfigDict(title="Decomposition")
+
+
+_FOLLOWUP_SCHEMAS: dict[type[BaseModel], type[BaseModel]] = {
+    SubQuestions: FollowupSubQuestions, Decomposition: FollowupDecomposition,
+    RecapDecomposition: FollowupRecapDecomposition}
+
+
 @dataclass(frozen=True)
 class Part:
     """A part of the question: its text, how it is answered, and (for an
@@ -301,19 +404,30 @@ class Plan:
     depth: str = "focused"
     # Set when the question asks for a recap (RECAP); None otherwise.
     recap: Recap | None = None
+    # The question rewritten to stand alone (FOLLOWUPS, with history), only
+    # when it differs from the question as typed; "" otherwise.
+    standalone: str = ""
 
     @property
     def questions(self) -> list[str]:
         return [part.question for part in self.parts]
 
 
-def active_schema() -> type[BaseModel]:
+def active_schema(followup: bool = False) -> type[BaseModel]:
+    """The schema the decomposer answers in; `followup` (history given, with
+    FOLLOWUPS on) adds `standalone` under the same name."""
     if RECAP:
-        return RecapDecomposition
-    return Decomposition if INTERPRETIVE or DEEP else SubQuestions
+        base: type[BaseModel] = RecapDecomposition
+    else:
+        base = Decomposition if INTERPRETIVE or DEEP else SubQuestions
+    return _FOLLOWUP_SCHEMAS[base] if followup and FOLLOWUPS else base
 
 
-def decomposition_prompt(question: str, book_titles: Sequence[str] = ()) -> str:
+def decomposition_prompt(question: str, book_titles: Sequence[str] = (), *,
+                         history: Sequence[Turn | dict] | None = None) -> str:
+    """The decomposer's prompt. `history` (the conversation's earlier turns,
+    clipped by clip_history) adds them before the question and asks for
+    `standalone`; with none, or FOLLOWUPS off, the prompt is what it was."""
     # Task 10e: listed as bare context, the titles invited a split per book
     # on single-book questions (Q3). They stay, for spelling book names.
     books = ("\nBooks in the library (a reference for names only): "
@@ -322,8 +436,23 @@ def decomposition_prompt(question: str, book_titles: Sequence[str] = ()) -> str:
                + (_DEPTH_RULE if DEEP else "")) if INTERPRETIVE or DEEP or RECAP else "")
     if RECAP:
         extras += _RECAP_RULE
+    turns = clip_history(history) if FOLLOWUPS else ()
+    if turns:
+        books += _HISTORY_BLOCK.format(turns=_history_text(turns))
+        extras += _STANDALONE_RULE
     return _PROMPT.format(question=question, books=books, extras=extras,
                           thematic=_THEMATIC_RULE if THEMATIC_PARTS else "")
+
+
+def _same_question(a: str, b: str) -> bool:
+    """Equal but for spacing and case: a rewrite like that is no rewrite."""
+    return " ".join(a.split()).casefold() == " ".join(b.split()).casefold()
+
+
+def standalone_of(question: str, reply: Any) -> str:
+    """The reply's `standalone` when it is a real rewrite of `question`, else ""."""
+    rewrite = _clean(getattr(reply, "standalone", "") or "")
+    return "" if not rewrite or _same_question(rewrite, question) else rewrite
 
 
 def _clean(text: Any) -> str:
@@ -381,20 +510,28 @@ def _part(spec: PartSpec) -> Part | None:
 
 
 async def plan(
-    question: str, generate: Generate, *, book_titles: Sequence[str] = ()
+    question: str, generate: Generate, *, book_titles: Sequence[str] = (),
+    history: Sequence[Turn | dict] | None = None,
 ) -> Plan | None:
     """The question's parts (1-4, each with its kind and lenses) and depth,
     or None when the model's output is unusable.
+
+    `history` (the conversation's earlier turns) makes it a follow-up: the
+    same call also rewrites the question to stand alone (`Plan.standalone`),
+    and the parts are the standalone question's.
 
     Only malformed output gives None. A quota, transport or auth failure is
     raised: it would fail the answer's other calls too, and hiding it here
     would only move the error.
     """
+    followup = FOLLOWUPS and bool(clip_history(history))
     try:
-        result = await generate(decomposition_prompt(question, book_titles),
-                                active_schema())
+        result = await generate(
+            decomposition_prompt(question, book_titles, history=history if followup else None),
+            active_schema(followup))
     except (ProviderOutputError, GeminiOutputError, ValidationError):
         return None
+    standalone = standalone_of(question, result) if followup else ""
     recap = _recap(getattr(result, "recap", None)) if RECAP else None
     if isinstance(result, Decomposition):
         specs = result.sub_questions
@@ -411,7 +548,8 @@ async def plan(
             parts.append(part)
     if not parts:
         return None
-    return Plan(tuple(parts[:MAX_SUB_QUESTIONS]), depth if depth in DEPTHS else "focused", recap)
+    return Plan(tuple(parts[:MAX_SUB_QUESTIONS]), depth if depth in DEPTHS else "focused", recap,
+                standalone)
 
 
 def resolve_depth(requested: str | None, planned: str) -> str:

@@ -30,6 +30,10 @@ export interface AskState {
   liveClaims: Claim[]; livePassages: Passage[];
   // A deep answer's short answer: sent before its sections when interpretive, after them otherwise.
   shortAnswer: ProseSentence[] | null;
+  // The question's request id (its first event): what "Report this answer" quotes.
+  requestId: string | null;
+  // A follow-up as the server understood it, when that differs from what was typed ("Understood as: …").
+  standalone: string | null;
 }
 
 export function initialState(question = ""): AskState {
@@ -37,7 +41,8 @@ export function initialState(question = ""): AskState {
     status: question ? "running" : "idle", question,
     steps: STEP_ORDER.map((name) => ({ name, state: "pending", detail: null, startedAt: null, doneAt: null })),
     subQuestions: [], seeds: [], edges: [], evidence: null, result: null, error: null, elapsed: 0,
-    lensOf: [], planQuestions: [], deepSteps: [], plan: null, sections: [], liveClaims: [], livePassages: [], shortAnswer: null,
+    lensOf: [], planQuestions: [], deepSteps: [], plan: null, sections: [], liveClaims: [], livePassages: [], shortAnswer: null, requestId: null,
+    standalone: null,
   };
 }
 
@@ -156,6 +161,10 @@ export function askReducer(state: AskState, event: AskEvent): AskState {
           : step.state === "pending" ? { ...step, state: "skipped" } : step),
         deepSteps: s.deepSteps.map((d) => d.state === "running" ? { ...d, state: "done", doneAt: event.t } : d),
       };
+    case "request":
+      return { ...s, requestId: event.request_id };
+    case "understood":
+      return { ...s, standalone: event.standalone || null };
     case "error":
       return {
         ...s, status: event.error.code === "interrupted" ? "interrupted" : "error", error: event.error,
@@ -168,6 +177,11 @@ export function askReducer(state: AskState, event: AskEvent): AskState {
 
 // What a prose view reads its citations from: the final answer, or while a deep answer is still arriving,
 // the claims and passages its sections have brought so far.
+/** A finished turn's state, folded from its events at once (no animation): how a thread draws its earlier answers. */
+export function foldEvents(question: string, events: AskEvent[]): AskState {
+  return events.reduce(askReducer, initialState(question));
+}
+
 export function citationSource(state: AskState): SearchResult {
   if (state.result) return state.result;
   return { answer: "", mode: "graph", template: null, note: null, model: null, selection_model: null,

@@ -95,10 +95,12 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
     path: path ? { nodes: path.nodes.map((n) => n.id), hops: path.hops } : null }),
     [mode, state, hiddenBooks, hoverChunks, exps, kinds, shownOverview, selected, panel, filters, path]);
   const anchor = pathSub ? pathSub.nodes[0]?.id : expansions[mode].at(-1)?.root ?? null;
+  // An expansion or a path pins the camera, and with it every node already on screen.
+  const pinned = expansions[mode].length > 0 || !!pathSub;
   const pos = useMemo(() => {
-    positions.current[mode] = place(positions.current[mode], view, anchor ?? null, !!view.overview);
+    positions.current[mode] = place(positions.current[mode], view, anchor ?? null, !!view.overview, pinned);
     return positions.current[mode];
-  }, [view, mode, anchor]);
+  }, [view, mode, anchor, pinned]);
 
   // Search edges name their ends but not their kinds: look those up, once per id per ask.
   const missing = unknownKinds(view).filter((id) => !asked.current.has(id) && !id.includes(","));
@@ -192,7 +194,7 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
         {noBooks ? <p className="hint" style={{ padding: 16 }}>{UI.noBooks}</p>
           : showHint ? <p className="hint" style={{ padding: 16 }}>{UI.overviewHint}</p>
           : <GraphCanvas view={view} positions={pos} onNodeClick={(id) => openEntity(id, false)} onEdgeClick={openEdge}
-            pinned={expansions[mode].length > 0 || !!pathSub} fitRequest={fitRequest} focusId={focus.id} focusRequest={focus.n} />}
+            pinned={pinned} fitRequest={fitRequest} focusId={focus.id} focusRequest={focus.n} />}
         {(panel || connection) && (
           <div className="gside">
             {panel?.type === "entity" && <EntityPanel key={panel.id} id={panel.id} world={world} positionVersion={positionVersion} bookTitles={bookTitles} seed={seedIds.has(panel.id)}

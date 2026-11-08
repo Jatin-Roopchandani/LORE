@@ -46,5 +46,5 @@ export function groupHistory(items: HistoryItem[], now: Date): { key: GroupKey; 
 
 /** A deep answer: sectioned, or planned in sections. Items saved before deep answers are never deep. */
 export function isDeep(item: HistoryItem): boolean {
-  return item.events.some((e) => (e.type === "answer" && e.result.answer_style === "sectioned") || e.type === "plan");
+  return item.deep === true || item.events.some((e) => (e.type === "answer" && e.result.answer_style === "sectioned") || e.type === "plan");
 }

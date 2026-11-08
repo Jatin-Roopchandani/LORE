@@ -1,7 +1,6 @@
 """Daily Gemini request budget, shared by every caller.
 
-Sibling to quota.py, which does the same job for Kaggle GPU-hours. The
-point of one ledger is that `lore ask` in a terminal and `lore_search`
+The point of one ledger is that `lore ask` in a terminal and `lore_search`
 over MCP spend the SAME daily allowance: a server-only counter reports a
 number that is wrong on any day the CLI was also used, which is most days.
 

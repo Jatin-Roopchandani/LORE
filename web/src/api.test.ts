@@ -1,4 +1,5 @@
-import { api, parseSse, streamAsk } from "./api";
+import type { AskEvent } from "./types";
+import { adminApi, api, authApi, csrfHeaders, keyApi, nav, onKeyProblem, parseSse, streamAsk } from "./api";
 
 const frame = (event: string, data: object) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
@@ -120,4 +121,150 @@ test("the explorer reads hit the right paths, in the world", async () => {
   expect(lastCall()[0]).toBe("/api/path?a=a_zed&b=a_yan&max=4&world=all");
   await api.passage("ba1:1:0", "2");
   expect(lastCall()[0]).toBe("/api/passage/ba1%3A1%3A0?world=2");
+});
+
+describe("the CSRF token", () => {
+  const setCookie = (value: string) => { document.cookie = `lore_csrf=${value}; path=/`; };
+  afterEach(() => { document.cookie = "lore_csrf=; path=/; max-age=0"; });
+
+  test("is read from the lore_csrf cookie", () => {
+    setCookie("abc123");
+    expect(csrfHeaders()).toEqual({ "X-CSRF-Token": "abc123" });
+  });
+
+  test("nothing is sent when there is no cookie (local mode)", () => {
+    expect(csrfHeaders()).toEqual({});
+  });
+
+  test("every mutating call sends it", async () => {
+    setCookie("tok");
+    jsonFetch({ started: true });
+    await api.continueBook("b1");
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    await api.moveBook("b1", "W", true);
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    await api.createWorld("Z");
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    await api.renameWorld(1, "Z");
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    await api.deleteWorld(1);
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+    jsonFetch({}, 400);
+    for await (const _ of streamAsk("who?", new AbortController().signal)) { /* drain */ }
+    expect((lastCall()[1]!.headers as Record<string, string>)["X-CSRF-Token"]).toBe("tok");
+  });
+
+  test("reads do not carry it", async () => {
+    setCookie("tok");
+    jsonFetch();
+    await api.worlds();
+    expect(lastCall()[1]!.headers).not.toHaveProperty("X-CSRF-Token");
+  });
+});
+
+describe("signed-out and strict errors", () => {
+  afterEach(() => { document.head.innerHTML = ""; });
+
+  test("a 401 in multi-user mode sends the browser to sign in", async () => {
+    document.head.innerHTML = '<meta name="lore-multi" content="1">';
+    const go = vi.spyOn(nav, "to").mockImplementation(() => {});
+    jsonFetch({ detail: "sign in required" }, 401);
+    const r = await api.worlds();
+    expect(go).toHaveBeenCalledWith("/signin");
+    expect(r).toEqual({ error: { code: "unauthorized", message: "" } });
+  });
+
+  test("local mode never redirects", async () => {
+    const go = vi.spyOn(nav, "to").mockImplementation(() => {});
+    jsonFetch({ detail: "x" }, 401);
+    await api.worlds();
+    expect(go).not.toHaveBeenCalled();
+  });
+
+  test("a 401 on a mutation and on the ask stream also signs out", async () => {
+    document.head.innerHTML = '<meta name="lore-multi" content="1">';
+    const go = vi.spyOn(nav, "to").mockImplementation(() => {});
+    jsonFetch({ detail: "x" }, 401);
+    await api.createWorld("w");
+    await api.continueBook("b");
+    const out = [];
+    for await (const e of streamAsk("q", new AbortController().signal)) out.push(e.type);
+    expect(go).toHaveBeenCalledTimes(3);
+    expect(out).toEqual(["error"]);
+  });
+
+  test("a bare 403 from the admin API is an error, not data", async () => {
+    jsonFetch({ detail: "admins only" }, 403);
+    expect(await adminApi.users()).toEqual({ error: { code: "http_403", message: "admins only" } });
+    expect(await adminApi.approve(1)).toEqual({ error: { code: "http_403", message: "admins only" } });
+  });
+
+  test("an {error} body keeps its own code", async () => {
+    jsonFetch({ error: { code: "rate_limited", message: "slow" } }, 429);
+    expect(await authApi.requestLink("a@b.co")).toEqual({ error: { code: "rate_limited", message: "slow" } });
+  });
+
+  test("the auth calls use the right paths and bodies", async () => {
+    jsonFetch({});
+    await authApi.requestLink("a@b.co", "INV");
+    expect([lastCall()[0], lastCall()[1]!.method, JSON.parse(lastCall()[1]!.body as string)]).toEqual(["/auth/email", "POST", { email: "a@b.co", invite: "INV" }]);
+    await authApi.requestLink("a@b.co");
+    expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ email: "a@b.co" });
+    await authApi.joinWaitlist("a@b.co", "Dracula", true);
+    expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ email: "a@b.co", reading: "Dracula", consent: true, website: "" });
+    await authApi.logout();
+    expect([lastCall()[0], lastCall()[1]!.method]).toEqual(["/auth/logout", "POST"]);
+    await adminApi.createInvite(7);
+    expect(JSON.parse(lastCall()[1]!.body as string)).toEqual({ days: 7 });
+  });
+});
+
+describe("the user's Gemini key", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  test("the key calls use the right paths, verbs and bodies", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ present: false }))));
+    await keyApi.get();
+    await keyApi.save("AIzaKEY");
+    await keyApi.remove();
+    await keyApi.usage();
+    const calls = (fetch as any).mock.calls.map(([url, init]: [string, RequestInit | undefined]) => [url, init?.method ?? "GET", init?.body]);
+    expect(calls).toEqual([["/api/me/key", "GET", undefined], ["/api/me/key", "PUT", JSON.stringify({ key: "AIzaKEY" })],
+      ["/api/me/key", "DELETE", undefined], ["/api/me/usage", "GET", undefined]]);
+  });
+
+  test("an ask answered key_required or key_invalid reports it", async () => {
+    const seen: string[] = [];
+    const stop = onKeyProblem((p) => seen.push(p));
+    for (const code of ["key_required", "key_invalid", "busy"]) {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(frame("error", { t: 0, error: { code, message: "" } }), { status: 200 })));
+      for await (const _ of streamAsk("who?", new AbortController().signal)) { /* drain */ }
+    }
+    stop();
+    expect(seen).toEqual(["key_required", "key_invalid"]);
+  });
+
+  test("a Continue or a move answered key_required reports it; the key routes themselves do not", async () => {
+    const seen: string[] = [];
+    const stop = onKeyProblem((p) => seen.push(p));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "key_required", message: "" } }), { status: 409 })));
+    await api.continueBook("b1");
+    await api.moveBook("b1", 2);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "key_invalid", message: "" } }), { status: 400 })));
+    expect(await keyApi.save("AIzaBAD")).toEqual({ error: { code: "key_invalid", message: "" } });
+    stop();
+    expect(seen).toEqual(["key_required", "key_required"]);
+  });
+});
+
+test("streamAsk sends chat_id only on a follow-up, and a gone chat is its own error", async () => {
+  const body = () => JSON.parse(((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1] as RequestInit).body as string);
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "not_found", message: "no such chat" } }), { status: 404 })));
+  const out: AskEvent[] = [];
+  for await (const e of streamAsk("q", new AbortController().signal, "all", "auto", "c1")) out.push(e);
+  expect(body()).toEqual({ question: "q", world: "all", depth: "auto", chat_id: "c1" });
+  expect(out).toEqual([{ type: "error", t: 0, error: { code: "chat_not_found", message: "" } }]);
+  for await (const _ of streamAsk("q", new AbortController().signal, "all", "auto")) { /* drain */ }
+  expect(body()).toEqual({ question: "q", world: "all", depth: "auto" });
+  vi.unstubAllGlobals();
 });

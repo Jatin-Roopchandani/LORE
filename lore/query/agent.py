@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from lore.config import LoreConfig
 from lore.extract.embed import QUERY_PREFIX
 from lore.inference.gemini import GeminiClient
+from lore.inference.providers import factory as providers
 from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
 from lore.query import deep as deep_module
@@ -51,6 +52,7 @@ from lore.query.templates import MAX_EVIDENCE_CHARS
 from lore.query.viewpoint import load_viewpoint
 from lore.query import timeline as timeline_module
 from lore.query import codexslice
+from lore.query import hubselect
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
 Generate = Callable[[str, type[BaseModel]], Awaitable[BaseModel]]
@@ -237,6 +239,7 @@ def make_query_models(
     ollama: OllamaProvider | None = None,
     gemini: GeminiClient | None = None,
     recorder: Callable[[str], None] | None = None,
+    credentials=None,
 ) -> QueryModels:
     """Build the query side's models. `ollama`/`gemini` are for tests.
 
@@ -252,10 +255,22 @@ def make_query_models(
     `gemini` is always shared), so per-model throttling and the RPM budget
     are counted once and `aclose` closes it once. Only two different
     `models` lists get two clients, because a client's cascade is fixed.
+
+    `credentials` (lore.inference.providers.factory) names the user's
+    provider. On Gemini (or None) everything above holds unchanged. On Claude
+    or OpenAI each remote call site gets its own model from the factory, with
+    its role's model and effort: decomposition and the check run on the
+    `fast` role, the claims and the prose on the `writer` role.
     """
     remote_steps = [name for name, section in (("selection", config.selection),
                                                ("synthesis", config.synthesis))
                     if section.provider == "gemini"]
+    if (credentials is None and remote_steps and gemini is None
+            and providers.active_provider(config) != providers.GEMINI):
+        credentials = providers.credentials(config)  # local mode's [lore.llm]
+    other = credentials is not None and credentials.provider != providers.GEMINI
+    if other:
+        api_key = credentials.key
     if remote_steps and gemini is None and not api_key:
         # Checked before any client opens, so a refusal leaks nothing.
         sections = " and ".join(f"[lore.{name}]" for name in remote_steps)
@@ -264,10 +279,16 @@ def make_query_models(
     # The one provider the embedder built (or was given): generators share it.
     local = embedder.provider
     remotes: dict[tuple[str, ...], GeminiClient] = {}
+    sites: dict[str, object] = {}  # Claude or OpenAI: one model per call site
 
-    def remote(models: list[str]) -> GeminiClient:
+    def remote(models: list[str], site: str = "synthesize") -> GeminiClient:
         if gemini is not None:
             return gemini
+        if other:
+            if site not in sites:
+                sites[site] = providers.build(credentials, config, site,
+                                              gemini_models=models)
+            return sites[site]
         key = tuple(models)
         if key not in remotes:
             remotes[key] = GeminiClient(api_key, models=models, recorder=recorder)
@@ -276,7 +297,7 @@ def make_query_models(
     embed = embedder.embed
 
     if config.selection.provider == "gemini":
-        selector = remote(config.selection.models)
+        selector = remote(config.selection.models, "select")
 
         async def select(prompt: str, schema: type[BaseModel]) -> BaseModel:
             return await selector.generate_json(prompt, schema)
@@ -302,6 +323,11 @@ def make_query_models(
 
         # The synthesis client and cascade; generate_json runs at temperature 0.
         decompose_with = synthesize_with
+        check_with = write_with = synthesize_with
+        if other:
+            decompose_with = _json_call(remote(config.synthesis.models, "decompose"))
+            check_with = _json_call(remote(config.synthesis.models, "check"))
+            write_with = _json_call(remote(config.synthesis.models, "write"))
 
         def synthesis_model() -> str | None:
             return writer.last_model
@@ -314,10 +340,13 @@ def make_query_models(
             # A short prompt, deterministic like selection.
             return await local.generate(prompt, schema, options=SELECTION_OPTIONS)
 
+        check_with = write_with = synthesize_with
+
         def synthesis_model() -> str | None:
             return config.ollama.model
 
-    opened = [gemini] if gemini is not None and remote_steps else list(remotes.values())
+    opened = ([gemini] if gemini is not None and remote_steps
+              else list(remotes.values()) + list(sites.values()))
 
     async def aclose() -> None:
         try:
@@ -333,10 +362,18 @@ def make_query_models(
     return QueryModels(embed, select, synthesize_with, synthesis_model, aclose,
                        selection_model, decompose=decompose_with, viewpoint=viewpoint,
                        evidence_chars=evidence_budget(config.synthesis.provider),
-                       # The same callable as synthesis: same provider, same
+                       # On Gemini, the same callable as synthesis: same
                        # client, same cascade, same temperature 0, and so the
-                       # same request bookkeeping.
-                       check=synthesize_with, write=synthesize_with)
+                       # same request bookkeeping. On Claude or OpenAI, each
+                       # its own call site (role and effort).
+                       check=check_with, write=write_with)
+
+
+def _json_call(model):
+    async def call(prompt: str, schema: type[BaseModel], *,
+                   avoid: str | None = None) -> BaseModel:
+        return await model.generate_json(prompt, schema)
+    return call
 
 
 async def _select(question, seeds, models: QueryModels):
@@ -449,14 +486,19 @@ def _retrieval(plan) -> list:
 
 
 async def _parts(question, vector, models: QueryModels, kuzu,
-                 book_ids: Collection[str] | None = None):
+                 book_ids: Collection[str] | None = None, history=None):
     """(retrieval part, its vector) pairs, whether decomposition succeeded, and
     the Plan (each part's kind and lenses, and the planned depth). The plan is
     None when decomposition did not run or failed: every part is then factual
     and the depth is `focused`. A retrieval part is a part of the question, or
     a lens of an interpretive part (which has no retrieval of its own). A part
     identical to the question reuses its vector; the others are embedded
-    together in one call."""
+    together in one call.
+
+    With `history` the plan may carry a standalone rewrite of the question
+    (decompose.FOLLOWUPS); it is embedded in that same call and its vector
+    returned with it: (pairs, decomposed, plan, (question, vector)), the
+    question the answer is for and its vector."""
     planned = None
     if models.decompose is not None:
         # The graph's books, not the registry's: only those can be searched,
@@ -468,16 +510,21 @@ async def _parts(question, vector, models: QueryModels, kuzu,
             graphed = sorted({str(row[1]) for row in kuzu.execute(
                 "MATCH (b:Book) RETURN b.id, b.title")
                 if row[1] and row[0] in book_ids})
-        planned = await decompose_plan(question, models.decompose, book_titles=graphed)
+        # `history` only when given: a decomposer call without it is unchanged.
+        planned = await decompose_plan(question, models.decompose, book_titles=graphed,
+                                       **({"history": history} if history else {}))
     decomposed = planned is not None
     rparts = _retrieval(planned)
+    asked = planned.standalone if planned is not None and planned.standalone else question
     parts = ([r.question for r in rparts] if rparts
              else planned.questions if planned is not None else [question])
-    fresh = [part for part in parts if part != question]
+    fresh = list(dict.fromkeys(([asked] if asked != question else [])
+                               + [part for part in parts if part != question]))
     vectors = {question: vector}
     if fresh:
         vectors.update(zip(fresh, await models.embed([QUERY_PREFIX + p for p in fresh])))
-    return [(part, vectors[part]) for part in parts], decomposed, planned
+    return ([(part, vectors[part]) for part in parts], decomposed, planned,
+            (asked, vectors[asked]))
 
 
 # The check step's detail when its verdicts were not applied: the call
@@ -639,8 +686,19 @@ async def answer_question(
     world: int | str | None = None,
     depth: str = "auto",
     spoilers: bool = False,
+    history=None,
 ) -> Answer:
     """Answer `question` from the library.
+
+    `history` (decompose.Turn or {question, answer} dicts: the conversation's
+    earlier turns, oldest first) makes it a follow-up. The decompose call also
+    rewrites the question to stand alone, resolving what it points back to,
+    and from then on that rewrite is the question: retrieval, the recap, deep
+    and interpretive routing, and the answer. When it differs from the
+    question as typed, an `understood {standalone}` event says so and the
+    answer carries it (`standalone`). No history: nothing differs. The history
+    text is only what the caller passes (earlier answers, already limited by
+    the reader's position); it is never retrieval evidence.
 
     A world's switched-on reading position (lore/reading_position.py) limits
     every step below to what the reader has read, and the answer carries
@@ -663,15 +721,19 @@ async def answer_question(
     if depth not in ("auto", *DEPTHS):
         raise ValueError(f"depth must be auto, deep or focused, not {depth!r}")
     scopes = resolve_scopes(conn, world, spoilers=spoilers)
+    rewrites: list[str] = []  # the standalone rewrite, when _answer made one
     answer = await _answer(conn, kuzu, lance, question, models, scopes=scopes,
-                           baseline=baseline, on_event=on_event, depth=depth)
+                           baseline=baseline, on_event=on_event, depth=depth,
+                           history=history, rewrites=rewrites)
+    if rewrites:
+        answer = replace(answer, standalone=rewrites[-1])
     note = visible_module.position_note([s.position for s in scopes if s.position])
     return replace(answer, position_note=note) if note else answer
 
 
 async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: QueryModels, *,
                   scopes: list[Scope], baseline: bool, on_event: OnEvent | None,
-                  depth: str) -> Answer:
+                  depth: str, history=None, rewrites: list[str] | None = None) -> Answer:
     """`answer_question` over scopes already resolved."""
     seen = union(scopes)  # the one visibility predicate, over every scope
     titles = {book["id"]: book["title"] for book in list_books(conn)}
@@ -708,7 +770,16 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
                                  book_titles=titles, books=books)
 
     emit(on_event, "step", name="split", state="start", part=None, detail=None)
-    parts, decomposed, plan = await _parts(question, vector, models, kuzu, union(scopes))
+    parts, decomposed, plan, (asked, asked_vector) = await _parts(
+        question, vector, models, kuzu, union(scopes),
+        history=history if decompose_module.FOLLOWUPS else None)
+    if asked != question:
+        # A follow-up, rewritten to stand alone: from here on it is the question.
+        question, vector = asked, asked_vector
+        if rewrites is not None:
+            rewrites.append(asked)
+        emit(on_event, "understood", standalone=asked)
+        nearest = {(si, tuple(vector)): near(si, vector) for si in range(len(scopes))}
     sub_questions = tuple(part for part, _ in parts)
     rparts = _retrieval(plan)  # parallel to `parts`; [] unless INTERPRETIVE
     depth = resolve_depth(depth, plan.depth if plan is not None else "focused")
@@ -793,6 +864,11 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
     # The codex lines of each part's entities (codexslice.py); only with DEEP on.
     part_codex: list[list] = [[] for _ in parts]
     running_in: list[list[int]] = [[] for _ in parts]  # part index -> scope indexes
+    # Per part: the entities its text (or the question) names, and the chunks
+    # of edges between two of them whose predicate the words ask about
+    # ("killed" -> KILLS): fused into the part's ranking (CUE_FUSION).
+    part_named: list[set[str]] = [set() for _ in parts]
+    cue_hits: list[list[tuple[str, str]]] = [[] for _ in parts]
     for index, (part, part_vector) in enumerate(parts):
         running = [si for si in active if runs_in(si, part)]
         running_in[index] = running
@@ -824,6 +900,7 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
                     visible=ctx.scope.books)
                 seeds = judged.seeds
             found_in[si] = (seeds, judged, part_books)
+            part_named[index] |= {s.id for s in named}
         shown = [s for si in running for s in found_in[si][0]]
         if len(running) > 1:  # one entry per entity, as first found
             shown = list({s.id: s for s in reversed(shown)}.values())[::-1]
@@ -880,10 +957,22 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
             if call.template not in templates:
                 templates.append(call.template)
             called.append(call.template)
-            found = run_template(kuzu, call)
-            if scope.books is not None:  # an entity's edges in another world's books
+            def seen_rows(found, scope=scope):
+                if scope.books is None:
+                    return found
+                # an entity's edges in another world's books
                 found = [r for r in found if scope.sees(r.book_id, r.chapter_seq)]
-                found = visible_module.shown_rows(kuzu, scope.books, found, books)
+                return visible_module.shown_rows(kuzu, scope.books, found, books)
+
+            # A hub's rows: question-aware and story-spanning, not its earliest.
+            asks = f"{part} {question}"
+            found = hubselect.search(kuzu, call, lance=lance, vector=part_vector,
+                                     question=asks, keep=seen_rows)
+            cued = hubselect.cued_predicates(asks)
+            cue_hits[index] += [(r.chunk_id, r.predicate) for r in found if r.predicate in cued
+                                and r.subject_id in part_named[index]
+                                and r.object_id in part_named[index]
+                                and r.subject_id != r.object_id]
             rows.extend(found)
             found_rows += found
             if part_books and len({r.chunk_id for r in found}) < WEAK_EVIDENCE:
@@ -935,6 +1024,9 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
     if KEYWORD_K > 0:
         score_lists = [fused(scores, [c for c, _, _ in hits])
                        for scores, hits in zip(score_lists, keyword_hits)]
+    if hubselect.CUE_FUSION:
+        score_lists = [fused(scores, hubselect.cue_ranked(hits, scores)) if hits else scores
+                       for scores, hits in zip(score_lists, cue_hits)]
     # Task 10e: within a part, relevance alone decides; a question about
     # each book is already one part per book. Book fairness is kept only on
     # the no-decomposition fallback -- decomposition failed or was not run,

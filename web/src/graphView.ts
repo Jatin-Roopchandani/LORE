@@ -1,5 +1,5 @@
 import type { AskState } from "./askReducer";
-import { WORLDS } from "./messages";
+import { EDGE_LABEL, WORLDS } from "./messages";
 import { edgeKey, type Edge, type SubgraphData, type WorldRef } from "./types";
 
 export type NodeState = "shown" | "dim";
@@ -28,16 +28,24 @@ export interface ViewOptions { hiddenBooks: Set<string>; hoverChunks: string[]; 
 
 const pretty = (p: string) => p.toLowerCase().replace(/_/g, " ");
 const pairKey = (a: string, b: string) => (a < b ? `${a}<->${b}` : `${b}<->${a}`);
-const topOf = (counts: Map<string, number>) =>
-  [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "";
-const times = (n: number) => (n > 1 ? ` ×${n}` : "");
+const ranked = (counts: Map<string, number>) => [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+const topOf = (counts: Map<string, number>) => ranked(counts)[0]?.[0] ?? "";
 
-// One label for a pair: "knows ×2" one way; "interacts with ×8 · ×3" both ways with the same
-// top relationship; "employs / works for ×2" when each way has its own.
-function pairLabel(fwd: { top: string; n: number }, back: { top: string; n: number } | null): string {
-  if (!back) return pretty(fwd.top) + times(fwd.n);
-  if (fwd.top === back.top) return `${pretty(fwd.top)} ×${fwd.n} · ×${back.n}`;
-  return `${pretty(fwd.top)}${times(fwd.n)} / ${pretty(back.top)}${times(back.n)}`;
+// One direction of a pair: its relationships by name, most common first.
+type Way = { counts: Map<string, number>; n: number };
+// The relationships one way: the most common by name with its own count, and "+k" for the k others
+// ("opposes ×3 +2": three OPPOSES and two other relationships). The edge view lists them all.
+function wayLabel(w: Way): string {
+  const [name, n] = ranked(w.counts)[0] ?? ["", 0];
+  return EDGE_LABEL.top(EDGE_LABEL.one(pretty(name), n), w.n - n);
+}
+// One label for a pair: one way as above; both ways with the same single relationship "interacts with ×8 · ×3";
+// otherwise each way's label, "employs / works for ×2".
+function pairLabel(fwd: Way, back: Way | null): string {
+  if (!back) return wayLabel(fwd);
+  if (fwd.counts.size === 1 && back.counts.size === 1 && topOf(fwd.counts) === topOf(back.counts))
+    return EDGE_LABEL.mutual(pretty(topOf(fwd.counts)), fwd.n, back.n);
+  return EDGE_LABEL.ways(wayLabel(fwd), wayLabel(back));
 }
 
 /** A node's name as drawn: in the all-worlds view it names its world too, so same-named characters tell apart. */
@@ -88,11 +96,11 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
 
   const links: ViewLink[] = [];
   for (const [id, g] of groups) {
-    const dir = (fromSource: boolean) => {
+    const dir = (fromSource: boolean): Way | null => {
       const rows = g.rows.filter((r) => ((r.subject_id || r.subject) === g.source) === fromSource);
       const counts = new Map<string, number>();
       rows.forEach((r) => counts.set(r.predicate, (counts.get(r.predicate) ?? 0) + 1));
-      return rows.length ? { top: topOf(counts), n: rows.length } : null;
+      return rows.length ? { counts, n: rows.length } : null;
     };
     const fwd = dir(true), back = dir(false);
     const chunkIds = [...new Set(g.rows.map((r) => r.chunk_id))];
@@ -129,8 +137,8 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
     }
   }
   for (const [id, x] of extra) {
-    const fwd = x.nf ? { top: topOf(x.fwd), n: x.nf } : null;
-    const back = x.nb ? { top: topOf(x.back), n: x.nb } : null;
+    const fwd = x.nf ? { counts: x.fwd, n: x.nf } : null;
+    const back = x.nb ? { counts: x.back, n: x.nb } : null;
     const quiet = x.quiet && !!options.overview;
     links.push({ id, source: x.source, target: x.target, label: pairLabel((fwd ?? back)!, fwd && back),
       count: x.nf + x.nb, chunkIds: [], part: null, state: quiet ? "faint" : "shown", hot: false, books: [], both: !!(fwd && back), picked: false, onPath: false });

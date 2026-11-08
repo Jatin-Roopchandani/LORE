@@ -262,3 +262,6 @@ class Answer:
     # Set only when a reading position limited the answer: "Answered from what
     # you've read: up to chapter 9 of <book>". None otherwise.
     position_note: str | None = None
+    # A follow-up's question rewritten to stand alone (decompose.FOLLOWUPS),
+    # when it differs from the question as typed. None otherwise.
+    standalone: str | None = None

@@ -1,12 +1,16 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TopBar } from "./TopBar";
 import { applyTheme } from "../theme";
 
 vi.mock("../api", () => ({
   api: { quota: () => Promise.resolve({ error: { code: "x", message: "x" } }), mcp: () => Promise.resolve({ error: { code: "x", message: "x" } }),
-    readingPosition: () => Promise.resolve({ error: { code: "x", message: "x" } }) },
-  isError: () => true,
+    readingPosition: () => Promise.resolve({ error: { code: "x", message: "x" } }),
+    books: () => Promise.resolve({ error: { code: "x", message: "x" } }), worlds: () => Promise.resolve({ error: { code: "x", message: "x" } }) },
+  authApi: { me: () => Promise.resolve({ error: { code: "x", message: "x" } }), logout: () => Promise.resolve({ ok: true }),
+    providers: () => Promise.resolve({ error: { code: "x", message: "x" } }) },
+  nav: { to: () => {} },
+  isError: (x: unknown) => typeof x === "object" && x !== null && "error" in x,
 }));
 
 const worlds = [
@@ -39,14 +43,36 @@ test("dialog shows a safely quoted command", async () => {
   expect(screen.getByText(`lore ingest 'it'\\''s.epub' --world 'it'\\''s'`)).toBeInTheDocument();
 });
 
-test("the theme button opens the picker; choosing a theme sets it on the page; Escape in settings returns focus", async () => {
+test("⚙ opens the Settings popup, whose Appearance tab sets the theme; Escape returns focus to ⚙", async () => {
   bar();
-  await userEvent.click(screen.getByRole("button", { name: "Theme" }));
-  await userEvent.click(screen.getByRole("menuitemradio", { name: "Neon" }));
-  expect(document.documentElement.dataset.theme).toBe("neon");
+  expect(screen.queryByRole("button", { name: "Theme" })).toBeNull();  // the old dropdown is gone: themes live in Settings
   await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(screen.getByRole("dialog", { name: "Settings" })).toHaveAttribute("aria-modal", "true");
+  await userEvent.click(screen.getByRole("tab", { name: "Appearance" }));
+  await userEvent.click(screen.getByRole("radio", { name: /Neon/ }));
+  expect(document.documentElement.dataset.theme).toBe("neon");
   await userEvent.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByRole("button", { name: "Settings" })).toHaveFocus();
+});
+
+test("local mode has no account menu; multi-user mode's has Settings and Sign out", async () => {
+  const local = bar();
+  expect(screen.queryByRole("button", { name: "Account menu" })).toBeNull();
+  local.unmount();
+  document.head.innerHTML = '<meta name="lore-multi" content="1">';
+  try {
+    render(<TopBar books={[]} hiddenBooks={new Set()} onBooksChange={() => {}} showInternals={false} refreshKey={0} />);
+    await userEvent.click(screen.getByRole("button", { name: "Account menu" }));
+    const menu = screen.getByRole("menu", { name: "Account menu" });
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Settings", "Sign out"]);
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Settings" }));
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#settings/account");
+  } finally {
+    document.head.innerHTML = "";
+    history.replaceState(null, "", window.location.pathname);
+  }
 });
 
 test("the add button uses a plain plus sign", () => {
@@ -92,4 +118,26 @@ test("add dialog: choosing another world changes the command", async () => {
   await addFile("Gamma_Isles.epub");
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "World for this book" }), "Beta Realm");
   expect(screen.getByText("lore ingest 'Gamma_Isles.epub' --world 'Beta Realm'")).toBeInTheDocument();
+});
+
+test("after an upload the page refetches, and the success link opens the Library", async () => {
+  const sent: { onload?: () => void; status?: number; responseText?: string }[] = [];
+  vi.stubGlobal("XMLHttpRequest", class {
+    upload = { onprogress: null }; status = 0; responseText = ""; onload: (() => void) | null = null;
+    constructor() { sent.push(this as never); }
+    open() {} setRequestHeader() {} send() {} abort() {}
+  });
+  const onLibraryChange = vi.fn();
+  await addFile("Gamma_Isles.epub", { onLibraryChange });
+  await userEvent.click(screen.getByRole("button", { name: "Upload" }));
+  const xhr = sent[0];
+  xhr.status = 202;
+  xhr.responseText = JSON.stringify({ book_id: "b9", title: "Gamma", world: { id: 3, name: "Gamma Isles" }, filename: "Gamma_Isles.epub",
+    processing: { state: "processing" } });
+  await act(async () => xhr.onload!());
+  expect(onLibraryChange).toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Open it in the Library" }));
+  expect(screen.getByRole("dialog", { name: "Library" })).toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Add a book" })).toBeNull();
+  vi.unstubAllGlobals();
 });

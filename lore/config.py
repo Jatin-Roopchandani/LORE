@@ -16,28 +16,25 @@ class OllamaConfig(BaseModel):
     model: str = "qwen2.5:3b-instruct-q4_K_M"
 
 
-class KaggleConfig(BaseModel):
-    username: str = ""
-    kernel_slug: str = "lore-hello"
-    dataset_slug: str = "lore-hello-data"
-    poll_interval_s: int = 30
-    poll_timeout_s: int = 1800
-    extract_kernel_slug: str = "lore-extract"
-    extract_dataset_slug: str = "lore-extract-data"
+# The extraction tier that ran on Kaggle's free GPUs was removed. An old
+# lore.toml still loads (its `[lore.kaggle]` section and the kernel's
+# `[lore.extraction]` keys are ignored, as any unknown key is); a run with
+# `extraction_provider = "kaggle"` is refused with this message instead.
+KAGGLE_REMOVED = (
+    'extraction_provider = "kaggle" is no longer supported (the Kaggle tier was'
+    ' removed). Set extraction_provider = "gemini" in lore.toml (the remote model'
+    ' [lore.llm] picks: Gemini, Claude or OpenAI) or "ollama" (fully local).'
+)
 
 
 class ExtractionConfig(BaseModel):
-    model: str = "Qwen/Qwen2.5-7B-Instruct-AWQ"
-    embed_model: str = "nomic-ai/nomic-embed-text-v1.5"
     embed_model_ollama: str = "nomic-embed-text"
-    work_unit_size: int = 10  # 10 verified on a Kaggle T4; 40 crashes vLLM's engine
-    vllm_version: str = ""  # empty = install latest on the kernel
-    # The cascade for `extraction_provider = "gemini"`. A field here rather
-    # than a new section: `extraction_provider` is a top-level string, and
-    # this section already holds each tier's model (`model` for Kaggle,
-    # `embed_model_ollama` for the local embedder). Lite only: 500
-    # requests/day each, and one chunk is one request. Measured on 22 chunks
-    # (extraction-eval-report.md), 3.1-flash-lite beat the Kaggle 7B on
+    # 10: a unit stopped mid-way re-embeds whole on resume, and each chunk's
+    # extraction is saved as it returns (lore/orchestrator/local.py).
+    work_unit_size: int = 10
+    # The cascade for `extraction_provider = "gemini"` on Gemini. Lite only:
+    # 500 requests/day each, and one chunk is one request. Measured on 22
+    # chunks (extraction-eval-report.md), 3.1-flash-lite beat a local 7B on
     # relationship precision (81% vs 61%) and entity kinds (1 wrong vs 56).
     gemini_models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
 
@@ -63,6 +60,21 @@ class DisambiguationConfig(BaseModel):
     # the next entry, which is what turns five per-model daily quotas into
     # aggregate capacity.
     models: list[str] = Field(default_factory=lambda: list(DEFAULT_MODELS))
+
+
+class ResolverConfig(BaseModel):
+    """Ingest-time entity resolution switches (an eval compares a book loaded
+    with and without them; they change a graph only when a book is loaded).
+
+    `synonyms`: names for one thing that share no word ("Myrddraal", "Fade",
+    "Halfman") become candidate pairs, asked with the disambiguation questions
+    and merged only on a "same" answer; "claimed" becomes an IDENTIFIED_AS
+    edge (lore/resolve/synonyms.py). Needs `[lore.disambiguation] enabled`
+    to ask anything. Off: names are resolved as before it existed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    synonyms: bool = True
 
 
 class SynthesisConfig(BaseModel):
@@ -131,6 +143,39 @@ class AdjudicationConfig(BaseModel):
     models: list[str] = Field(default_factory=lambda: list(LITE_MODELS))
 
 
+class LlmConfig(BaseModel):
+    """Which remote model provider the steps set to "gemini" run on (local mode).
+
+    `provider` is "gemini" (the default: every step exactly as before),
+    "anthropic" (Claude) or "openai". The `[lore.<step>] provider = "gemini"`
+    settings keep meaning "this step runs on the remote model"; this section
+    picks the remote. Claude and OpenAI keys come from ANTHROPIC_API_KEY /
+    OPENAI_API_KEY or ~/.config/lore/anthropic.env / openai.env, never from
+    lore.toml.
+
+    `model`: Claude's model (default claude-sonnet-5-5; claude-opus-5-5 or
+    claude-haiku-5-5 also work), or the OpenAI model id (required: LORE never
+    assumes one). `fast_model`: an optional cheaper model for the short
+    structured steps (lore.inference.providers.roles). `effort`: per call
+    site, Claude's effort ("low" ... "max"), e.g. {write = "high"}.
+
+    `gemini_paid`: true when the Gemini key is on a paid plan: LORE's
+    free-tier daily request cap and the answer reserve then do not apply
+    (Google bills the usage). Off by default.
+
+    In multi mode each user's own choice (Account settings) applies instead.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["gemini", "anthropic", "openai"] = "gemini"
+    model: str = ""
+    fast_model: str = ""
+    gemini_paid: bool = False
+    effort: dict[str, Literal["low", "medium", "high", "xhigh", "max"]] = Field(
+        default_factory=dict)
+
+
 class WebConfig(BaseModel):
     """`lore ui` (Phase 5a). show_internals gates provider details (model
     names, the Gemini quota, Ollama commands, the MCP panel): on for a
@@ -143,9 +188,19 @@ class WebConfig(BaseModel):
 class ProcessingConfig(BaseModel):
     """Book processing (resumable jobs). `answer_reserve` is the number of
     Gemini requests per day that processing leaves untouched, so questions
-    in the UI keep working while a book is being processed."""
+    in the UI keep working while a book is being processed.
+
+    `llm_concurrency`: how many of processing's model requests (extraction
+    chunks, codex profiles, beat parts, disambiguation batches) may be in
+    flight at once on Claude, OpenAI or a paid Gemini plan.
+    `gemini_free_concurrency`: the same on free-tier Gemini, 1 by default:
+    its per-minute throttle and the reserve check above count one request at
+    a time, so a higher value can overshoot the reserve by that many minus
+    one. See lore/orchestrator/concurrency.py."""
 
     answer_reserve: int = Field(default=60, ge=0)
+    llm_concurrency: int = Field(default=4, ge=1)
+    gemini_free_concurrency: int = Field(default=1, ge=1)
 
 
 class BeatsConfig(BaseModel):
@@ -171,16 +226,19 @@ class AnswersConfig(BaseModel):
 
 class LoreConfig(BaseModel):
     data_dir: Path = Path("data")
-    # "kaggle": free T4 burst. "ollama": fully local, zero egress.
+    # "ollama" (the default, like every other step's): fully local, zero
+    # egress, so a checkout with no key still works.
     # "gemini": each chunk's text goes to Google, one request per chunk;
     # embeddings stay local on Ollama.
-    extraction_provider: Literal["kaggle", "ollama", "gemini"] = "kaggle"
+    # "kaggle" is the removed tier: accepted only so an old lore.toml still
+    # loads; extraction refuses it with KAGGLE_REMOVED.
+    extraction_provider: Literal["ollama", "gemini", "kaggle"] = "ollama"
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
-    kaggle: KaggleConfig = Field(default_factory=KaggleConfig)
     extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
     disambiguation: DisambiguationConfig = Field(
         default_factory=DisambiguationConfig
     )
+    resolver: ResolverConfig = Field(default_factory=ResolverConfig)
     selection: SelectionConfig = Field(default_factory=SelectionConfig)
     synthesis: SynthesisConfig = Field(default_factory=SynthesisConfig)
     adjudication: AdjudicationConfig = Field(default_factory=AdjudicationConfig)
@@ -189,10 +247,14 @@ class LoreConfig(BaseModel):
     beats: BeatsConfig = Field(default_factory=BeatsConfig)
     answers: AnswersConfig = Field(default_factory=AnswersConfig)
     codex: CodexConfig = Field(default_factory=CodexConfig)
+    llm: LlmConfig = Field(default_factory=LlmConfig)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
-        candidate = path if path is not None else Path("lore.toml")
+        # LORE_CONFIG names the file when the working directory is not the
+        # project's (an MCP client starts `lore mcp` wherever it likes).
+        candidate = (path if path is not None
+                     else Path(os.environ.get("LORE_CONFIG") or "lore.toml"))
         raw: dict = {}
         if candidate.is_file():
             with candidate.open("rb") as f:
@@ -200,6 +262,10 @@ class LoreConfig(BaseModel):
         cfg = cls.model_validate(raw)
         if env_dir := os.environ.get("LORE_DATA_DIR"):
             cfg = cfg.model_copy(update={"data_dir": Path(env_dir)})
+        # In a container Ollama is another service (deploy/compose.yaml).
+        if ollama_host := os.environ.get("LORE_OLLAMA_HOST"):
+            cfg = cfg.model_copy(update={
+                "ollama": cfg.ollama.model_copy(update={"host": ollama_host})})
         return cfg
 
     @property

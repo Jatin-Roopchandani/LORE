@@ -8,9 +8,25 @@ def test_defaults_when_no_file(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)  # no lore.toml here
     cfg = LoreConfig.load()
     assert cfg.data_dir == Path("data")
-    assert cfg.extraction_provider == "kaggle"
+    assert cfg.extraction_provider == "ollama"
     assert cfg.ollama.model == "qwen2.5:3b-instruct-q4_K_M"
     assert cfg.ollama.host == "http://localhost:11434"
+
+
+def test_env_overrides_the_ollama_host(tmp_path: Path, monkeypatch) -> None:
+    """In a container Ollama is another service (deploy/compose.yaml):
+    LORE_OLLAMA_HOST points at it without a second lore.toml."""
+    monkeypatch.setenv("LORE_OLLAMA_HOST", "http://ollama:11434")
+    (tmp_path / "lore.toml").write_text('[lore.ollama]\nmodel = "m:1"\n')
+    cfg = LoreConfig.load(tmp_path / "lore.toml")
+    assert cfg.ollama.host == "http://ollama:11434"
+    assert cfg.ollama.model == "m:1", "the rest of the file still applies"
+
+
+def test_without_the_env_the_ollama_host_comes_from_the_file(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("LORE_OLLAMA_HOST", raising=False)
+    (tmp_path / "lore.toml").write_text('[lore.ollama]\nhost = "http://box:1"\n')
+    assert LoreConfig.load(tmp_path / "lore.toml").ollama.host == "http://box:1"
 
 
 def test_load_from_toml(tmp_path: Path) -> None:
@@ -18,13 +34,31 @@ def test_load_from_toml(tmp_path: Path) -> None:
     toml.write_text(
         '[lore]\ndata_dir = "elsewhere"\nextraction_provider = "ollama"\n'
         '[lore.ollama]\nmodel = "llama3.2:3b"\n'
-        '[lore.kaggle]\nusername = "someuser"\n'
     )
     cfg = LoreConfig.load(toml)
     assert cfg.data_dir == Path("elsewhere")
     assert cfg.extraction_provider == "ollama"
     assert cfg.ollama.model == "llama3.2:3b"
-    assert cfg.kaggle.username == "someuser"
+
+
+def test_an_old_kaggle_section_and_kernel_keys_are_ignored(tmp_path: Path) -> None:
+    """The Kaggle tier was removed. An old lore.toml must still load: its
+    [lore.kaggle] section and the kernel's [lore.extraction] keys are
+    ignored, and "kaggle" loads so extraction can refuse it with a message
+    (tests/test_cli_extract.py) instead of every command crashing."""
+    toml = tmp_path / "lore.toml"
+    toml.write_text(
+        '[lore]\nextraction_provider = "kaggle"\n'
+        '[lore.kaggle]\nusername = "someuser"\npoll_timeout_s = 5400\n'
+        '[lore.extraction]\nmodel = "Qwen/Qwen2.5-7B-Instruct-AWQ"\n'
+        'embed_model = "nomic-ai/nomic-embed-text-v1.5"\nvllm_version = ""\n'
+        'work_unit_size = 12\n'
+    )
+    cfg = LoreConfig.load(toml)
+    assert cfg.extraction_provider == "kaggle"
+    assert cfg.extraction.work_unit_size == 12
+    assert not hasattr(cfg, "kaggle")
+    assert "username" not in cfg.model_dump_json()
 
 
 def test_env_overrides_data_dir(tmp_path: Path, monkeypatch) -> None:

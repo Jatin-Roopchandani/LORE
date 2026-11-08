@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, isError } from "../api";
-import { LIBRARY, WORLDS } from "../messages";
-import type { LibraryBook, LibraryStatus, World } from "../types";
+import { LIBRARY, PROVIDERS, WORLDS } from "../messages";
+import type { LibraryBook, LibraryStatus, StepPlan, World } from "../types";
 
 const POLL_MS = 3000;
 const TICK_MS = 30000;
@@ -9,29 +9,43 @@ const START_CYCLES = 10; // polls forced after Continue, in case the first GET p
 
 const clock = (d: Date) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
-function Row({ book, now, busy, error, onGo, onMove, children }: { book: LibraryBook; now: number; busy: boolean; error?: string; onGo: () => void; onMove: () => void; children?: React.ReactNode }) {
+function Row({ book, now, busy, error, focus = false, onGo, onMove, children }: { book: LibraryBook; now: number; busy: boolean; error?: string; focus?: boolean; onGo: () => void; onMove: () => void; children?: React.ReactNode }) {
+  const ref = useRef<HTMLLIElement>(null);
+  useEffect(() => { if (focus) ref.current?.scrollIntoView?.({ block: "nearest" }); }, [focus]);
   const job = book.job;
   const meta = [book.author, book.series && (book.series_index != null ? `${book.series} #${book.series_index}` : book.series)].filter(Boolean).join(" · ");
   const btn = (verb: string, disabled = false) => (
     <button className="tbtn" type="button" disabled={disabled || busy} aria-label={LIBRARY.action(verb, book.title)} onClick={onGo}>{verb}</button>
   );
   let body: React.ReactNode;
-  if (job?.state === "running") {
+  if (job?.state === "running" && job.total <= 1) {
+    // No real count (a one-step stage, or a load that hasn't counted its mentions yet): an indeterminate bar, never a
+    // frozen 0 / 1. Reduce-motion stops the animation (theme.css).
+    body = (<>
+      <span className="lib-state">{job.provider
+        ? LIBRARY.stageOn(job.stage, PROVIDERS.names[job.provider] ?? job.provider) : LIBRARY.stage(job.stage)}</span>
+      <div className="lib-bar indeterminate" role="progressbar" aria-label={LIBRARY.progressLabel(job.stage)} aria-busy="true">
+        <span />
+      </div>
+      <span className="hint">{LIBRARY.slowStep}</span>
+    </>);
+  } else if (job?.state === "running") {
     const pct = job.total > 0 ? Math.min(100, Math.round((job.done / job.total) * 100)) : 0;
     body = (<>
-      <span className="lib-state">{LIBRARY.stage(job.stage)}</span>
+      <span className="lib-state">{job.provider
+        ? LIBRARY.stageOn(job.stage, PROVIDERS.names[job.provider] ?? job.provider) : LIBRARY.stage(job.stage)}</span>
       <div className="lib-bar" role="progressbar" aria-label={LIBRARY.progressLabel(job.stage)} aria-valuemin={0} aria-valuemax={job.total} aria-valuenow={job.done}>
         <span style={{ width: `${pct}%` }} />
       </div>
       <span className="hint">{LIBRARY.progress(job.done, job.total)}</span>
     </>);
-  } else if (job?.state === "waiting_quota" || job?.state === "idle") {
+  } else if (job?.state === "waiting_quota" || job?.state === "idle" || job?.state === "waiting_key") {
     const at = job.resumable_at ? new Date(job.resumable_at) : null;
     const left = at ? Math.max(0, Math.ceil((at.getTime() - now) / 60000)) : 0;
     const enabled = at ? now >= at.getTime() : job.can_continue;
     body = (<>
       <span className="lib-state">{LIBRARY.paused}</span>
-      <span className="hint">{job.stopped_reason || LIBRARY.pausedDefault}</span>
+      <span className="hint">{job.stopped_reason || (job.state === "waiting_key" ? LIBRARY.pausedKey : LIBRARY.pausedDefault)}</span>
       {at && !enabled && <span className="hint">{LIBRARY.continuesAfter(clock(at), LIBRARY.inHM(left))}</span>}
       {btn(LIBRARY.continue, !enabled)}
     </>);
@@ -47,15 +61,40 @@ function Row({ book, now, busy, error, onGo, onMove, children }: { book: Library
     body = (<><span className="lib-state">{LIBRARY.unprocessed}</span>{btn(LIBRARY.process)}</>);
   }
   return (
-    <li className="lib-row">
+    <li ref={ref} className={`lib-row${focus ? " focus" : ""}`} aria-current={focus ? "true" : undefined}>
       <div className="lib-title"><strong>{book.title}</strong>{meta && <span className="meta">{meta}</span>}</div>
       <div className="lib-body">
         {body}
         <button className="tbtn" type="button" disabled={busy || job?.state === "running"} aria-label={WORLDS.moveOpenLabel(book.title)} onClick={onMove}>{WORLDS.moveOpen}</button>
       </div>
+      {job?.state === "running" && job.plan && <Steps plan={job.plan} />}
       {children}
       {error && <p className="hint" role="alert">{error}</p>}
     </li>
+  );
+}
+
+// The whole pipeline under a running book, collapsed to "Step 4 of 6 · Writing entity profiles · ~50 min left"; the
+// disclosure lists every step: done ones ticked, the current one with its live count, upcoming ones greyed out.
+// The list comes from the server (the stages it will really run); only the labels live here. No animation.
+function Steps({ plan }: { plan: StepPlan }) {
+  const current = plan.steps.find((s) => s.state === "current");
+  const label = current ? LIBRARY.stage(current.stage) : "";
+  return (
+    <details className="lib-steps">
+      <summary>{LIBRARY.stepOf(plan.step, plan.of, label, LIBRARY.left(plan.seconds_left, plan.unknown_left))}</summary>
+      <ol aria-label={LIBRARY.stepsLabel}>
+        {plan.steps.map((s) => (
+          <li key={s.stage} className={`step ${s.state}`} aria-current={s.state === "current" ? "step" : undefined}>
+            <span className="tick" aria-hidden="true">{s.state === "done" ? "\u2713" : s.state === "current" ? "\u25B8" : "\u00B7"}</span>
+            <span>{LIBRARY.stage(s.stage)}</span>
+            {s.state === "done" && <span className="hint">{LIBRARY.stepDone}</span>}
+            {s.state === "current" && (s.total ?? 0) > 1 && <span className="hint">{LIBRARY.stepCount(s.done ?? 0, s.total ?? 0)}</span>}
+            {s.state !== "done" && <span className="hint">{LIBRARY.duration(s.seconds_left)}</span>}
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 
@@ -142,8 +181,19 @@ function WorldHeader({ group, error, onRename, onDelete }:
 }
 
 // `onChange`: called once a world was renamed or deleted, and when a move has run its course, so the page
-// can refetch the worlds and the graph.
-export function LibraryPanel({ open, onClose, showInternals, onChange }: { open: boolean; onClose: () => void; showInternals: boolean; onChange?: () => void }) {
+// can refetch the worlds and the graph. `focusBook`: a book just added; the panel opens at it and polls until its
+// processing shows (a queued book's row may take a moment to appear).
+// The footer follows the user's provider: Gemini's free tier shows today's requests; Claude, OpenAI and a paid Gemini
+// plan show tokens (and an estimated cost where a price is known, and the daily cap when set).
+function footer(data: LibraryStatus, showInternals: boolean): string {
+  const u = data.usage;
+  if (u && u.mode === "metered")
+    return LIBRARY.metered(PROVIDERS.names[u.provider] ?? u.provider, u.tokens_today, u.cost_usd, u.daily_token_cap);
+  return LIBRARY.gemini(data.gemini.used_today, data.gemini.limit, data.gemini.answer_reserve, showInternals);
+}
+
+export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook = null }:
+  { open: boolean; onClose: () => void; showInternals: boolean; onChange?: () => void; focusBook?: string | null }) {
   const [data, setData] = useState<LibraryStatus | null>(null);
   const [worlds, setWorlds] = useState<World[]>([]);
   const [moving, setMoving] = useState<string | null>(null);
@@ -170,6 +220,9 @@ export function LibraryPanel({ open, onClose, showInternals, onChange }: { open:
     load();
     return () => { opener.current?.focus(); };
   }, [open, load]);
+  useEffect(() => {
+    if (open && focusBook) { setStarted((cur) => ({ ...cur, [focusBook]: { left: START_CYCLES, seen: false } })); dirty.current = true; }
+  }, [open, focusBook]);
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -261,7 +314,7 @@ export function LibraryPanel({ open, onClose, showInternals, onChange }: { open:
             {g.books.length ? (
               <ul className="lib-list">
                 {g.books.map((b) => (
-                  <Row key={b.id} book={b} now={now} busy={busy.has(b.id)} error={errors[b.id]} onGo={() => go(b.id)}
+                  <Row key={b.id} book={b} now={now} busy={busy.has(b.id)} error={errors[b.id]} focus={b.id === focusBook} onGo={() => go(b.id)}
                     onMove={() => setMoving(moving === b.id ? null : b.id)}>
                     {moving === b.id && <MovePicker book={b} worlds={worlds} onCancel={() => setMoving(null)} onConfirm={(w, create) => move(b, w, create)} />}
                   </Row>
@@ -270,7 +323,7 @@ export function LibraryPanel({ open, onClose, showInternals, onChange }: { open:
             ) : <p className="hint">{WORLDS.noBooksInWorld}</p>}
           </div>
         )) : <p className="hint">{LIBRARY.empty}</p>)}
-        {data && <p className="hint lib-foot">{LIBRARY.gemini(data.gemini.used_today, data.gemini.limit, data.gemini.answer_reserve, showInternals)}</p>}
+        {data && <p className="hint lib-foot">{footer(data, showInternals)}</p>}
         <div className="row-end"><button className="tbtn" type="button" onClick={onClose}>{LIBRARY.close}</button></div>
       </div>
     </div>

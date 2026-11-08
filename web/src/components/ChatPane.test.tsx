@@ -104,3 +104,12 @@ test("the reading position note shows under the short answer, only when the answ
   rerender(<ChatPane ask={askWith(single as AskEvent[])} showInternals onHoverChunks={() => {}} />);
   expect(screen.queryByRole("note", { name: POSITION.noteLabel })).toBeNull();
 });
+
+test("a finished answer with a request id offers \"Report this answer\"; one without, or still running, does not", () => {
+  const withId = [{ type: "request", t: 0, request_id: "req-1" } as AskEvent, ...(single as AskEvent[])];
+  const { unmount } = render(<ChatPane ask={askWith(withId)} showInternals onHoverChunks={() => {}} />);
+  expect(screen.getByRole("button", { name: "Report this answer" })).toBeInTheDocument();
+  unmount();
+  render(<ChatPane ask={askWith(single as AskEvent[])} showInternals onHoverChunks={() => {}} />);
+  expect(screen.queryByRole("button", { name: "Report this answer" })).toBeNull();
+});

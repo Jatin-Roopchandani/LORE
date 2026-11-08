@@ -15,6 +15,13 @@ of module settings, `name=value`, from ARM_SETTINGS -- e.g.
 `candidate_k=20,keyword_k=20`. Each answer goes to
 runs/<label>.<arm>.jsonl in run_eval.py's format, so recall.py and the
 grading packets read them unchanged. Resumable per arm.
+
+A provider arm answers on another model provider: `provider=anthropic` (with
+an optional `model=claude-opus-5-5`; Claude's default is claude-sonnet-5-5)
+or `provider=openai,model=<id>`, with its key in ANTHROPIC_API_KEY /
+OPENAI_API_KEY or ~/.config/lore/<provider>.env. It sets [lore.llm] for that
+arm only, and may be combined with the module settings below. The pinned
+Gemini model then applies to Gemini arms only.
 """
 from __future__ import annotations
 
@@ -89,7 +96,41 @@ ARM_SETTINGS = {
     # (lore/query/recap.py). `recap=false` is the code before it existed.
     "recap": ("lore.query.decompose", "RECAP",
               lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Follow-ups: a question with `history` (earlier turns, each {question,
+    # answer}) is rewritten to stand alone in the decompose call, and the
+    # rewrite drives the answer (lore/query/decompose.py). `followups=false`
+    # ignores the history, as the code before it did. Questions without
+    # history are unaffected by either arm.
+    "followups": ("lore.query.decompose", "FOLLOWUPS",
+                  lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A hub's edges past the limit chosen by the question and spread over the
+    # story, direct edges first for two entities (lore/query/hubselect.py).
+    # `hub_select=false` is the template's own LIMIT, earliest edges first.
+    "hub_select": ("lore.query.hubselect", "HUB_SELECT",
+                   lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Passages of an edge between two named entities whose predicate the
+    # question asks about join the part's ranking (hubselect.CUE_FUSION).
+    "cue_fusion": ("lore.query.hubselect", "CUE_FUSION",
+                   lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Vector-found seeds bring what an IDENTIFIED_AS edge ties them to, as
+    # named seeds already do (seed.FOLLOW_IDENTITY_LINKS).
+    # A template from an entity also walks from what IDENTIFIED_AS ties it to.
+    # Multi-part factual answers: drop a later part's claim that cites the
+    # same quote as an earlier part's; show a list answer in reading order.
+    "cross_part_quote": ("lore.query.synthesize", "CROSS_PART_SAME_QUOTE",
+                         lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "story_order_list": ("lore.query.synthesize", "STORY_ORDER_LIST",
+                         lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "identity_search": ("lore.query.hubselect", "SEARCH_IDENTITY_LINKS",
+                        lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "identity_links": ("lore.query.seed", "FOLLOW_IDENTITY_LINKS",
+                       lambda v: v.lower() in ("1", "true", "yes", "on")),
 }
+
+
+# Arm settings that change [lore.llm] instead of a module attribute.
+LLM_SETTINGS = {"provider": "provider", "model": "model", "fast_model": "fast_model"}
+LLM = ("config", "llm")
 
 
 def parse_arm(spec: str) -> dict[tuple[str, str], object]:
@@ -98,6 +139,11 @@ def parse_arm(spec: str) -> dict[tuple[str, str], object]:
     out = {}
     for item in spec.split(","):
         name, _, value = item.partition("=")
+        if name in LLM_SETTINGS:
+            llm = dict(out.get(LLM, {}))
+            llm[LLM_SETTINGS[name]] = value
+            out[LLM] = llm
+            continue
         if name not in ARM_SETTINGS:
             raise SystemExit(f"unknown arm setting {name!r}; known: {sorted(ARM_SETTINGS)}")
         module, attr, kind = ARM_SETTINGS[name]
@@ -114,6 +160,8 @@ class _Applied:
     def __enter__(self):
         import importlib
         for (module, attr), value in self._overrides.items():
+            if (module, attr) == LLM:
+                continue  # applied to the config (with_llm), not a module
             mod = importlib.import_module(module)
             self._saved[(mod, attr)] = getattr(mod, attr)
             setattr(mod, attr, value)
@@ -121,6 +169,14 @@ class _Applied:
     def __exit__(self, *exc):
         for (mod, attr), value in self._saved.items():
             setattr(mod, attr, value)
+
+
+def with_llm(config, overrides):
+    """The config with this arm's [lore.llm] (a provider arm), else as given."""
+    llm = overrides.get(LLM)
+    if not llm:
+        return config
+    return config.model_copy(update={"llm": config.llm.model_copy(update=llm)})
 
 
 def _pinned(config, model: str):
@@ -134,7 +190,7 @@ def _pinned(config, model: str):
 WORLD: str | None = None
 
 
-async def ask(config, question: str, overrides, trace: list | None):
+async def ask(config, question: str, overrides, trace: list | None, history=None):
     # The `deep` arm asks at depth "deep"; any other arm lets the decomposer decide.
     depth = "deep" if overrides.get(("lore.query.decompose", "DEEP")) is True else None
     kw = {"depth": depth} if depth else {}
@@ -143,6 +199,9 @@ async def ask(config, question: str, overrides, trace: list | None):
     kw["spoilers"] = True
     if WORLD is not None:
         kw["world"] = WORLD
+    if history:  # a follow-up question in the set: its earlier turns
+        kw["history"] = history
+    config = with_llm(config, overrides)
     with _Applied(overrides):
         models = _real_models(config)
         if trace is not None:
@@ -180,7 +239,7 @@ async def run(label: str, arms: list[str], qset: str, only, trace: bool) -> None
                 continue
             calls: list[dict] | None = [] if trace else None
             started = time.monotonic()
-            result = await ask(config, q["question"], overrides[a], calls)
+            result = await ask(config, q["question"], overrides[a], calls, q.get("history"))
             record = {"id": q["id"], "question": q["question"], "arm": arms[a],
                       "pinned_model": model,
                       "seconds": round(time.monotonic() - started, 1), **result}

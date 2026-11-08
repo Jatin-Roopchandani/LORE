@@ -15,11 +15,12 @@ const base: AskEvent[] = [
   { type: "edges", t: 0, part: 0, template: "neighbours", total: 400, edges: [edge("h", "d", "c1"), edge("h", "d", "c2", "b1", "OPPOSES"), edge("h", "x", "c3", "b2")] },
 ];
 
-test("groups edges by pair with the top predicate and count", () => {
+test("groups edges by pair, naming each relationship with its own count", () => {
   const v = deriveGraph(stateWith(base), opts);
   const hd = v.links.find((l) => l.source === "h" && l.target === "d")!;
   expect(hd.count).toBe(2);
-  expect(hd.label).toMatch(/×2$/);
+  // One KILLS and one OPPOSES: not "kills ×2", which would count the OPPOSES under KILLS.
+  expect(hd.label).toBe("kills +1");
   expect(v.totalEdges).toBe(400);
   expect(v.shownEdges).toBe(3);
 });
@@ -299,4 +300,14 @@ test("no filters changes nothing", () => {
   const v = deriveGraph(initialState(), { ...opts, overview: lib, filters: { kinds: new Set(), books: new Set() } });
   expect(v.nodes).toHaveLength(3);
   expect(v.hiddenByFilters).toBe(0);
+});
+
+test("a pair with many relationships names the most common with its own count and counts the rest", () => {
+  const rows = [edge("h", "d", "c1", "b1", "OPPOSES"), edge("h", "d", "c2", "b1", "OPPOSES"), edge("h", "d", "c3", "b1", "OPPOSES"),
+    edge("h", "d", "c4", "b1", "FEARS"), edge("h", "d", "c5", "b1", "FEARS"), edge("h", "d", "c6", "b1", "KILLS"), edge("h", "d", "c7", "b1", "MEETS"),
+    edge("d", "h", "c8", "b1", "SERVES")];
+  const v = deriveGraph(stateWith([{ type: "parts", t: 0, sub_questions: ["a"] }, { type: "edges", t: 0, part: 0, template: null, total: 8, edges: rows }]), opts);
+  expect(v.links).toHaveLength(1);
+  expect(v.links[0].label).toBe("opposes ×3 +4 / serves");
+  expect(v.links[0].count).toBe(8);
 });

@@ -6,6 +6,14 @@ Streamable HTTP instead.
 
 In stdio mode stdout is the protocol channel: nothing here may print to it.
 
+Tenancy: THIS server is local-mode only (release spec §6). It serves the one
+`LoreConfig` it is given, i.e. the local user's library, and has no notion of
+a request's user: never expose it from a multi-user deployment. `build_server`
+(so `lore mcp`, stdio and HTTP) refuses to start while LORE_MULTI_USER is set
+(`MultiUserRefused`). A multi-user deployment serves its own endpoint instead,
+/mcp inside the web app, where every request carries a user's bearer token
+and every tool works on that user's library (lore.mcp.hosted).
+
 Operational note: an engine crash takes the whole process down. Kuzu 0.11.3
 segfaults on `CALL read_csv_serial('<path>')`; the cypher guard rejects that
 name and allowlists only show_tables, table_info and db_version, so the known
@@ -29,7 +37,20 @@ def _bypass(ignore_reading_position: bool) -> dict:
     return {"spoilers": True} if ignore_reading_position else {}
 
 
+class MultiUserRefused(RuntimeError):
+    """MCP is local-only: it has no notion of which user is asking."""
+
+
+def refuse_multi_user() -> None:
+    from lore.tenancy import multi_user_enabled
+    if multi_user_enabled():
+        raise MultiUserRefused(
+            "the MCP server is local-only and does not run with LORE_MULTI_USER=1:"
+            " it would serve one library to anyone who can reach it")
+
+
 def build_server(config: LoreConfig) -> MCPServer:
+    refuse_multi_user()
     mcp = MCPServer("lore")
 
     @mcp.tool()
@@ -83,7 +104,7 @@ def build_server(config: LoreConfig) -> MCPServer:
         """Run a read-only Cypher query against the graph, capped at 200 rows.
 
         Any query containing COPY, LOAD, EXPORT, IMPORT, ATTACH, INSTALL,
-        CREATE, MERGE, SET, DELETE, DROP or ALTER as a whole word is rejected,
+        CREATE, MERGE, SET, DELETE, REMOVE, DROP or ALTER as a whole word is rejected,
         even inside a string literal. CALL is rejected the same way, except
         for the three allowlisted procedures show_tables, table_info and
         db_version. A question about a book titled "The Call of the Wild"

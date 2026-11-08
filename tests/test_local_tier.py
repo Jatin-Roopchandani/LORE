@@ -41,7 +41,7 @@ async def test_local_unit_produces_kernel_shaped_output(tmp_path: Path) -> None:
     )
     assert summary.chunks_ok == 3
     # The SPEC parity requirement: local output validates against the very
-    # same checker the Kaggle path uses.
+    # same checker every tier uses.
     assert validate_output(unit, tmp_path).chunks_ok == 3
 
 

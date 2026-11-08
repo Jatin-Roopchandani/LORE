@@ -1,63 +1,64 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ThemeMenu } from "./ThemeMenu";
+import { ThemeGrid } from "./ThemeMenu";
 import { applyTheme } from "../theme";
+import { THEMES } from "../themes";
 
 beforeEach(() => { localStorage.clear(); applyTheme("system"); localStorage.clear(); });
-const open = async () => { render(<ThemeMenu />); await userEvent.click(screen.getByRole("button", { name: "Theme" })); };
 
-test("the button opens a menu: System first, then a Dark group, then a Light group", async () => {
-  await open();
-  const menu = screen.getByRole("menu", { name: "Choose a theme" });
-  const names = within(menu).getAllByRole("menuitemradio").map((e) => e.textContent);
-  expect(names[0]).toMatch(/^System/);
-  expect(within(menu).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(["Dark", "Light"]);
-  const dark = within(within(menu).getByRole("group", { name: "Dark" })).getAllByRole("menuitemradio").map((e) => e.textContent);
-  const light = within(within(menu).getByRole("group", { name: "Light" })).getAllByRole("menuitemradio").map((e) => e.textContent);
-  expect(dark).toContain("Tokyo Night"); expect(dark).toContain("Neon"); expect(dark).toContain("High Contrast Dark");
-  expect(light).toEqual(["Light", "Catppuccin Latte", "Solarized Light", "Gruvbox Light", "Paper", "Rosé Pine Dawn"]);
-  expect(names).toHaveLength(1 + dark.length + light.length);
+test("the grid offers every theme: System, Light and Dark first, then the dark and the light themes", () => {
+  render(<ThemeGrid />);
+  const grid = screen.getByRole("radiogroup", { name: "Theme" });
+  const names = within(grid).getAllByRole("radio").map((e) => e.querySelector(".theme-name")!.textContent);
+  expect(names.slice(0, 3)).toEqual(["System", "Light", "Dark"]);
+  expect(within(grid).getAllByRole("group").map((g) => g.getAttribute("aria-label"))).toEqual(
+    ["System, light and dark", "Dark themes", "Light themes"]);
+  const light = within(within(grid).getByRole("group", { name: "Light themes" })).getAllByRole("radio")
+    .map((e) => e.querySelector(".theme-name")!.textContent);
+  expect(light).toEqual(["Catppuccin Latte", "Solarized Light", "Gruvbox Light", "Paper", "Rosé Pine Dawn"]);
+  expect(names).toHaveLength(1 + THEMES.length);
+  expect(new Set(names).size).toBe(names.length);
 });
 
-test("every entry shows a swatch", async () => {
-  await open();
-  for (const item of screen.getAllByRole("menuitemradio")) expect(item.querySelector(".theme-swatch")).not.toBeNull();
+test("every card shows a preview", () => {
+  render(<ThemeGrid />);
+  for (const item of screen.getAllByRole("radio")) expect(item.querySelector(".theme-swatch.large")).not.toBeNull();
 });
 
-test("choosing applies the theme to <html>, persists it, closes the menu and refocuses the button", async () => {
-  await open();
-  await userEvent.click(screen.getByRole("menuitemradio", { name: "Dracula" }));
+test("choosing applies the theme to <html> and persists it", async () => {
+  const onChange = vi.fn();
+  render(<ThemeGrid onChange={onChange} />);
+  await userEvent.click(screen.getByRole("radio", { name: /Dracula/ }));
   expect(document.documentElement.dataset.theme).toBe("dracula");
   expect(localStorage.getItem("lore-theme-v2")).toBe("dracula");
-  expect(screen.queryByRole("menu")).toBeNull();
-  expect(screen.getByRole("button", { name: "Theme" })).toHaveFocus();
+  expect(screen.getByRole("radio", { name: /Dracula/ })).toHaveAttribute("aria-checked", "true");
+  expect(onChange).toHaveBeenCalledWith("dracula");
 });
 
-test("keyboard: opening focuses the current entry, arrows move, Enter picks, Escape closes", async () => {
+test("keyboard: only the current card is in the tab order, arrows move and choose, Home and End jump", async () => {
   applyTheme("nord");
-  render(<ThemeMenu />);
-  const button = screen.getByRole("button", { name: "Theme" });
-  button.focus();
-  await userEvent.keyboard("{Enter}");
-  expect(screen.getByRole("menuitemradio", { name: "Nord" })).toHaveFocus();
-  expect(screen.getByRole("menuitemradio", { name: "Nord" })).toHaveAttribute("aria-checked", "true");
-  await userEvent.keyboard("{ArrowDown}");
-  expect(screen.getByRole("menuitemradio", { name: "Catppuccin Mocha" })).toHaveFocus();
-  await userEvent.keyboard("{ArrowUp}{ArrowUp}");
-  expect(screen.getByRole("menuitemradio", { name: "Dracula" })).toHaveFocus();
+  render(<ThemeGrid />);
+  const nord = screen.getByRole("radio", { name: /Nord/ });
+  expect(nord).toHaveAttribute("tabindex", "0");
+  expect(screen.getByRole("radio", { name: /Dracula/ })).toHaveAttribute("tabindex", "-1");
+  nord.focus();
   await userEvent.keyboard("{Home}");
-  expect(screen.getByRole("menuitemradio", { name: /^System/ })).toHaveFocus();
-  await userEvent.keyboard("{ArrowDown}{Enter}");
+  expect(screen.getByRole("radio", { name: /^System/ })).toHaveFocus();
+  expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+  await userEvent.keyboard("{ArrowRight}");
+  expect(screen.getByRole("radio", { name: /^Light/ })).toHaveFocus();
+  expect(document.documentElement.dataset.theme).toBe("light");
+  await userEvent.keyboard("{ArrowDown}");
   expect(document.documentElement.dataset.theme).toBe("dark");
-  await userEvent.keyboard("{Enter}");
-  await userEvent.keyboard("{Escape}");
-  expect(screen.queryByRole("menu")).toBeNull();
-  expect(button).toHaveFocus();
+  await userEvent.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
+  expect(document.documentElement.dataset.theme).toBe(THEMES.filter((t) => t.group === "light").at(-1)!.id);
+  await userEvent.keyboard("{End}");
+  expect(screen.getByRole("radio", { name: /Rosé Pine Dawn/ })).toHaveFocus();
 });
 
 test("choosing System removes the attribute", async () => {
   applyTheme("monokai");
-  await open();
-  await userEvent.click(screen.getByRole("menuitemradio", { name: /^System/ }));
+  render(<ThemeGrid />);
+  await userEvent.click(screen.getByRole("radio", { name: /^System/ }));
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
 });

@@ -1,16 +1,45 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, isError } from "./api";
+import { api, authApi, isError, keyApi, onKeyProblem } from "./api";
 import { ChatPane } from "./components/ChatPane";
+import { KeyOnboarding } from "./components/KeyOnboarding";
 import { GraphPane } from "./components/GraphPane";
 import { HistorySidebar } from "./components/HistorySidebar";
 import { QuickSwitcher } from "./components/QuickSwitcher";
 import { TopBar } from "./components/TopBar";
+import { HISTORY } from "./messages";
+import { isMulti } from "./routing";
+import { applyMotion, loadInternals, loadMotion, saveInternals } from "./settings";
 import { applyTheme, loadTheme } from "./theme";
-import type { Book, SubgraphData, World } from "./types";
+import type { Book, Me, SubgraphData, World } from "./types";
 import { useAsk } from "./useAsk";
 import { loadWorld, resolveWorld, saveWorld } from "./worlds";
 
+// Multi-user mode: whether the signed-in user has a working Gemini key. `checking` while it is asked for (nothing is
+// drawn yet), `missing` or `invalid` show the key screen instead of the app. Local mode is always `ok`.
+type KeyState = "checking" | "ok" | "missing" | "invalid";
+
 export default function App() {
+  const [keyState, setKeyState] = useState<KeyState>(() => (isMulti() ? "checking" : "ok"));
+  // Multi-user: ask who we are once, so a lost or stale CSRF cookie is re-issued before the first POST (saving a key too).
+  // The answer also names the account menu's owner.
+  const [me, setMe] = useState<Me | null>(null);
+  useEffect(() => { if (isMulti()) authApi.me().then((r) => { if (r && !isError(r) && r.user) setMe(r); }); }, []);
+  useEffect(() => {
+    if (!isMulti()) return;
+    keyApi.get().then((k) => {
+      if (isError(k)) { setKeyState("ok"); return; }  // the calls themselves will say key_required if it matters
+      setKeyState(!k.present ? "missing" : k.last_error === "rejected" ? "invalid" : "ok");
+    });
+  }, []);
+  // An ask, a Continue or a move answered key_required or key_invalid: back to the key screen.
+  useEffect(() => onKeyProblem((p) => setKeyState(p === "key_invalid" ? "invalid" : "missing")), []);
+  if (keyState === "checking") return <div className="app" aria-busy="true" />;
+  if (keyState === "missing" || keyState === "invalid")
+    return <KeyOnboarding reason={keyState} onDone={() => setKeyState("ok")} />;
+  return <ReadingApp me={me} />;
+}
+
+function ReadingApp({ me }: { me: Me | null }) {
   // The remembered world choice; the list of worlds (null while loading) can still overrule it.
   const [stored, setStored] = useState<string | null>(() => loadWorld());
   const [worlds, setWorlds] = useState<World[] | null>(null);
@@ -18,7 +47,12 @@ export default function App() {
   const chooseWorld = useCallback((w: string) => { setStored(w); saveWorld(w); }, []);
   const ask = useAsk(world, chooseWorld);
   const [books, setBooks] = useState<Book[]>([]);
-  const [showInternals, setShowInternals] = useState(true);
+  // Internals: the server's default (lore.toml; always off in multi mode), unless this browser chose otherwise in
+  // Settings, Reading (local mode only).
+  const [serverInternals, setServerInternals] = useState(true);
+  const [internalsChoice, setInternalsChoice] = useState<boolean | null>(() => (isMulti() ? null : loadInternals()));
+  const showInternals = isMulti() ? false : internalsChoice ?? serverInternals;
+  const chooseInternals = useCallback((on: boolean) => { saveInternals(on); setInternalsChoice(on); }, []);
   const [hiddenBooks, setHiddenBooks] = useState<Set<string>>(new Set());
   const [hoverChunks, setHoverChunks] = useState<string[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -43,9 +77,9 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  useEffect(() => { applyTheme(loadTheme()); }, []);
+  useEffect(() => { applyTheme(loadTheme()); applyMotion(loadMotion()); }, []);
   useEffect(() => {
-    api.settings().then((s) => { if (!isError(s)) setShowInternals(s.show_internals); });
+    api.settings().then((s) => { if (!isError(s)) setServerInternals(s.show_internals); });
   }, []);
   useEffect(() => {
     api.worlds().then((w) => { if (!isError(w) && Array.isArray(w)) setWorlds(w); });
@@ -85,7 +119,14 @@ export default function App() {
     <div className="app">
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey}
         worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)} onPositionChange={positionChanged}
-        historyOpen={drawerOpen} onToggleHistory={toggleHistory} />
+        historyOpen={drawerOpen} onToggleHistory={toggleHistory} depth={ask.depth} onDepth={ask.setDepth} onShowInternals={chooseInternals} me={me} />
+      {ask.importable > 0 && (
+        <div className="import-offer" role="status">
+          <span>{HISTORY.importOffer(ask.importable)}</span>
+          <button className="tbtn primary" type="button" onClick={() => void ask.importLocal()}>{HISTORY.importYes}</button>
+          <button className="tbtn" type="button" onClick={ask.declineImport}>{HISTORY.importNo}</button>
+        </div>
+      )}
       <div className="panes">
         {drawerOpen && (
           <HistorySidebar items={ask.history} current={ask.current} world={world} worlds={worlds ?? []} onReplay={replay} onDelete={ask.remove}

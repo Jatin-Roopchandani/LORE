@@ -8,7 +8,7 @@
 # LORE â€” Local Orchestration & Relational Extraction
 
 A local-first literary knowledge graph: e-books in, entities/relationships out
-(extracted by Gemini Flash Lite, on free Kaggle GPUs, or fully locally), served from embedded
+(extracted by a remote model â€” Gemini, Claude or OpenAI â€” or fully locally), served from embedded
 databases (Kuzu + LanceDB) with a hybrid graph-vector query agent, an MCP
 server, and a graph UI.
 
@@ -17,8 +17,7 @@ See `SPEC.md` for the full design. Status: Phase 3 (the query agent) complete â€
 ## Quickstart
 
     uv sync
-    uv run lore doctor            # checks config, stores, ollama, kaggle auth
-    uv run lore doctor --kaggle   # + full free-tier GPU round trip (slow)
+    uv run lore doctor            # checks config, stores and ollama
     uv run lore ingest book.epub --world "My Series"   # parse + chunk + register a book in a world
     uv run lore books             # list the ingested library
     uv run lore extract <book_id> # extract entities + relationships (Gemini in this lore.toml)
@@ -33,18 +32,19 @@ See `SPEC.md` for the full design. Status: Phase 3 (the query agent) complete â€
     uv run lore ask "how are Holmes and Watson connected?"   # cited answer from the graph
     uv run lore ask "..." --baseline   # vector search alone, for comparison
     uv run lore ask "..." --depth deep --world "My Series"   # a long, sectioned answer within one world
-    uv run lore quota             # this week's free-tier GPU budget (Kaggle only)
+    uv run lore quota             # today's Gemini requests per model
 
 `extraction_provider` picks who reads the chunks:
 
 | Value | Where | Notes |
 |---|---|---|
-| `"gemini"` (**this project's `lore.toml`**) | Google API, one request per chunk | Best measured quality. Needs a key (see below). Embeddings stay local on Ollama |
-| `"kaggle"` (code default) | Free Kaggle T4, Qwen2.5-7B on vLLM | One work unit per Kaggle session; GPU hours go in the quota ledger |
-| `"ollama"` | This machine, qwen2.5:3b | Zero egress; slower and weaker |
+| `"gemini"` (**this project's `lore.toml`**) | The remote model `[lore.llm]` picks (Gemini, Claude or OpenAI), one request per chunk | Best measured quality. Needs a key (see below). Embeddings stay local on Ollama |
+| `"ollama"` (code default) | This machine, qwen2.5:3b | Zero egress; slower and weaker |
 
-Extraction runs in work units of `work_unit_size` chunks (code default 10,
-verified on a Kaggle T4; this `lore.toml` sets 10 for Gemini, see below).
+Extraction runs in work units of `work_unit_size` chunks (default 10). On
+Claude, OpenAI or a paid Gemini plan up to `[lore.processing] llm_concurrency`
+(default 4) chunk requests are in flight at once, and the next unit is embedded
+while this one is extracted; free-tier Gemini asks one chunk at a time.
 
 ## Asking questions (`lore ask`)
 
@@ -196,6 +196,10 @@ list.
 A long-lived `--http` server should run under a supervisor, because an engine
 crash takes the whole process down.
 
+MCP is local-only. It serves one library and has no notion of which user is
+asking, so `lore mcp` refuses to start while `LORE_MULTI_USER=1` is set, and
+the web app's MCP panel (`/api/mcp`) is off in multi-user mode.
+
 ## How it works: from book to answer
 
 LORE turns a book into a knowledge graph in three commands, then answers
@@ -209,7 +213,7 @@ questions from that graph with citations.
 
 | Store | Kind | Holds |
 |---|---|---|
-| **SQLite** (`data/lore.db`) | relational | Book catalog, **full chunk text**, the `jobs` table (the authority on which extraction units finished), the GPU quota ledger |
+| **SQLite** (`data/lore.db`) | relational | Book catalog, **full chunk text**, the `jobs` table (the authority on which extraction units finished), the daily Gemini request ledger |
 | **Extraction artifacts** (Parquet under `data/`) | files | Raw model output per work unit: entities, relationships, evidence sentences, chunk vectors |
 | **Kuzu** (`data/kuzu/graph`) | graph, Cypher | Nodes `Book`, `Chapter`, `Chunk`, `Entity`; edges `HAS_CHAPTER`, `HAS_CHUNK`, `MENTIONS`, `ALIAS_OF`, and `REL` (the relationships, each carrying its predicate, evidence sentence and chunk id) |
 | **LanceDB** (`data/lancedb`) | vectors, 768-d | `chunks`: vector + text + `entity_ids`, the bridge from a passage to its graph entities; `entities`: entity vectors |
@@ -221,8 +225,7 @@ questions from that graph with citations.
 | Model | Runs on | Used for |
 |---|---|---|
 | Gemini Flash Lite (3.1, then 3.5) | Google API, **opt-in in code, on in this project's `lore.toml`** | Extraction (`extraction_provider = "gemini"`), resolution yes/no calls (`[lore.adjudication]`), surname disambiguation, choosing a graph search (`[lore.selection]`) and answers (`[lore.synthesis]`) |
-| nomic-embed-text v1.5 | Local Ollama; on Kaggle only during Kaggle extraction | Chunk vectors, entity similarity, predicate mapping, question embedding |
-| Qwen2.5-7B-Instruct (AWQ) | Kaggle T4, vLLM | Extraction when `extraction_provider = "kaggle"` (the code default) |
+| nomic-embed-text v1.5 | Local Ollama | Chunk vectors, entity similarity, predicate mapping, question embedding |
 | qwen2.5:3b | Local Ollama | Every step above when its setting is left on `"ollama"` (the code default), and `extraction_provider = "ollama"` |
 
 ### 1. `lore ingest`: parse and chunk (no models)
@@ -244,15 +247,17 @@ its `jobs` row says so, never merely because its files exist.
 
 - **nomic-embed-text** on local Ollama embeds every chunk (document prefix)
   first, so a stopped Ollama fails the unit before any Gemini request is spent.
-- **Gemini Flash Lite** reads the chunks **one per request**, in order, with the
-  same extraction prompt the other providers use. One client serves the whole
-  run, so its per-model throttle (15 requests/minute) holds across units.
+- **Gemini Flash Lite** reads the chunks **one per request**, with the same
+  extraction prompt the other providers use (on free-tier Gemini one at a time;
+  on Claude, OpenAI or a paid plan up to `llm_concurrency` at once, assembled in
+  chunk order). One client serves the whole run, so its per-model throttle
+  (15 requests/minute) holds across units.
 - The manifest's `model` names the model(s) that actually answered
   (`gemini-3.1-flash-lite`, or a comma-joined list if the cascade fell through).
 
 Measured on 22 chunks, same prompt, every fact judged against the text
 (Phase 3 extraction eval): relationships supported **81%** (Gemini) vs **61%**
-(Kaggle 7B), wrong entity kinds **1 vs 56**, key facts found **26/35 vs 22/35**.
+(Qwen2.5-7B), wrong entity kinds **1 vs 56**, key facts found **26/35 vs 22/35**.
 Gemini did not repeat "Hope KILLS Lucy", "Holmes KILLS Athelney Jones" or the
 Wiggins-as-a-Place kind split. Sending several chunks in one request lost about
 two thirds of the relationships, which is why it is one chunk per request. Both
@@ -273,10 +278,6 @@ Two kinds of failure are handled differently:
 
 Gemini receives each chunk's text. The key is read as for `lore ask` (below);
 with no key, `extract` and `process` exit before dispatching anything.
-
-**`extraction_provider = "kaggle"` (code default).** Each unit runs as its own
-free Kaggle GPU session: **Qwen2.5-7B-Instruct** on vLLM reads each chunk, and
-nomic-embed-text embeds them. GPU hours are recorded in the quota ledger.
 
 **`extraction_provider = "ollama"`.** The same step fully locally on qwen2.5:3b
 and nomic-embed-text: slower and weaker, but nothing leaves the machine.

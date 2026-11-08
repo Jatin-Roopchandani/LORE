@@ -27,6 +27,8 @@ from lore.inference.gemini import (
     default_key_file,
     resolve_api_key,
 )
+from lore.inference.key_scope import gemini_api_key  # noqa: F401 - a patch point
+from lore.inference.providers import factory as providers
 from lore.inference.ollama import OllamaProvider
 from lore.orchestrator.gemini_budget import recorder_for
 from lore.resolve.disambiguation import _atomic_write
@@ -183,9 +185,16 @@ ADJUDICATION_EXHAUSTED_HINT = (
 )
 
 
-def _adjudication_client(config: LoreConfig, api_key: str | None) -> GeminiClient:
-    """A client on `[lore.adjudication]`'s cascade, or the clear no-key refusal."""
-    key = api_key or resolve_api_key(key_file=default_key_file())
+def _adjudication_client(config: LoreConfig, api_key: str | None,
+                         site: str = "adjudicate") -> GeminiClient:
+    """A client on `[lore.adjudication]`'s cascade, or the clear no-key refusal.
+
+    The user's provider (providers.factory): on Gemini, the same cascade
+    client as ever; on Claude or OpenAI, the `site`'s model."""
+    # A bound user's provider and key in multi mode, never the file (key_scope).
+    creds = providers.credentials(
+        config, api_key, local=lambda: resolve_api_key(key_file=default_key_file()))
+    key = creds.key
     if not key:
         raise ValueError(
             '[lore.adjudication] provider = "gemini" but no API key: set'
@@ -193,8 +202,9 @@ def _adjudication_client(config: LoreConfig, api_key: str | None) -> GeminiClien
             " `GEMINI_API_KEY=...` in ~/.config/lore/gemini.env with mode"
             ' 600. Or set provider = "ollama" to adjudicate locally.'
         )
-    return GeminiClient(key, models=config.adjudication.models,
-                        recorder=recorder_for(config.sqlite_path))
+    gemini = creds.provider == providers.GEMINI
+    return providers.build(creds, config, site, gemini_models=config.adjudication.models,
+                           recorder=recorder_for(config.sqlite_path) if gemini else None)
 
 
 def make_gemini_pair(
@@ -268,7 +278,7 @@ def make_gemini_first_person(
     is written.
     """
     if client is None:
-        client = _adjudication_client(config, api_key)
+        client = _adjudication_client(config, api_key, "narrator")
     narrators = (narrator_cache if narrator_cache is not None
                  else NarratorCache(config.narrators_dir))
     speakers = (speaker_cache if speaker_cache is not None

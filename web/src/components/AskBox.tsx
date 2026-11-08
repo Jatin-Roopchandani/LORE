@@ -3,11 +3,13 @@ import { DEEP, UI } from "../messages";
 import { DEPTHS } from "../depth";
 import type { Depth } from "../types";
 
-export function AskBox({ onAsk, busy, depth = "auto", onDepth }: { onAsk: (q: string) => void; busy: boolean; depth?: Depth; onDepth?: (d: Depth) => void }) {
+// `placeholder`: what the empty box says ("Ask about your books…" by default; "Ask a follow-up…" inside a chat).
+export function AskBox({ onAsk, busy, depth = "auto", onDepth, placeholder = UI.askPlaceholder }:
+  { onAsk: (q: string) => void; busy: boolean; depth?: Depth; onDepth?: (d: Depth) => void; placeholder?: string }) {
   const [q, setQ] = useState("");
   return (
     <form className="ask" onSubmit={(e) => { e.preventDefault(); const v = q.trim(); if (v && !busy) { onAsk(v); setQ(""); } }}>
-      <input id="ask-input" autoComplete="off" maxLength={2000} placeholder={UI.askPlaceholder} aria-label="Question" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input id="ask-input" autoComplete="off" maxLength={2000} placeholder={placeholder} aria-label="Question" value={q} onChange={(e) => setQ(e.target.value)} />
       <button type="submit" disabled={busy || !q.trim()}>{busy ? "Answering…" : "Ask"}</button>
       {onDepth && (
         <div className="ask-opts">

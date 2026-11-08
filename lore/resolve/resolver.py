@@ -21,11 +21,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Awaitable, Callable, Container, Iterable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from lore import progress
 from lore.resolve.disambiguation import Candidate, Question
-from lore.resolve.normalize import entity_id, leading_titles, normalize_name
+from lore.resolve.normalize import HONORIFICS, entity_id, leading_titles, normalize_name
 from lore.resolve.predicates import cosine
+from lore.resolve.unify import Equivalence, fold_map, majority_kinds
 
 Embed = Callable[[list[str]], Awaitable[list[list[float]]]]
 # Task 1j's two optional hooks onto the ambiguous residue. Both default to
@@ -41,6 +43,9 @@ class Mention:
     kind: str
     book_id: str
     context: str
+    # How many extracted rows name this (name, kind): the vote of this kind
+    # when one name came out under several (lore/resolve/unify.py).
+    weight: int = 1
 
 
 @dataclass(frozen=True)
@@ -182,7 +187,44 @@ def is_description_shaped(raw_name: str) -> bool:
     tokens = raw_name.split()
     return any(_POSSESSIVE_SUFFIX.search(token) for token in tokens) or any(
         token.strip(_EDGE_PUNCTUATION).casefold() in _DESCRIPTION_WORDS
+        or token.strip(_EDGE_PUNCTUATION).casefold() in _COORDINATORS
         for token in tokens[1:]
+    )
+
+
+# A coordinated name ("Air and Water", "the Stag and Lion") names a pair or
+# a title, never one of its parts: measured on a novel's graph, "Water" was
+# merged into "Air and Water" by the subset rule. So, like a description, it
+# is never the target of a subset merge.
+_COORDINATORS = frozenset({"and", "or", "&", "nor"})
+
+
+def is_bare_title(normalized: str) -> bool:
+    """A name that is nothing but a title or rank ("king", "the captain"):
+    `normalize_name` keeps it because it is all there is. It names a role,
+    which many people hold, so it never joins a longer name by nesting or
+    similarity ("King" was merged into "Artur the High King"); pass 1 still
+    joins its exact repeats."""
+    tokens = normalized.split()
+    return bool(tokens) and all(token in HONORIFICS for token in tokens)
+
+
+def _siblings(left: str, right: str) -> bool:
+    """Two normalized names with the same last word, each with a word the
+    other lacks ("blue ajah", "yellow ajah")."""
+    lw, rw = left.split(), right.split()
+    if not lw or not rw or lw[-1] != rw[-1]:
+        return False
+    lt, rt = name_tokens(left), name_tokens(right)
+    return bool(lt - rt) and bool(rt - lt)
+
+
+def _named_in(names: Iterable[str], text: str) -> bool:
+    """Whether any of `names` occurs as words in `text` (case-insensitive)."""
+    lowered = text.casefold()
+    return any(
+        re.search(r"(?<!\w)" + re.escape(name.casefold()) + r"(?!\w)", lowered)
+        for name in names if len(name.strip()) > 2
     )
 
 
@@ -428,7 +470,7 @@ def disambiguated_entity_id(
     )
 
 
-async def resolve_mentions(
+async def _resolve_core(
     mentions: list[Mention],
     embed: Embed,
     adjudicate: Adjudicate,
@@ -543,7 +585,10 @@ async def resolve_mentions(
     # Task 11a: every title an entity's surface forms carry ("major", "mr").
     titles: dict[str, set[str]] = {}
 
-    for mention in ordered_mentions:
+    # Progress (lore.progress): one step per mention, the long part of a load
+    # (each may embed). Reported before each, and once more when all are done.
+    for index, mention in enumerate(ordered_mentions):
+        progress.report(index, len(ordered_mentions))
         normalized = normalize_name(mention.name)
         if not normalized:
             # A mention with no word characters at all mints no entity.
@@ -617,6 +662,11 @@ async def resolve_mentions(
             for cid in alias_sets
             if kinds[cid] == mention.kind and alias_tokens[cid] & mention_tokens
             and not title_conflict(cid)
+            # a role ("King") is no one's name (`is_bare_title`): it meets
+            # only the same role (in another book, for adjudication)
+            and (normalized in alias_sets[cid] or not (
+                is_bare_title(normalized)
+                or all(is_bare_title(alias) for alias in alias_sets[cid])))
         ]
         chosen: str | None = None
         vector: list[float] | None = None
@@ -796,6 +846,27 @@ async def resolve_mentions(
                         verdict = cid
                         break
 
+        # Only the similarity path below reads `candidates` from here on. Two
+        # names written side by side in one sentence are two things ("the
+        # Blue Ajah, the Green Ajah and the Yellow Ajah"), and the embedding
+        # measures exactly that co-occurrence (see the pass-2 name gate):
+        # measured on a novel, the White, Blue, Brown, Gray and Green Ajah
+        # all merged into the Yellow. So a candidate named in this mention's
+        # sentence, or naming it in its own, is not compared.
+        #
+        # And, for anything but a person, two names with one head word and
+        # different words before it ("Blue Ajah"/"Yellow Ajah", "Bond
+        # Street"/"Miles Street") are siblings of one sort, not one thing: the
+        # head word is what they share, the rest is what tells them apart.
+        # People are left to the similarity, since a given name and its
+        # nickname under one surname ("Elizabeth"/"Lizzy Bennet") are one.
+        candidates = [
+            cid for cid in candidates
+            if not _named_in(raw_names[cid], mention.context)
+            and not _named_in([mention.name], contexts[cid])
+            and not (mention.kind != "Character"
+                     and any(_siblings(normalized, alias) for alias in alias_sets[cid]))
+        ]
         if subset_matches:
             # Prefer the most specific match (the largest shared token set;
             # one side nests in the other, so that is the larger of the two
@@ -891,4 +962,131 @@ async def resolve_mentions(
         )
         for cid in alias_sets
     ]
+    progress.report(len(ordered_mentions), len(ordered_mentions))
     return result
+
+
+# Off: names are resolved within their extracted kind and number, as before
+# lore/resolve/unify.py (an ingest-time setting: it changes a graph only when
+# a book is processed again).
+UNIFY = True
+
+
+async def resolve_mentions(
+    mentions: list[Mention],
+    embed: Embed,
+    adjudicate: Adjudicate,
+    *,
+    same_book_floor: float = 0.86,
+    cross_book_floor: float = 0.92,
+    reject_floor: float = 0.70,
+    record_ambiguous: RecordAmbiguous | None = None,
+    decide_ambiguous: DecideAmbiguous | None = None,
+    equivalences: Iterable[Equivalence] = (),
+) -> ResolutionResult:
+    """Resolve a book's mentions into entities (see the module docstring).
+
+    First, within each book (lore/resolve/unify.py): a plural folds onto its
+    singular name, the text's own namings ("Myrddraal, also called
+    Halfmen") that the disambiguation answers confirm join their name, and
+    every mention of one resulting name takes that name's majority kind.
+    The passes then run as they always have, over those mentions. The
+    result's `mention_map` answers for every ORIGINAL (name, kind, book),
+    each entity's aliases keep the original normalized names, and an
+    original (name, kind) whose id is not its entity's gets an alias record,
+    so a node or reference under the old id points at the entity.
+
+    A naming equivalence becomes a disambiguation `Question` (the mention is
+    the alias, the one option the name), recorded with `record_ambiguous` and
+    merged only when `decide_ambiguous` returns that option. A believed
+    identity is never passed here (the loader writes it as an edge).
+    """
+    mentions = list(mentions)
+    kwargs = dict(same_book_floor=same_book_floor, cross_book_floor=cross_book_floor,
+                  reject_floor=reject_floor, record_ambiguous=record_ambiguous,
+                  decide_ambiguous=decide_ambiguous)
+    if not UNIFY or not mentions:
+        return await _resolve_core(mentions, embed, adjudicate, **kwargs)
+
+    canon: dict[tuple[str, str], str] = dict(fold_map((m.book_id, m.name) for m in mentions))
+
+    def key_of(book_id: str, normalized: str) -> str:
+        seen = set()
+        while (book_id, normalized) in canon and normalized not in seen:
+            seen.add(normalized)
+            normalized = canon[(book_id, normalized)]
+        return normalized
+
+    def grouped() -> tuple[dict, dict]:
+        weights: dict[tuple[str, str, str], int] = {}
+        raws: dict[tuple[str, str], set[str]] = {}
+        for m in mentions:
+            normalized = normalize_name(m.name)
+            if not normalized:
+                continue
+            key = key_of(m.book_id, normalized)
+            weights[(m.book_id, key, m.kind)] = (
+                weights.get((m.book_id, key, m.kind), 0) + max(1, m.weight))
+            if normalized == key:
+                raws.setdefault((m.book_id, key), set()).add(m.name)
+        return majority_kinds(weights), raws
+
+    kind_of, raws = grouped()
+    present = {(m.book_id, normalize_name(m.name)) for m in mentions}
+    for eq in sorted(set(equivalences), key=lambda e: (e.chunk_id, e.name, e.alias)):
+        if eq.believed:
+            continue
+        for book_id in sorted({m.book_id for m in mentions}):
+            a_raw, b_raw = normalize_name(eq.name), normalize_name(eq.alias)
+            if (book_id, a_raw) not in present or (book_id, b_raw) not in present:
+                continue
+            a, b = key_of(book_id, a_raw), key_of(book_id, b_raw)
+            if a == b:
+                continue
+            option = Candidate(id=entity_id(a, kind_of[(book_id, a)]),
+                               name=display_name(raws.get((book_id, a), {eq.name})))
+            question = Question(
+                mention=display_name(raws.get((book_id, b), {eq.alias})),
+                kind=kind_of[(book_id, b)], book_id=book_id, evidence=eq.evidence,
+                candidates=(option,))
+            if record_ambiguous is not None:
+                record_ambiguous(question)
+            if decide_ambiguous is not None and decide_ambiguous(question) == option.id:
+                canon[(book_id, b)] = a
+    kind_of, raws = grouped()
+
+    rewritten: dict[Mention, Mention] = {}
+    for m in mentions:
+        normalized = normalize_name(m.name)
+        if not normalized:
+            rewritten[m] = m
+            continue
+        key = key_of(m.book_id, normalized)
+        name = m.name if normalized == key else display_name(raws[(m.book_id, key)])
+        rewritten[m] = replace(m, name=name, kind=kind_of[(m.book_id, key)])
+    core = await _resolve_core(list(dict.fromkeys(rewritten.values())), embed, adjudicate,
+                               **kwargs)
+
+    extra_aliases: dict[str, set[str]] = {}
+    recorded = {(a.alias_id, a.canonical_id) for a in core.aliases}
+    canonical = {e.id for e in core.entities}
+    for m, new in rewritten.items():
+        target = core.mention_map.get((new.name, new.kind, new.book_id))
+        if target is None:
+            continue
+        core.mention_map[(m.name, m.kind, m.book_id)] = target
+        normalized = normalize_name(m.name)
+        if new == m or not normalized:
+            continue
+        extra_aliases.setdefault(target, set()).add(normalized)
+        alias_id = entity_id(normalized, m.kind)
+        if alias_id != target and alias_id not in canonical \
+                and (alias_id, target) not in recorded:
+            recorded.add((alias_id, target))
+            core.aliases.append(AliasRecord(alias_id=alias_id, alias_name=m.name,
+                                            kind=m.kind, canonical_id=target))
+    core.entities = [
+        replace(e, aliases=tuple(sorted(set(e.aliases) | extra_aliases.get(e.id, set()))))
+        for e in core.entities
+    ]
+    return core

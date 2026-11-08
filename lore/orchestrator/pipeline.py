@@ -3,7 +3,15 @@
 A stage declares its items and skips the ones already done, so running it
 again after a stop does only the missing work. The runner owns the
 `book_jobs` row (see jobs.py): a QuotaStop parks the job as waiting_quota
-until the daily allowance resets; any other exception marks it failed.
+until the daily allowance resets; Gemini's 402 (prepaid credit used up, from
+any stage) parks it as waiting_key with a friendly reason, resumable with
+Continue; any other exception marks it failed.
+
+A later stage that finds completed extraction units with missing or damaged
+files (DamagedUnitsError, after a hard kill) sends the book back to
+`extract` once in the same run, which redoes exactly those units; a run
+with no extract stage fails with the job saved at `extract`, so Continue
+re-extracts them.
 """
 from __future__ import annotations
 
@@ -16,8 +24,11 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from lore.config import LoreConfig
-from lore.inference.gemini import limits_for
-from lore.orchestrator import jobs
+from lore.graph.artifacts import DamagedUnitsError
+from lore.inference import key_scope
+from lore.inference.gemini import CREDIT_MESSAGE, GeminiCreditError, limits_for
+from lore.inference.providers import factory as providers
+from lore.orchestrator import jobs, plan
 from lore.orchestrator.gemini_budget import calls_today, today
 
 # Order matters. `beats` needs the loaded graph (its entities), so it follows load;
@@ -36,7 +47,40 @@ class QuotaStop(Exception):
     """
 
 
+class KeyStop(Exception):
+    """The user's Gemini key is missing or Gemini refused it (multi mode).
+
+    Raised by the worker's stage guard (lore.worker); the runner parks the
+    job as waiting_key, resumable once a working key is saved. Local mode
+    never raises it.
+    """
+
+
+class ProviderSwitch(QuotaStop):
+    """The user switched provider (or removed the key in use) mid-job.
+
+    Raised at a safe point (JobCtl.spend_check, before a request, between
+    items); the runner parks the job as idle with SWITCH_REASON, and the
+    worker requeues it to resume on the new provider. A QuotaStop so every
+    path that halts cleanly on a spent allowance (extraction never retries
+    or dead-letters on one) halts the same way on this.
+    """
+
+
+SWITCH_REASON = "Paused: you switched AI provider. Continuing with your new choice."
+
 JobRefused = jobs.JobRefused  # run_book will not start (see jobs.py)
+
+
+def caused_by(exc: BaseException | None, kind: type) -> bool:
+    """True when `exc` or anything in its cause/context chain is a `kind`."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, kind):
+            return True
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return False
 
 
 @dataclass
@@ -128,10 +172,25 @@ class JobCtl:
     def heartbeat(self) -> None:
         jobs.heartbeat(self._ctx.conn, self._ctx.book_id, now=self._moment())
 
+    def progress(self, done: int, total: int) -> None:
+        """Both counts, for a stage that learns its total once under way."""
+        jobs.set_progress(self._ctx.conn, self._ctx.book_id, done, total,
+                          now=self._moment())
+
     def spend_check(self) -> None:
         """Call before each Gemini request; stops once only the answer
         reserve (or less) of today's requests remains."""
         cfg = self._ctx.config
+        if key_scope.provider_changed():
+            raise ProviderSwitch(SWITCH_REASON)
+        if not providers.on_gemini(cfg):
+            # Claude, OpenAI or a paid Gemini plan: billed to the user, so no
+            # free-tier ledger and no reserve; only the user's own daily token
+            # cap stops processing.
+            if key_scope.over_token_cap():
+                raise QuotaStop("your daily token cap is reached (Account settings);"
+                                " processing continues after midnight Pacific")
+            return
         left = processing_budget_left(self._ctx.conn, cfg, today(self._moment()))
         reserve = cfg.processing.answer_reserve
         if left <= reserve:
@@ -181,28 +240,61 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
     # later stamp is unguarded, and the row stays `running` between stages.
     if not claimed:
         jobs.claim_job(conn, book_id, now=clock())
+    provider = providers.active_provider(config)
+    model = providers.processing_model(config)
+    jobs.set_provider(conn, book_id, provider)
 
     ctx = StageContext(conn, config, book_id)
     ctl = JobCtl(ctx, clock)
-    for stage in stages:
-        if STAGES.index(stage.name) < resume_at:
-            continue
+    queue = [stage for stage in stages if STAGES.index(stage.name) >= resume_at]
+    rewound = False
+    while queue:
+        stage = queue.pop(0)
         total = stage.total(ctx)
         jobs.start_job(conn, book_id, stage.name, total, now=clock(), guard=False)
+        jobs.reset_stage_clock(conn, book_id)
         try:
             with keep_alive(conn, book_id, clock, keepalive_interval):
                 stage.run(ctx, ctl)
-        except QuotaStop as stop:
+        except KeyStop as stop:
+            jobs.stop_key(conn, book_id, str(stop), now=clock())
+            return jobs.get_job(conn, book_id)
+        except Exception as exc:  # noqa: BLE001 - sorted below
+            if caused_by(exc, DamagedUnitsError) and stage.name != "extract":
+                # The damaged units are already demoted to `failed`.
+                at = next((i for i, s in enumerate(stages) if s.name == "extract"), None)
+                if at is not None and not rewound:
+                    rewound = True
+                    queue = list(stages[at:])
+                    continue
+                jobs.fail(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000],
+                          now=clock())
+                jobs.set_stage(conn, book_id, "extract")
+                return jobs.get_job(conn, book_id)
+            if caused_by(exc, ProviderSwitch):
+                jobs.stop_switch(conn, book_id, SWITCH_REASON, now=clock())
+                return jobs.get_job(conn, book_id)
+            if caused_by(exc, GeminiCreditError):
+                # Gemini 402: the key's prepaid credit is used up. Paused with
+                # a fixed, friendly reason (never Google's JSON); Continue
+                # resumes it once topped up, or on another provider.
+                jobs.stop_key(conn, book_id, CREDIT_MESSAGE, now=clock())
+                return jobs.get_job(conn, book_id)
+            if not isinstance(exc, QuotaStop):
+                jobs.fail(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000],
+                          now=clock())
+                return jobs.get_job(conn, book_id)
+            stop = exc
             cur = jobs.get_job(conn, book_id)
             jobs.stop_quota(
                 conn, book_id,
                 f"{stop} (during {stage.name}: {cur.done_items}/{cur.total_items})",
                 now=clock())
             return jobs.get_job(conn, book_id)
-        except Exception as exc:  # noqa: BLE001 - recorded on the job row
-            jobs.fail(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000],
-                      now=clock())
-            return jobs.get_job(conn, book_id)
+        try:  # this stage's measured speed, for the next book's estimates
+            plan.record_stage(conn, book_id, stage.name, provider, model, clock())
+        except sqlite3.Error:
+            pass
         jobs.finish_stage(conn, book_id, _next_stage(stage.name), now=clock(),
                           keep_running=True)
     jobs.done(conn, book_id, now=clock())

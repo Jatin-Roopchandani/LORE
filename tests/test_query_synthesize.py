@@ -1478,3 +1478,47 @@ async def test_a_sized_section_keeps_the_writer_by_default(length):
     await _finish("Habits?", ["Habits?"], list(kept), _EV, _check(["supported"] * 2, ["supported"]), write, None,
                   length=length)
     assert len(wcalls) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_later_part_rewording_an_earlier_parts_quote_appears_once() -> None:
+    # Claude rewords freely: same passage, same quote, little shared wording.
+    first = Claim(text="Drebber forced Lucy to marry him.", passage=2,
+                  quote="forced Lucy into a marriage")
+    reworded = Claim(text="Lucy was made to become Drebber's wife against her will.", passage=2,
+                     quote="forced Lucy into a marriage")
+    shared = Evidence(edges=(), passages=(S1, S2, S3), truncated=False, shares=((1, 2), (2, 3)))
+    answer = await synthesize_parts(
+        "q", SUBS, shared,
+        _per_part([Synthesis(claims=[first], can_answer=True),
+                   Synthesis(claims=[reworded, WHY_S], can_answer=True)], []), mode="graph")
+    assert answer.text == ("Drebber forced Lucy to marry him. [2] "
+                           "Stangerson shot her father. [3]")
+    assert answer.note is None  # part two still counts as answered
+
+
+@pytest.mark.asyncio
+async def test_two_facts_from_one_quote_inside_one_part_both_stay() -> None:
+    q = "forced Lucy into a marriage"
+    a = Claim(text="Drebber wanted Lucy.", passage=2, quote=q)
+    b = Claim(text="The marriage was not Lucy's choice.", passage=2, quote=q)
+    shared = Evidence(edges=(), passages=(S1, S2, S3), truncated=False, shares=((1, 2), (2, 3)))
+    answer = await synthesize_parts(
+        "q", SUBS, shared,
+        _per_part([Synthesis(claims=[a, b], can_answer=True),
+                   Synthesis(claims=[WHY_S], can_answer=True)], []), mode="graph")
+    assert "Drebber wanted Lucy. [2]" in answer.text and "not Lucy's choice. [2]" in answer.text
+
+
+@pytest.mark.asyncio
+async def test_a_list_answer_reads_in_story_order_not_part_by_part() -> None:
+    late = Claim(text="Stangerson shot her father.", passage=3, quote="Stangerson shot her father")
+    early = Claim(text="Drebber forced Lucy to marry him.", passage=2,
+                  quote="forced Lucy into a marriage")
+    shared = Evidence(edges=(), passages=(S1, S2, S3), truncated=False, shares=((2, 3), (2, 3)))
+    answer = await synthesize_parts(
+        "q", SUBS, shared,
+        _per_part([Synthesis(claims=[late], can_answer=True),
+                   Synthesis(claims=[early], can_answer=True)], []), mode="graph")
+    assert answer.text == ("Drebber forced Lucy to marry him. [2] "
+                           "Stangerson shot her father. [3]")

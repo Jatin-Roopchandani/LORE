@@ -71,7 +71,7 @@ class FakeKuzu:
     def execute(self, cypher, params=None):
         if "e.aliases" in cypher or "b:Book" in cypher:  # Task 10d's reads
             return []
-        if "ALIAS_OF" in cypher:
+        if "ALIAS_OF" in cypher or "IDENTIFIED_AS" in cypher:
             return []
         if "count(r)" in cypher:
             return [["e1", 3]]
@@ -609,8 +609,25 @@ async def test_the_graph_path_embeds_the_question_exactly_once(tmp_path: Path) -
 
 
 async def test_templates_are_asked_for_the_wide_candidate_pool(tmp_path: Path) -> None:
+    from lore.query import hubselect
     from lore.query.agent import CANDIDATE_LIMIT
 
+    conn = _conn(tmp_path)
+    ollama, models = _local()
+    kuzu = FakeKuzu(EDGE)
+    await answer_question(conn, kuzu, FakeLance([SEED_ROW]), "q", models)
+    # fetched wide, then cut to CANDIDATE_LIMIT by hubselect.select_rows
+    assert [p["limit"] for p in kuzu.template_params] == [max(CANDIDATE_LIMIT,
+                                                              hubselect.FETCH_CAP)]
+    conn.close()
+
+
+async def test_templates_keep_the_template_limit_with_hub_select_off(
+        tmp_path: Path, monkeypatch) -> None:
+    from lore.query import hubselect
+    from lore.query.agent import CANDIDATE_LIMIT
+
+    monkeypatch.setattr(hubselect, "HUB_SELECT", False)
     conn = _conn(tmp_path)
     ollama, models = _local()
     kuzu = FakeKuzu(EDGE)
@@ -739,7 +756,7 @@ class EntityKuzu:
             return [list(r) for r in self._names]
         if "b:Book" in cypher:
             return [["A Study in Scarlet"]]
-        if "ALIAS_OF" in cypher:
+        if "ALIAS_OF" in cypher or "IDENTIFIED_AS" in cypher:
             return []
         if "count(r)" in cypher:
             return [[i, 1] for i in params["ids"] if self._edges.get(i)]

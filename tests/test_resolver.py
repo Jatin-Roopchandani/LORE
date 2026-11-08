@@ -123,17 +123,26 @@ async def test_cross_book_merge_requires_adjudication() -> None:
 
 
 @pytest.mark.asyncio
-async def test_different_kinds_never_merge() -> None:
+async def test_one_name_in_one_book_is_one_entity_whatever_its_kinds() -> None:
+    # CHANGED, deliberately (lore/resolve/unify.py): this pinned "different
+    # kinds never merge", which split one thing into as many nodes as the
+    # extractor had kinds for it ("Myrddraal" was four on a novel). A name in
+    # one book is now one entity, of the kind most of its edges gave it.
     embed = _embedder({"Netherfield": [1.0, 0.0, 0.0]})
     result = await resolve_mentions(
         [
-            Mention("Netherfield", "Place", "b1", "the estate"),
+            Mention("Netherfield", "Place", "b1", "the estate", weight=3),
             Mention("Netherfield", "Faction", "b1", "the household"),
         ],
         embed,
-        _always,
+        _never,
     )
-    assert len(result.entities) == 2
+    assert [(e.name, e.kind) for e in result.entities] == [("Netherfield", "Place")]
+    # across books, kinds stay apart as before
+    apart = await resolve_mentions(
+        [Mention("Netherfield", "Place", "b1", "the estate"),
+         Mention("Netherfield", "Faction", "b2", "the household")], embed, _always)
+    assert len(apart.entities) == 2
 
 
 @pytest.mark.asyncio

@@ -789,3 +789,117 @@ def test_a_cached_answer_of_the_previous_prompt_is_stale(tmp_path) -> None:
     path.write_text(json.dumps({"prompt_hash": "d7913555ea303606", "evidence_hash": "h",
                                 "answer": {"summary": "s", "identity": [], "statements": []}}))
     assert build.read_cached(path, "h") is None
+
+
+
+# --- concurrent requests (lore/orchestrator/concurrency.py) -------------------------
+
+
+class _Slow(_Client):
+    """Delays each answer by its subject; `fail_markers` hit the quota."""
+
+    def __init__(self, answers, delays=None, fail_markers=()):
+        super().__init__(answers)
+        self.delays = delays or {}
+        self.fail_markers = set(fail_markers)
+        self.live = self.peak = 0
+        self.finished: list[str] = []
+
+    async def generate_json(self, prompt, schema, **kw):
+        import asyncio
+
+        marker = next((m for m in ("Mira Voss", "the Ledger", "the Quay")
+                       if f"Subject: {m}" in prompt), "?")
+        self.live += 1
+        self.peak = max(self.peak, self.live)
+        try:
+            await asyncio.sleep(self.delays.get(marker, 0.0))
+            if marker in self.fail_markers:
+                self.calls += 1
+                raise GeminiQuotaError("HTTP 429")
+            return await super().generate_json(prompt, schema, **kw)
+        finally:
+            self.live -= 1
+            self.finished.append(marker)
+
+
+def _billed(config, n):
+    return config.model_copy(update={
+        "llm": config.llm.model_copy(update={"provider": "anthropic"}),
+        "processing": config.processing.model_copy(update={"llm_concurrency": n})})
+
+
+def test_concurrent_profiles_are_saved_as_the_sequential_run_saves_them(env) -> None:
+    config, conn, tmp_path, world = env
+    client = _Slow(ANSWERS, delays={"Mira Voss": 0.2, "the Ledger": 0.1})
+    embeds: list[str] = []
+    stage, lance = _stage(env, client, embeds)
+    job = run_book(conn, _billed(config, 3), BOOK, [stage])
+    assert job.state == jobs.DONE
+    assert client.peak == 3, "all three profiles were asked at once"
+    assert client.finished == ["the Quay", "the Ledger", "Mira Voss"]
+    # Stored in plan order, exactly what the sequential test expects.
+    mira = store.entries_for(conn, ["e1"])[0]
+    assert [s.aspect for s in mira.statements] == ["nature", "role", "change"]
+    assert store.entries_for(conn, ["e3"])[0].statements[0].quote == Q3
+    assert lance.count("codex") == 4
+    assert embeds[0] == "Mira Voss (nature): She keeps the Ledger."
+
+
+def test_the_codex_bound_is_never_exceeded(env) -> None:
+    config, conn, tmp_path, world = env
+    client = _Slow(ANSWERS, delays={"Mira Voss": 0.05, "the Ledger": 0.05,
+                                    "the Quay": 0.05})
+    stage, _ = _stage(env, client)
+    assert run_book(conn, _billed(config, 2), BOOK, [stage]).state == jobs.DONE
+    assert client.peak == 2 and client.calls == 3
+
+
+def test_free_tier_codex_asks_one_entity_at_a_time(env) -> None:
+    config, conn, tmp_path, world = env
+    client = _Slow(ANSWERS, delays={"Mira Voss": 0.05, "the Ledger": 0.05})
+    stage, _ = _stage(env, client)
+    assert run_book(conn, config, BOOK, [stage]).state == jobs.DONE
+    assert client.peak == 1 and client.finished == ["Mira Voss", "the Ledger", "the Quay"]
+
+
+def test_a_quota_stop_with_profiles_in_flight_caches_them_and_resumes(env) -> None:
+    config, conn, tmp_path, world = env
+    # The Ledger is refused while the Quay is still being written.
+    first = _Slow(ANSWERS, delays={"the Quay": 0.2}, fail_markers={"the Ledger"})
+    stage, lance = _stage(env, first)
+    job = run_book(conn, _billed(config, 3), BOOK, [stage])
+    assert job.state == jobs.WAITING_QUOTA and job.stage == "codex"
+    assert store.with_entries(conn, ["e1", "e3"]) == ["e1"]
+    # The Quay's answer arrived after the stop and is cached, not lost.
+    assert "the Quay" in first.finished
+    assert len(list(config.codex_dir.iterdir())) == 2
+
+    second = _Client(ANSWERS)
+    stage2, _ = _stage(env, second, lance=lance)
+    assert run_book(conn, _billed(config, 3), BOOK, [stage2], force=True).state == jobs.DONE
+    assert second.calls == 1 and "Subject: the Ledger" in second.prompts[0]
+    assert store.with_entries(conn, ["e1", "e3"]) == ["e1", "e3"]
+
+
+def test_a_spend_stop_lets_no_further_profile_start(env, monkeypatch) -> None:
+    from lore.orchestrator.pipeline import JobCtl, QuotaStop
+
+    config, conn, tmp_path, world = env
+    checks = 0
+
+    def spend_check(self) -> None:
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise QuotaStop("reserve reached")
+
+    monkeypatch.setattr(JobCtl, "spend_check", spend_check)
+    client = _Slow(ANSWERS, delays={"Mira Voss": 0.1})
+    stage, _ = _stage(env, client)
+    job = run_book(conn, _billed(config, 3), BOOK, [stage])
+    assert job.state == jobs.WAITING_QUOTA and "reserve reached" in job.stopped_reason
+    # Mira was in flight when the Ledger's check stopped the stage: she
+    # finished and was saved; the Quay was never asked.
+    assert client.finished == ["Mira Voss"] and checks == 2
+    assert store.with_entries(conn, ["e1"]) == ["e1"]
