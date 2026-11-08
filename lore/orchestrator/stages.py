@@ -7,6 +7,16 @@ into `pipeline.QuotaStop`, so the runner parks the job until the allowance
 resets instead of marking it failed. Re-running a stage is cheap: load is
 idempotent and disambiguation answers are cached per question.
 
+Disambiguation, beats and codex keep up to `llm_concurrency(config)` model
+requests in flight (1 on free-tier Gemini; lore/orchestrator/concurrency.py).
+Each answer is cached the moment it arrives, as before; everything that
+writes the graph, LanceDB or SQLite still happens one item at a time in plan
+order, so the output does not depend on which answer came back first. A stop
+(the spend check, a spent allowance) lets no further request start, and the
+requests in flight finish and are cached. Beats and codex hold a request's
+slot until its item is stored (`hold`), so at 1 they run exactly as the
+sequential loop did.
+
 The stages take their heavy dependencies (the load function, the Gemini
 client factory) as arguments so the CLI can wire the real ones and tests can
 wire fakes.
@@ -34,6 +44,7 @@ from lore.inference.gemini import (
 from lore.inference.key_scope import gemini_api_key
 from lore.inference.providers import factory as providers
 from lore.orchestrator import jobs
+from lore.orchestrator.concurrency import bounded_fetch, llm_concurrency
 from lore.orchestrator.gemini_budget import recorder_for
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
 from lore.resolve.disambiguation import (
@@ -252,28 +263,40 @@ class DisambiguateStage:
         synonym_client = None
         got_new = False
 
+        answered = already
+
+        async def ask(index: int) -> None:
+            # The batches are independent: each one's answers are saved the
+            # moment they are verified (the stores re-read and merge, and
+            # write sorted), so the order they come back in changes nothing.
+            nonlocal got_new, synonym_client, answered
+            kind, batch = todo[index]
+            job_ctl.spend_check()
+            if kind == "names":
+                answers = await ask_disambiguation(client, batch)
+                store.save_answers(answers)
+            else:
+                if synonym_client is None:
+                    synonym_client = (client if self._synonym_client_factory
+                                      is self._client_factory
+                                      else self._synonym_client_factory(ctx.config))
+                answers = await _ask_synonyms_softly(synonym_client, batch)
+                store.save_synonym_answers(answers)
+            if answers and self._reload is not None:
+                # Durable before anything else can stop the run.
+                jobs.set_needs_reload(ctx.conn, ctx.book_id)
+            got_new = got_new or bool(answers)
+            answered += 1
+            job_ctl.advance(answered)
+
         async def _run() -> None:
-            nonlocal got_new, synonym_client
             # One loop for the requests and the close: httpx binds its
             # sockets to the loop that opened them.
             try:
-                for index, (kind, batch) in enumerate(todo):
-                    job_ctl.spend_check()
-                    if kind == "names":
-                        answers = await ask_disambiguation(client, batch)
-                        store.save_answers(answers)
-                    else:
-                        if synonym_client is None:
-                            synonym_client = (client if self._synonym_client_factory
-                                              is self._client_factory
-                                              else self._synonym_client_factory(ctx.config))
-                        answers = await _ask_synonyms_softly(synonym_client, batch)
-                        store.save_synonym_answers(answers)
-                    if answers and self._reload is not None:
-                        # Durable before anything else can stop the run.
-                        jobs.set_needs_reload(ctx.conn, ctx.book_id)
-                    got_new = got_new or bool(answers)
-                    job_ctl.advance(already + index + 1)
+                async with bounded_fetch(range(len(todo)), ask,
+                                         llm_concurrency(ctx.config)) as asked:
+                    for index in range(len(todo)):
+                        await asked[index]
             finally:
                 await client.aclose()
                 if synonym_client is not None and synonym_client is not client:
@@ -484,55 +507,68 @@ class BeatsStage:
         title = ctx.conn.execute("SELECT title FROM books WHERE id = ?",
                                  (ctx.book_id,)).fetchone()[0]
         client = embed = embed_close = lance = None
+
+        async def ask(index: int):
+            """One part's answer, cached as it arrives. An unusable answer is
+            returned, not raised: it skips that part and stops nothing."""
+            nonlocal client
+            part = plan[index]
+            job_ctl.spend_check()
+            if client is None:
+                client = self._client_factory(ctx.config)
+            prompt = beats_build.render_prompt(
+                title, part.chapter, part.index, part.count,
+                part.entities, part.chunks)
+            try:
+                answer = await client.generate_json(
+                    prompt, beats_build.BeatsAnswer,
+                    exhausted_hint="Continue the job when a daily"
+                                   " budget resets.")
+            except GeminiOutputError as exc:
+                return exc
+            beats_build.write_cached(self._cache(ctx, part), part.chunks, answer)
+            return answer
+
+        to_ask = [i for i, part in enumerate(plan) if cached[part.label] is None]
         try:
             # One loop for the requests, the embeds and the closes: httpx
             # binds its sockets to the loop that opened them.
-            for part in plan:
-                answer = cached[part.label]
-                fresh = answer is None
-                if fresh:
-                    job_ctl.spend_check()
-                    if client is None:
-                        client = self._client_factory(ctx.config)
-                    prompt = beats_build.render_prompt(
-                        title, part.chapter, part.index, part.count,
-                        part.entities, part.chunks)
-                    try:
-                        answer = await client.generate_json(
-                            prompt, beats_build.BeatsAnswer,
-                            exhausted_hint="Continue the job when a daily"
-                                           " budget resets.")
-                    except GeminiOutputError:
-                        # Not cached: the next run asks this part again.
-                        self.skipped.append(f"{part.label}: unusable answer")
+            async with bounded_fetch(to_ask, ask, llm_concurrency(ctx.config),
+                                     hold=True) as asked:
+                for index, part in enumerate(plan):
+                    answer = cached[part.label]
+                    fresh = answer is None
+                    if fresh:
+                        answer = await asked.take(index)
+                        if isinstance(answer, GeminiOutputError):
+                            # Not cached: the next run asks this part again.
+                            self.skipped.append(f"{part.label}: unusable answer")
+                            done += 1
+                            job_ctl.advance(done)
+                            continue
+                    beats = beats_build.verify_beats(
+                        answer, ctx.book_id, part.chapter, part.chunks, part.entities)
+                    existing = {r[0] for r in ctx.conn.execute(
+                        "SELECT id FROM beats WHERE book_id = ? AND chapter_seq = ?"
+                        " AND part = ?", (ctx.book_id, part.chapter, part.index))}
+                    ids = {b.id for b in beats}
+                    if beats and (fresh or ids != existing):
+                        if embed is None:
+                            embed, embed_close = self._embed_factory(ctx.config)
+                            lance = self._lance_factory(ctx.config)
+                        vectors = await embed([b.text for b in beats])
+                        lance.upsert_beats([
+                            {"id": b.id, "book_id": ctx.book_id, "vector": v}
+                            for b, v in zip(beats, vectors)])
+                    if existing - ids:
+                        if lance is None:
+                            lance = self._lance_factory(ctx.config)
+                        lance.delete_beats(sorted(existing - ids))
+                    # SQLite last: a part is done once its rows are saved.
+                    save_beats(ctx.conn, ctx.book_id, part.chapter, part.index, beats)
+                    if fresh:
                         done += 1
                         job_ctl.advance(done)
-                        continue
-                    beats_build.write_cached(self._cache(ctx, part), part.chunks,
-                                             answer)
-                beats = beats_build.verify_beats(
-                    answer, ctx.book_id, part.chapter, part.chunks, part.entities)
-                existing = {r[0] for r in ctx.conn.execute(
-                    "SELECT id FROM beats WHERE book_id = ? AND chapter_seq = ?"
-                    " AND part = ?", (ctx.book_id, part.chapter, part.index))}
-                ids = {b.id for b in beats}
-                if beats and (fresh or ids != existing):
-                    if embed is None:
-                        embed, embed_close = self._embed_factory(ctx.config)
-                        lance = self._lance_factory(ctx.config)
-                    vectors = await embed([b.text for b in beats])
-                    lance.upsert_beats([
-                        {"id": b.id, "book_id": ctx.book_id, "vector": v}
-                        for b, v in zip(beats, vectors)])
-                if existing - ids:
-                    if lance is None:
-                        lance = self._lance_factory(ctx.config)
-                    lance.delete_beats(sorted(existing - ids))
-                # SQLite last: a part is done once its rows are saved.
-                save_beats(ctx.conn, ctx.book_id, part.chapter, part.index, beats)
-                if fresh:
-                    done += 1
-                    job_ctl.advance(done)
         finally:
             try:
                 if client is not None:
@@ -694,73 +730,87 @@ class CodexStage:
 
     async def _run(self, ctx, job_ctl, plan, cached, current, done: int) -> None:
         client = embed = embed_close = lance = None
+
+        async def ask(index: int):
+            """One entity's answer, cached as it arrives. An unusable answer
+            is returned, not raised: it skips that entity and stops nothing."""
+            nonlocal client
+            item = plan[index]
+            job_ctl.spend_check()
+            if client is None:
+                client = self._client_factory(ctx.config)
+            try:
+                answer = await client.generate_json(
+                    codex_build.render_prompt(item.entity, item.evidence),
+                    codex_build.CodexAnswer,
+                    exhausted_hint="Continue the job when a daily"
+                                   " budget resets.")
+            except GeminiOutputError as exc:
+                return exc
+            codex_build.write_cached(self._cache(ctx, item), item.evidence_hash, answer)
+            return answer
+
+        to_ask = [i for i, item in enumerate(plan)
+                  if item.entity.id not in current and cached[item.entity.id] is None]
         try:
             # One loop for the requests, the embeds and the closes: httpx
             # binds its sockets to the loop that opened them.
-            for item in plan:
-                entity = item.entity
-                if entity.id in current:
-                    continue
-                answer = cached[entity.id]
-                fresh = answer is None
-                if fresh:
-                    job_ctl.spend_check()
-                    if client is None:
-                        client = self._client_factory(ctx.config)
-                    try:
-                        answer = await client.generate_json(
-                            codex_build.render_prompt(entity, item.evidence),
-                            codex_build.CodexAnswer,
-                            exhausted_hint="Continue the job when a daily"
-                                           " budget resets.")
-                    except GeminiOutputError:
-                        # Not cached: the next run asks this entity again, until
-                        # it has failed MAX_ATTEMPTS times; then an empty answer
-                        # marked failed is cached (a new prompt or new evidence
-                        # still invalidates it).
-                        path = self._cache(ctx, item)
-                        tries = codex_build.read_attempts(path, item.evidence_hash) + 1
-                        if tries >= codex_build.MAX_ATTEMPTS:
-                            codex_build.write_cached(
-                                path, item.evidence_hash,
-                                codex_build.CodexAnswer(summary="", statements=[]),
-                                failed=True)
-                            self.skipped.append(
-                                f"{entity.name}: unusable answer, given up after {tries} attempts")
-                        else:
-                            codex_build.write_attempts(path, item.evidence_hash, tries)
-                            self.skipped.append(f"{entity.name}: unusable answer")
+            async with bounded_fetch(to_ask, ask, llm_concurrency(ctx.config),
+                                     hold=True) as asked:
+                for index, item in enumerate(plan):
+                    entity = item.entity
+                    if entity.id in current:
+                        continue
+                    answer = cached[entity.id]
+                    fresh = answer is None
+                    if fresh:
+                        answer = await asked.take(index)
+                        if isinstance(answer, GeminiOutputError):
+                            # Not cached: the next run asks this entity again, until
+                            # it has failed MAX_ATTEMPTS times; then an empty answer
+                            # marked failed is cached (a new prompt or new evidence
+                            # still invalidates it).
+                            path = self._cache(ctx, item)
+                            tries = codex_build.read_attempts(path, item.evidence_hash) + 1
+                            if tries >= codex_build.MAX_ATTEMPTS:
+                                codex_build.write_cached(
+                                    path, item.evidence_hash,
+                                    codex_build.CodexAnswer(summary="", statements=[]),
+                                    failed=True)
+                                self.skipped.append(
+                                    f"{entity.name}: unusable answer, given up after {tries} attempts")
+                            else:
+                                codex_build.write_attempts(path, item.evidence_hash, tries)
+                                self.skipped.append(f"{entity.name}: unusable answer")
+                            done += 1
+                            job_ctl.advance(done)
+                            continue
+                    entry = codex_build.verify_entry(
+                        answer, entity, item.world_id, item.evidence, item.evidence_hash)
+                    old = codex_store.statement_ids(ctx.conn, [entity.id])
+                    if lance is None and (entry is not None or old):
+                        lance = self._lance_factory(ctx.config)
+                    new: list[str] = []
+                    if entry is not None:
+                        if embed is None:
+                            embed, embed_close = self._embed_factory(ctx.config)
+                        new = [codex_store.statement_id(entity.id, i, s.text)
+                               for i, s in enumerate(entry.statements)]
+                        vectors = await embed(
+                            [f"{entity.name} ({s.aspect}): {s.text}"
+                             for s in entry.statements])
+                        lance.upsert_codex([{"id": i, "vector": v}
+                                            for i, v in zip(new, vectors)])
+                    if set(old) - set(new):
+                        lance.delete_codex(sorted(set(old) - set(new)))
+                    # SQLite last: an entity is done once its rows are saved.
+                    if entry is not None:
+                        codex_store.save_entry(ctx.conn, entry)
+                    elif old:
+                        codex_store.delete_entities(ctx.conn, [entity.id])
+                    if fresh:
                         done += 1
                         job_ctl.advance(done)
-                        continue
-                    codex_build.write_cached(self._cache(ctx, item),
-                                             item.evidence_hash, answer)
-                entry = codex_build.verify_entry(
-                    answer, entity, item.world_id, item.evidence, item.evidence_hash)
-                old = codex_store.statement_ids(ctx.conn, [entity.id])
-                if lance is None and (entry is not None or old):
-                    lance = self._lance_factory(ctx.config)
-                new: list[str] = []
-                if entry is not None:
-                    if embed is None:
-                        embed, embed_close = self._embed_factory(ctx.config)
-                    new = [codex_store.statement_id(entity.id, i, s.text)
-                           for i, s in enumerate(entry.statements)]
-                    vectors = await embed(
-                        [f"{entity.name} ({s.aspect}): {s.text}"
-                         for s in entry.statements])
-                    lance.upsert_codex([{"id": i, "vector": v}
-                                        for i, v in zip(new, vectors)])
-                if set(old) - set(new):
-                    lance.delete_codex(sorted(set(old) - set(new)))
-                # SQLite last: an entity is done once its rows are saved.
-                if entry is not None:
-                    codex_store.save_entry(ctx.conn, entry)
-                elif old:
-                    codex_store.delete_entities(ctx.conn, [entity.id])
-                if fresh:
-                    done += 1
-                    job_ctl.advance(done)
         finally:
             try:
                 if client is not None:
