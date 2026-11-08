@@ -1,11 +1,12 @@
 # LORE configuration — see lore/config.py for all keys and defaults.
 [lore]
 data_dir = "data"
-# "kaggle" (free T4 burst, code default) | "ollama" (fully local, zero-egress)
-# | "gemini" (one request per chunk to Google; embeddings stay local on Ollama).
+# "ollama" (fully local, zero-egress, code default) | "gemini" (one request
+# per chunk to the remote model [lore.llm] picks, Gemini unless set;
+# embeddings stay local on Ollama).
 # This project builds its graph with Gemini, for quality (Task R1): on 22
 # chunks judged against the text, Gemini 3.1 Flash Lite's relationships were
-# 81% supported vs the Kaggle 7B's 61%, with 1 wrong entity kind vs 56. The key
+# 81% supported vs a local 7B's 61%, with 1 wrong entity kind vs 56. The key
 # comes from GEMINI_API_KEY or ~/.config/lore/gemini.env (mode 600), never here.
 extraction_provider = "gemini"
 
@@ -13,25 +14,12 @@ extraction_provider = "gemini"
 host = "http://localhost:11434"
 model = "qwen2.5:3b-instruct-q4_K_M"
 
-[lore.kaggle]
-username = "jatinroopchandani"  # personal Kaggle username (required for doctor --kaggle)
-kernel_slug = "lore-hello"
-dataset_slug = "lore-hello-data"
-poll_interval_s = 30
-poll_timeout_s = 5400   # size-40 units run ~1505s typical; 1800s timed out a dense one
-extract_kernel_slug = "lore-extract"
-extract_dataset_slug = "lore-extract-data"
-
 [lore.extraction]
-model = "Qwen/Qwen2.5-7B-Instruct-AWQ"
-embed_model = "nomic-ai/nomic-embed-text-v1.5"
 embed_model_ollama = "nomic-embed-text"
-# 10 for Gemini: a unit stopped by the daily quota re-runs whole on --resume,
-# so a small unit re-spends at most 9 requests. (Kaggle ran 40 safely since
-# bfe61bf decoupled vLLM concurrency from unit size.)
+# 10: a unit stopped by the daily quota re-embeds on --resume, and each chunk's
+# extraction is saved as it returns, so a resume asks only the missing chunks.
 work_unit_size = 10
 # gemini_models = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]   # the default
-vllm_version = ""            # empty installs the latest vLLM on the kernel
 
 # `lore ask`'s two LLM steps. Code defaults are "ollama" for both, so a
 # checkout with no key still works; this project uses Gemini for both, for
