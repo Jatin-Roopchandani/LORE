@@ -778,7 +778,8 @@ class CodexStage:
                                     codex_build.CodexAnswer(summary="", statements=[]),
                                     failed=True)
                                 self.skipped.append(
-                                    f"{entity.name}: unusable answer, given up after {tries} attempts")
+                                    f"{entity.name}: unusable answer, given up after"
+                                    f" {tries} attempts")
                             else:
                                 codex_build.write_attempts(path, item.evidence_hash, tries)
                                 self.skipped.append(f"{entity.name}: unusable answer")
