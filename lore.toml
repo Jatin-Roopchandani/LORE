@@ -62,3 +62,7 @@ enabled = true
 # questions in the UI keep working during a long book (about 8 questions).
 [lore.processing]
 answer_reserve = 60
+# Model requests in flight at once while processing (extraction chunks, codex,
+# beats, disambiguation): Claude, OpenAI and a paid Gemini plan. Free-tier
+# Gemini uses gemini_free_concurrency (default 1, one at a time).
+# llm_concurrency = 4
