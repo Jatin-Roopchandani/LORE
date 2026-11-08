@@ -5,7 +5,6 @@ import asyncio
 import dataclasses
 import math
 import sqlite3
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,8 +42,6 @@ from lore.inference.gemini import (
     resolve_api_key,
 )
 from lore.inference.ollama import OllamaProvider
-from lore.kaggle_api.client import KaggleClient
-from lore.kaggle_api.hello import run_hello_roundtrip
 from lore.orchestrator.gemini_budget import day_report, recorder_for, today
 from lore.graph.remove import remove_book_from_graph
 from lore.orchestrator.jobs import (
@@ -61,7 +58,6 @@ from lore.orchestrator.move import prepare_move
 from lore.orchestrator.extract_stage import ExtractStage
 from lore.orchestrator.local import missing_gemini_key_message
 from lore.orchestrator.pipeline import JobRefused, QuotaStop, run_book
-from lore.orchestrator.quota import iso_week, week_report
 from lore.orchestrator.run import run_extraction
 from lore.orchestrator.stages import (
     BeatsStage,
@@ -98,9 +94,8 @@ def main() -> None:
 
 
 @app.command()
-def doctor(kaggle: bool = typer.Option(False, "--kaggle",
-                                       help="also run the free-tier GPU round trip (slow)")) -> None:
-    """Verify every Phase 0 subsystem is alive."""
+def doctor() -> None:
+    """Verify every subsystem is alive."""
     ok = True
 
     try:
@@ -146,23 +141,6 @@ def doctor(kaggle: bool = typer.Option(False, "--kaggle",
                       config.ollama.model if healthy else f"no server at {config.ollama.host}")
     except Exception as exc:
         ok &= _report("ollama", False, str(exc))
-
-    client = KaggleClient(config.kaggle)
-    ok &= _report("kaggle-auth", client.authenticated(),
-                  "" if client.authenticated()
-                  else "no ~/.kaggle/kaggle.json, ~/.kaggle/access_token, or KAGGLE_API_TOKEN")
-
-    if kaggle:
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                result = run_hello_roundtrip(
-                    config.kaggle, Path(tmp),
-                    on_tick=lambda s: typer.echo(f"       kaggle kernel: {s}"),
-                )
-            ok &= _report("kaggle-roundtrip", True,
-                          f"sum={result['sum']} on {result['device_name']}")
-        except Exception as exc:
-            ok &= _report("kaggle-roundtrip", False, str(exc))
 
     raise typer.Exit(0 if ok else 1)
 
@@ -684,7 +662,7 @@ def _graph_build_key(
     alternatives: list[str] = []
     if extracting and config.extraction_provider == "gemini":
         settings.append('extraction_provider = "gemini"')
-        alternatives.append('extraction_provider = "kaggle" or "ollama"')
+        alternatives.append('extraction_provider = "ollama"')
     if loading and config.adjudication.provider == "gemini":
         settings.append('[lore.adjudication] provider = "gemini"')
         alternatives.append('[lore.adjudication] provider = "ollama"')
@@ -733,8 +711,6 @@ def extract(
         f"{report.book_id}: {report.units_completed}/{report.units_total} units, "
         f"{report.chunks_ok} chunks extracted, {report.chunks_dead} dead-lettered"
     )
-    if config.extraction_provider == "kaggle":
-        summary += f", {report.gpu_hours:.2f} GPU-hours"
     typer.echo(summary)
     if report.stopped_reason:
         typer.echo(f"stopped early — {report.stopped_reason}")
@@ -747,20 +723,15 @@ def extract(
 
 @app.command()
 def quota() -> None:
-    """Show this week's Kaggle GPU-hour budget and today's Gemini requests."""
+    """Show today's Gemini requests against each model's daily budget."""
     config = LoreConfig.load()
     config.ensure_dirs()
     conn = open_db(config.sqlite_path)
     try:
-        report = week_report(conn, iso_week())
         day = today()
         gemini = day_report(conn, day)
     finally:
         conn.close()
-    typer.echo(
-        f"{report['week']}: {report['used_hours']:.2f}h used, "
-        f"{report['remaining_hours']:.2f}h remaining across {report['runs']} run(s)"
-    )
     if not gemini:
         typer.echo(f"{day}: no Gemini requests recorded")
         return
@@ -830,8 +801,7 @@ class _RunExtractionStage:
 
     Used by `default_stages` until a purpose-built ExtractStage is passed in
     its place. A Gemini run that stopped early (quota, key, network) becomes
-    a QuotaStop so the job parks; any other stop (e.g. the weekly GPU quota)
-    only records the report, and `process` prints it as incomplete after the
+    a QuotaStop so the job parks; any other stop only records the report, and `process` prints it as incomplete after the
     load, as before.
     """
 

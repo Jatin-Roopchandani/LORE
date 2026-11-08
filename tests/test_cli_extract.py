@@ -30,7 +30,7 @@ def test_extract_reports_the_run(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     _seed(tmp_path)
     report = RunReport(book_id=BOOK, units_total=1, units_completed=1,
-                       chunks_ok=3, chunks_dead=0, gpu_hours=0.5)
+                       chunks_ok=3, chunks_dead=0)
     with patch("lore.cli.run_extraction", return_value=report) as run:
         result = runner.invoke(app, ["extract", BOOK])
     assert result.exit_code == 0, result.output
@@ -57,13 +57,13 @@ def test_extract_echoes_and_fails_when_stopped_early(
     _seed(tmp_path)
     report = RunReport(
         book_id=BOOK, units_total=2, units_completed=1,
-        chunks_ok=3, chunks_dead=0, gpu_hours=0.5,
-        stopped_reason="weekly GPU-hour quota exhausted",
+        chunks_ok=3, chunks_dead=0,
+        stopped_reason="every configured model refused the request",
     )
     with patch("lore.cli.run_extraction", return_value=report):
         result = runner.invoke(app, ["extract", BOOK])
     assert result.exit_code != 0
-    assert "weekly GPU-hour quota exhausted" in result.output
+    assert "every configured model refused the request" in result.output
 
 
 def test_extract_fails_cleanly_for_unknown_book(tmp_path: Path, monkeypatch) -> None:
@@ -72,14 +72,6 @@ def test_extract_fails_cleanly_for_unknown_book(tmp_path: Path, monkeypatch) -> 
     result = runner.invoke(app, ["extract", "nosuchbook"])
     assert result.exit_code == 1
     assert "no chunks" in result.output
-
-
-def test_quota_reports_the_week(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["quota"])
-    assert result.exit_code == 0
-    assert "remaining" in result.output.lower()
 
 
 # --- Task R1: extraction_provider = "gemini" needs a key up front ----------
@@ -118,11 +110,10 @@ def test_extract_on_gemini_passes_the_resolved_key(tmp_path: Path, monkeypatch) 
     assert result.exit_code == 0, result.output
     assert run.call_args.kwargs["api_key"] == "k-from-env"
     assert "k-from-env" not in result.output
-    # Gemini spends no Kaggle GPU; do not report GPU-hours as if it did.
     assert "GPU-hours" not in result.output
 
 
-def test_extract_on_kaggle_needs_no_key(tmp_path: Path, monkeypatch) -> None:
+def test_extract_on_ollama_the_default_needs_no_key(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)
     _no_key(tmp_path, monkeypatch)
@@ -132,3 +123,65 @@ def test_extract_on_kaggle_needs_no_key(tmp_path: Path, monkeypatch) -> None:
         result = runner.invoke(app, ["extract", BOOK])
     assert result.exit_code == 0, result.output
     assert run.call_args.kwargs["api_key"] is None
+
+
+# --- the removed Kaggle tier --------------------------------------------------
+
+OLD_KAGGLE_TOML = """[lore]
+extraction_provider = "kaggle"
+
+[lore.kaggle]
+username = "someone"
+kernel_slug = "lore-hello"
+poll_timeout_s = 5400
+
+[lore.extraction]
+model = "Qwen/Qwen2.5-7B-Instruct-AWQ"
+embed_model = "nomic-ai/nomic-embed-text-v1.5"
+vllm_version = ""
+work_unit_size = 10
+"""
+
+
+def test_an_old_kaggle_lore_toml_gets_a_clear_message_not_a_crash(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _no_key(tmp_path, monkeypatch)
+    (tmp_path / "lore.toml").write_text(OLD_KAGGLE_TOML)
+    _seed(tmp_path)
+    result = runner.invoke(app, ["extract", BOOK])
+    assert result.exit_code == 1, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert 'extraction_provider = "kaggle" is no longer supported' in result.output
+    assert '"gemini"' in result.output and '"ollama"' in result.output
+    conn = open_db(tmp_path / "data" / "lore.db")
+    assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+    conn.close()
+
+
+def test_an_old_kaggle_lore_toml_still_runs_every_other_command(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "lore.toml").write_text(OLD_KAGGLE_TOML)
+    _seed(tmp_path)
+    result = runner.invoke(app, ["books"])
+    assert result.exit_code == 0, result.output
+    assert BOOK in result.output
+
+
+def test_process_with_an_old_kaggle_lore_toml_fails_with_the_message(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _no_key(tmp_path, monkeypatch)
+    (tmp_path / "lore.toml").write_text(OLD_KAGGLE_TOML)
+    _seed(tmp_path)
+    result = runner.invoke(app, ["process", BOOK])
+    assert result.exit_code != 0, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert 'extraction_provider = "kaggle" is no longer supported' in result.output

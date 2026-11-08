@@ -1,7 +1,7 @@
 """Per-chunk extraction loop, independent of which backend runs the model.
 
-This is the code the Kaggle kernel imports and the local Ollama tier
-calls, so both tiers share prompt, validation, retry and dead-letter
+Both tiers (the remote model, one chunk per call, and the local Ollama
+tier) call it, so they share prompt, validation, retry and dead-letter
 behaviour exactly (SPEC.md section 3).
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ class ExtractionHalted(RuntimeError):
     dead-lettering on it would silently mark every remaining chunk of the
     book dead. So this propagates out of `extract_chunks`, un-retried: the
     unit fails and `--resume` runs it again later. Only a provider raises
-    it (the Gemini tier does; the Ollama and Kaggle tiers never do, so their
+    it (the Gemini tier does; the Ollama tier never does, so its
     retry-then-dead-letter behaviour is unchanged).
     """
 

@@ -324,12 +324,20 @@ class GeminiClient:
         return limits_for(self.last_model or self.models[0]).rpd
 
     async def _throttle(self, model: str) -> None:
+        """Wait for this model's next free slot at its RPM.
+
+        The slot is reserved before sleeping, so requests in flight at once
+        on one client (processing's `llm_concurrency`) queue one interval
+        apart instead of all waking at the same moment. One request at a
+        time waits exactly as long as before."""
+        now = self._now()
         last = self._last_request_at.get(model)
         if last is None:
             return
-        remaining = (60.0 / max(limits_for(model).rpm, 1)) - (self._now() - last)
-        if remaining > 0:
-            await self._sleep(remaining)
+        slot = last + 60.0 / max(limits_for(model).rpm, 1)
+        if slot > now:
+            self._last_request_at[model] = slot
+            await self._sleep(slot - now)
 
     async def _generate_one(
         self, model: str, prompt: str, generation_config: dict
@@ -350,7 +358,9 @@ class GeminiClient:
         self, model: str, prompt: str, generation_config: dict
     ) -> str:
         await self._throttle(model)
-        self._last_request_at[model] = self._now()
+        # Never move a slot another request reserved back to now.
+        self._last_request_at[model] = max(
+            self._now(), self._last_request_at.get(model, float("-inf")))
         self.requests_made += 1
         self.attempts[model] = self.attempts.get(model, 0) + 1
         if self._recorder is not None:

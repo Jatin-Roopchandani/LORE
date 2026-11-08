@@ -208,6 +208,33 @@ async def test_a_second_call_to_one_model_respects_that_models_rpm() -> None:
 
 
 @pytest.mark.asyncio
+async def test_requests_in_flight_at_once_queue_one_interval_apart() -> None:
+    # Processing may keep several requests in flight on one client
+    # (lore/orchestrator/concurrency.py): the RPM throttle must space them
+    # out, not let them all wake at the same moment.
+    import asyncio
+
+    clock = [0.0]
+    sent: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        target = clock[0] + seconds
+        await asyncio.sleep(seconds / 1000)
+        clock[0] = max(clock[0], target)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(clock[0])
+        return httpx.Response(200, json=_ok("ok"))
+
+    client = _client(handler, sleep=sleep, now=lambda: clock[0])
+    await client.generate("warm")
+    await asyncio.gather(*(client.generate(f"q{i}") for i in range(3)))
+    interval = 60.0 / limits_for(DEFAULT_MODELS[0]).rpm
+    gaps = [b - a for a, b in zip(sent, sent[1:])]
+    assert all(gap >= interval - 1e-9 for gap in gaps), gaps
+
+
+@pytest.mark.asyncio
 async def test_a_request_that_already_waited_long_enough_does_not_sleep() -> None:
     clock = [0.0]
     slept: list[float] = []

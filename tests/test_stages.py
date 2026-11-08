@@ -273,3 +273,47 @@ def test_reassign_stage_fails_for_an_unknown_book(env) -> None:
     ctl = type("Ctl", (), {"advance": lambda self, n: None})()
     with pytest.raises(RuntimeError, match="unknown book"):
         ReassignStage(world).run(StageContext(conn, config, "nope"), ctl)
+
+
+
+# --- concurrent batches (lore/orchestrator/concurrency.py) --------------------------
+
+
+class _SlowClient(_Client):
+    def __init__(self, fail_on=()):
+        super().__init__(fail_on)
+        self.live = self.peak = 0
+
+    async def generate(self, prompt: str) -> str:
+        import asyncio
+
+        self.live += 1
+        self.peak = max(self.peak, self.live)
+        try:
+            await asyncio.sleep(0.05)
+            return await super().generate(prompt)
+        finally:
+            self.live -= 1
+
+
+def test_disambiguation_batches_run_concurrently_with_the_same_answers(env) -> None:
+    config, conn = env
+    billed = _enable(config).model_copy(update={
+        "llm": config.llm.model_copy(update={"provider": "anthropic"})})
+    _record(billed, 3 * MAX_BATCH + 1)  # four batches
+    client = _SlowClient()
+    job = run_book(conn, billed, BOOK, [DisambiguateStage(lambda cfg: client)])
+    assert job.state == jobs.DONE
+    assert client.peak == 4 and client.calls == 4
+    store = DisambiguationStore(billed.disambiguation_dir)
+    assert store.unanswered(store.pending()) == []
+
+
+def test_free_tier_disambiguation_stays_one_batch_at_a_time(env) -> None:
+    config, conn = env
+    config = _enable(config)
+    _record(config, 2 * MAX_BATCH + 1)
+    client = _SlowClient()
+    assert run_book(conn, config, BOOK,
+                    [DisambiguateStage(lambda cfg: client)]).state == jobs.DONE
+    assert client.peak == 1 and client.calls == 3

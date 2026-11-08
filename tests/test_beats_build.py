@@ -485,3 +485,57 @@ def test_the_prompt_asks_for_the_spec_rules() -> None:
         assert must in p
     for kind in ("action", "decision", "feeling", "treatment", "change"):
         assert kind in p
+
+
+
+# --- concurrent requests (lore/orchestrator/concurrency.py) -------------------------
+
+
+def test_concurrent_parts_are_stored_in_plan_order(env) -> None:
+    import asyncio
+
+    config, conn, tmp_path = env
+    seen = {"live": 0, "peak": 0}
+
+    class Slow(_Client):
+        async def generate_json(self, prompt, schema, **kw):
+            seen["live"] += 1
+            seen["peak"] = max(seen["peak"], seen["live"])
+            try:
+                # Chapter 1 answers last.
+                await asyncio.sleep(0.2 if "Chapter 1" in prompt else 0.0)
+                return await super().generate_json(prompt, schema, **kw)
+            finally:
+                seen["live"] -= 1
+
+    billed = config.model_copy(update={
+        "llm": config.llm.model_copy(update={"provider": "openai"})})
+    client = Slow(ANSWERS)
+    embeds: list[str] = []
+    stage, lance = _stage(env, client, embeds)
+    assert run_book(conn, billed, BOOK, [stage]).state == jobs.DONE
+    assert seen["peak"] == 2 and client.calls == 2
+    # Embedded and stored in plan order (chapter 1 first), as sequentially.
+    assert embeds[0].startswith("Mira goes to the gate")
+    assert count(conn, BOOK) == 3 and lance.count("beats") == 3
+
+
+def test_free_tier_beats_ask_one_part_at_a_time(env) -> None:
+    import asyncio
+
+    config, conn, tmp_path = env
+    seen = {"live": 0, "peak": 0}
+
+    class Counting(_Client):
+        async def generate_json(self, prompt, schema, **kw):
+            seen["live"] += 1
+            seen["peak"] = max(seen["peak"], seen["live"])
+            try:
+                await asyncio.sleep(0.02)
+                return await super().generate_json(prompt, schema, **kw)
+            finally:
+                seen["live"] -= 1
+
+    stage, _ = _stage(env, Counting(ANSWERS))
+    assert run_book(conn, config, BOOK, [stage]).state == jobs.DONE
+    assert seen["peak"] == 1
