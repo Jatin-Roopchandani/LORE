@@ -191,9 +191,19 @@ class WebConfig(BaseModel):
 class ProcessingConfig(BaseModel):
     """Book processing (resumable jobs). `answer_reserve` is the number of
     Gemini requests per day that processing leaves untouched, so questions
-    in the UI keep working while a book is being processed."""
+    in the UI keep working while a book is being processed.
+
+    `llm_concurrency`: how many of processing's model requests (extraction
+    chunks, codex profiles, beat parts, disambiguation batches) may be in
+    flight at once on Claude, OpenAI or a paid Gemini plan.
+    `gemini_free_concurrency`: the same on free-tier Gemini, 1 by default:
+    its per-minute throttle and the reserve check above count one request at
+    a time, so a higher value can overshoot the reserve by that many minus
+    one. See lore/orchestrator/concurrency.py."""
 
     answer_reserve: int = Field(default=60, ge=0)
+    llm_concurrency: int = Field(default=4, ge=1)
+    gemini_free_concurrency: int = Field(default=1, ge=1)
 
 
 class BeatsConfig(BaseModel):

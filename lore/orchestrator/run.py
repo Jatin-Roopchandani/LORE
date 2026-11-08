@@ -272,12 +272,15 @@ def run_extraction(
         # connection pool is bound to the loop that opened it.
         with asyncio.Runner() as loop:
             try:
-                for unit in pending:
+                for index, unit in enumerate(pending):
                     dest = config.extractions_dir / unit.book_id / unit.unit_id
+                    # Embedded in the background while this unit extracts.
+                    nxt = pending[index + 1] if index + 1 < len(pending) else None
                     try:
                         ok, _hours, chunks_ok, chunks_dead = _run_unit_here(
                             conn, unit,
-                            lambda unit=unit, dest=dest: loop.run(tier.run(unit, dest)),
+                            lambda unit=unit, dest=dest, nxt=nxt: loop.run(
+                                tier.run(unit, dest, next_unit=nxt)),
                             on_event,
                         )
                     except _UnitHalted as exc:
