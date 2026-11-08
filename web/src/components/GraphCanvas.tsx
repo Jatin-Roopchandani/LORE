@@ -170,7 +170,7 @@ export function GraphCanvas({ view, positions, onNodeClick, onEdgeClick, pinned 
         : n.world ? p.v(`--world-${worldSlot(n.world.id)}`) : p.faint;
       const attrs = { x: at.x, y: -at.y, size: sizes.get(n.id) ?? 7, label: drawnLabel(n), color,
         ring: seed || marked ? 0.3 : n.world ? 0.28 : 0, gap: ringed ? 0.12 : 0, gapColor: p.panel,
-        ringColor, zIndex: marked ? 5 : dim ? 0 : 1 };
+        ringColor, zIndex: marked ? 5 : dim ? 0 : 1, labelColor: dim ? p.muted : undefined };
       if (g.hasNode(n.id)) g.mergeNodeAttributes(n.id, attrs); else g.addNode(n.id, attrs);
     }
     const keepEdges = new Set(v.links.map((l) => l.id));

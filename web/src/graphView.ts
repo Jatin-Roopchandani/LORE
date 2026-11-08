@@ -11,12 +11,17 @@ export interface ViewNode { id: string; label: string; kind: string; books: stri
 // `both`: the pair has relationships in each direction, merged into one link drawn without an arrowhead.
 export interface ViewLink { id: string; source: string; target: string; label: string; count: number; chunkIds: string[];
   part: number | null; state: LinkState; hot: boolean; books: string[]; both: boolean;
+  // Every part whose search found this pair (the answer's own links only; `part` is the first of them).
+  parts?: number[];
   // The link the edge view shows, and a link on the highlighted path.
   picked?: boolean; onPath?: boolean }
 // `overview`: the library overview is drawn (before any question); its own links are faint, and their
 // labels show only when zoomed in or on the node in focus (GraphCanvas, edgeLabel.ts).
 // `hiddenByFilters`: how many nodes the kind and book filters removed.
-export interface GraphView { nodes: ViewNode[]; links: ViewLink[]; shownEdges: number; totalEdges: number; overview?: boolean; hiddenByFilters?: number }
+// `hiddenUncategorized`: how many relationships were left out as "uncategorized" (the extractor's catch-all).
+// `focus`: set on a big answer's focused view (graphFocus.ts): how many nodes the full view has.
+export interface GraphView { nodes: ViewNode[]; links: ViewLink[]; shownEdges: number; totalEdges: number; overview?: boolean; hiddenByFilters?: number;
+  hiddenUncategorized?: number; focus?: { total: number } }
 export type KindMap = Record<string, { kind: string; books: string[]; world?: WorldRef }>;
 export interface ViewOptions { hiddenBooks: Set<string>; hoverChunks: string[]; expansions: SubgraphData[]; kinds?: KindMap;
   // The library overview, drawn before any question: like an expansion, but it marks no node expanded.
@@ -24,7 +29,13 @@ export interface ViewOptions { hiddenBooks: Set<string>; hoverChunks: string[]; 
   // The entity open in the panel; the pair whose edge view is open; the path being shown (node ids, and its hops' ends).
   selected?: string | null; edge?: { a: string; b: string } | null; path?: { nodes: string[]; hops: { from: string; to: string }[] } | null;
   // Kinds and books to hide: their nodes go, and so do the links to them. The selected node and the path stay.
-  filters?: { kinds: ReadonlySet<string>; books: ReadonlySet<string> } }
+  filters?: { kinds: ReadonlySet<string>; books: ReadonlySet<string> };
+  // Leave out "uncategorized" relationships (the answer view hides them unless the filter chip shows them): a pair
+  // with only those has no link, and a merged label keeps just its named relationships.
+  hideUncategorized?: boolean }
+
+/** The extractor's catch-all predicate: a relationship it could not name. */
+export const UNCATEGORIZED = "UNCATEGORIZED";
 
 const pretty = (p: string) => p.toLowerCase().replace(/_/g, " ");
 const pairKey = (a: string, b: string) => (a < b ? `${a}<->${b}` : `${b}<->${a}`);
@@ -75,13 +86,17 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
   }));
 
   // Grouped by unordered pair: a→b and b→a become one link.
-  const groups = new Map<string, { source: string; target: string; rows: Edge[]; part: number | null }>();
+  const groups = new Map<string, { source: string; target: string; rows: Edge[]; part: number | null; parts: number[] }>();
+  const hideUnc = !!options.hideUncategorized;
+  let hiddenUncategorized = 0;
   state.edges.forEach((pe, part) => pe?.edges.forEach((e) => {
+    if (hideUnc && e.predicate === UNCATEGORIZED) { hiddenUncategorized++; return; }
     const source = touch(e.subject_id, e.subject, undefined, [e.book_id]).id;
     const target = touch(e.object_id, e.object, undefined, [e.book_id]).id;
     const id = pairKey(source, target);
-    const g = groups.get(id) ?? { source, target, rows: [], part };
+    const g = groups.get(id) ?? { source, target, rows: [], part, parts: [] };
     g.rows.push(e);
+    if (!g.parts.includes(part)) g.parts.push(part);
     groups.set(id, g);
   }));
 
@@ -111,7 +126,7 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
     else if (kept) linkState = g.rows.some((r) => kept.has(edgeKey(r))) ? "shown" : "cut";
     if (allHidden(books)) linkState = "faint";
     links.push({ id, source: g.source, target: g.target, label: pairLabel((fwd ?? back)!, fwd && back),
-      count: g.rows.length, chunkIds, part: g.part, state: linkState,
+      count: g.rows.length, chunkIds, part: g.part, parts: g.parts, state: linkState,
       hot: chunkIds.some((c) => options.hoverChunks.includes(c)), books, both: !!(fwd && back), picked: false, onPath: false });
   }
 
@@ -131,12 +146,18 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
       const forward = l.subject_id === x.source;
       if (forward ? x.nf : x.nb) continue; // the same link from an earlier expansion
       const into = forward ? x.fwd : x.back;
-      for (const [p, n] of Object.entries(l.predicates)) into.set(p, n);
-      if (forward) x.nf = l.count; else x.nb = l.count;
+      let count = l.count;
+      for (const [p, n] of Object.entries(l.predicates)) {
+        if (hideUnc && p === UNCATEGORIZED) { count -= n; continue; }
+        into.set(p, n);
+      }
+      if (count <= 0 || into.size === 0) continue;   // only uncategorized that way: no link that way
+      if (forward) x.nf = count; else x.nb = count;
       extra.set(id, x);
     }
   }
   for (const [id, x] of extra) {
+    if (!x.nf && !x.nb) continue;
     const fwd = x.nf ? { counts: x.fwd, n: x.nf } : null;
     const back = x.nb ? { counts: x.back, n: x.nb } : null;
     const quiet = x.quiet && !!options.overview;
@@ -174,7 +195,7 @@ export function deriveGraph(state: AskState, options: ViewOptions): GraphView {
       && (l.picked || l.onPath || !(l.books.length > 0 && l.books.every((b) => f.books.has(b)))));
   }
   return {
-    nodes: shownNodes, links: shownLinks, overview: !!options.overview, hiddenByFilters,
+    nodes: shownNodes, links: shownLinks, overview: !!options.overview, hiddenByFilters, hiddenUncategorized,
     shownEdges: state.edges.reduce((a, pe) => a + (pe?.edges.length ?? 0), 0),
     totalEdges: state.edges.reduce((a, pe) => a + (pe?.total ?? 0), 0),
   };
