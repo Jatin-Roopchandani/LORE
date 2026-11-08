@@ -34,8 +34,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY lore/ lore/
 COPY --from=web /src/lore/web/static/ lore/web/static/
 # The package itself, installed (not editable) with the built UI inside it.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable
+# --no-cache: uv keys a built local package on pyproject.toml alone, so a cached
+# wheel would carry the previous build's code and UI into this image.
+RUN uv sync --frozen --no-dev --no-editable --no-cache
 
 # --- 3. runtime -----------------------------------------------------------------
 FROM python:3.12-slim-bookworm
