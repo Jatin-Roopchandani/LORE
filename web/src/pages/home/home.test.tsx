@@ -61,6 +61,22 @@ describe("the homepage", () => {
     expect(document.title).toBe(HOME.title);
   });
 
+  test("the nav and the footer link to LORE's public GitHub repository, in a new tab", () => {
+    for (const signedIn of [false, true]) {
+      const { unmount } = render(<Home signedIn={signedIn} />);
+      const nav = screen.getByRole("navigation", { name: HOME.navLabel });
+      const footer = screen.getByRole("contentinfo");
+      for (const link of [within(nav).getByRole("link", { name: HOME.githubLabel }), within(footer).getByRole("link", { name: HOME.github })]) {
+        expect(link).toHaveAttribute("href", "https://github.com/Jatin-Roopchandani/LORE");
+        expect(link).toHaveAttribute("target", "_blank");
+        expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      }
+      // The nav's link is an icon: its picture is hidden, and its name comes from the label.
+      expect(within(nav).getByRole("link", { name: HOME.githubLabel }).querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+      unmount();
+    }
+  });
+
   test("a signed-in visitor gets Open LORE in place of Sign in and Request an invite", () => {
     render(<Home signedIn />);
     const nav = screen.getByRole("navigation", { name: HOME.navLabel });

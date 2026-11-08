@@ -216,3 +216,8 @@ html:has(.lh){scroll-behavior:smooth;scroll-padding-top:calc(68px + 12px)}
   .h-glide{height:auto}.h-glide .h-scene-view{position:static;height:auto;overflow:visible;padding-block:calc(var(--nav-h) + 24px) 48px}
   .h-glide-track{flex-wrap:wrap}.h-feature{flex:1 1 300px}.h-glide-bar{display:none}
 }
+
+/* The GitHub icon link in the nav (next to Sign in): a quiet round target, brighter on hover. */
+.lh .h-nav .h-gh{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;color:var(--night-muted);text-decoration:none;
+  transition:color .15s,background-color .15s}
+.lh .h-nav .h-gh:hover{color:var(--night-ink);background:var(--night-2)}
