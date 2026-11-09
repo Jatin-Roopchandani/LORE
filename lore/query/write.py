@@ -515,7 +515,7 @@ EVENT_ORDER_RULE = """- Tell events in story order, the order the facts are list
 # a sentence that combines or restates facts keeps who did what, and how often.
 ATTRIBUTION_RULE = """- When a sentence combines or restates facts, keep exactly who did what to
   whom: the doer, the recipient, the speaker and the one spoken to, as the
-  facts give them, and how many times and when it happened. Never move an
+  facts give them, and how often and when it happened. Never move an
   action, message or statement to a different person, and never make one
   event a repeated one ("again", "repeatedly", "later ... too") unless a fact
   says so.

@@ -786,6 +786,7 @@ async def test_with_deep_off_everything_is_what_it_was(tmp_path, monkeypatch, na
     monkeypatch.setattr(write_module, "GENTLE_FALLBACK", False)
     monkeypatch.setattr(write_module, "STORY_ORDER_PROSE", False)  # pinned before order-and-setup
     monkeypatch.setattr("lore.query.scene.SCENE_SETUP", False)
+    monkeypatch.setattr("lore.query.synthesize.ATTRIBUTION_FIDELITY", False)
     config = build_deep_library(tmp_path)
     scripted = Scripted(plan)
     answer, events = await run_scenario(config, scripted, depth="deep")

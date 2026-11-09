@@ -292,6 +292,7 @@ def test_the_check_prompt_is_unchanged_when_off(monkeypatch):
     monkeypatch.setattr(w, "COVERAGE", False)
     monkeypatch.setattr(synth, "SUMMARY_CHECK", False)  # pinned before it existed
     monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
+    monkeypatch.setattr(synth, "ATTRIBUTION_FIDELITY", False)  # pinned before it existed
     sents = [S("Rin met a teacher and trained.", [1, 2]), S("Rin trained.", [3])]
     assert faithfulness_prompt(CS, PS, TITLES, books=BOOKS) == GOLDEN["check_plain"]
     assert faithfulness_prompt(CS, PS, TITLES, sents, books=BOOKS, gaps=["x"]) == GOLDEN["check_sentences"]
@@ -307,6 +308,7 @@ def test_switch_off_is_byte_identical_to_the_previous_release(monkeypatch):
     monkeypatch.setattr(w, "READER_PROSE", False)  # pinned before it existed
     monkeypatch.setattr(w, "OPENER_CITES", False)
     monkeypatch.setattr(w, "STORY_ORDER_PROSE", False)  # pinned before order-and-setup
+    monkeypatch.setattr(synth, "ATTRIBUTION_FIDELITY", False)
     assert writer_prompt("How did Rin grow?", ["How did Rin grow?", "Who taught Rin?"], CS, PS, TITLES,
                          books=BOOKS) == GOLDEN["writer"]
     assert writer_prompt("Q?", [], CS, PS, None, books=BOOKS) == GOLDEN["writer_one_part"]
