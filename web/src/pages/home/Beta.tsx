@@ -17,20 +17,18 @@ function problemFor(code: string): string {
 export function WaitlistForm({ ready }: { ready: boolean }) {
   const [email, setEmail] = useState("");
   const [reading, setReading] = useState("");
-  const [consent, setConsent] = useState(false);
   const [honeypot, setHoneypot] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
-  const [problem, setProblem] = useState<{ text: string; field?: "email" | "consent" } | null>(null);
+  const [problem, setProblem] = useState<{ text: string; field?: "email" } | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (state !== "idle") return;
     const address = email.trim();
     if (!SHAPE.test(address)) { setProblem({ text: HOME.invalidEmail, field: "email" }); emailRef.current?.focus(); return; }
-    if (!consent) { setProblem({ text: HOME.needConsent, field: "consent" }); return; }
     setProblem(null);
     setState("sending");
-    const r = await authApi.joinWaitlist(address, reading.trim(), consent, honeypot);
+    const r = await authApi.joinWaitlist(address, reading.trim(), true, honeypot);
     if (!isError(r)) { setState("done"); return; }
     setState("idle");
     setProblem({ text: problemFor(r.error.code) });
@@ -49,15 +47,11 @@ export function WaitlistForm({ ready }: { ready: boolean }) {
       {/* The honeypot: off-screen and out of the tab order for people, tempting to bots. */}
       <input className="h-hp" type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true"
         value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
-      <label className="h-consent">
-        <input type="checkbox" name="consent" required checked={consent} onChange={(e) => setConsent(e.target.checked)} disabled={done}
-          aria-invalid={problem?.field === "consent" ? true : undefined} />
-        {HOME.consent}
-      </label>
       {problem && <p className="h-problem" id="h-problem" role="alert">{problem.text}</p>}
       <button className="h-btn is-primary" type="submit" disabled={state !== "idle"}>
         {done ? HOME.done : state === "sending" ? HOME.sending : HOME.submit}
       </button>
+      {!done && <p className="h-consent">{HOME.consentLine}</p>}
       {done && <p className="h-done-note">{HOME.doneNote}</p>}
       <p className="h-sr" role="status">{done ? HOME.done : ""}</p>
     </form>

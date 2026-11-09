@@ -226,10 +226,10 @@ describe("Waitlist", () => {
     render(<Waitlist />);
     expect(screen.getByRole("heading", { level: 1, name: AUTH.waitlistTitle })).toBeInTheDocument();
     const submit = screen.getByRole("button", { name: AUTH.submit });
-    expect(submit).toBeDisabled(); // no consent yet
+    expect(screen.queryByRole("checkbox")).toBeNull(); // sending is the consent; the line says what it allows
+    expect(screen.getByText(AUTH.consentLine)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@example.org");
     await userEvent.type(screen.getByLabelText(AUTH.readingLabel), "Dracula");
-    await userEvent.click(screen.getByLabelText(AUTH.consentLabel));
     await userEvent.click(submit);
     expect(await screen.findByRole("status")).toHaveTextContent(AUTH.thanks);
     // the invite may land in spam: say where it comes from and where to look
@@ -251,7 +251,6 @@ describe("Waitlist", () => {
     serve(() => ({ status: 500, body: { detail: "boom" } }));
     render(<Waitlist />);
     await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@example.org");
-    await userEvent.click(screen.getByLabelText(AUTH.consentLabel));
     await userEvent.click(screen.getByRole("button", { name: AUTH.submit }));
     expect(await screen.findByText(AUTH.thanks)).toBeInTheDocument();
   });

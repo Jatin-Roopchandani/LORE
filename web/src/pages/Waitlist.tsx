@@ -8,7 +8,6 @@ import { CheckIcon } from "./authIcons";
 export function Waitlist() {
   const [email, setEmail] = useState("");
   const [reading, setReading] = useState("");
-  const [consent, setConsent] = useState(false);
   const [honeypot, setHoneypot] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const doneHeading = useRef<HTMLHeadingElement>(null);
@@ -16,7 +15,7 @@ export function Waitlist() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setState("sending");
-    await authApi.joinWaitlist(email.trim(), reading.trim(), consent, honeypot);
+    await authApi.joinWaitlist(email.trim(), reading.trim(), true, honeypot);
     setState("done"); // the server answers 202 whatever happened, and so does this page
   };
   if (state === "done") {
@@ -53,11 +52,8 @@ export function Waitlist() {
         <div className="hp" aria-hidden="true">
           <input type="text" name="website" tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
         </div>
-        <label className="au-check">
-          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required />
-          <span>{AUTH.consentLabel}</span>
-        </label>
-        <PrimaryButton busy={state === "sending"} busyLabel={AUTH.submitting} disabled={!consent}>{AUTH.submit}</PrimaryButton>
+        <PrimaryButton busy={state === "sending"} busyLabel={AUTH.submitting}>{AUTH.submit}</PrimaryButton>
+        <p className="au-fine">{AUTH.consentLine}</p>
       </form>
       <AgreeLine />
       <p className="au-switch">{AUTH.haveAccount} <a href="/signin">{AUTH.signIn}</a></p>
