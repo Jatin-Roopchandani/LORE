@@ -731,7 +731,36 @@ async def answer_question(
     if rewrites:
         answer = replace(answer, standalone=rewrites[-1])
     note = visible_module.position_note([s.position for s in scopes if s.position])
-    return replace(answer, position_note=note) if note else answer
+    if not note:
+        return answer
+    answer = replace(answer, position_note=note)
+    if (AHEAD_CHECK and answer.mode == "empty" and not answer.claims
+            and await _ahead(lance, answer.standalone or question, models,
+                             scopes, resolve_scopes(conn, world, spoilers=True))):
+        answer = replace(answer, text=AHEAD, ahead=True)
+    return answer
+
+
+# An empty answer under a reading position says whether the books further on
+# would answer it ("you haven't reached that part yet") rather than that the
+# books do not contain it. One extra vector search; no model call.
+AHEAD_CHECK = True
+AHEAD = ("You haven't reached the part of the book that answers this yet. "
+         "Tick \"Show spoilers for this question\" to see it anyway.")
+
+
+async def _ahead(lance, question: str, models: QueryModels,
+                 limited: list[Scope], unlimited: list[Scope]) -> bool:
+    """Whether nothing within the reading position is near `question` but
+    something past it is, by the relevance floor the answer path starts from."""
+    vector = await embed_question(question, models.embed)
+
+    def best(scopes: list[Scope]) -> float:
+        return max((_cosine(row) for scope in scopes
+                    for row in search_chunks(lance, vector, CANDIDATE_K, book_ids=scope.books)),
+                   default=float("-inf"))
+
+    return best(limited) < RELEVANCE_FLOOR <= best(unlimited)
 
 
 async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: QueryModels, *,

@@ -98,6 +98,8 @@ export const POSITION = {
   buttonLabel: (summary: string) => `Reading progress: ${summary}`,
   // The ask box: one question with everything.
   spoilerToggle: "Show spoilers for this question",
+  // An empty answer the reading position held back: the books further on answer it.
+  ahead: "You haven\u2019t reached the part of the book that answers this yet. Tick \u201cShow spoilers for this question\u201d to see it anyway.",
   spoilerOn: "This question uses every book, past your progress. It goes back to your progress after.",
   noteLabel: "Reading position note",
   summaryHidden: "The summary covers the whole story, so it is hidden while a reading position is on. These are the statements from what you have read.",

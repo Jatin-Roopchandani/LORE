@@ -265,6 +265,10 @@ class Answer:
     # Set only when a reading position limited the answer: "Answered from what
     # you've read: up to chapter 9 of <book>". None otherwise.
     position_note: str | None = None
+    # True when the reading position held the answer back: nothing the reader
+    # has read is near the question, but the books further on are. `text` then
+    # says so (agent.AHEAD) instead of the plain refusal.
+    ahead: bool = False
     # A follow-up's question rewritten to stand alone (decompose.FOLLOWUPS),
     # when it differs from the question as typed. None otherwise.
     standalone: str | None = None

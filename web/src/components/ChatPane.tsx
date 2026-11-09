@@ -157,7 +157,7 @@ function AnswerBody({ state, run, showInternals, resetsAt, onHoverChunks, onRetr
       {state.status === "stopped" && (
         <p className="note stopped-note" role="status"><strong className="stopped-label">{UI.stopped}</strong> {UI.stoppedNote}</p>
       )}
-      {r && r.claims.length === 0 && <p className="note">{UI.refusal}</p>}
+      {r && r.claims.length === 0 && <p className="note">{r.ahead ? POSITION.ahead : UI.refusal}</p>}
       <ShortAnswer state={state} onHoverChunks={onHoverChunks} />
       {r?.position_note && <p className="position-note" role="note" aria-label={POSITION.noteLabel}>{r.position_note}</p>}
       {sectioned && <Sections key={run} state={state} onHoverChunks={onHoverChunks} onSection={onSection} />}

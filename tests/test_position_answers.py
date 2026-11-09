@@ -246,3 +246,44 @@ async def test_a_deep_question_about_one_entity_plans_from_its_visible_facets(co
     assert "Old Tam" in plan and "EARLYSTATE" in plan
     for late in ("Ren Ashby", "LATESTATE", "SEQUELSTATE", "WHOLESTORYSUMMARY", "Dorn Vale"):
         assert late not in plan, late
+
+
+# --- an answer held back by the position -------------------------------------------------
+
+def _near_only(*places):
+    """A _cosine under which only chunks at `places` ((book, chapter)) are near."""
+    def cosine(row):
+        return 0.9 if (row.get("book_id"), int(row.get("chapter_seq", 0))) in places else 0.1
+    return cosine
+
+
+async def test_an_answer_past_the_position_says_the_reader_has_not_reached_it(config, monkeypatch):
+    monkeypatch.setattr(agent_module, "_cosine", _near_only(("hb1", 3)))
+    position(config, chapter=2)
+    answer, calls = await ask(config)
+    assert answer.mode == "empty" and answer.ahead
+    assert answer.text == agent_module.AHEAD and "Show spoilers" in answer.text
+    assert answer.position_note
+    assert not calls["synthesize"]  # still no model saw anything past the position
+
+
+async def test_an_answer_nowhere_in_the_books_keeps_the_plain_refusal(config, monkeypatch):
+    monkeypatch.setattr(agent_module, "_cosine", _near_only())
+    position(config, chapter=2)
+    answer, _ = await ask(config)
+    assert answer.mode == "empty" and not answer.ahead
+    assert answer.text != agent_module.AHEAD
+
+
+async def test_without_a_position_an_empty_answer_is_never_ahead(config, monkeypatch):
+    monkeypatch.setattr(agent_module, "_cosine", _near_only(("hb1", 3)))
+    answer, _ = await ask(config, spoilers=True)
+    assert not answer.ahead and answer.position_note is None
+
+
+async def test_the_ahead_check_switched_off_changes_nothing(config, monkeypatch):
+    monkeypatch.setattr(agent_module, "_cosine", _near_only(("hb1", 3)))
+    monkeypatch.setattr(agent_module, "AHEAD_CHECK", False)
+    position(config, chapter=2)
+    answer, _ = await ask(config)
+    assert answer.mode == "empty" and not answer.ahead and answer.text != agent_module.AHEAD

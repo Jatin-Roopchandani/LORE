@@ -42,7 +42,9 @@ export interface SearchResult { answer: string; mode: string; template: string |
   // Sections of a sectioned answer that failed or found nothing: they are left out of `sections`, counted here.
   unwritten_sections?: number;
   // Present only when a reading position limited the answer: "Answered from what you've read: up to chapter 9 of <book>".
-  position_note?: string }
+  position_note?: string;
+  // True when the reading position held the answer back: the books further on answer it, what has been read does not.
+  ahead?: boolean }
 export interface PlanSection { index: number; heading: string; group?: string; group_title?: string; title?: string;
   entities: { id: string; name: string; kind: string }[] }
 export interface SectionEvent { type: "section"; t: number; index: number; kind: "section" | "close"; heading: string;
