@@ -70,6 +70,8 @@ export const POSITION = {
   heading: (world: string) => `Your progress \u00b7 ${world}`,
   allWorlds: "All worlds",
   states: { finished: "Finished", reading: "Reading", not_started: "Not started" } as Record<"finished" | "reading" | "not_started", string>,
+  // A book's place in its series, under its title (the series is not named again when the world bears its name).
+  seriesTag: (series: string, index: number, sameAsWorld: boolean) => (sameAsWorld ? `Book ${index}` : `${series} · book ${index}`),
   chapterLabel: "Chapter",
   chapterLabelFor: (title: string) => `Chapter you have reached in ${title}`,
   chapterOption: (n: number, heading?: string | null) => (n === 0 ? "Before chapter 1" : heading ? `${n} \u00b7 ${heading}` : `${n}`),
@@ -1038,7 +1040,7 @@ export const HOME = {
     { num: "03", title: "Explore the graph", body: "Characters, places and groups, and how they connect. Click any link to read the passage behind it.",
       eg: ["Watson —", { i: "meets again" }, "→ Stamford —", { i: "introduces" }, "→ Holmes"] as Seg[] },
     { num: "04", title: "Spoiler-safe", body: "Tell LORE which chapter you’re on. Answers, the graph and every character profile stop there, so nothing ahead leaks out.",
-      eg: ["Reading position: ", { b: "ch. 2" }, " · nothing past it"] as Seg[] },
+      eg: ["Your progress: ", { b: "Ch. 2" }, " · nothing past it"] as Seg[] },
     { num: "05", title: "Your private library", body: "Your books stay in your own library, read with your own key. Nothing is shared between readers.",
       eg: ["EPUB or PDF · books you own"] as Seg[] },
   ] as { num: string; title: string; body: string; eg: Seg[]; egNote?: string }[],

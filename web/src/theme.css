@@ -416,8 +416,11 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .admin-scroll{overflow-x:auto}
 /* Reading progress: the header control (a summary: "Ch. 7 · The Sign of the Four", "All read", "3 of 5 read"), its list
    of books (each finished, reading with a chapter, or not started) and the line under it saying where answers stop. */
-.pos-icon{flex:none;font-size:13px;line-height:1}
+.pos-icon{flex:none;color:var(--muted)}
 .pos-btn.on{background:var(--accent-soft);border-color:var(--accent)}
+.pos-btn.on .pos-icon{color:var(--accent)}
+.prog-name{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px}
+.prog-series{font-size:11.5px;color:var(--muted)}
 .pos-title{font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .menu.pos-menu{width:min(400px,calc(100vw - 32px));max-height:min(78vh,640px);overflow-y:auto;gap:12px;padding:14px 16px}
 .pos-menu:focus{outline:none}
@@ -444,7 +447,12 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .prog-lead{margin:0;font-weight:600;font-size:13px;color:var(--ink)}
 .prog-summary{margin:0;font-size:12.5px;color:var(--muted)}
 .prog-world .prog-summary{font-size:12px}
-@media (max-width:520px){.pos-title{max-width:150px}}
+/* On a phone the list is a sheet along the bottom of the screen, never cut off by the button's place in the bar. */
+@media (max-width:640px){
+  .pos-title{max-width:150px}
+  .menu.pos-menu{position:fixed;left:12px;right:12px;bottom:12px;top:auto;width:auto;max-height:min(82vh,680px);
+    box-shadow:0 -6px 40px rgb(0 0 0 / .28)}
+}
 /* The ask box's one-question override. */
 .spoiler-toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink);margin-left:auto}
 .spoiler-toggle input{accent-color:var(--warn);margin:0}

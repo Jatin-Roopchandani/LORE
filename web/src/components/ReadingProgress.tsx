@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api, isError } from "../api";
 import { POSITION } from "../messages";
-import { chapterOptions, limits, pickedSeq, summaryLine, topBarLabel } from "../progress";
+import { chapterOptions, limits, pickedSeq, storyOf, summaryLine, topBarLabel } from "../progress";
 import type { PositionBook, ProgressState, ReadingPositionData, World } from "../types";
 import { ALL_WORLDS } from "../worlds";
 
 const STATES: ProgressState[] = ["finished", "reading", "not_started"];
+// The raw section of a book's first story chapter: where Reading starts when no chapter is chosen (as the server does).
+const storyFirst = (book: PositionBook) => storyOf(book)[0]?.seq ?? 0;
 
 /** The reading progress control in the top bar: a summary of where the reader is ("Ch. 7 · The Sign of the Four",
  *  "All read", "3 of 5 read") that opens the list of the world's books, each finished, being read (with a chapter
@@ -71,10 +73,19 @@ export function ReadingProgress({ world, worlds = [], refreshKey = 0, onChange =
   }, [open, loaded]);
 
   const change = useCallback((wid: string, book: PositionBook, state: ProgressState, chapter?: number) => {
+    // The choice shows at once; the server's list (with the series filled in) replaces it when it comes, and a
+    // refused change puts the list back as it was.
+    let before: ReadingPositionData | undefined;
+    setData((d) => {
+      before = d[wid];
+      if (!before) return d;
+      const shown = { ...book, state, forced: false, progress_chapter: state === "reading" ? chapter ?? (book.state === "reading" ? book.progress_chapter : storyFirst(book)) : 0 };
+      return { ...d, [wid]: { ...before, books: before.books.map((b) => (b.id === book.id ? shown : b)) } };
+    });
     queue.current = queue.current.then(async () => {
       const r = await api.setReadingPosition(wid, { change: { book_id: book.id, state, ...(chapter != null ? { chapter } : {}) } });
       if (!live.current) return;
-      if (isError(r)) { setFailed("save"); return; }
+      if (isError(r)) { setFailed("save"); if (before) { const was = before; setData((d) => ({ ...d, [wid]: was })); } return; }
       setFailed(null);
       setData((d) => ({ ...d, [wid]: r }));
       const titles = new Map(r.books.map((b) => [b.id, b.title]));
@@ -91,7 +102,7 @@ export function ReadingProgress({ world, worlds = [], refreshKey = 0, onChange =
     <div className="pop" ref={root}>
       <button ref={trigger} className={`tbtn pos-btn${limited ? " on" : ""}`} type="button" aria-haspopup="dialog" aria-expanded={open}
         aria-label={POSITION.buttonLabel(label)} onClick={() => setOpen(!open)}>
-        <span className="pos-icon" aria-hidden="true">📖</span>
+        <OpenBook />
         <span className="pos-title">{label}</span>
         <span className="caret" aria-hidden="true">▾</span>
       </button>
@@ -107,7 +118,7 @@ export function ReadingProgress({ world, worlds = [], refreshKey = 0, onChange =
                 <section key={d.world.id} className="prog-world" aria-label={world === ALL_WORLDS ? d.world.name : undefined}>
                   {world === ALL_WORLDS && <h4>{d.world.name}</h4>}
                   <ul className="prog-books">
-                    {d.books.map((b) => <BookRow key={b.id} uid={`${uid}-${d.world.id}-${b.id}`} book={b}
+                    {d.books.map((b) => <BookRow key={b.id} uid={`${uid}-${d.world.id}-${b.id}`} book={b} worldName={d.world.name}
                       onState={(s) => change(String(d.world.id), b, s)}
                       onChapter={(seq) => change(String(d.world.id), b, "reading", seq)} />)}
                   </ul>
@@ -128,12 +139,24 @@ export function ReadingProgress({ world, worlds = [], refreshKey = 0, onChange =
   );
 }
 
-function BookRow({ uid, book, onState, onChapter }:
-  { uid: string; book: PositionBook; onState: (s: ProgressState) => void; onChapter: (seq: number) => void }) {
+// An open book (the 📖 of the design, drawn so it looks the same on every system and follows the theme).
+const OpenBook = () => (
+  <svg className="pos-icon" width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+    <path d="M8 3.2C6.4 2 4 1.6 1.5 1.8v9.6C4 11.2 6.4 11.6 8 12.8c1.6-1.2 4-1.6 6.5-1.4V1.8C12 1.6 9.6 2 8 3.2z"
+      fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    <path d="M8 3.2v9.6" stroke="currentColor" strokeWidth="1.4" />
+  </svg>
+);
+
+function BookRow({ uid, book, worldName, onState, onChapter }:
+  { uid: string; book: PositionBook; worldName: string; onState: (s: ProgressState) => void; onChapter: (seq: number) => void }) {
   const titleId = `${uid}-t`;
   return (
     <li className={`prog-book${book.state === "reading" ? " reading" : ""}`}>
-      <span className="prog-title" id={titleId}>{book.title}</span>
+      <span className="prog-name">
+        <span className="prog-title" id={titleId}>{book.title}</span>
+        {book.series && book.series_index != null && <span className="prog-series">{POSITION.seriesTag(book.series, book.series_index, book.series.trim().toLowerCase() === worldName.trim().toLowerCase())}</span>}
+      </span>
       <div className="prog-states" role="radiogroup" aria-labelledby={titleId}>
         {STATES.map((s) => (
           <label key={s} className={`prog-state${book.state === s ? " on" : ""}`}>
