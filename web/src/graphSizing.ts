@@ -15,7 +15,8 @@ export const estimateWidth = (text: string, px = NODE_LABEL_PX) => Math.ceil(tex
 // An answer graph counts as large from this many nodes: it is laid out by density (layout.ts) and its
 // nodes are sized by their links. Smaller answers keep the layout and sizes they always had.
 export const LARGE_GRAPH = 40;
-export const isLarge = (view: GraphView) => !view.overview && view.nodes.length >= LARGE_GRAPH;
+// A big answer's focused view (graphFocus.ts) is drawn the same way, whatever its size.
+export const isLarge = (view: GraphView) => !view.overview && (view.nodes.length >= LARGE_GRAPH || !!view.focus);
 
 /** Each node's links, counting a pair once. */
 export function degrees(view: GraphView): Map<string, number> {

@@ -11,16 +11,30 @@ test.skip(!dir, "set LORE_GRAPH_SHOTS=<dir> (and serve the harness on 18766)");
 const base = process.env.LORE_HARNESS ?? "http://127.0.0.1:18766";
 const tag = process.env.LORE_GRAPH_TAG ?? "shot";
 
-for (const fx of ["dark", "battle", "two"]) for (const theme of ["light", "nord"]) {
-  test(`${fx} in ${theme}`, async ({ page }) => {
+// A big answer is drawn focused by default; `full` is the whole graph (the header's "Show all").
+for (const fx of ["ogier", "dark", "battle", "two"]) for (const theme of ["light", "nord"]) for (const view of ["focused", "full", "before"]) {
+  if (fx === "two" && view !== "focused") continue;   // a small answer has one view
+  test(`${fx} ${view} in ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(`${base}/e2e/graph-harness/index.html?fx=${fx}&theme=${theme}`);
-    await expect.poll(() => page.evaluate(() => window.__lore?.ready), { timeout: 60_000 }).toBe(true);
+    await page.goto(`${base}/e2e/graph-harness/index.html?fx=${fx}&theme=${theme}&view=${view}`);
+    await expect.poll(() => page.evaluate(() => window.__lore?.ready), { timeout: 150_000 }).toBe(true);
     await page.waitForTimeout(1200);
-    await page.screenshot({ path: `${dir}/${tag}-${fx}-${theme}.png` });
+    await page.screenshot({ path: `${dir}/${tag}-${fx}-${view}-${theme}.png` });
     const metrics = await page.evaluate(() => window.__lore.metrics(1));
-    console.log(`METRICS ${tag} ${fx} ${theme} ${JSON.stringify(metrics)}`);
+    console.log(`METRICS ${tag} ${fx} ${view} ${theme} ${JSON.stringify(metrics)}`);
+  });
+}
+
+// A deep answer's section brought forward (as when it is picked in the contents, or scrolled to).
+for (const theme of ["light", "nord"]) {
+  test(`ogier section 1 in ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${base}/e2e/graph-harness/index.html?fx=ogier&theme=${theme}&section=1`);
+    await expect.poll(() => page.evaluate(() => window.__lore?.ready), { timeout: 150_000 }).toBe(true);
+    await page.waitForTimeout(1200);
+    await page.screenshot({ path: `${dir}/${tag}-ogier-section1-${theme}.png` });
   });
 }
 
@@ -30,7 +44,7 @@ for (const theme of ["light", "nord"]) {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`${base}/e2e/graph-harness/index.html?fx=dark&theme=${theme}`);
-    await expect.poll(() => page.evaluate(() => window.__lore?.ready), { timeout: 60_000 }).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.__lore?.ready), { timeout: 150_000 }).toBe(true);
     await page.waitForTimeout(1200);
     const hub = await page.evaluate(() => window.__lore.point("The Dark One"));
     expect(hub).not.toBeNull();

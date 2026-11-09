@@ -55,6 +55,8 @@ function ReadingApp({ me }: { me: Me | null }) {
   const chooseInternals = useCallback((on: boolean) => { saveInternals(on); setInternalsChoice(on); }, []);
   const [hiddenBooks, setHiddenBooks] = useState<Set<string>>(new Set());
   const [hoverChunks, setHoverChunks] = useState<string[]>([]);
+  // The deep answer's section being read (for the graph), tagged with its ask so a new one starts with none.
+  const [reading, setReading] = useState<{ run: number; index: number | null }>({ run: -1, index: null });
   const [refreshKey, setRefreshKey] = useState(0);
   const [resetsAt, setResetsAt] = useState<string | undefined>();
   // The library overview, fetched once for both panes: undefined while loading, null if unavailable or empty.
@@ -132,8 +134,10 @@ function ReadingApp({ me }: { me: Me | null }) {
           <HistorySidebar items={ask.history} current={ask.current} world={world} worlds={worlds ?? []} onReplay={replay} onDelete={ask.remove}
             onClear={ask.clearHistory} onNew={newQuestion} onClose={closeDrawer} />
         )}
-        <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview} />
-        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} positionVersion={positionVersion} onAsk={ask.ask} />
+        <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview}
+          onSection={(index) => setReading((r) => (r.run === ask.run && r.index === index ? r : { run: ask.run, index }))} />
+        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} positionVersion={positionVersion} onAsk={ask.ask}
+          section={reading.run === ask.run ? reading.index : null} />
       </div>
       {quickOpen && <QuickSwitcher items={ask.history} onReplay={ask.replay} onAsk={(q) => ask.ask(q)} onClose={closeQuick} />}
     </div>

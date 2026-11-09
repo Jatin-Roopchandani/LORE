@@ -1,6 +1,6 @@
 import type { GraphView } from "./graphView";
 import { degrees, drawnLabel, estimateWidth, isLarge, LABEL_GAP, NODE_LABEL_PX, nodeSizes } from "./graphSizing";
-import { contentBounds, sigmaScale } from "./graphMetrics";
+import { contentBounds, measureGraph, sigmaScale } from "./graphMetrics";
 
 export type Positions = Map<string, { x: number; y: number }>;
 const CX = 500, CY = 350;
@@ -67,7 +67,7 @@ export function place(previous: Positions, view: GraphView, anchor: string | nul
     const key = denseKey(view);
     const fresh = view.nodes.some((n) => !previous.has(n.id));
     if (!fresh && laidOut.get(previous) === key) return previous;
-    const pos = denseLayout(view);
+    const pos = view.focus ? focusLayout(view) : denseLayout(view);
     for (const [id, p] of previous) if (!pos.has(id)) pos.set(id, p);
     laidOut.set(pos, key);
     return pos;
@@ -199,7 +199,25 @@ function nearestFree(occ: Occupancy, x: number, y: number, f: Foot, ok: (x: numb
 }
 
 
-export function denseLayout(view: GraphView, measure: (text: string, px: number) => number = estimateWidth): Positions {
+// A big answer's focused view (graphFocus.ts) is small enough to lay out several ways: the density layout at a few
+// link lengths, keeping the one whose labels collide least at the fitted zoom (graphMetrics). Where some thirty cited
+// labels share a picture, which one that is swings with small changes, so picking beats any single setting.
+// Deterministic, and about 5 x 20 ms for 30-odd nodes.
+export const FOCUS_SPREADS = [0.9, 0.65, 0.8, 1.05, 1.2];
+export function focusLayout(view: GraphView, measure: (text: string, px: number) => number = estimateWidth): Positions {
+  let best: Positions | null = null, bestCost = Infinity;
+  for (const spread of FOCUS_SPREADS) {
+    const pos = denseLayout(view, measure, spread);
+    const m = measureGraph(view, pos, REF, { measure });
+    const cost = 5 * m.nodeOverlaps + 3 * (m.labelOverlaps + m.labelOnNode + m.offCanvas) + 2 * m.edgeLabelOverlaps
+      + 4 * (m.citedLabels - m.citedLabelsDrawn);
+    if (cost < bestCost) { best = pos; bestCost = cost; }
+  }
+  return best!;
+}
+
+// `spread`: the link length as a share of the side of each node's equal share of the pane.
+export function denseLayout(view: GraphView, measure: (text: string, px: number) => number = estimateWidth, spread = 0.9): Positions {
   const sizes = nodeSizes(view);
   const deg = degrees(view);
   // Packing order: the ends of cited links first (so their labels' stretches are kept clear early), then by links.
@@ -223,7 +241,7 @@ export function denseLayout(view: GraphView, measure: (text: string, px: number)
   const room = new Map<string, number>();     // a cited link's ends keep its label's width apart
   const springs: [number, number, number][] = [];
   const seen = new Set<string>();
-  const ideal = 0.9 * Math.sqrt((REF_W * REF_H) / Math.max(n, 1));
+  const ideal = spread * Math.sqrt((REF_W * REF_H) / Math.max(n, 1));
   for (const l of view.links) {
     const a = index.get(l.source), b = index.get(l.target);
     if (a === undefined || b === undefined || a === b) continue;

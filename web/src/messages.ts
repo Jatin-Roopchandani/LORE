@@ -343,6 +343,18 @@ export const EXPLORE = {
   resetFilters: "Show everything",
   kindLabel: { Character: "Character", Place: "Place", Faction: "Group", Object: "Object", Concept: "Concept", Event: "Event" } as Record<string, string>,
   filteredOut: (nodes: number) => `${nth(nodes, "entity", "entities")} hidden by filters`,
+  // The "uncategorized" relationships (the extractor's catch-all), hidden unless this chip is pressed.
+  linksLabel: "Show links", uncategorized: "Uncategorized",
+  uncategorizedHint: (n: number) => `${nth(n, "relationship", "relationships")} the extractor could not name`,
+  // A big answer's graph: focused on what the answer cites, or everything its search found.
+  focusLabel: "Graph detail",
+  focused: "Focused",
+  showAll: (total: number) => `Show all ${total}`,
+  focusAgain: (shown: number) => `Focus (${shown})`,
+  focusedHint: (shown: number, total: number) => `Showing the ${shown} entities the answer rests on, of ${total}`,
+  fullHint: "Showing everything the search found",
+  // A section picked in the answer's contents (or scrolled to): its part of the graph stands out.
+  sectionShown: (heading: string) => `Section: ${heading}`,
 };
 
 // The history sidebar: earlier questions, grouped by when they were asked.

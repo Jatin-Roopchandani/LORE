@@ -27,9 +27,10 @@ export const MAX_SHOWN = 20;
 type AskApi = ReturnType<typeof useAsk>;
 type Hover = (chunks: string[]) => void;
 
-export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview }:
+// `onSection`: the latest answer's section being read (a deep answer), for the graph.
+export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview, onSection }:
   { ask: Pick<AskApi, "state" | "run" | "ask" | "retry" | "busy" | "depth" | "setDepth"> & Partial<Pick<AskApi, "thread" | "clear">>;
-    showInternals: boolean; resetsAt?: string; onHoverChunks: Hover; overview?: SubgraphData | null }) {
+    showInternals: boolean; resetsAt?: string; onHoverChunks: Hover; overview?: SubgraphData | null; onSection?: (index: number | null) => void }) {
   const { state } = ask;
   const thread = ask.thread ?? [];
   const inChat = Boolean(state.question) || thread.length > 0;
@@ -62,7 +63,7 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
             {state.standalone && <Understood text={state.standalone} />}
             <div className="a">
               <StepList state={state} />
-              <AnswerBody state={state} run={ask.run} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={onHoverChunks} onRetry={ask.retry} />
+              <AnswerBody state={state} run={ask.run} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={onHoverChunks} onRetry={ask.retry} onSection={onSection} />
               <HowPanel state={state} showInternals={showInternals} />
             </div>
           </div>
@@ -128,8 +129,9 @@ const EarlierTurn = memo(function EarlierTurn({ entry, showInternals, onHoverChu
 });
 
 // The answer itself: the error, the short answer, the sections, prose or claims, and the notes under them.
-function AnswerBody({ state, run, showInternals, resetsAt, onHoverChunks, onRetry }:
-  { state: AskState; run: number; showInternals: boolean; resetsAt?: string; onHoverChunks: Hover; onRetry?: () => void }) {
+function AnswerBody({ state, run, showInternals, resetsAt, onHoverChunks, onRetry, onSection }:
+  { state: AskState; run: number; showInternals: boolean; resetsAt?: string; onHoverChunks: Hover; onRetry?: () => void;
+    onSection?: (index: number | null) => void }) {
   const r = state.result;
   const err = state.error ? errorMessage(state.error, { showInternals, resetsAt }) : null;
   const notFound = missingParts(r?.note);
@@ -152,7 +154,7 @@ function AnswerBody({ state, run, showInternals, resetsAt, onHoverChunks, onRetr
       {r && r.claims.length === 0 && <p className="note">{UI.refusal}</p>}
       <ShortAnswer state={state} onHoverChunks={onHoverChunks} />
       {r?.position_note && <p className="position-note" role="note" aria-label={POSITION.noteLabel}>{r.position_note}</p>}
-      {sectioned && <Sections key={run} state={state} onHoverChunks={onHoverChunks} />}
+      {sectioned && <Sections key={run} state={state} onHoverChunks={onHoverChunks} onSection={onSection} />}
       {!sectioned && r && r.claims.length > 0 && r.answer_style === "prose" && (r.prose?.length ?? 0) > 0 ? (
         <>
           <Prose key={run} result={r} onHoverChunks={onHoverChunks} />

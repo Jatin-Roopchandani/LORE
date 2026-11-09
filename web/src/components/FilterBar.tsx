@@ -4,9 +4,11 @@ import { EXPLORE, UI } from "../messages";
 
 const KINDS = ["Character", "Place", "Faction", "Object", "Concept", "Event"];
 
-/** Kind and book chips: a pressed chip is shown, an unpressed one hides its nodes and the edges to them. */
-export function FilterBar({ filters, onChange, books, hiddenCount }:
-  { filters: Filters; onChange: (f: Filters) => void; books: { id: string; title: string }[]; hiddenCount: number }) {
+/** Kind and book chips: a pressed chip is shown, an unpressed one hides its nodes and the edges to them.
+ *  `uncategorized` (the answer view only): how many "uncategorized" relationships the answer has, for the chip
+ *  that shows them (unpressed by default: they are hidden). */
+export function FilterBar({ filters, onChange, books, hiddenCount, uncategorized }:
+  { filters: Filters; onChange: (f: Filters) => void; books: { id: string; title: string }[]; hiddenCount: number; uncategorized?: number }) {
   const [open, setOpen] = useState(false);
   const uid = useId();
   const n = activeFilters(filters);
@@ -32,6 +34,15 @@ export function FilterBar({ filters, onChange, books, hiddenCount }:
             {books.map((b) => (
               <button key={b.id} className="chip" type="button" aria-pressed={!filters.books.has(b.id)} onClick={() => onChange(toggled(filters, "books", b.id))}>{b.title}</button>
             ))}
+          </div>
+        )}
+        {uncategorized !== undefined && (
+          <div role="group" aria-label={EXPLORE.linksLabel} className="chips">
+            <span className="chip-label" aria-hidden="true">{EXPLORE.linksLabel}</span>
+            <button className="chip" type="button" aria-pressed={!!filters.uncategorized} title={EXPLORE.uncategorizedHint(uncategorized)}
+              onClick={() => onChange({ ...filters, uncategorized: !filters.uncategorized })}>
+              {EXPLORE.uncategorized}{uncategorized > 0 ? ` (${uncategorized})` : ""}
+            </button>
           </div>
         )}
         {n > 0 && <button className="btn" type="button" onClick={() => onChange({ kinds: new Set(), books: new Set() })}>{EXPLORE.resetFilters}</button>}

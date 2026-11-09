@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, isError } from "../api";
 import { initialState, type AskState } from "../askReducer";
-import { loadFilters, saveFilters, type Filters } from "../filters";
-import { deriveGraph, unknownKinds, worldsIn, type KindMap } from "../graphView";
+import { loadFilters, loadFocus, saveFilters, saveFocus, type Filters, type FocusChoice } from "../filters";
+import { focusable, focusGraph, highlightPart } from "../graphFocus";
+import { deriveGraph, UNCATEGORIZED, unknownKinds, worldsIn, type KindMap } from "../graphView";
 import { place, type Positions } from "../layout";
 import { EXPLORE, STEP_LABEL, UI, WORLDS } from "../messages";
 import type { Book, Depth, PathResult, SearchHit, SubgraphData, SubgraphLink } from "../types";
@@ -16,6 +17,8 @@ import { GraphCanvas } from "./GraphCanvas";
 
 interface Expansion { root: string; data: SubgraphData }
 type Mode = "answer" | "library";
+// Each drawing keeps its own layout: the library, the answer whole, and a big answer's focused view.
+type Layout = Mode | "focused";
 type Panel = { type: "entity"; id: string } | { type: "edge"; a: string; b: string };
 // Ids per /api/entities request: keeps the URL well under the server's request-line limit.
 const KIND_BATCH = 100;
@@ -44,9 +47,12 @@ function pathData(r: PathResult): SubgraphData {
 // `onAsk`: sends a question through the ordinary ask path (the panel's one-click questions).
 // `positionVersion`: bumped when the reading position changed. The expansions and the path were fetched under the old
 // position, so they are dropped; the open panel refetches under the new one.
-export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = [], overview, world, positionVersion = 0, onAsk = () => {} }:
+// `section`: the deep answer's section picked in its contents or scrolled to (null: none); its part of the graph
+// stands out (a section's part has its index).
+export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = [], overview, world, positionVersion = 0, onAsk = () => {}, section = null }:
   { state: AskState; hiddenBooks: Set<string>; hoverChunks: string[]; noBooks: boolean; books?: Book[];
-    overview?: SubgraphData | null; world?: string; positionVersion?: number; onAsk?: (question: string, depth?: Depth) => void }) {
+    overview?: SubgraphData | null; world?: string; positionVersion?: number; onAsk?: (question: string, depth?: Depth) => void;
+    section?: number | null }) {
   const idle = state.status === "idle" && !state.question;
   // The person's choice of view; with none, an answer shows its graph and nothing shows the library.
   const [chosen, setChosen] = useState<Mode | null>(null);
@@ -58,9 +64,10 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
   const [focus, setFocus] = useState<{ id: string | null; n: number }>({ id: null, n: 0 });
   const [connection, setConnection] = useState<Connection | null>(null);
   const [filters, setFilters] = useState<Filters>(() => loadFilters());
+  const [focusChoice, setFocusChoice] = useState<FocusChoice>(() => loadFocus());
   const [kinds, setKinds] = useState<KindMap>({});
   const asked = useRef(new Set<string>());
-  const positions = useRef<Record<Mode, Positions>>({ answer: new Map(), library: new Map() });
+  const positions = useRef<Record<Layout, Positions>>({ answer: new Map(), library: new Map(), focused: new Map() });
   const bookTitles = useMemo(() => new Map(books.map((b) => [b.id, b.title])), [books]);
   const graphed = useMemo(() => books.filter((b) => b.status === "graphed"), [books]);
   const mounted = useRef(true);
@@ -72,7 +79,7 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
     lastWorld.current = world;
     setChosen("library"); setPanel(null); setConnection(null);
     setExpansions({ answer: [], library: [] });
-    positions.current = { answer: new Map(), library: new Map() };
+    positions.current = { answer: new Map(), library: new Map(), focused: new Map() };
   }, [world]);
 
   const lastPosition = useRef(positionVersion);
@@ -81,7 +88,7 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
     lastPosition.current = positionVersion;
     setConnection(null);
     setExpansions({ answer: [], library: [] });
-    positions.current = { answer: new Map(), library: new Map() };
+    positions.current = { answer: new Map(), library: new Map(), focused: new Map() };
   }, [positionVersion]);
 
   const libraryOverview = overview?.nodes.length ? overview : null;
@@ -90,17 +97,32 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
   const path = connection?.status === "found" && connection.result ? connection.result : null;
   const pathSub = useMemo(() => (path ? pathData(path) : null), [path]);
   const exps = useMemo(() => [...expansions[mode].map((e) => e.data), ...(pathSub ? [pathSub] : [])], [expansions, mode, pathSub]);
-  const view = useMemo(() => deriveGraph(mode === "library" ? BLANK : state, { hiddenBooks, hoverChunks, expansions: exps, kinds,
-    overview: shownOverview, selected, edge: panel?.type === "edge" ? { a: panel.a, b: panel.b } : null, filters,
+  // The answer view leaves out "uncategorized" relationships unless the filter chip shows them.
+  const hideUncategorized = mode === "answer" && !filters.uncategorized;
+  const whole = useMemo(() => deriveGraph(mode === "library" ? BLANK : state, { hiddenBooks, hoverChunks, expansions: exps, kinds,
+    overview: shownOverview, selected, edge: panel?.type === "edge" ? { a: panel.a, b: panel.b } : null, filters, hideUncategorized,
     path: path ? { nodes: path.nodes.map((n) => n.id), hops: path.hops } : null }),
-    [mode, state, hiddenBooks, hoverChunks, exps, kinds, shownOverview, selected, panel, filters, path]);
+    [mode, state, hiddenBooks, hoverChunks, exps, kinds, shownOverview, selected, panel, filters, hideUncategorized, path]);
+  // A big answer is focused on what it cites unless the reader chose the whole graph (graphFocus.ts).
+  const canFocus = mode === "answer" && focusable(whole);
+  const view = useMemo(() => (canFocus && focusChoice === "focused" ? focusGraph(whole) : whole), [whole, canFocus, focusChoice]);
+  const layout: Layout = view.focus ? "focused" : mode;
+  const uncategorized = useMemo(() => state.edges.reduce((a, pe) => a + (pe?.edges.filter((e) => e.predicate === UNCATEGORIZED).length ?? 0), 0), [state.edges]);
+  const chooseFocus = (c: FocusChoice) => { setFocusChoice(c); saveFocus(c); };
   const anchor = pathSub ? pathSub.nodes[0]?.id : expansions[mode].at(-1)?.root ?? null;
   // An expansion or a path pins the camera, and with it every node already on screen.
   const pinned = expansions[mode].length > 0 || !!pathSub;
   const pos = useMemo(() => {
-    positions.current[mode] = place(positions.current[mode], view, anchor ?? null, !!view.overview, pinned);
-    return positions.current[mode];
-  }, [view, mode, anchor, pinned]);
+    positions.current[layout] = place(positions.current[layout], view, anchor ?? null, !!view.overview, pinned);
+    return positions.current[layout];
+  }, [view, layout, anchor, pinned]);
+  // A deep answer's section in view: its part stands out (after the layout, which it leaves alone).
+  const sectioned = !!state.plan || state.sections.length > 0;
+  const part = mode === "answer" && sectioned && section !== null && (state.seeds[section] || state.edges[section]) ? section : null;
+  const partSeeds = useMemo(() => (part === null ? [] : (state.seeds[part] ?? []).map((s) => s.id)), [part, state.seeds]);
+  const drawn = useMemo(() => highlightPart(view, part, partSeeds), [view, part, partSeeds]);
+  const partHeading = part === null || drawn === view ? null
+    : state.sections.find((x) => x.index === part)?.heading ?? state.plan?.sections.find((x) => x.index === part)?.heading ?? null;
 
   // Search edges name their ends but not their kinds: look those up, once per id per ask.
   const missing = unknownKinds(view).filter((id) => !asked.current.has(id) && !id.includes(","));
@@ -174,6 +196,24 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
           </div>
         )}
         {!noBooks && view.nodes.length > 0 && <button className="tbtn" type="button" onClick={() => setFitRequest((n) => n + 1)}>{UI.fitGraph}</button>}
+        {canFocus && (
+          <span className="gfocus" role="group" aria-label={EXPLORE.focusLabel}>
+            {view.focus ? (
+              <>
+                <span className="gfocus-note" title={EXPLORE.focusedHint(view.nodes.length, view.focus.total)}>{EXPLORE.focused}</span>
+                <span aria-hidden="true">·</span>
+                <button className="tbtn" type="button" title={EXPLORE.fullHint} onClick={() => chooseFocus("full")}>{EXPLORE.showAll(view.focus.total)}</button>
+              </>
+            ) : (
+              <button className="tbtn" type="button" onClick={() => chooseFocus("focused")}>{EXPLORE.focusAgain(focusGraph(whole).nodes.length)}</button>
+            )}
+          </span>
+        )}
+        {partHeading && (
+          <span className="gsection" role="status">
+            {EXPLORE.sectionShown(partHeading)}
+          </span>
+        )}
         {mode === "answer" && view.shownEdges < view.totalEdges && <span>{UI.showingEdges(view.shownEdges, view.totalEdges)}</span>}
         <div className="legend">
           {mode === "answer" && (state.subQuestions.length > 1
@@ -188,12 +228,13 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
       </div>
       <div className="gtools">
         <EntitySearch world={world} label={EXPLORE.searchLabel} placeholder={EXPLORE.searchPlaceholder} onPick={(h) => openEntity(h.id)} />
-        <FilterBar filters={filters} onChange={changeFilters} books={graphed.map((b) => ({ id: b.id, title: b.title }))} hiddenCount={view.hiddenByFilters ?? 0} />
+        <FilterBar filters={filters} onChange={changeFilters} books={graphed.map((b) => ({ id: b.id, title: b.title }))} hiddenCount={view.hiddenByFilters ?? 0}
+          uncategorized={mode === "answer" && uncategorized > 0 ? uncategorized : undefined} />
       </div>
       <div className="gwrap">
         {noBooks ? <p className="hint" style={{ padding: 16 }}>{UI.noBooks}</p>
           : showHint ? <p className="hint" style={{ padding: 16 }}>{UI.overviewHint}</p>
-          : <GraphCanvas view={view} positions={pos} onNodeClick={(id) => openEntity(id, false)} onEdgeClick={openEdge}
+          : <GraphCanvas view={drawn} positions={pos} onNodeClick={(id) => openEntity(id, false)} onEdgeClick={openEdge}
             pinned={pinned} fitRequest={fitRequest} focusId={focus.id} focusRequest={focus.n} />}
         {(panel || connection) && (
           <div className="gside">
