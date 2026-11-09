@@ -7,6 +7,7 @@ from typing import Iterable, Sequence
 
 from lore.ingest.models import chunk_story_key
 from lore.ingest.registry import chunks_by_id
+from lore.query import scene as scene_module
 from lore.query import visible as visible_module
 from lore.query.models import CodexLine, EdgeRow, Evidence, Passage, TemplateCall, TimelineBeat
 from lore.query.retrieval import drop_boilerplate
@@ -241,8 +242,13 @@ def assemble_ranked(
     codexes: Sequence[Sequence[CodexLine]] = (),
     codex_share: float = 0.0,
     visible=None,
+    scene_setup: bool = False,
 ) -> Evidence:
     """Evidence from template rows plus vector passages, for one or more parts.
+
+    `scene_setup` (scene.SCENE_SETUP, for an event question): a best-ranked
+    passage that opens mid-scene brings the passage just before it in its
+    chapter, within the budget (`_with_setups`); `Evidence.setups` names them.
 
     `extra_chunks` are (chunk_id, book_id, chapter_seq) of passages that come
     from vector search rather than from an edge (Task 10d): the graph
@@ -361,7 +367,12 @@ def assemble_ranked(
     slice_ids = {item[0] for item in slice_items}
     ranked, truncated = _capped([i for i in turns.merged if i[0] not in slice_ids],
                                 max_chars - slice_used)
-    kept = ranked + slice_items
+    setup_pairs: list[tuple[_Item, str]] = []
+    if scene_setup:
+        ranked, setup_pairs, cut = _with_setups(conn, ranked, slice_items,
+                                                max_chars - slice_used, visible)
+        truncated = truncated or cut
+    kept = ranked + slice_items + [item for item, _ in setup_pairs]
     kept_ids = {item[0] for item in kept}
     # Every timeline passage the evidence could not hold is evidence cut too.
     truncated = truncated or any(c not in kept_ids for ids in part_ids for c in ids)
@@ -377,14 +388,21 @@ def assemble_ranked(
 
     edges = tuple(sorted((e for e in edges if e.chunk_id in kept_ids),
                          key=lambda e: (best(e.chunk_id), _edge_key(e))))
-    rank = {item[0]: index for index, item in enumerate(items)}
-    kept.sort(key=lambda item: rank[item[0]])
+    if setup_pairs:  # a setup passage may be no candidate: the same order, by key
+        kept.sort(key=lambda item: (item[1], item[2], chunk_story_key(item[0])))
+    else:
+        rank = {item[0]: index for index, item in enumerate(items)}
+        kept.sort(key=lambda item: rank[item[0]])
     passages = tuple(
         Passage(n=index + 1, chunk_id=c, book_id=b, chapter_seq=s, text=t)
         for index, (c, b, s, t) in enumerate(kept)
     )
     number = {p.chunk_id: p.n for p in passages}
     base = _shares(turns, kept_count)
+    if setup_pairs:
+        # A part that answers from a scene also reads its setup.
+        base = [share | {item[0] for item, anchor in setup_pairs if anchor in share}
+                for share in base]
     if part_ids:
         base = [share | {c for c in ids if c in kept_ids}
                 for share, ids in zip(base, part_ids + [[]] * len(base))]
@@ -398,7 +416,45 @@ def assemble_ranked(
                     timeline=timeline,
                     timelines=tuple(tuple(beats) for beats in timelines) if timeline else (),
                     codex=codex,
-                    codexes=tuple(tuple(lines) for lines in codexes) if codex else ())
+                    codexes=tuple(tuple(lines) for lines in codexes) if codex else (),
+                    setups=tuple((number[item[0]], number[anchor]) for item, anchor in setup_pairs))
+
+
+def _with_setups(conn, ranked: list[_Item], slice_items: list[_Item], budget: int,
+                 visible) -> tuple[list[_Item], list[tuple[_Item, str]], bool]:
+    """SCENE_SETUP: (`ranked` with room made, the setup passages with the chunk
+    each sets up, whether a ranked passage was cut for one). A setup takes the
+    room left in `budget`, else the place of the least relevant ranked passages
+    below the first scene.SETUP_TOP (never one a setup is for); one that still
+    does not fit is left out."""
+    held = {i[0] for i in ranked} | {i[0] for i in slice_items}
+    found = scene_module.setups(conn, ranked, held, visible=visible,
+                                is_boilerplate=is_boilerplate_chunk)
+    if not found:
+        return ranked, [], False
+    ranked = list(ranked)
+    anchors = {anchor for _, anchor in found}
+    room = budget - sum(len(i[3]) for i in ranked)
+    out: list[tuple[_Item, str]] = []
+    cut = False
+    for item, anchor in found:
+        need = len(item[3])
+        spare = [j for j in range(len(ranked) - 1, scene_module.SETUP_TOP - 1, -1)
+                 if ranked[j][0] not in anchors]
+        freed, drop = room, []
+        for j in spare:
+            if freed >= need:
+                break
+            freed += len(ranked[j][3])
+            drop.append(j)
+        if freed < need:
+            continue
+        for j in drop:  # highest index first: the others keep their places
+            del ranked[j]
+        cut = cut or bool(drop)
+        room = freed - need
+        out.append((item, anchor))
+    return ranked, out, cut
 
 
 def passages_from_chunks(chunk_rows: list[dict]) -> tuple[Passage, ...]:

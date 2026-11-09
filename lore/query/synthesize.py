@@ -551,7 +551,20 @@ def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
     block = "\n\n".join(f"[{pos.n}] ({pos.label(detail=True)})\n{by_n[pos.n].text}"
                          for pos in order.ordered)
     note = order.note()
-    return f"Passages are in story order.{' ' + note if note else ''}\n\n{block}"
+    setup = _setup_note(evidence)
+    return f"Passages are in story order.{' ' + note if note else ''}{setup}\n\n{block}"
+
+
+# SCENE_SETUP (scene.py): what a setup passage is for, said once per pair shown.
+_SETUP_NOTE = (" Passage [{setup}] comes just before passage [{scene}] in the book and sets up"
+               " its scene: what it tells about how that scene came about, or why, helps"
+               " answer the question.")
+
+
+def _setup_note(evidence: Evidence) -> str:
+    shown = {p.n for p in evidence.passages}
+    return "".join(_SETUP_NOTE.format(setup=s, scene=a) for s, a in evidence.setups
+                   if s in shown and a in shown)
 
 
 def _build_prompt(
@@ -1892,7 +1905,8 @@ async def synthesize_parts(
                        timeline=(evidence.timelines[index]
                                  if len(evidence.timelines) == len(sub_questions) else ()),
                        codex=(evidence.codexes[index]
-                              if len(evidence.codexes) == len(sub_questions) else ()))
+                              if len(evidence.codexes) == len(sub_questions) else ()),
+                       setups=evidence.setups)
         result = await generate(
             _build_prompt(part, own, book_titles, part_of=question, books=books), Synthesis)
         verified, _ = verify_claims(_capped(result), passages)
@@ -1970,7 +1984,8 @@ async def shaped_claims(question: str, plan: Sequence, retrieval: Sequence, evid
             per_part.append([])
             continue
         own = Evidence(edges=evidence.edges, passages=passages, truncated=evidence.truncated,
-                       timeline=timelines[index], codex=codexes[index])
+                       timeline=timelines[index], codex=codexes[index],
+                       setups=evidence.setups)
         served = plan[part.part]
         role = ("lens" if part.lens else "beyond" if served.kind == "beyond" else "part")
         spec = (SectionSpec(part_of=question, max_claims=max_claims, length="section")
