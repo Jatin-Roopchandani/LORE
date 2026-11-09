@@ -148,6 +148,16 @@ _STRICT_LINKS_RULE = """Give a reason, motive or consequence only when the quote
 Two facts from one passage stay two claims: never join them with "because",
 "so", "since", "in order to" or "which led to" unless the passage says so.
 """
+# QUOTE_POINTER: the quote under a claim only shows where to look. Measured
+# live: the checker failed claims whose quote covered part of them while the
+# cited passage stated the rest a line later ("dim, madness, Machin Shin are
+# later lines"). Off: the prompt as before (run_pair arm `quote_pointer`).
+QUOTE_POINTER = True
+_QUOTE_POINTER_CHECK = """The quote under a claim only shows where in the passage to look. Judge the
+claim against the whole cited passage: if that passage states everything the
+claim says, the claim is "{supported}" even when its quote covers only part.
+"""
+
 _STRICT_LINKS_CHECK = """Connecting words count: a "because", "so", "since", "in order to" or
 "which led to" in a claim that the cited passage does not state makes the
 claim "{not_supported}", even when both facts it joins are true.
@@ -913,8 +923,9 @@ def faithfulness_prompt(
     prompt = _CHECK_PROMPT.format(
         passages=shown, claims="\n\n".join(items), count=len(claims),
         supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS,
-        strict_links=(_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
-                      if STRICT_LINKS else ""))
+        strict_links=((_QUOTE_POINTER_CHECK.format(supported=SUPPORTED) if QUOTE_POINTER else "")
+                      + (_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
+                         if STRICT_LINKS else "")))
     if order and order.note():
         prompt += "\n" + order.note() + "\n"
     if sentences:
@@ -1035,6 +1046,25 @@ class CheckOutcome:
     # OPENER_CITES: the claims (1-based, in range) the check says support the
     # opening sentence, judged against every claim. None when not asked.
     opener_support: list[int] | None = None
+
+
+# CARRY_VERDICTS: a fact the first check passed stays passed in every later
+# round of the same answer (a section rewrite, a repair, an orphan or intro
+# repair); those rounds judge only their new sentences. Measured live: a
+# repair's second check failed a claim the first had passed ("or five hundred"
+# was in the same passage), and the section's verified prose fell to a list.
+# Off: every round re-judges every claim, as before (run_pair arm).
+CARRY_VERDICTS = True
+
+
+def carry_verdicts(later: "CheckOutcome", first: "CheckOutcome",
+                   claims: Sequence[Claim]) -> "CheckOutcome":
+    """`later` with `first`'s claim verdicts, when both judged the same claims."""
+    if (not CARRY_VERDICTS or not later.ran or not first.ran
+            or len(first.claim_ok) != len(claims) or len(later.claim_ok) != len(claims)):
+        return later
+    kept = [c for c, ok in zip(claims, first.claim_ok) if ok]
+    return replace(later, kept=kept, dropped=list(first.dropped), claim_ok=list(first.claim_ok))
 
 
 async def check_answer(
@@ -1339,6 +1369,7 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
                 outcome2 = await check_answer(kept, evidence.passages, check,
                                               book_titles=book_titles, sentences=second,
                                               books=books, shape=shape, opener=opener)
+                outcome2 = carry_verdicts(outcome2, outcome, kept)
                 second = with_opener(second, outcome2)
                 if outcome2.ran and outcome2.sentence_ok is not None:
                     built = build(second, len(split_items(again)), outcome2)
@@ -1431,6 +1462,7 @@ async def _repair(question, sub_questions, kept, evidence, check, write, book_ti
                                   opener=opener)
     if not (outcome2.ran and outcome2.sentence_ok is not None):
         return None
+    outcome2 = carry_verdicts(outcome2, outcome, kept)
     return with_opener(second, outcome2), len(split_items(again)), outcome2
 
 
@@ -1496,7 +1528,9 @@ async def _orphan_repair(question, sub_questions, kept, passages, check, write, 
     lifted = [s.model_copy(update={"claims": [idx[k - 1] + 1 for k in s.claims]}) for s in second]
     claim_ok = [False] * len(kept)
     for j, i in enumerate(idx):
-        claim_ok[i] = checked.claim_ok[j]
+        # CARRY_VERDICTS: these claims all passed the first check; only the
+        # repaired sentences are judged in this round.
+        claim_ok[i] = True if CARRY_VERDICTS else checked.claim_ok[j]
     restated = None
     if checked.restated is not None:
         restated = [0] * len(kept)

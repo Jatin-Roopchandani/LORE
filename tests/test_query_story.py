@@ -379,6 +379,7 @@ def test_switch_off_is_byte_identical_to_the_previous_release(monkeypatch):
     import json
     from pathlib import Path
     monkeypatch.setattr(write_module, "STORY_ORDER", False)
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
     golden = json.loads((Path(__file__).parent / "golden_story_off.json").read_text())
     ps = (Passage(n=1, chunk_id="b2:5:0", book_id="b2", chapter_seq=5, text="Rin trained with the sword."),
           Passage(n=2, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Rin met the old teacher."),

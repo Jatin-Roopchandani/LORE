@@ -291,6 +291,7 @@ def test_the_check_prompt_is_unchanged_when_off(monkeypatch):
     monkeypatch.setattr(w, "READINGS", False)
     monkeypatch.setattr(w, "COVERAGE", False)
     monkeypatch.setattr(synth, "SUMMARY_CHECK", False)  # pinned before it existed
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
     sents = [S("Rin met a teacher and trained.", [1, 2]), S("Rin trained.", [3])]
     assert faithfulness_prompt(CS, PS, TITLES, books=BOOKS) == GOLDEN["check_plain"]
     assert faithfulness_prompt(CS, PS, TITLES, sents, books=BOOKS, gaps=["x"]) == GOLDEN["check_sentences"]

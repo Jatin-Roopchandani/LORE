@@ -1526,3 +1526,32 @@ async def test_a_list_answer_reads_in_story_order_not_part_by_part() -> None:
                    Synthesis(claims=[early], can_answer=True)], []), mode="graph")
     assert answer.text == ("Drebber forced Lucy to marry him. [2] "
                            "Stangerson shot her father. [3]")
+
+
+def test_a_later_round_keeps_the_first_rounds_claim_verdicts():
+    from lore.query import synthesize as s
+    a = Claim(text="A walk of a day goes a hundred or five hundred miles.", passage=1, quote="a hundred miles")
+    b = Claim(text="Stangerson shot her father.", passage=3, quote="Stangerson shot her father")
+    first = s.CheckOutcome([a, b], [], True, [True, True], [True])
+    later = s.CheckOutcome([b], [(a, "five hundred is a later line")], True, [False, True], [True, True])
+    carried = s.carry_verdicts(later, first, [a, b])
+    assert carried.claim_ok == [True, True] and carried.kept == [a, b] and carried.dropped == []
+    assert carried.sentence_ok == [True, True]  # the new round's sentence verdicts stand
+
+
+def test_carrying_verdicts_can_be_switched_off(monkeypatch):
+    from lore.query import synthesize as s
+    monkeypatch.setattr(s, "CARRY_VERDICTS", False)
+    a = Claim(text="x", passage=1, quote="x")
+    first = s.CheckOutcome([a], [], True, [True], None)
+    later = s.CheckOutcome([], [(a, "r")], True, [False], None)
+    assert s.carry_verdicts(later, first, [a]) is later
+
+
+def test_the_claim_check_treats_a_quote_as_a_pointer_into_its_passage(monkeypatch):
+    from lore.query import synthesize as s
+    claims = [Claim(text="t", passage=S1.n, quote="q")]
+    prompt = s.faithfulness_prompt(claims, [S1])
+    assert "only shows where in the passage to look" in prompt
+    monkeypatch.setattr(s, "QUOTE_POINTER", False)
+    assert "only shows where in the passage to look" not in s.faithfulness_prompt(claims, [S1])

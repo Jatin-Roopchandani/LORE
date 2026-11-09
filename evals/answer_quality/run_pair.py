@@ -148,6 +148,12 @@ ARM_SETTINGS = {
                          lambda v: v.lower() in ("1", "true", "yes", "on")),
     "story_order_list": ("lore.query.synthesize", "STORY_ORDER_LIST",
                          lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Later check rounds keep the first round's claim verdicts; the claim check
+    # treats a quote as a pointer into its passage.
+    "carry_verdicts": ("lore.query.synthesize", "CARRY_VERDICTS",
+                       lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "quote_pointer": ("lore.query.synthesize", "QUOTE_POINTER",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     "identity_search": ("lore.query.hubselect", "SEARCH_IDENTITY_LINKS",
                         lambda v: v.lower() in ("1", "true", "yes", "on")),
     "identity_links": ("lore.query.seed", "FOLLOW_IDENTITY_LINKS",

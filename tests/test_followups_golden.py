@@ -72,12 +72,15 @@ async def capture(config, **extra) -> dict:
     return json.loads(json.dumps(out, sort_keys=True, default=str))
 
 
-async def test_without_history_every_call_event_and_result_is_golden(tmp_path) -> None:
+async def test_without_history_every_call_event_and_result_is_golden(tmp_path, monkeypatch) -> None:
+    # pinned before quote_pointer (the golden predates it)
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
     config = build_position_library(tmp_path)
     got = await capture(config)
     assert got == json.loads(GOLDEN.read_text())
 
 
-async def test_an_empty_history_is_no_history(tmp_path) -> None:
+async def test_an_empty_history_is_no_history(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
     config = build_position_library(tmp_path)
     assert await capture(config, history=[]) == json.loads(GOLDEN.read_text())

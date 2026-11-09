@@ -780,6 +780,7 @@ async def test_with_deep_off_everything_is_what_it_was(tmp_path, monkeypatch, na
     monkeypatch.setattr(write_module, "READER_PROSE", False)  # pinned before orphan-repair
     monkeypatch.setattr(write_module, "ORPHAN_REPAIR", False)
     monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "SUMMARY_CHECK", False)
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
     monkeypatch.setattr(write_module, "OPENER_CITES", False)  # pinned before intro-reliability
     monkeypatch.setattr(write_module, "INTRO_REPAIR", False)
     monkeypatch.setattr(write_module, "GENTLE_FALLBACK", False)
