@@ -49,6 +49,7 @@ from lore.extract.embed import QUERY_PREFIX
 from lore.ingest.registry import story_chapters
 from lore.query import deep as deep_module
 from lore.query import visible as visible_module
+from lore.query import write as write_module
 from lore.query.decompose import Recap
 from lore.query.events import EDGES_PER_PART_CAP, edge_key, emit
 from lore.query.models import (
@@ -546,12 +547,15 @@ async def short_gist(question: str, sections: Sequence[AnswerSection], claims: S
     except Exception:  # noqa: BLE001 -- the sections are written; the gist is an extra
         log.exception("the recap's short answer failed")
         got = None
-    chosen = [s for s in got or () if s.kind == "fact"][:sentences]
+    chosen = [replace(s, claims=tuple(numbers[k - 1] for k in s.claims))
+              for s in got or () if s.kind == "fact"][:sentences]
+    if not chosen and write_module.intro_repair_on():
+        # INTRO_REPAIR: never "no direct summary" while the sections hold checked prose.
+        chosen = deep_module.section_opening(sections, sentences)
     if not chosen:
         return (ProseSentence(text=deep_module.NO_SUMMARY_LINE, claims=(), passages=(),
                               new_paragraph=True, kind="limit", short=True),)
-    return tuple(replace(s, claims=tuple(numbers[k - 1] for k in s.claims),
-                         new_paragraph=i == 0, short=True) for i, s in enumerate(chosen))
+    return tuple(replace(s, new_paragraph=i == 0, short=True) for i, s in enumerate(chosen))
 
 
 def compose_recap(sections: Sequence[AnswerSection], short: Sequence[ProseSentence]) -> str:

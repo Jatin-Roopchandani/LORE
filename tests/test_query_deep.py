@@ -242,7 +242,9 @@ async def test_the_short_answer_is_written_after_the_sections_from_all_their_cla
         assert set(s.passages) == {answer.claims[k - 1].passage for k in s.claims}
 
 
-async def test_a_short_answer_that_cannot_be_verified_says_so_and_keeps_the_sections(config):
+async def test_a_short_answer_that_cannot_be_verified_says_so_and_keeps_the_sections(config, monkeypatch):
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "INTRO_REPAIR", False)  # pinned before intro-reliability
     scripted = deep_models(reject=("Tell me everything",))  # the short answer's sentences are tagged with the question
     answer, events = await ask(config, scripted)
     (line,) = answer.short_answer
@@ -253,7 +255,9 @@ async def test_a_short_answer_that_cannot_be_verified_says_so_and_keeps_the_sect
     assert event["text"] == deep.NO_SUMMARY_LINE and [p["text"] for p in event["prose"]] == [deep.NO_SUMMARY_LINE]
 
 
-async def test_a_short_answer_whose_writer_fails_says_so_too(config):
+async def test_a_short_answer_whose_writer_fails_says_so_too(config, monkeypatch):
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "INTRO_REPAIR", False)  # pinned before intro-reliability
     scripted = deep_models(fail=("short answer that opens a long answer",))
     answer, _ = await ask(config, scripted)
     assert [s.text for s in answer.short_answer] == [deep.NO_SUMMARY_LINE]
@@ -776,6 +780,9 @@ async def test_with_deep_off_everything_is_what_it_was(tmp_path, monkeypatch, na
     monkeypatch.setattr(write_module, "READER_PROSE", False)  # pinned before orphan-repair
     monkeypatch.setattr(write_module, "ORPHAN_REPAIR", False)
     monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "SUMMARY_CHECK", False)
+    monkeypatch.setattr(write_module, "OPENER_CITES", False)  # pinned before intro-reliability
+    monkeypatch.setattr(write_module, "INTRO_REPAIR", False)
+    monkeypatch.setattr(write_module, "GENTLE_FALLBACK", False)
     config = build_deep_library(tmp_path)
     scripted = Scripted(plan)
     answer, events = await run_scenario(config, scripted, depth="deep")
