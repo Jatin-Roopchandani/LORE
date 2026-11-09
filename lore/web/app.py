@@ -52,7 +52,9 @@ from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.move import prepare_move
 from lore.orchestrator.pipeline import processing_budget_left
 from lore.query import explore, visible
-from lore.reading_position import ReadingPosition, get_position, set_position
+from lore.reading_position import (
+    Progress, ReadingPosition, get_position, progress_position, set_position,
+)
 from lore.tenancy import (
     LOCAL_USER_ID, CurrentUser, InvalidUserId, config_for, multi_user_enabled,
     require_session_user, resolve_user as default_resolver, validate_user_id,
@@ -92,16 +94,37 @@ class WorldBody(BaseModel):
     name: str
 
 
+class ProgressChange(BaseModel):
+    """One book of the progress list set to a state (lore/query/visible.py):
+    the series order fills in the books around it."""
+
+    book_id: str
+    state: Literal["finished", "reading", "not_started"]
+    # READING: the chapter_seq reached; none: the book's first story chapter.
+    chapter: int | None = Field(None, ge=0)
+
+
 class PositionBody(BaseModel):
-    enabled: bool
+    # The progress list: the change the reader made.
+    change: ProgressChange | None = None
+    # The older shape (the book being read, its chapter, the read toggles of
+    # books of unknown order and the switch), still accepted and stored as
+    # the progress list that shows the same (visible.legacy_progress).
+    enabled: bool = False
     book_id: str | None = None
     chapter: int = Field(0, ge=0)
-    # Books of unknown order the reader has read (the position ignores any other).
     read_books: list[str] = []
 
 
 def _invalid_position(body: PositionBody, rows: dict, chapters: dict) -> str | None:
     """Why `body` cannot be stored for a world whose books are `rows`, or None."""
+    if body.change is not None:
+        change = body.change
+        if change.book_id not in rows:
+            return f"no book {change.book_id!r} in this world"
+        if change.chapter is not None and change.chapter > int(chapters.get(change.book_id) or 0):
+            return f"{rows[change.book_id]['title']} has no chapter {change.chapter}"
+        return None
     if body.book_id is not None and body.book_id not in rows:
         return f"no book {body.book_id!r} in this world"
     if body.enabled and body.book_id is None:
@@ -524,32 +547,66 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             chapters = dict(conn.execute(
                 "SELECT book_id, MAX(chapter_seq) FROM chunks GROUP BY book_id").fetchall())
             story = {b: story_chapters(conn, b) for b in rows}
+            infos = book_rows(conn)
+            stored = get_position(conn, found.id)
+            progress = _progress_of(stored, rows, infos)
+            filled: dict[str, str] = {}
             if body is not None:
                 bad = _invalid_position(body, rows, chapters)
                 if bad:
                     return _api_error(400, "invalid_position", bad)
-                set_position(conn, ReadingPosition(
-                    found.id, body.book_id, body.chapter,
-                    tuple(b for b in body.read_books if b != body.book_id), body.enabled))
-            stored = get_position(conn, found.id)
-            infos = book_rows(conn)
+                if body.change is not None:
+                    change = body.change
+                    chapter = change.chapter
+                    if chapter is None:  # the first story chapter
+                        chapter = story[change.book_id][0]["seq"] if story[change.book_id] else 0
+                    progress, filled = visible.change_progress(
+                        rows, progress, infos, change.book_id, change.state, chapter)
+                else:
+                    progress = visible.legacy_progress(ReadingPosition(
+                        found.id, body.book_id, body.chapter,
+                        tuple(b for b in body.read_books if b != body.book_id), body.enabled),
+                        rows, infos)
+                set_position(conn, progress_position(found.id, progress))
         finally:
             conn.close()
-        current = stored.book_id if stored and stored.book_id in rows else None
+        order = visible.series_order(infos, rows)
+        states = visible.book_states(order, progress, infos)
+        reading = [b for b in order if states[b].state == visible.READING]
+        current = reading[0] if reading else None
         relation = visible.order_against(infos, rows, current) if current else {}
         return {
             "world": {"id": found.id, "name": found.name},
-            "enabled": bool(stored and stored.enabled and current),
+            # The older shape, kept for its readers: whether anything is
+            # limited, the first book in progress, and the books of unknown
+            # order against it that are finished.
+            "enabled": progress.limits() and any(s.state != visible.FINISHED
+                                                 for s in states.values()),
             "book_id": current,
-            "chapter": stored.chapter if stored and current else 0,
-            "read_books": [b for b in (stored.read_books if stored else ()) if b in rows],
+            "chapter": states[current].chapter if current else 0,
+            "read_books": [b for b in order if relation.get(b) == "unknown"
+                           and states[b].state == visible.FINISHED],
             "books": [{"id": b, "title": rows[b]["title"], "series": rows[b]["series"],
                        "series_index": rows[b]["series_index"],
                        "chapters": len(story[b]),
                        "sections": story[b],
-                       "order": "current" if b == current else relation.get(b, "unknown")}
-                      for b in visible.series_order(infos, rows)],
+                       "order": "current" if b == current else relation.get(b, "unknown"),
+                       # The progress list: what the reader set (or a series kept).
+                       "state": states[b].state,
+                       "progress_chapter": states[b].chapter,
+                       "forced": states[b].forced}
+                      for b in order],
+            # The books the last change also set, by the series order.
+            "filled": [{"id": b, "state": s} for b, s in filled.items()],
         }
+
+    def _progress_of(stored, rows: dict, infos) -> Progress:
+        """The world's progress list (every book finished when none is stored)."""
+        if stored is None:
+            return Progress()
+        if stored.progress is not None:
+            return stored.progress
+        return visible.legacy_progress(stored, rows, infos)
 
     @api.get("/api/books")
     def books(config: LoreConfig = Depends(user_config),

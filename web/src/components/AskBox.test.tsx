@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { DEEP } from "../messages";
+import { DEEP, POSITION } from "../messages";
 import { AskBox } from "./AskBox";
 
 test("the Deep dive toggle is a labelled radio group with Auto, On and Off", () => {
@@ -36,4 +36,30 @@ test("asking still works with the toggle present", () => {
   fireEvent.change(screen.getByLabelText("Question"), { target: { value: " who? " } });
   fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   expect(onAsk).toHaveBeenCalledWith("who?");
+});
+
+// ---- the one-question spoiler override ------------------------------------------------------------------------------
+
+test("the spoiler override is offered only while the reading progress holds something back", () => {
+  const { rerender } = render(<AskBox onAsk={() => {}} busy={false} />);
+  expect(screen.queryByRole("switch", { name: POSITION.spoilerToggle })).toBeNull();
+  rerender(<AskBox onAsk={() => {}} busy={false} spoilerGuard />);
+  expect(screen.getByRole("switch", { name: POSITION.spoilerToggle })).not.toBeChecked();
+});
+
+test("Show spoilers applies to the next question only, then switches itself off", () => {
+  const onAsk = vi.fn();
+  render(<AskBox onAsk={onAsk} busy={false} spoilerGuard />);
+  const toggle = screen.getByRole("switch", { name: POSITION.spoilerToggle });
+  fireEvent.click(toggle);
+  expect(toggle).toBeChecked();
+  expect(screen.getByRole("status")).toHaveTextContent(POSITION.spoilerOn);
+  const input = screen.getByLabelText("Question");
+  fireEvent.change(input, { target: { value: "Who is the killer?" } });
+  fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  expect(onAsk).toHaveBeenLastCalledWith("Who is the killer?", true);
+  expect(toggle).not.toBeChecked();
+  fireEvent.change(input, { target: { value: "And then?" } });
+  fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  expect(onAsk).toHaveBeenLastCalledWith("And then?");
 });

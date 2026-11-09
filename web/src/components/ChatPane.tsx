@@ -27,9 +27,11 @@ export const MAX_SHOWN = 20;
 type AskApi = ReturnType<typeof useAsk>;
 type Hover = (chunks: string[]) => void;
 
-// `onSection`: the latest answer's section being read (a deep answer), for the graph.
-export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview, onSection }:
+// `onSection`: the latest answer's section being read (a deep answer), for the graph. `limited`: the reading progress
+// holds something back, so the ask box offers "Show spoilers for this question".
+export function ChatPane({ ask, limited = false, showInternals, resetsAt, onHoverChunks, overview, onSection }:
   { ask: Pick<AskApi, "state" | "run" | "ask" | "retry" | "busy" | "depth" | "setDepth"> & Partial<Pick<AskApi, "thread" | "clear">>;
+    limited?: boolean;
     showInternals: boolean; resetsAt?: string; onHoverChunks: Hover; overview?: SubgraphData | null; onSection?: (index: number | null) => void }) {
   const { state } = ask;
   const thread = ask.thread ?? [];
@@ -69,7 +71,8 @@ export function ChatPane({ ask, showInternals, resetsAt, onHoverChunks, overview
           </div>
         )}
       </div>
-      <AskBox onAsk={ask.ask} busy={ask.busy} depth={ask.depth} onDepth={ask.setDepth}
+      <AskBox onAsk={(q, spoilers) => (spoilers ? ask.ask(q, undefined, true) : ask.ask(q))} busy={ask.busy} depth={ask.depth} onDepth={ask.setDepth}
+        spoilerGuard={limited}
         placeholder={inChat ? CHAT.followupPlaceholder : UI.askPlaceholder} />
     </section>
   );

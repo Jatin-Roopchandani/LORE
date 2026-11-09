@@ -319,7 +319,26 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             "CREATE INDEX idx_stage_timings_stage ON stage_timings(stage, provider, model)",
         ],
     ),
+    # Reading progress (2026-11-09): a world's position becomes a progress
+    # list, each book finished (the default), in progress up to a chapter, or
+    # not started; `progress` is JSON {"reading": {book: chapter_seq},
+    # "unread": [book]} (lore/reading_position.py). Each existing position is
+    # converted to the list that shows exactly what it showed; one that was
+    # off showed everything, so its books are all finished.
+    (
+        18,
+        [
+            "ALTER TABLE reading_positions ADD COLUMN progress TEXT",
+            lambda conn: _migrate_reading_progress(conn),
+        ],
+    ),
 ]
+
+
+def _migrate_reading_progress(conn: sqlite3.Connection) -> None:
+    from lore.reading_position import migrate_to_progress
+
+    migrate_to_progress(conn)
 
 
 def open_db(path: Path) -> sqlite3.Connection:
@@ -339,7 +358,12 @@ def open_db(path: Path) -> sqlite3.Connection:
                 try:
                     conn.execute("BEGIN")
                     for stmt in statements:
-                        conn.execute(stmt)
+                        # A step is SQL, or a function of the connection for
+                        # a data migration that needs Python (migration 18).
+                        if callable(stmt):
+                            stmt(conn)
+                        else:
+                            conn.execute(stmt)
                     conn.execute(
                         "INSERT INTO schema_migrations (version) VALUES (?)", (version,)
                     )
