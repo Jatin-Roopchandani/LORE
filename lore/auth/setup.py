@@ -29,7 +29,8 @@ def build_context(base: LoreConfig, *, auth: AuthSettings | None = None,
             # Local development: mail goes to <data root>/dev-mailbox.txt (localhost only).
             mailer = DevMailboxMailer(base.data_dir / "dev-mailbox.txt", settings.base_url)
         else:
-            mailer = (ResendMailer(settings.resend_api_key, settings.mail_from)
+            mailer = (ResendMailer(settings.resend_api_key, settings.mail_from,
+                                   reply_to=settings.mail_reply_to)
                       if settings.resend_api_key else UnconfiguredMailer())
     if providers is None:
         providers = default_providers(settings.google, settings.github)

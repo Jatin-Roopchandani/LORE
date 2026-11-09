@@ -97,3 +97,40 @@ def test_the_dev_mailbox_writes_messages_to_a_file_on_localhost_only(tmp_path):
         except MailError:
             continue
         raise AssertionError(f"the dev mailbox accepted {public}")
+
+
+def test_a_reply_to_is_sent_only_when_set():
+    import json
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"id": "1"})
+
+    ResendMailer("k", "LORE <login@example.org>", transport=httpx.MockTransport(handler),
+                 reply_to="hello@example.org").send(to="a@example.org", subject="s", text="t")
+    mailer(handler).send(to="a@example.org", subject="s", text="t")
+    assert seen[0]["reply_to"] == "hello@example.org"
+    assert "reply_to" not in seen[1]
+
+
+@pytest.mark.parametrize("make", ["sign_in", "invite"])
+def test_both_emails_carry_the_logo_a_button_and_a_plain_text_part(make):
+    from lore.auth import mailer as m
+    link = "https://lore.example.org/signin?invite=abc&x=<1>"
+    subject, text, html = (m.sign_in_message if make == "sign_in" else m.invite_message)(link)
+    assert '<img src="https://lore.example.org/icon-192.png"' in html  # served by LORE itself
+    assert 'alt="LORE"' in html
+    assert link in text                                  # the plain-text part has the link
+    assert "<1>" not in html and "&lt;1&gt;" in html      # the link is escaped in the HTML
+    assert html.count('href="https://lore.example.org/signin?invite=abc&amp;x=&lt;1&gt;"') == 2
+    assert "<style" not in html and "<script" not in html  # inline styles only
+
+
+def test_the_reply_to_setting_comes_from_the_environment():
+    from lore.auth.settings import AuthSettings
+    base = {"LORE_SESSION_SECRET": "s" * 40, "LORE_CSRF_SECRET": "c" * 40,
+            "LORE_BASE_URL": "https://lore.example.org"}
+    assert AuthSettings.from_env(base).mail_reply_to is None
+    with_reply = AuthSettings.from_env({**base, "LORE_MAIL_REPLY_TO": " hi@example.org "})
+    assert with_reply.mail_reply_to == "hi@example.org"
