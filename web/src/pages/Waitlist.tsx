@@ -3,6 +3,7 @@ import { authApi } from "../api";
 import { AUTH } from "../messages";
 import { AgreeLine, AuthShell, PrimaryButton } from "./AuthShell";
 import { CheckIcon } from "./authIcons";
+import { EmailSuggestion } from "../components/EmailSuggestion";
 
 // Also where a sign-in with no account and no invite lands, so it explains itself.
 export function Waitlist() {
@@ -42,6 +43,7 @@ export function Waitlist() {
           <label htmlFor="waitlist-email">{AUTH.emailLabel}</label>
           <input id="waitlist-email" className="au-input" type="email" name="email" autoComplete="email" required
             placeholder={AUTH.emailPlaceholder} value={email} onChange={(e) => setEmail(e.target.value)} />
+          <EmailSuggestion email={email} onUse={setEmail} />
         </div>
         <div className="au-field">
           <label htmlFor="waitlist-reading">{AUTH.readingLabel}</label>

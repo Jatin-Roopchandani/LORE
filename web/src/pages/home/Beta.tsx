@@ -2,6 +2,7 @@ import { FormEvent, useRef, useState } from "react";
 import { authApi, isError } from "../../api";
 import { HOME } from "../../messages";
 import { NARROW, useMedia, usePinProgress } from "./scroll";
+import { EmailSuggestion } from "../../components/EmailSuggestion";
 
 const SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -41,6 +42,7 @@ export function WaitlistForm({ ready }: { ready: boolean }) {
       <input id="h-email" ref={emailRef} type="email" name="email" required autoComplete="email" placeholder={HOME.emailPlaceholder}
         value={email} onChange={(e) => setEmail(e.target.value)} readOnly={done}
         aria-invalid={problem?.field === "email" ? true : undefined} aria-describedby={problem ? "h-problem" : undefined} />
+      {!done && <EmailSuggestion email={email} onUse={setEmail} className="h-suggest" />}
       <label htmlFor="h-reading">{HOME.readingLabel} <span className="h-opt">{HOME.optional}</span></label>
       <input id="h-reading" type="text" name="reading" maxLength={500} placeholder={HOME.readingPlaceholder}
         value={reading} onChange={(e) => setReading(e.target.value)} readOnly={done} />

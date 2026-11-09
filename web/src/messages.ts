@@ -457,6 +457,12 @@ export const THEME = {
 };
 
 // Sign-in, the waitlist and the public pages (multi-user mode).
+// "Did you mean …?" under email fields (emailSuggest.ts).
+export const EMAIL_SUGGEST = {
+  didYouMean: "Did you mean",
+  use: "Use it",
+};
+
 export const AUTH = {
   brand: "LORE",
   brandTag: "Reader",
