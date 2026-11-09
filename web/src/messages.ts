@@ -33,7 +33,8 @@ export const DEEP = {
   // The one muted line that ends an answer with sections that failed or found nothing (they are not shown).
   unwritten: (n: number) => `${n} ${n === 1 ? "section" : "sections"} couldn't be written`,
   skipped: { budget: "Not written: the request limit for one answer was reached.",
-    reserve: "Not written: the rest of today's allowance is kept for answering other questions." },
+    reserve: "Not written: the rest of today's allowance is kept for answering other questions.",
+    stopped: "Not written: you stopped the answer." },
   requests: "Requests used",
   requestCount: (n: number) => `${n} ${n === 1 ? "request" : "requests"}`,
 };
@@ -195,6 +196,12 @@ export const EDGE_LABEL = {
 
 export const UI = {
   askPlaceholder: "Ask about your books…",
+  ask: "Ask",
+  // While an answer streams the Ask button is Stop (Esc in the ask box does the same).
+  stop: "Stop",
+  stopHint: "Stop this answer (Esc)",
+  stopped: "Stopped",
+  stoppedNote: "You stopped this answer. Ask again to continue.",
   noBooks: "Pick at least one book to see its part of the graph.",
   refusal: "The books don't contain enough to answer that. The graph shows where LORE looked.",
   evidence: (n: number) => `Evidence (${n} ${n === 1 ? "claim" : "claims"})`,

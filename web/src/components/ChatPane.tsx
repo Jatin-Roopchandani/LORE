@@ -30,7 +30,7 @@ type Hover = (chunks: string[]) => void;
 // `onSection`: the latest answer's section being read (a deep answer), for the graph. `limited`: the reading progress
 // holds something back, so the ask box offers "Show spoilers for this question".
 export function ChatPane({ ask, limited = false, showInternals, resetsAt, onHoverChunks, overview, onSection }:
-  { ask: Pick<AskApi, "state" | "run" | "ask" | "retry" | "busy" | "depth" | "setDepth"> & Partial<Pick<AskApi, "thread" | "clear">>;
+  { ask: Pick<AskApi, "state" | "run" | "ask" | "retry" | "busy" | "depth" | "setDepth"> & Partial<Pick<AskApi, "thread" | "clear" | "stopAnswer">>;
     limited?: boolean;
     showInternals: boolean; resetsAt?: string; onHoverChunks: Hover; overview?: SubgraphData | null; onSection?: (index: number | null) => void }) {
   const { state } = ask;
@@ -72,7 +72,7 @@ export function ChatPane({ ask, limited = false, showInternals, resetsAt, onHove
         )}
       </div>
       <AskBox onAsk={(q, spoilers) => (spoilers ? ask.ask(q, undefined, true) : ask.ask(q))} busy={ask.busy} depth={ask.depth} onDepth={ask.setDepth}
-        spoilerGuard={limited}
+        spoilerGuard={limited} onStop={ask.stopAnswer}
         placeholder={inChat ? CHAT.followupPlaceholder : UI.askPlaceholder} />
     </section>
   );
@@ -153,6 +153,9 @@ function AnswerBody({ state, run, showInternals, resetsAt, onHoverChunks, onRetr
           {err.settings && <a className="tbtn" href={hrefFor(err.settings)}>{SETTINGS.openTab(SETTINGS.tabs[err.settings])}</a>}
           {err.retry && onRetry && <button className="tbtn" type="button" onClick={onRetry}>Retry</button>}
         </div>
+      )}
+      {state.status === "stopped" && (
+        <p className="note stopped-note" role="status"><strong className="stopped-label">{UI.stopped}</strong> {UI.stoppedNote}</p>
       )}
       {r && r.claims.length === 0 && <p className="note">{UI.refusal}</p>}
       <ShortAnswer state={state} onHoverChunks={onHoverChunks} />

@@ -154,6 +154,10 @@ details.how summary{cursor:pointer;font-weight:600}
 form.ask{display:flex;flex-wrap:wrap;gap:8px;padding:12px;border-top:1px solid var(--line)}
 form.ask input:not([type=radio]){flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font:inherit;color:var(--ink)}
 form.ask button{border:0;background:var(--accent);color:var(--panel);border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer}
+form.ask button.stop{display:inline-flex;align-items:center;gap:8px;background:var(--panel);color:var(--danger);border:1px solid var(--danger)}
+form.ask button.stop:hover{background:var(--danger);color:var(--panel)}
+.stop-icon{width:9px;height:9px;border-radius:2px;background:currentColor}
+.stopped-note{color:var(--muted)} .stopped-label{color:var(--ink);font-weight:600}
 .ask-opts{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12px;color:var(--muted)}
 fieldset.depth{display:inline-flex;align-items:center;gap:2px;margin:0;padding:0;border:0;min-width:0}
 fieldset.depth legend{float:left;padding:0 8px 0 0;font-weight:600;color:var(--ink)}

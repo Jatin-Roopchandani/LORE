@@ -105,8 +105,8 @@ function ReadingApp({ me }: { me: Me | null }) {
     chooseWorld(w);
   }, [world, ask.clear, chooseWorld]);
   useEffect(() => {
-    // "interrupted" too: a dropped stream may still have spent requests.
-    if (ask.state.status !== "done" && ask.state.status !== "error" && ask.state.status !== "interrupted") return;
+    // "interrupted" and "stopped" too: a dropped or stopped stream may still have spent requests.
+    if (ask.state.status === "idle" || ask.state.status === "running") return;
     setRefreshKey((k) => k + 1);
     api.quota().then((q) => { if (!isError(q)) setResetsAt(q.resets_at); });
   }, [ask.state.status]);

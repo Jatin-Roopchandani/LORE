@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import shlex
@@ -258,18 +259,41 @@ def _gemini_use(conn: sqlite3.Connection, config: LoreConfig, now: datetime) -> 
             "answer_reserve": config.processing.answer_reserve}
 
 
+@dataclasses.dataclass(frozen=True)
+class _RunningAsk:
+    """A question being answered: whose it is, and how to stop it. `cancel`
+    may be called from any thread (a sync route runs in the thread pool)."""
+
+    owner: str
+    loop: asyncio.AbstractEventLoop
+    stop: asyncio.Event
+
+    def cancel(self) -> None:
+        try:
+            self.loop.call_soon_threadsafe(self.stop.set)
+        except RuntimeError:  # the loop is closed: nothing is running to stop
+            pass
+
+
 class _Releasing:
     """The answer stream, giving the question's in-flight slots back when it
     ends however it ends: finished, failed, the client gone, or never started
-    (a response dropped before its first chunk is only garbage collected)."""
+    (a response dropped before its first chunk is only garbage collected).
+    `on_done`, when given, runs once then too (the question leaves the list
+    of running ones that Stop can reach)."""
 
-    def __init__(self, inner, grant) -> None:
-        self._inner, self._grant = inner, grant
+    def __init__(self, inner, grant, on_done: Callable[[], None] | None = None) -> None:
+        self._inner, self._grant, self._on_done = inner, grant, on_done
 
     def _done(self) -> None:
         grant, self._grant = self._grant, None
-        if grant is not None:
-            grant.release()
+        on_done, self._on_done = self._on_done, None
+        try:
+            if grant is not None:
+                grant.release()
+        finally:
+            if on_done is not None:
+                on_done()
 
     def __aiter__(self):
         return self
@@ -1150,6 +1174,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     # One question at a time PER USER: one user's long answer must not make
     # another's `busy`. Locks only; no store handle is held across requests.
     locks: dict[str, asyncio.Lock] = {}
+    # The questions being answered in this process, by request id: what Stop
+    # (POST /api/ask/{request_id}/cancel) reaches. One web process serves the
+    # app (deploy/compose.yaml); a cancel that lands in another finds nothing
+    # and is 404, and the stream's own disconnect still stops the run.
+    running_asks: dict[str, _RunningAsk] = {}
 
     def _position_note_now(cfg, world, spoilers: bool) -> str | None:
         """The note a question asked now would carry: None with spoilers shown or
@@ -1208,7 +1237,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             """The finished question: appended to the user's chat when it was
             answered, and its trace stored either way. Returns the chat it
             went to, for the answer event."""
-            if trace.finished_s is None or (error and not trace.error):
+            # A stopped or abandoned question is recorded as that, whatever the
+            # cancelled run itself last wrote (a CancelledError).
+            ended = error is not None and error.get("code") in ("stopped", "cancelled")
+            if trace.finished_s is None or (error and not trace.error) or ended:
                 trace.finish(answer=result if trace.answer is None else trace.answer,
                              error=f"{error.get('code')}: {error.get('message')}"
                              if error else None)
@@ -1243,14 +1275,39 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             grant = throttle.start_question(user.id)
             if isinstance(grant, JSONResponse):
                 return grant
+        # Stop reaches the question through here until its stream ends.
+        stop = asyncio.Event()
+        rid = trace.request_id
+        running = _RunningAsk(owner=owner, loop=asyncio.get_running_loop(), stop=stop)
+        running_asks[rid] = running
+
+        def forget() -> None:
+            if running_asks.get(rid) is running:
+                del running_asks[rid]
+
         return StreamingResponse(
             _Releasing(ask_events(cfg, body.question, lock, search=search,
                        world=body.world, depth=body.depth, on_finish=save, history=history,
-                       request_id=trace.request_id,
+                       request_id=rid, stop=stop,
                        public=friendly.public_event if multi else None,
-                       **_bypass(spoilers)), grant),
+                       **_bypass(spoilers)), grant, on_done=forget),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    @api.post("/api/ask/{request_id}/cancel")
+    def cancel_ask(request: Request, request_id: str):
+        """Stop: the asker's own question, still running, is cancelled (no
+        further model call), its slots freed as its stream ends. The UI calls
+        this as well as aborting the stream, because a proxy (Cloudflare
+        Tunnel) may not pass a client's disconnect on for a while. Another
+        user's question, or one already over, is 404: the same answer, so a
+        request id says nothing about whose it is. CSRF-checked as every POST."""
+        owner = central_user(request)
+        running = running_asks.get(request_id)
+        if running is None or running.owner != owner:
+            return _api_error(404, "not_found", "no such question is being answered")
+        running.cancel()
+        return {"cancelled": True}
 
     # Decided per request, not once here: building the frontend while the
     # server runs and reloading must serve it, as the not-built page says.
