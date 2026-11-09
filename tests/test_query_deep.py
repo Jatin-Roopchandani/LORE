@@ -27,6 +27,7 @@ from tests.deep_fixtures import (
     QUESTION, Scripted, add_codex, build_deep_library, run_scenario, snapshot,
 )
 from tests.worlds_fixtures import ALPHA
+from tests.precision_pins import before_prose_precision
 
 GENERAL = "Tell me everything about this world."  # names no entity: planned from the whole scope
 
@@ -773,6 +774,7 @@ async def test_with_deep_off_everything_is_what_it_was(tmp_path, monkeypatch, na
     """Events, prompts and the answer, with codex rows in the library and depth
     asked for, are byte-identical to the code before deep answers (pinned from
     6d931a7)."""
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     monkeypatch.setattr(decompose_module, "DEEP", False)
     from lore.query import write as write_module
     monkeypatch.setattr(write_module, "COVERAGE", False)  # pinned before coverage existed

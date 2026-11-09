@@ -16,6 +16,7 @@ from lore.query.select import TemplateChoice
 from lore.query.subgraph import assemble_ranked
 from lore.query.synthesize import Claim, Synthesis, _build_prompt
 from tests.test_query_agent import A, B, Q, EntityKuzu, VectorLance, _edge_row, _scripted
+from tests.precision_pins import before_prose_precision
 
 GOLDEN = Path(__file__).parent / "golden" / "timeline_off.json"
 
@@ -121,10 +122,12 @@ async def _golden_agent(tmp_path: Path, *, prepare=None, kind="Character") -> di
 
 
 def test_golden_assemble_matches_head(monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     assert _golden_assemble() == json.loads(GOLDEN.read_text())["assemble"]
 
 
-async def test_golden_agent_matches_head(tmp_path) -> None:
+async def test_golden_agent_matches_head(tmp_path, monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     assert await _golden_agent(tmp_path) == json.loads(GOLDEN.read_text())["agent"]
 
 
@@ -425,22 +428,26 @@ def _with_beats(conn) -> None:
 
 
 async def test_agent_off_with_beats_present_equals_head(tmp_path, monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     monkeypatch.setattr(tl, "TIMELINE", False)
     got = await _golden_agent(tmp_path, prepare=_with_beats)
     assert got == json.loads(GOLDEN.read_text())["agent"]
 
 
-async def test_agent_on_without_beats_equals_head(tmp_path) -> None:
+async def test_agent_on_without_beats_equals_head(tmp_path, monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     assert tl.TIMELINE is True
     assert await _golden_agent(tmp_path) == json.loads(GOLDEN.read_text())["agent"]
 
 
-async def test_agent_on_with_beats_of_a_place_equals_head(tmp_path) -> None:
+async def test_agent_on_with_beats_of_a_place_equals_head(tmp_path, monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     got = await _golden_agent(tmp_path, prepare=_with_beats, kind="Place")
     assert got == json.loads(GOLDEN.read_text())["agent"]
 
 
-async def test_agent_without_the_beats_tables_equals_head(tmp_path) -> None:
+async def test_agent_without_the_beats_tables_equals_head(tmp_path, monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     def drop(conn):
         conn.execute("DROP TABLE beat_entities")
         conn.execute("DROP TABLE beats")
