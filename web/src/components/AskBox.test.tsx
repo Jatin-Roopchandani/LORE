@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { DEEP, POSITION } from "../messages";
+import { DEEP, POSITION, UI } from "../messages";
 import { AskBox } from "./AskBox";
 
 test("the Deep dive toggle is a labelled radio group with Auto, On and Off", () => {
@@ -62,4 +63,21 @@ test("Show spoilers applies to the next question only, then switches itself off"
   fireEvent.change(input, { target: { value: "And then?" } });
   fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   expect(onAsk).toHaveBeenLastCalledWith("And then?");
+});
+
+test("pressing Stop never asks the stopped question again (the Stop button is not reused as the submit button)", () => {
+  const onAsk = vi.fn();
+  function Host() {
+    const [busy, setBusy] = useState(true);
+    return <AskBox onAsk={onAsk} busy={busy} onStop={() => { setBusy(false); return "Who is the killer?"; }} />;
+  }
+  render(<Host />);
+  const stopButton = screen.getByRole("button", { name: UI.stopHint });
+  fireEvent.click(stopButton);
+  expect(onAsk).not.toHaveBeenCalled();
+  // A real click finishes (a submit button submits) after React re-renders, which a test's click cannot show: the
+  // Ask button must be a new element, never the Stop button with its type changed.
+  expect(stopButton.isConnected).toBe(false);
+  expect(screen.getByRole("button", { name: UI.ask })).toHaveAttribute("type", "submit");
+  expect(screen.getByRole("textbox", { name: "Question" })).toHaveValue("Who is the killer?");
 });

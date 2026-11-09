@@ -32,10 +32,12 @@ export function AskBox({ onAsk, busy, depth = "auto", onDepth, placeholder = UI.
       <input id="ask-input" ref={input} autoComplete="off" maxLength={2000} placeholder={placeholder} aria-label="Question" value={q}
         onChange={(e) => setQ(e.target.value)} aria-keyshortcuts={stoppable ? "Escape" : undefined} />
       {stoppable
-        ? <button type="button" className="stop" onClick={stop} title={UI.stopHint} aria-label={UI.stopHint} aria-keyshortcuts="Escape">
+        // Two elements, not one whose type changes: a Stop click that turns the button into Ask (type submit) before the
+        // browser finishes the click would submit the form and ask the stopped question again.
+        ? <button key="stop" type="button" className="stop" onClick={stop} title={UI.stopHint} aria-label={UI.stopHint} aria-keyshortcuts="Escape">
             <span className="stop-icon" aria-hidden="true" />{UI.stop}
           </button>
-        : <button type="submit" disabled={busy || !q.trim()}>{busy ? "Answering…" : UI.ask}</button>}
+        : <button key="ask" type="submit" disabled={busy || !q.trim()}>{busy ? "Answering…" : UI.ask}</button>}
       {(onDepth || spoilerGuard) && (
         <div className="ask-opts">
           {onDepth && (<>
