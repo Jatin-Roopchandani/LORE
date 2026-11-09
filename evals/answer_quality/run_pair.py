@@ -117,6 +117,14 @@ ARM_SETTINGS = {
     # sentence already says instead of placing it (synthesize.DEDUP_SENTENCES).
     "dedup_sentences": ("lore.query.synthesize", "DEDUP_SENTENCES",
                         lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # The check gives its reason before its verdict, in the schema and the prompt
+    # (synthesize.REASON_FIRST).
+    "reason_first": ("lore.query.synthesize", "REASON_FIRST",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A rejection whose own reason affirms the claim is asked again, once
+    # (synthesize.VERDICT_GUARD).
+    "verdict_guard": ("lore.query.synthesize", "VERDICT_GUARD",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),
