@@ -14,6 +14,7 @@ from lore.query import agent as agent_module
 from lore.query.agent import answer_question
 from lore.query.scope import UnknownWorld, resolve_scopes
 from tests.worlds_fixtures import ALPHA, BETA, build_library, scripted_models
+from tests.precision_pins import before_prose_precision
 
 QUESTION = "Who is Zed Quill?"
 
@@ -174,12 +175,13 @@ async def test_with_one_world_nothing_changes(tmp_path) -> None:
 GOLDEN_PROMPT = Path(__file__).parent / "golden" / "one_world_claims_prompt.txt"
 
 
-async def test_a_one_world_claims_prompt_matches_the_one_before_worlds(tmp_path) -> None:
+async def test_a_one_world_claims_prompt_matches_the_one_before_worlds(tmp_path, monkeypatch) -> None:
     """The claims prompt for a one-world library is byte for byte what the code
     before world scoping (03d3c15, before the query changes) built for the same
     library and question. The golden was dumped from that commit by running its
     `answer_question` over this fixture, one_world=True, with the scripted
     models; regenerate it only by doing the same."""
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     golden = GOLDEN_PROMPT.read_text()
     one = build_library(tmp_path / "one", one_world=True)
     for world in ("unset", ALPHA, "all"):

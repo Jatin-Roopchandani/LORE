@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, ConfigDict, create_model
 
 from lore.query import interpret
 from lore.query import write as write_module
@@ -172,17 +172,36 @@ claim "{not_supported}", even when both facts it joins are true.
 # STORY_ORDER (it lives in the story writer and check). Off gives the prompts
 # before it, byte for byte.
 ATTRIBUTION_FIDELITY = True
-_ATTRIBUTION_CHECK = """- attributes an action, message or speech to a different person than its
-  cited claims name: another doer, sender, recipient, speaker or addressee;
+#
+# Widened 2026-11-09 (h9b): a claim gave a relation ("has friends who would risk
+# something for him") to the disguised visitor, while the passage gave it to the
+# man the speaker was hunting, mentioned in the same breath. The check passed it
+# ("friends ready to risk" is in the passage): the rule named actions, messages
+# and speech, not traits and relations, nor someone else the passage mentions.
+# The rules now name both and ask whom the passage gives it to; the claims
+# prompt says the same (`_ATTRIBUTION_CLAIMS_RULE`).
+_ATTRIBUTION_CHECK = """- attributes an action, message, speech, trait or relation to a different
+  person than its cited claims give it to: another doer, sender, recipient,
+  speaker or addressee, or someone else they mention ("his master", "the man
+  she works for");
 - states a repetition, frequency or recurrence ("again", "twice", "kept",
   "repeatedly") that no cited claim states;
 """
 # The same test for a claim against its passage: in h9's X3 the swapped
 # recipient was already in the claim the writer copied word for word.
-_ATTRIBUTION_CLAIM_CHECK = """People count: a claim that gives an action, message or speech to a different
-person than the cited passage does (another doer, sender, recipient, speaker
-or addressee), or that says something happened again, more than once or
-regularly when the passage tells it once, is "{not_supported}".
+_ATTRIBUTION_CLAIM_CHECK = """People count: a claim that gives an action, message, speech, trait or
+relation to a different person than the cited passage does (another doer,
+sender, recipient, speaker or addressee, or someone else the passage
+mentions, such as "his master" or "the man she works for"), or that says
+something happened again, more than once or regularly when the passage tells
+it once, is "{not_supported}". Check whom the passage gives it to, not only
+that its words are there.
+"""
+# The claims step, where h9b's swap began.
+_ATTRIBUTION_CLAIMS_RULE = """Give each action, trait or relation to the person the passage gives it to.
+What a passage says of someone it only mentions ("his master", "the man she
+works for") is not said of another person present, unless the passage says
+they are the same.
 """
 
 
@@ -365,6 +384,123 @@ def _near_duplicate(a: Claim, b: Claim) -> bool:
     return (_same_evidence(a, b)
             and _numbers(a.text) == _numbers(b.text)
             and _overlap(a.text, b.text) >= NEAR_DUPLICATE_OVERLAP)
+
+
+# DEDUP_SENTENCES (2026-11-09): no shown sentence restates an earlier one.
+# Measured in a blind held-out eval (h9b): a claim the writer had folded into a
+# sentence the check then removed was placed by COVERAGE in its own words next
+# to a second claim from another part that said the same in other words, so the
+# answer said one impression twice. Code now (1) cites a claim a shown sentence
+# already states there instead of placing it (`place_uncited(same=...)`), and
+# (2) drops a shown fact sentence that restates an earlier one, its citations
+# moving to the one kept (`dedup_sentences`). Off: the code before it (run_pair
+# arm `dedup_sentences`).
+DEDUP_SENTENCES = True
+# The share of a later sentence's content words the earlier one must use.
+DEDUP_SHARE = 0.5
+
+
+def _cited(sentence: ProseSentence, claims: Sequence[Claim]) -> list[Claim] | None:
+    if not sentence.claims or not all(1 <= k <= len(claims) for k in sentence.claims):
+        return None
+    return [claims[k - 1] for k in sentence.claims]
+
+
+def sentence_restates(earlier: ProseSentence, later: ProseSentence,
+                      claims: Sequence[Claim]) -> bool:
+    """Whether fact sentence `later` says nothing that fact sentence `earlier`
+    does not (claims: what their 1-based `claims` index). All of:
+    - every claim `later` cites shares its evidence with a claim `earlier`
+      cites (`_same_evidence`: same passage, quotes sharing MIN_QUOTE_WORDS
+      words in a row), so the two rest on one stretch of the text;
+    - `later` states no number `earlier` does not;
+    - every content word of `later` that its claims' quotes contain -- the
+      book's own words for the facts it states -- is in `earlier` too, so it
+      brings no fact of its quote that `earlier` leaves out;
+    - and `earlier` uses at least DEDUP_SHARE of `later`'s content words.
+    A sentence that adds a distinct fact fails the third test (or the first,
+    when that fact comes from other evidence) and stays."""
+    if earlier.kind != "fact" or later.kind != "fact":
+        return False
+    mine, theirs = _cited(later, claims), _cited(earlier, claims)
+    if not mine or not theirs:
+        return False
+    if not all(any(_same_evidence(c, d) for d in theirs) for c in mine):
+        return False
+    if not _numbers(later.text) <= _numbers(earlier.text):
+        return False
+    own, said = _content_words(later.text), _content_words(earlier.text)
+    if not own:
+        return False
+    quoted = frozenset().union(*(_content_words(c.quote) for c in mine))
+    if (own & quoted) - said:
+        return False
+    return len(own & said) >= DEDUP_SHARE * len(own)
+
+
+def states_claim(sentence: ProseSentence, k: int, claims: Sequence[Claim]) -> bool:
+    """Whether shown `sentence` already says claim `k` (1-based in `claims`):
+    the claim, placed as its own sentence, would restate it."""
+    if not 1 <= k <= len(claims):
+        return False
+    claim = claims[k - 1]
+    alone = ProseSentence(text=claim.text, claims=(k,), passages=(claim.passage,))
+    return sentence_restates(sentence, alone, claims)
+
+
+def restated_pairs(prose: Sequence[ProseSentence],
+                   claims: Sequence[Claim]) -> list[tuple[int, int]]:
+    """(later, earlier) 0-based indices into `prose` of each sentence
+    `dedup_sentences` drops, and the kept sentence it restates."""
+    pairs: list[tuple[int, int]] = []
+    kept: list[int] = []
+    merged: dict[int, ProseSentence] = {}
+    for i, s in enumerate(prose):
+        nxt = prose[i + 1] if i + 1 < len(prose) else None
+        hit = next((j for j in kept if sentence_restates(merged[j], s, claims)), None)
+        if hit is not None and nxt is not None and not nxt.new_paragraph \
+                and write_module.leans_back(nxt.text) \
+                and (s.new_paragraph or not kept or kept[-1] != hit):
+            hit = None  # the next sentence leans on this one: dropping it would orphan that
+        if hit is None:
+            kept.append(i)
+            merged[i] = s
+            continue
+        pairs.append((i, hit))
+        at = merged[hit]
+        ks = (*at.claims, *(k for k in s.claims if k not in at.claims))
+        merged[hit] = replace(at, claims=ks,
+                              passages=tuple(sorted({*at.passages, *s.passages})))
+    return pairs
+
+
+def dedup_sentences(prose: Sequence[ProseSentence],
+                    claims: Sequence[Claim]) -> tuple[ProseSentence, ...]:
+    """`prose` without each fact sentence that restates an earlier shown one
+    (`sentence_restates`); the dropped sentence's citations join the kept
+    one's. A paragraph a dropped sentence opened goes on from the next one. A
+    sentence the next one leans on ("He ...") stays unless the sentence it
+    restates comes right before it. Readings, counter-cases and lines written
+    by code are never compared."""
+    pairs = dict(restated_pairs(prose, claims))
+    if not pairs:
+        return tuple(prose)
+    out: list[ProseSentence] = []
+    at: dict[int, int] = {}
+    carry = False
+    for i, s in enumerate(prose):
+        if i in pairs:
+            j = at[pairs[i]]
+            kept = out[j]
+            out[j] = replace(kept, claims=(*kept.claims,
+                                           *(k for k in s.claims if k not in kept.claims)),
+                             passages=tuple(sorted({*kept.passages, *s.passages})))
+            carry = carry or s.new_paragraph
+            continue
+        at[i] = len(out)
+        out.append(replace(s, new_paragraph=s.new_paragraph or (carry and bool(out))))
+        carry = False
+    return tuple(out)
 
 
 # Across sub-questions, a claim citing the very quote an earlier part's claim
@@ -634,6 +770,7 @@ def _build_prompt(
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
                           + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else "")
                           + (_STRICT_LINKS_RULE if STRICT_LINKS else "")
+                          + (_ATTRIBUTION_CLAIMS_RULE if attribution_on() else "")
                           + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else "")
                           + (_CHANGE_RULE if write_module.STORY_ORDER else "")
                           + (_ACTIONS_RULE if write_module.readings_on() else ""),
@@ -668,12 +805,75 @@ def _build_prompt(
 
 SUPPORTED = "supported"
 NOT_SUPPORTED = "not_supported"
-# Asked for, not enforced: the reason is shown to a human, never parsed.
+# Asked for, not enforced: the reason is shown to a human, and read only by
+# VERDICT_GUARD.
 MAX_REASON_WORDS = 12
 CHECK_SKIPPED_NOTE = "the faithfulness check did not run"
 
+# REASON_FIRST (2026-11-09): the check gives its reason before its verdict.
+# Measured live (a production trace, Claude Sonnet as checker): asked for
+# claim, verdict, reason in that order, the model committed to a verdict and
+# then reasoned its way out of it -- four of eight claims "not_supported" with
+# reasons such as "fully stated" -- and the answer fell to its claim list. Every
+# judgement the check returns (claims, sentences, gaps, the opening and the
+# introduction check) now lists claim, reason, verdict, then its other fields,
+# in the JSON schema and in the prompt, and the reason may run to
+# REASON_FIRST_WORDS so it can hold the comparison. The classes are the same
+# (only their JSON schema's property order changes), so a reply validates as
+# before. Off: the schemas and prompts before it, byte for byte (run_pair arm
+# `reason_first`).
+REASON_FIRST = True
+REASON_FIRST_WORDS = 20
+
+
+def reason_words() -> int:
+    return REASON_FIRST_WORDS if REASON_FIRST else MAX_REASON_WORDS
+
+
+_LEADING = ("claim", "reason", "verdict")
+
+
+def _reason_first_order(schema: dict, _cls=None) -> None:
+    """A judgement's JSON schema with REASON_FIRST: its properties in the order
+    claim, reason, verdict, then the rest as they were, and the reason asked
+    for, not optional (a reply without one still validates, as "").
+    Untouched when the switch is off."""
+    if not REASON_FIRST:
+        return
+    props = schema.get("properties")
+    if not isinstance(props, dict) or not {"reason", "verdict"} <= set(props):
+        return
+    order = [k for k in _LEADING if k in props] + [k for k in props if k not in _LEADING]
+    schema["properties"] = {k: props[k] for k in order}
+    required = {*schema.get("required", []), "reason"}
+    schema["required"] = [k for k in order if k in required]
+
+
+# The prompt's list of fields. Off: the wording before REASON_FIRST.
+_CLAIM_FIELDS = '- verdict: "{supported}" or "{not_supported}"\n- reason: at most {max_words} words.'
+_CLAIM_FIELDS_FIRST = """- reason: at most {max_words} words, written first: what the passage states,
+  set against what the claim says;
+- verdict: "{supported}" or "{not_supported}", the one that reason finds."""
+_ITEM_FIELDS_FIRST = """with a reason of at most {max_words} words, written first (what the
+claims state, set against what is judged), then the verdict that reason finds."""
+_SENTENCE_FIELDS = "with a verdict and a\nreason of at most {max_words} words."
+_STORY_FIELDS = "with a verdict and a reason of at most\n{max_words} words."
+_GAP_FIELDS = "with a verdict and a reason of at most {max_words} words."
+_INTRO_FIELDS = ('with a verdict ("{supported}" or "{not_supported}"), a reason\n'
+                 "of at most {max_words} words, and supported_by.")
+_INTRO_FIELDS_FIRST = """with a reason of at most {max_words} words, written first (what the
+claims state, set against the sentence), then a verdict ("{supported}" or
+"{not_supported}") that reason finds, and supported_by."""
+
+
+def _fields(off: str, first: str = _ITEM_FIELDS_FIRST) -> str:
+    return (first if REASON_FIRST else off).format(
+        max_words=reason_words(), supported=SUPPORTED, not_supported=NOT_SUPPORTED)
+
 
 class Judgement(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_reason_first_order)
+
     claim: int
     verdict: str
     reason: str = ""
@@ -765,8 +965,7 @@ each claim against its own cited passage alone: what another passage says,
 or what you already know about the story, cannot make a claim supported.
 {strict_links}
 Return one entry per claim, in the same order, each with its claim number:
-- verdict: "{supported}" or "{not_supported}"
-- reason: at most {max_words} words.
+{fields}
 
 Answer every claim: give exactly {count} entries, numbered 1 to {count}, in order.
 """
@@ -781,8 +980,7 @@ together, state everything the sentence says. "{not_supported}": the
 sentence says more than they do. Connecting words count: a "because",
 "so", "later" or "which led to" that no cited claim states makes the
 sentence "{not_supported}". Return these in sentence_judgements, one per
-sentence, numbered 1 to {count} in the claim field, with a verdict and a
-reason of at most {max_words} words.
+sentence, numbered 1 to {count} in the claim field, {fields}
 """
 
 # STORY_ORDER (write.STORY_ORDER): the sentence rule judges meaning, not
@@ -813,8 +1011,7 @@ wording.
 {attribution}- or summarises with more than the claims show, such as "always" or
   "every" when they show one case or some.
 Return these in sentence_judgements, one per sentence, numbered 1 to
-{count} in the claim field, with a verdict and a reason of at most
-{max_words} words.
+{count} in the claim field, {fields}
 """
 
 # SUMMARY_CHECK (2026-11-08, spec orphan-repair): an introduction or summary
@@ -908,7 +1105,7 @@ about. Judge each against all of the claims above.
 gap.
 "{not_supported}": some claim, or the claims together, do answer it.
 Return these in gap_judgements, one per gap, numbered 1 to {count} in the
-claim field, with a verdict and a reason of at most {max_words} words.
+claim field, {fields}
 """
 
 
@@ -961,7 +1158,8 @@ def faithfulness_prompt(
                      f"   quote: {claim.quote.strip()}")
     prompt = _CHECK_PROMPT.format(
         passages=shown, claims="\n\n".join(items), count=len(claims),
-        supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS,
+        supported=SUPPORTED, not_supported=NOT_SUPPORTED,
+        fields=_fields(_CLAIM_FIELDS, _CLAIM_FIELDS_FIRST),
         strict_links=((_QUOTE_POINTER_CHECK.format(supported=SUPPORTED) if QUOTE_POINTER else "")
                       + (_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
                          if STRICT_LINKS else "")
@@ -994,11 +1192,11 @@ def faithfulness_prompt(
                                                               if attribution_on() else ""),
                                                  count=len(sentences), supported=SUPPORTED,
                                                  not_supported=NOT_SUPPORTED,
-                                                 max_words=MAX_REASON_WORDS)
+                                                 fields=_fields(_STORY_FIELDS))
                    if story else
                    _SENTENCES_BLOCK.format(sentences=lines, count=len(sentences),
                                            supported=SUPPORTED, not_supported=NOT_SUPPORTED,
-                                           max_words=MAX_REASON_WORDS))
+                                           fields=_fields(_SENTENCE_FIELDS)))
         if readings:
             prompt += _READINGS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
         if shape is not None:
@@ -1011,7 +1209,7 @@ def faithfulness_prompt(
             prompt += _GAPS_BLOCK.format(
                 gaps="\n".join(f"{i}. gap: {g}" for i, g in enumerate(gaps, start=1)),
                 count=len(gaps), supported=SUPPORTED, not_supported=NOT_SUPPORTED,
-                max_words=MAX_REASON_WORDS)
+                fields=_fields(_GAP_FIELDS))
     return prompt
 
 
@@ -1110,6 +1308,93 @@ def carry_verdicts(later: "CheckOutcome", first: "CheckOutcome",
     return replace(later, kept=kept, dropped=list(first.dropped), claim_ok=list(first.claim_ok))
 
 
+# VERDICT_GUARD (2026-11-09): a "not_supported" whose own reason says the
+# opposite is asked again. Measured live (the trace REASON_FIRST cites): "Passage
+# 12 states noon meeting and thanks and interest; fully stated" came back
+# not_supported. Code reads the reason only for this: an affirmation (_AFFIRMS)
+# and no negation (_NEGATES) makes the verdict inconsistent. The inconsistent
+# claims and fact sentences (not an opening, which is judged against every
+# claim) are re-asked in ONE small call, after the spend check; a "supported"
+# then replaces the verdict, anything else (another "not_supported", a failed
+# or garbled call) keeps it -- rejecting stays the safe direction. Lists kept
+# short on purpose: a rejection whose reason names what is wrong ("adds",
+# "not", "only", "beyond") is never re-asked. Off: no re-ask (run_pair arm
+# `verdict_guard`).
+VERDICT_GUARD = True
+_AFFIRMS = re.compile(r"\b(?:supported|stated|states (?:this|it|that|all|both|everything)"
+                      r"|matches|match|correct)\b", re.I)
+_NEGATES = re.compile(r"n't\b|\b(?:not|no|never|nothing|none|only|adds?|added|beyond|lacks?"
+                      r"|missing|contradicts?|contradicted|unsupported|not_supported"
+                      r"|invents?|invented|wrong|differs?|different|instead)\b", re.I)
+REASK_LEAD = """A first check of the items below gave a verdict that its own reason
+disagreed with. Check them again from the passages: write the reason first,
+then the verdict that reason finds.
+
+"""
+
+
+def inconsistent_verdict(verdict: str, reason: str) -> bool:
+    """A "not_supported" whose reason affirms the claim and negates nothing."""
+    word = _SPACE.sub("_", str(verdict).strip().lower().strip(".")).strip("_")
+    reason = str(reason or "")
+    return (word == NOT_SUPPORTED and bool(_AFFIRMS.search(reason))
+            and not _NEGATES.search(reason))
+
+
+def inconsistent_items(result, sentences: Sequence["Sentence"] | None = None,
+                       opener: bool = False) -> tuple[list[int], list[int]]:
+    """0-based (claims, sentences) of `result` whose verdict its reason
+    contradicts; only fact sentences, never an opening (`opener`)."""
+    claims = [i for i, j in enumerate(getattr(result, "judgements", None) or [])
+              if inconsistent_verdict(j.verdict, j.reason)]
+    sents = [i for i, j in enumerate(getattr(result, "sentence_judgements", None) or [])
+             if sentences and i < len(sentences)
+             and getattr(sentences[i], "kind", "fact") == "fact" and not (opener and i == 0)
+             and inconsistent_verdict(j.verdict, j.reason)]
+    return claims, sents
+
+
+async def _guard_verdicts(claims, passages, check, result, verdicts, sentence_ok, sentences, *,
+                          book_titles=None, books=None, opener=False, spend_ok=None):
+    """VERDICT_GUARD: (verdicts, sentence_ok), with each inconsistent rejection
+    asked again in one call and replaced only by a "supported"."""
+    bad_claims, bad_sents = inconsistent_items(
+        result, sentences if sentence_ok is not None else None, opener)
+    if not bad_claims and not bad_sents:
+        return verdicts, sentence_ok
+    if spend_ok is not None and not spend_ok():
+        return verdicts, sentence_ok
+    try:
+        wanted = sorted({*bad_claims, *(k - 1 for i in bad_sents for k in sentences[i].claims
+                                        if 1 <= k <= len(claims))})
+        number = {i: n for n, i in enumerate(wanted, start=1)}
+        sub = [claims[i] for i in wanted]
+        again = [sentences[i].model_copy(update={"claims": [number[k - 1] for k in
+                                                            sentences[i].claims
+                                                            if k - 1 in number]})
+                 for i in bad_sents]
+        reply = await check(REASK_LEAD + faithfulness_prompt(sub, passages, book_titles,
+                                                             again or None, books),
+                            check_schema(bool(again)))
+        sub_verdicts = validated_verdicts(reply, len(sub))
+        sub_sentences = (validated_sentence_verdicts(reply, len(again))
+                         if again and sub_verdicts is not None else None)
+    except Exception:  # noqa: BLE001 -- a failed re-ask keeps the first verdicts
+        return verdicts, sentence_ok
+    verdicts = list(verdicts)
+    if sub_verdicts is not None:
+        for i in bad_claims:
+            ok, reason = sub_verdicts[number[i] - 1]
+            if ok:
+                verdicts[i] = (True, reason)
+    if sentence_ok is not None and sub_sentences is not None:
+        sentence_ok = list(sentence_ok)
+        for n, i in enumerate(bad_sents):
+            if sub_sentences[n]:
+                sentence_ok[i] = True
+    return verdicts, sentence_ok
+
+
 async def check_answer(
     claims: Sequence[Claim],
     passages: Iterable[Passage],
@@ -1121,8 +1406,12 @@ async def check_answer(
     gaps: Sequence[str] | None = None,
     shape: "interpret.Shape | None" = None,
     opener: bool = False,
+    spend_ok=None,
 ) -> CheckOutcome:
     """`check_claims`, plus one verdict per prose sentence in the same call.
+
+    `spend_ok`: asked before VERDICT_GUARD's re-ask (False: no re-ask). None:
+    always allowed.
 
     Claim and sentence verdicts are validated separately: garbled sentence
     verdicts cost only the prose (`sentence_ok=None`), never the claim check.
@@ -1147,6 +1436,10 @@ async def check_answer(
         verdicts = validated_verdicts(result, len(claims))
         sentence_ok = (validated_sentence_verdicts(result, len(sentences))
                        if sentences and verdicts is not None else None)
+        if VERDICT_GUARD and verdicts is not None:
+            verdicts, sentence_ok = await _guard_verdicts(
+                claims, passages, check, result, verdicts, sentence_ok, sentences,
+                book_titles=book_titles, books=books, opener=opener, spend_ok=spend_ok)
         if gaps and sentences and verdicts is not None and write_module.STORY_ORDER:
             gap_ok = validated_gap_verdicts(result, len(gaps))
         if sentence_ok is not None and write_module.coverage_on():
@@ -1206,8 +1499,7 @@ wording.
   figures in the story. A sentence 1 that gives only one detail or event of
   the subject instead is "{not_supported}" (reason: "not an introduction").
 Return these in sentence_judgements, one per sentence, numbered 1 to {count} in
-the claim field, with a verdict ("{supported}" or "{not_supported}"), a reason
-of at most {max_words} words, and supported_by.
+the claim field, {fields}
 """
 
 
@@ -1232,7 +1524,8 @@ def intro_check_prompt(claims: Sequence[Claim], passages: Iterable[Passage],
     return _INTRO_CHECK_PROMPT.format(
         claims="\n".join(items), order_note=("\n" + order.note() + "\n") if order.note() else "",
         sentences=lines, summary=summary_rule(opener=True, every_sentence=True), count=len(sentences),
-        supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+        supported=SUPPORTED, not_supported=NOT_SUPPORTED,
+        fields=_fields(_INTRO_FIELDS, _INTRO_FIELDS_FIRST))
 
 
 async def check_intro(claims: Sequence[Claim], passages: Iterable[Passage],
@@ -1348,7 +1641,8 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     opener = write_module.opener_on(length, shape)
     outcome = await check_answer(kept, evidence.passages, check, book_titles=book_titles,
                                  sentences=sentences or None, books=books,
-                                 gaps=gaps if sentences else None, shape=shape, opener=opener)
+                                 gaps=gaps if sentences else None, shape=shape, opener=opener,
+                                 spend_ok=spend_ok)
     if sentences:
         sentences = with_opener(sentences, outcome)
     skipped = None if outcome.ran else CHECK_SKIPPED_NOTE
@@ -1411,7 +1705,8 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
             if second:
                 outcome2 = await check_answer(kept, evidence.passages, check,
                                               book_titles=book_titles, sentences=second,
-                                              books=books, shape=shape, opener=opener)
+                                              books=books, shape=shape, opener=opener,
+                                              spend_ok=spend_ok)
                 outcome2 = carry_verdicts(outcome2, outcome, kept)
                 second = with_opener(second, outcome2)
                 if outcome2.ran and outcome2.sentence_ok is not None:
@@ -1433,8 +1728,13 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
                                        check, write, book_titles, books, length, covered, built,
                                        opener, spend_ok)
         if built and enforce:
-            built = place_uncited(built, [c.text for c in outcome.kept],
-                                  [c.passage for c in outcome.kept])
+            shown_kept = outcome.kept
+            built = place_uncited(built, [c.text for c in shown_kept],
+                                  [c.passage for c in shown_kept],
+                                  same=((lambda s, k: states_claim(s, k, shown_kept))
+                                        if DEDUP_SENTENCES else None))
+        if built and DEDUP_SENTENCES:
+            built = dedup_sentences(built, outcome.kept)
         if built and part_claims is not None:
             numbered = [[outcome.kept.index(c) + 1 for c in cs if c in outcome.kept]
                         for cs in part_claims]
@@ -1505,7 +1805,8 @@ async def _order_repair(question, sub_questions, claims, passages, check, write,
     if not second:
         return None
     checked = await check_answer(claims, passages, check, book_titles=book_titles,
-                                 sentences=second, books=books, opener=opener)
+                                 sentences=second, books=books, opener=opener,
+                                 spend_ok=spend_ok)
     if not (checked.ran and checked.sentence_ok is not None
             and len(checked.sentence_ok) == len(second)):
         return None
@@ -1636,7 +1937,8 @@ async def _orphan_repair(question, sub_questions, kept, passages, check, write, 
         return None
     checked = await check_answer(sub_claims, passages, check, book_titles=book_titles,
                                  sentences=second, books=books, gaps=gaps or None, shape=sub_shape,
-                                 opener=write_module.opener_on(length, sub_shape))
+                                 opener=write_module.opener_on(length, sub_shape),
+                                 spend_ok=spend_ok)
     if not (checked.ran and checked.sentence_ok is not None):
         return None
     second = with_opener(second, checked)

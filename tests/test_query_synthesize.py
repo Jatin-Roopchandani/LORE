@@ -885,7 +885,7 @@ async def test_the_check_prompt_names_both_verdicts_and_the_two_rules() -> None:
     assert SUPPORTED in prompt and NOT_SUPPORTED in prompt
     assert "book" in prompt and "place" in prompt
     assert "cause" in prompt and "motive" in prompt and "consequence" in prompt
-    assert "12 words" in prompt
+    assert "20 words" in prompt  # REASON_FIRST: 12 before it
     assert "numbered 1 to 1" in prompt
 
 
@@ -1066,7 +1066,10 @@ def _new_prompt_texts() -> str:
                       write_module.EVENT_ORDER_RULE, write_module.ORDER_RULE,
                       synthesize_module._SETUP_NOTE, write_module.ATTRIBUTION_RULE,
                       synthesize_module._ATTRIBUTION_CHECK,
-                      synthesize_module._ATTRIBUTION_CLAIM_CHECK))
+                      synthesize_module._ATTRIBUTION_CLAIM_CHECK,
+                      synthesize_module._ATTRIBUTION_CLAIMS_RULE,
+                      synthesize_module._CLAIM_FIELDS_FIRST, synthesize_module._ITEM_FIELDS_FIRST,
+                      synthesize_module._INTRO_FIELDS_FIRST, synthesize_module.REASK_LEAD))
 
 
 def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:

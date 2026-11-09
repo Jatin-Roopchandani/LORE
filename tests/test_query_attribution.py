@@ -121,3 +121,110 @@ async def test_a_swapped_recipient_is_rejected_and_a_faithful_paraphrase_passes(
                                    Sentence(text=ASKED, claims=[2])]))
     b = await good.answer()
     assert b.answer_style == "prose" and [s.text for s in b.prose] == [FAITHFUL, ASKED]
+
+
+# ---- widened 2026-11-09: traits and relations, and someone else the passage mentions ------
+# h9b: the passage gave a relation ("has friends who would risk something for him") to
+# the man the speaker was hunting; the claim gave it to the visitor standing there. The
+# fixture is a made-up scene of that shape.
+
+HUNT = (Passage(n=1, chunk_id="c:1:0", book_id="c", chapter_seq=1,
+                text="The peddler slipped out of the yard before anyone could stop him. "
+                     "\"So the one we are hunting is not alone,\" said Ilse. \"He has friends "
+                     "who would hide him.\""),)
+HUNT_TITLES = {"c": "The Ferry"}
+HUNT_BOOKS = {"c": BookInfo("The Ferry")}
+HUNT_QUOTE = "He has friends who would hide him"
+SWAPPED_CLAIM = "Ilse says the peddler has friends who would hide him."
+FAITHFUL_CLAIM = "Ilse says the man they are hunting is not alone: he has friends who would hide him."
+SWAPPED_SENTENCE = "The peddler, Ilse says, has friends who would hide him."
+
+
+def test_the_rules_name_traits_relations_and_someone_else_mentioned():
+    for rule in (synth._ATTRIBUTION_CHECK, synth._ATTRIBUTION_CLAIM_CHECK,
+                 synth._ATTRIBUTION_CLAIMS_RULE):
+        flat = " ".join(rule.split())
+        assert "trait" in flat and "relation" in flat and '"his master"' in flat
+    assert "attributes an action" in synth._ATTRIBUTION_CHECK
+    assert "not only that its words are there" in " ".join(synth._ATTRIBUTION_CLAIM_CHECK.split())
+
+
+def test_the_claims_prompt_carries_the_rule_only_when_on(monkeypatch):
+    from lore.query.synthesize import _build_prompt
+    ev = Evidence(edges=(), passages=HUNT, truncated=False)
+    on = _build_prompt("Who has friends?", ev, HUNT_TITLES, books=HUNT_BOOKS)
+    assert synth._ATTRIBUTION_CLAIMS_RULE in on
+    assert on.index(synth._STRICT_LINKS_RULE) < on.index(synth._ATTRIBUTION_CLAIMS_RULE)
+    monkeypatch.setattr(synth, "ATTRIBUTION_FIDELITY", False)
+    off = _build_prompt("Who has friends?", ev, HUNT_TITLES, books=HUNT_BOOKS)
+    assert off == on.replace(synth._ATTRIBUTION_CLAIMS_RULE, "")
+
+
+class Careful:
+    """A fake checker that applies the widened rule as a careful model would: a
+    claim or sentence giving the passage's relation to the peddler (whom the
+    passage does not give it to) is not_supported -- but only when the prompt
+    tells it to look at whom the passage gives it to, as h9b's check did not."""
+
+    def __init__(self, claim_text, sentence=None):
+        self.claim_text, self.sentence = claim_text, sentence
+
+    async def generate(self, prompt, schema):
+        return Synthesis(can_answer=True, claims=[
+            {"text": "The peddler slipped out of the yard before anyone could stop him.",
+             "passage": 1, "quote": "The peddler slipped out of the yard"},
+            {"text": self.claim_text, "passage": 1, "quote": HUNT_QUOTE}])
+
+    async def write(self, prompt, schema):
+        return Prose(sentences=[
+            Sentence(text="The peddler slipped out of the yard before anyone could stop him.",
+                     claims=[1]),
+            Sentence(text=self.sentence or self.claim_text, claims=[2])])
+
+    async def check(self, prompt, schema):
+        flat = " ".join(prompt.split())
+        claim_rule = "trait or relation" in flat and "whom the passage gives it to" in flat
+        sentence_rule = "speech, trait or relation to a different person than its cited" in flat
+        claims = re.findall(r"^\d+\. claim: (.*)$", prompt, re.M)
+        texts = re.findall(r"^\d+\. sentence(?: \(\w+\))?: (.*)$", prompt, re.M)
+
+        def swapped(text):
+            return "peddler" in text and "friends" in text
+
+        return schema.model_validate({
+            "judgements": [{"claim": i, "reason": "r", "restated_by": 0,
+                            "verdict": "not_supported" if claim_rule and swapped(t) else "supported"}
+                           for i, t in enumerate(claims, start=1)],
+            "sentence_judgements": [
+                {"claim": i, "reason": "r", "inference_in_fact": False,
+                 "verdict": "not_supported" if sentence_rule and swapped(t) else "supported"}
+                for i, t in enumerate(texts, start=1)]})
+
+    async def answer(self):
+        return await synthesize("Who helps the man they are hunting?",
+                                Evidence(edges=(), passages=HUNT, truncated=False),
+                                self.generate, mode="graph", check=self.check, write=self.write,
+                                book_titles=HUNT_TITLES, books=HUNT_BOOKS)
+
+
+async def test_a_relation_given_to_the_wrong_participant_is_rejected():
+    a = await Careful(SWAPPED_CLAIM).answer()
+    assert SWAPPED_CLAIM not in [c.text for c in a.claims]
+    assert "peddler has friends" not in a.text
+
+
+async def test_a_correct_paraphrase_of_the_relation_passes():
+    a = await Careful(FAITHFUL_CLAIM).answer()
+    assert FAITHFUL_CLAIM in [c.text for c in a.claims]
+    assert a.answer_style == "prose" and FAITHFUL_CLAIM in a.text
+
+
+async def test_a_sentence_that_moves_the_relation_is_rejected():
+    a = await Careful(FAITHFUL_CLAIM, sentence=SWAPPED_SENTENCE).answer()
+    assert SWAPPED_SENTENCE not in a.text
+
+
+async def test_without_the_rule_the_swap_passes_as_it_did(monkeypatch):
+    monkeypatch.setattr(synth, "ATTRIBUTION_FIDELITY", False)
+    a = await Careful(SWAPPED_CLAIM).answer()
+    assert SWAPPED_CLAIM in [c.text for c in a.claims]
