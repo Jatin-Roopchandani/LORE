@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { streamAsk } from "./api";
-import { askReducer, initialState, type AskState } from "./askReducer";
+import { cancelAsk, streamAsk } from "./api";
+import { askReducer, foldEvents, initialState, type AskState } from "./askReducer";
 import { chatsApi, failed } from "./chatsApi";
 import { addToHistory, entriesOf, importBody, importDone, itemFromChat, keepLegacy, loadHistory, loadLegacy, markImportDone,
   saveHistory, type HistoryItem, type ThreadEntry } from "./history";
@@ -9,9 +9,16 @@ import { prefersReducedMotion } from "./settings";
 import { createScheduler, type Scheduler } from "./scheduler";
 import type { AskEvent, Depth } from "./types";
 
-type Action = { kind: "reset"; question: string } | { kind: "event"; event: AskEvent };
+// `stopped`: the reader pressed Stop. Every event received so far is drawn at once (the animation may still have been
+// catching up), then the question is marked stopped.
+type Action = { kind: "reset"; question: string } | { kind: "event"; event: AskEvent }
+  | { kind: "stopped"; question: string; events: AskEvent[]; mark: boolean };
 function reducer(state: AskState, action: Action): AskState {
-  return action.kind === "reset" ? initialState(action.question) : askReducer(state, action.event);
+  if (action.kind === "reset") return initialState(action.question);
+  if (action.kind === "event") return askReducer(state, action.event);
+  const received = foldEvents(action.question, action.events);
+  // `mark` false: a replay (or an answer already in) is only drawn whole, not marked stopped.
+  return action.mark ? askReducer(received, { type: "stopped", t: received.elapsed }) : received;
 }
 // The device's setting, or the Settings popup's "Reduce motion" override.
 const reduceMotion = prefersReducedMotion;
@@ -89,6 +96,26 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
 
   const stop = () => { abort.current?.abort(); scheduler.current?.stop(); };
   useEffect(() => stop, []);
+
+  // Stop (the ask box's Stop button, or Esc in it): the question on screen stops at once. Its stream is aborted, the
+  // server is told to cancel the run (no further model calls; the abort alone may not reach it through a proxy), and
+  // what had arrived stays on screen, marked stopped. A stopped question is not a turn of the chat: the server never
+  // saves it, the next question follows up the chat without it, and it is not moved up into the thread.
+  // Returns the stopped question, for the ask box to hold again (null when nothing was stopped).
+  const stopAnswer = useCallback((): string | null => {
+    const shown = live.current;
+    if (!shown) return null;
+    const events = shown.entry.events;
+    const over = shown.done || events.some((e) => e.type === "answer" || e.type === "error" || e.type === "stopped");
+    // A replay, or an answer already in and still being drawn: drawn whole at once, nothing to cancel (its stream is
+    // left to end, so an answer the server saved still joins the chat).
+    if (over) scheduler.current?.stop(); else stop();
+    dispatch({ kind: "stopped", question: shown.entry.question, events: [...events], mark: !over });
+    if (over) return null;
+    const request = events.find((e) => e.type === "request");
+    if (request && request.type === "request") void cancelAsk(request.request_id);
+    return shown.entry.question;
+  }, []);
 
   // Starts the next question of the open chat. The finished question on screen moves up into the thread (one still
   // streaming is dropped: it was cut off). `again` (Retry) replaces the question on screen instead.
@@ -216,6 +243,6 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   }, []);
 
   const retry = useCallback(() => { if (last.current.question) send(last.current.question, last.current.depth, true, last.current.spoilers); }, [send]);
-  return { state, thread, history, current, run, ask, replay, retry, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running",
+  return { state, thread, history, current, run, ask, replay, retry, stopAnswer, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running",
     importable, importLocal, declineImport };
 }

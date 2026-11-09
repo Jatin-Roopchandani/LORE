@@ -179,7 +179,7 @@ export function GraphPane({ state, hiddenBooks, hoverChunks, noBooks, books = []
 
   const running = state.steps.find((s) => s.state === "running");
   const stage = mode === "library" ? (shownOverview ? UI.overviewStage : UI.graphIdle)
-    : running ? `${STEP_LABEL[running.name]}…` : state.status === "done" ? UI.answeredIn(state.elapsed) : UI.graphIdle;
+    : running ? `${STEP_LABEL[running.name]}…` : state.status === "done" ? UI.answeredIn(state.elapsed) : state.status === "stopped" ? UI.stopped : UI.graphIdle;
   // Several worlds drawn together: each is a cluster, marked on its nodes and listed here.
   const marked = worldsIn(view);
   const showHint = mode === "library" && overview === null && view.nodes.length === 0;

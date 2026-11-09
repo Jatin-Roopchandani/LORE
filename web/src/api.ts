@@ -72,7 +72,7 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
       const parsed = parseSse(buffer + value);
       buffer = parsed.rest;
       for (const e of parsed.events) {
-        if (e.type === "answer" || e.type === "error") finished = true;
+        if (e.type === "answer" || e.type === "error" || e.type === "stopped") finished = true;
         if (e.type === "error") reportKeyProblem(e.error.code);
         yield e;
       }
@@ -81,6 +81,19 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
     if (signal.aborted) return;
   }
   if (!finished && !signal.aborted) yield errorEvent("interrupted", "");
+}
+
+// Stop: asks the server to cancel the question (no further model calls), as well as the page aborting its stream,
+// because a proxy (Cloudflare Tunnel) may not tell the server the stream was dropped. Best effort: a question already
+// over (or not this user's) is a 404, and nothing here waits on it.
+export async function cancelAsk(requestId: string): Promise<boolean> {
+  try {
+    const r = await fetch(`/api/ask/${encodeURIComponent(requestId)}/cancel`, {
+      method: "POST", keepalive: true, headers: { Accept: "application/json", ...csrfHeaders() } });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }
 
 // Where the browser goes when the server says the session is over (multi-user mode only). A seam for tests.

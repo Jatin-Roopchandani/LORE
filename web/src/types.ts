@@ -70,7 +70,9 @@ export type AskEvent =
   // The first event of every question: its id, which a report of the answer quotes (release step 4).
   | { type: "request"; t: number; request_id: string }
   // A follow-up rewritten to stand alone from the chat's earlier turns, sent only when it differs from what was typed.
-  | { type: "understood"; t: number; standalone: string };
+  | { type: "understood"; t: number; standalone: string }
+  // The reader pressed Stop: the server's last event when it ends the run, and what the page records at once.
+  | { type: "stopped"; t: number };
 export interface Book { id: string; title: string; author: string | null; status: string;
   chunk_count: number; entity_count: number | null; world?: string | null }
 // Set on nodes and entities only when several worlds are shown together (the "all worlds" view).

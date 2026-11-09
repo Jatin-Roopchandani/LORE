@@ -9,7 +9,7 @@ export interface PlanView { scope: string; candidates: number; sections: PlanSec
 // One section of a sectioned answer as it streams in: writing, then done, skipped (budget) or failed.
 export interface SectionView { index: number; kind: "section" | "close"; heading: string;
   state: "writing" | "done" | "skipped" | "failed" | "empty"; style: "prose" | "claims" | null;
-  text: string; prose: ProseSentence[]; claimsRange: [number, number] | null; reason: "budget" | "reserve" | null;
+  text: string; prose: ProseSentence[]; claimsRange: [number, number] | null; reason: "budget" | "reserve" | "stopped" | null;
   // The interpretive part this lens section is grouped under ("" for none).
   group: string;
   // The part's full question (`group` is its short label; "" for none).
@@ -18,7 +18,8 @@ export interface SectionView { index: number; kind: "section" | "close"; heading
   title: string }
 export interface PartEdges { template: string | null; total: number; edges: Edge[] }
 export interface AskState {
-  status: "idle" | "running" | "done" | "error" | "interrupted";
+  // "stopped": the reader pressed Stop; what had streamed stays, and it is not saved as a turn of the chat.
+  status: "idle" | "running" | "done" | "error" | "interrupted" | "stopped";
   question: string; steps: StepView[]; subQuestions: string[];
   seeds: Seed[][]; edges: PartEdges[]; evidence: { chunkIds: string[]; edgeKeys: string[] } | null;
   result: SearchResult | null; error: ApiError | null; elapsed: number;
@@ -165,6 +166,15 @@ export function askReducer(state: AskState, event: AskEvent): AskState {
       return { ...s, requestId: event.request_id };
     case "understood":
       return { ...s, standalone: event.standalone || null };
+    case "stopped":
+      // Only a question still running can be stopped; one that has landed (or failed) stays as it is.
+      if (s.status !== "running") return s;
+      return {
+        ...s, status: "stopped",
+        steps: s.steps.map((step) => step.state === "running" ? { ...step, state: "pending" } : step),
+        deepSteps: s.deepSteps.map((d) => d.state === "running" ? { ...d, state: "skipped" } : d),
+        sections: s.sections.map((x) => x.state === "writing" ? { ...x, state: "skipped", reason: "stopped" } : x),
+      };
     case "error":
       return {
         ...s, status: event.error.code === "interrupted" ? "interrupted" : "error", error: event.error,
