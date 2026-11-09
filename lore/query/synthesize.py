@@ -1384,6 +1384,11 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
                 question, sub_questions, kept, evidence.passages, check, write, book_titles,
                 books, shape, length, covered, sentences, written, outcome, gaps, built, build,
                 kept_mask, spend_ok)
+        if built and write_module.story_order_prose_on(length, shape):
+            # STORY_ORDER_PROSE: events in story order, by code where it can.
+            built = await _story_order(question, sub_questions, outcome.kept, evidence.passages,
+                                       check, write, book_titles, books, length, covered, built,
+                                       opener, spend_ok)
         if built and enforce:
             built = place_uncited(built, [c.text for c in outcome.kept],
                                   [c.passage for c in outcome.kept])
@@ -1410,6 +1415,74 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
         prose, shown_gaps = interpret.close_answer(prose, shape, shown_gaps, survivors), ()
     return (outcome.kept, [c for c, _ in outcome.dropped], prose, skipped, prose_note,
             tuple(missing) if prose else (), shown_gaps)
+
+
+async def _story_order(question, sub_questions, claims, passages, check, write, book_titles,
+                       books, length, covered, built, opener, spend_ok=None):
+    """STORY_ORDER_PROSE: `built` (the shown prose, its claims numbered as
+    `claims`, the claims the check kept) with its events in story order. An
+    answer with no fault, or organised by theme, is returned as it is; a fault
+    is fixed by moving the sentence (`write.story_reorder`) when that orphans
+    nothing, else by one repair round (`_order_repair`); if that fails too the
+    prose stands as it was."""
+    keys = write_module.story_keys(built, passages, book_titles, books)
+    faults = write_module.order_faults(built, keys, opener)
+    if not faults or not write_module.chronological(built, keys, opener):
+        return built
+    moved = write_module.story_reorder(built, keys, opener)
+    if moved is not None:
+        return moved
+    fixed = await _order_repair(question, sub_questions, claims, passages, check, write,
+                                book_titles, books, length, covered, built, faults, opener,
+                                spend_ok)
+    return fixed if fixed else built
+
+
+async def _order_repair(question, sub_questions, claims, passages, check, write, book_titles,
+                        books, length, covered, built, faults, opener, spend_ok=None):
+    """STORY_ORDER_PROSE's one repair round: the writer sees the shown prose
+    with the out-of-order sentences named (`Repair.order`); its revision is
+    checked once, the claims' verdicts carried (they all passed). Returns the
+    revised prose, or None when the spend check says no, the round fails, or
+    the revision is no better: it must assemble, orphan nothing, cite every
+    claim the prose cited, and have fewer order faults."""
+    if write is None or check is None or (spend_ok is not None and not spend_ok()):
+        return None
+    if any(s.kind not in ("fact", "reading") for s in built):
+        return None
+    from lore.query.write import Sentence  # write.py never imports this module
+    draft = tuple(Sentence(text=s.text, claims=list(s.claims), new_paragraph=s.new_paragraph,
+                           kind=s.kind) for s in built)
+    repair = Repair(draft=draft, order=tuple(i + 1 for i in faults))
+    again = await write_answer(question, sub_questions, claims, passages, write,
+                               book_titles=book_titles, books=books, length=length,
+                               covered=covered, repair=repair)
+    second = (verify_prose(again, len(claims), [c.text for c in claims])
+              if again is not None else [])
+    if not second:
+        return None
+    checked = await check_answer(claims, passages, check, book_titles=book_titles,
+                                 sentences=second, books=books, opener=opener)
+    if not (checked.ran and checked.sentence_ok is not None
+            and len(checked.sentence_ok) == len(second)):
+        return None
+    second = with_opener(second, checked)
+    ok = list(checked.sentence_ok)
+    if write_module.fidelity_on() and checked.inference and len(checked.inference) == len(ok):
+        ok = [good and not (flag and getattr(s, "kind", "fact") == "fact")
+              for s, good, flag in zip(second, ok, checked.inference)]
+    every = [True] * len(claims)  # CARRY_VERDICTS: these claims all passed the check
+    rebuilt = assemble(second, len(split_items(again)), every, ok, [c.passage for c in claims])
+    if not rebuilt:
+        return None
+    if write_module.orphans(second, write_module.kept_flags(second, every, ok)):
+        return None
+    if not {k for s in built for k in s.claims} <= {k for s in rebuilt for k in s.claims}:
+        return None
+    keys = write_module.story_keys(rebuilt, passages, book_titles, books)
+    if len(write_module.order_faults(rebuilt, keys, opener)) >= len(faults):
+        return None
+    return rebuilt
 
 
 def uncited_claims(sentences: Sequence["Sentence"], outcome: CheckOutcome) -> list[int]:
