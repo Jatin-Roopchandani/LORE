@@ -903,3 +903,27 @@ def test_a_spend_stop_lets_no_further_profile_start(env, monkeypatch) -> None:
     # finished and was saved; the Quay was never asked.
     assert client.finished == ["Mira Voss"] and checks == 2
     assert store.with_entries(conn, ["e1"]) == ["e1"]
+
+
+def test_relink_deleting_stale_profiles_opens_the_vector_store_with_the_config(env, monkeypatch) -> None:
+    # Live failure: a second book in a world made earlier profiles stale, relink
+    # deleted them, and the store factory was called with no config (TypeError).
+    config, conn, tmp_path, _w = env
+    opened: list = []
+    lance = LanceStore(tmp_path / "lance")
+
+    def factory(cfg):
+        opened.append(cfg)
+        return lance
+
+    def relink(conn_, kuzu_, deferred=None):
+        deferred.delete_codex(["gone"])  # what relink does when a profile's entity is gone
+        return 1
+
+    monkeypatch.setattr(store, "relink", relink)
+    stage = CodexStage(client_factory=lambda cfg: _Client(ANSWERS),
+                       embed_factory=_embed_factory([]),
+                       kuzu_factory=lambda cfg: KuzuStore(config.kuzu_dir / "graph", read_only=True),
+                       lance_factory=factory)
+    assert run_book(conn, config, BOOK, [stage]).state == jobs.DONE
+    assert opened and all(cfg is config for cfg in opened)
