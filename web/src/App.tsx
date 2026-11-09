@@ -66,6 +66,8 @@ function ReadingApp({ me }: { me: Me | null }) {
   // Bumped when the reading position changed: the book list, the overview and the open panels refetch under it.
   const [positionVersion, setPositionVersion] = useState(0);
   const positionChanged = useCallback(() => setPositionVersion((v) => v + 1), []);
+  // Whether the reading progress holds anything back: the ask box then offers to show spoilers for one question.
+  const [limited, setLimited] = useState(false);
   // History is a drawer over the page at every width (never a column); Ctrl/Cmd+K opens the quick switcher.
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -121,6 +123,7 @@ function ReadingApp({ me }: { me: Me | null }) {
     <div className="app">
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey}
         worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)} onPositionChange={positionChanged}
+        libraryKey={libraryVersion} onLimited={setLimited}
         historyOpen={drawerOpen} onToggleHistory={toggleHistory} depth={ask.depth} onDepth={ask.setDepth} onShowInternals={chooseInternals} me={me} />
       {ask.importable > 0 && (
         <div className="import-offer" role="status">
@@ -134,7 +137,7 @@ function ReadingApp({ me }: { me: Me | null }) {
           <HistorySidebar items={ask.history} current={ask.current} world={world} worlds={worlds ?? []} onReplay={replay} onDelete={ask.remove}
             onClear={ask.clearHistory} onNew={newQuestion} onClose={closeDrawer} />
         )}
-        <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview}
+        <ChatPane ask={ask} limited={limited} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview}
           onSection={(index) => setReading((r) => (r.run === ask.run && r.index === index ? r : { run: ask.run, index }))} />
         <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} positionVersion={positionVersion} onAsk={ask.ask}
           section={reading.run === ask.run ? reading.index : null} />

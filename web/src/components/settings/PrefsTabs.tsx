@@ -63,7 +63,6 @@ export interface ReadingProps {
 
 export function ReadingTab({ multi, worlds, world, onWorldChange, depth, onDepth, showInternals, onShowInternals, onOpenPosition }: ReadingProps) {
   const [steps, setSteps] = useState(() => loadOpen(STEPS_KEY, false));
-  const oneWorld = world !== ALL_WORLDS;
   return (<>
     <section className="set-section">
       <div className="set-field">
@@ -80,9 +79,8 @@ export function ReadingTab({ multi, worlds, world, onWorldChange, depth, onDepth
         <span className="set-label">{SETTINGS.position}</span>
         <p className="hint">{SETTINGS.positionHint}</p>
         <div className="key-actions">
-          <button className="tbtn" type="button" disabled={!oneWorld} onClick={onOpenPosition}>{SETTINGS.positionOpen}</button>
+          <button className="tbtn" type="button" onClick={onOpenPosition}>{SETTINGS.positionOpen}</button>
         </div>
-        {!oneWorld && <p className="hint">{SETTINGS.positionNeedsWorld}</p>}
       </div>
     </section>
     <section className="set-section">

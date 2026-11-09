@@ -76,7 +76,7 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   const declineImport = useCallback(() => { markImportDone(); setImportable(0); }, []);
   const abort = useRef<AbortController | null>(null);
   const scheduler = useRef<Scheduler | null>(null);
-  const last = useRef<{ question: string; depth?: Depth }>({ question: "" });
+  const last = useRef<{ question: string; depth?: Depth; spoilers?: boolean }>({ question: "" });
   // The Deep dive choice (auto, deep or focused), remembered across visits and sent with every question.
   const [depth, setDepthState] = useState<Depth>(() => loadDepth());
   const depthRef = useRef(depth);
@@ -92,12 +92,12 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
 
   // Starts the next question of the open chat. The finished question on screen moves up into the thread (one still
   // streaming is dropped: it was cut off). `again` (Retry) replaces the question on screen instead.
-  const send = useCallback((question: string, depth: Depth | undefined, again: boolean) => {
+  const send = useCallback((question: string, depth: Depth | undefined, again: boolean, spoilers = false) => {
     stop();
     const shown = live.current;
     if (!again && shown?.done) setThread((t) => [...t, shown.entry]);
     const asked = worldRef.current;
-    last.current = { question, depth };
+    last.current = { question, depth, spoilers };
     const entry: ThreadEntry = { key: `q${++asks.current}`, question, standalone: null, events: [] };
     live.current = { entry, done: false };
     const following = chat.current;
@@ -113,7 +113,9 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
       const events = entry.events;
       const d = depth ?? depthRef.current;
       // The chat's id only on a follow-up: a first question is sent exactly as before chats had threads.
-      const stream = following ? streamAsk(question, controller.signal, asked, d, following) : streamAsk(question, controller.signal, asked, d);
+      // Spoilers shown for this one question only: the reading progress is skipped for it (`?spoilers=1`).
+      const stream = spoilers ? streamAsk(question, controller.signal, asked, d, following ?? undefined, true)
+        : following ? streamAsk(question, controller.signal, asked, d, following) : streamAsk(question, controller.signal, asked, d);
       for await (const event of stream) { events.push(event); sched.push(event); }
       if (controller.signal.aborted) return;
       entry.standalone = standaloneOf(events);
@@ -137,7 +139,8 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   }, []);
 
   // `depth` overrides the Deep dive choice for this one question (the graph panel's Deep dive button).
-  const ask = useCallback((question: string, depth?: Depth) => send(question, depth, false), [send]);
+  // `spoilers` answers this one question from every book, past the reading progress (the ask box's override).
+  const ask = useCallback((question: string, depth?: Depth, spoilers?: boolean) => send(question, depth, false, spoilers === true), [send]);
 
   // Draws a chat: `earlier` above, and `latest` replayed below (animated unless motion is reduced; no model call).
   const open = useCallback((id: string, itemWorld: string | undefined, earlier: ThreadEntry[], latest: ThreadEntry) => {
@@ -212,7 +215,7 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
     setCurrent(null);
   }, []);
 
-  const retry = useCallback(() => { if (last.current.question) send(last.current.question, last.current.depth, true); }, [send]);
+  const retry = useCallback(() => { if (last.current.question) send(last.current.question, last.current.depth, true, last.current.spoilers); }, [send]);
   return { state, thread, history, current, run, ask, replay, retry, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running",
     importable, importLocal, declineImport };
 }

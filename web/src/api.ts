@@ -30,10 +30,11 @@ import { reportKeyProblem } from "./keyProblem";
 // `world`: a world id as a string, or "all" (the same value the graph calls take).
 // `depth`: auto, deep or focused; left out of the body when not given.
 // `chatId`: the chat this question follows up; the server loads that chat's earlier turns itself (never sent from here).
-export async function* streamAsk(question: string, signal: AbortSignal, world?: string, depth?: Depth, chatId?: string): AsyncGenerator<AskEvent> {
+// `spoilers`: this one question ignores the reading progress (`?spoilers=1`), as the ask box's override asks.
+export async function* streamAsk(question: string, signal: AbortSignal, world?: string, depth?: Depth, chatId?: string, spoilers?: boolean): AsyncGenerator<AskEvent> {
   let response: Response;
   try {
-    response = await fetch("/api/ask", {
+    response = await fetch(spoilers ? "/api/ask?spoilers=1" : "/api/ask", {
       method: "POST", signal,
       headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...csrfHeaders() },
       body: JSON.stringify({ question, ...(world ? { world } : {}), ...(depth ? { depth } : {}), ...(chatId ? { chat_id: chatId } : {}) }),

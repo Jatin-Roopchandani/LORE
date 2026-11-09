@@ -483,7 +483,8 @@ test("Reading: world, depth, steps and internals", async () => {
   expect(internals).toBeChecked();
   await userEvent.click(internals);
   expect(onShowInternals).toHaveBeenCalledWith(false);
-  expect(screen.getByRole("button", { name: SETTINGS.positionOpen })).toBeDisabled();
+  // The progress list also opens in All worlds (grouped by world), so the button is never disabled.
+  expect(screen.getByRole("button", { name: SETTINGS.positionOpen })).toBeEnabled();
 });
 
 test("Reading: the reading-position button closes Settings and opens the top bar's control", async () => {
