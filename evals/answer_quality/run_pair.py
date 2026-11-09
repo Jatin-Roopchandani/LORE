@@ -86,6 +86,20 @@ ARM_SETTINGS = {
     # the claims it cites (synthesize.SUMMARY_CHECK).
     "summary_check": ("lore.query.synthesize", "SUMMARY_CHECK",
                       lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # An opening cites every claim it sums up: the writer is told so, and the check
+    # judges the opening against all the unit's claims and names those supporting
+    # it, which become its citations (write.OPENER_CITES).
+    "opener_cites": ("lore.query.write", "OPENER_CITES",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # An opening still rejected gets one focused introduction call, checked once;
+    # a gist with no opening takes its sections' first sentences (write.INTRO_REPAIR).
+    "intro_repair": ("lore.query.write", "INTRO_REPAIR",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A failed orphan repair keeps the prose: the repaired draft minus its rejects,
+    # else the first draft minus rejects and orphans, the claim list last
+    # (write.GENTLE_FALLBACK).
+    "gentle_fallback": ("lore.query.write", "GENTLE_FALLBACK",
+                        lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),

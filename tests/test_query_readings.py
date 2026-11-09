@@ -304,6 +304,7 @@ def test_switch_off_is_byte_identical_to_the_previous_release(monkeypatch):
     """tests/golden_readings_off.json was dumped from e9471a1 (STORY_ORDER on)."""
     monkeypatch.setattr(w, "READINGS", False)
     monkeypatch.setattr(w, "READER_PROSE", False)  # pinned before it existed
+    monkeypatch.setattr(w, "OPENER_CITES", False)
     assert writer_prompt("How did Rin grow?", ["How did Rin grow?", "Who taught Rin?"], CS, PS, TITLES,
                          books=BOOKS) == GOLDEN["writer"]
     assert writer_prompt("Q?", [], CS, PS, None, books=BOOKS) == GOLDEN["writer_one_part"]

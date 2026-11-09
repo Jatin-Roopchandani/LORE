@@ -202,7 +202,9 @@ async def test_the_two_rivers_shape_is_repaired_and_he_never_opens_the_section()
     assert {k for s in a.prose for k in s.claims} == {1, 2, 3}
 
 
-async def test_a_repair_that_still_leaves_an_orphan_falls_back_to_the_claim_list():
+async def test_a_repair_that_still_leaves_an_orphan_falls_back_to_the_claim_list(monkeypatch):
+    monkeypatch.setattr(w, "GENTLE_FALLBACK", False)  # pinned before intro-reliability
+    monkeypatch.setattr(w, "INTRO_REPAIR", False)
     still = Prose(sentences=[S("Raiders struck the farm at night.", [1], True),
                              S(HE_RAN, [1]), S("Oren shouted to Ash to run and hide.", [2]),
                              S("Raiders burned half the village.", [3], True)])
@@ -216,7 +218,9 @@ async def test_a_repair_that_still_leaves_an_orphan_falls_back_to_the_claim_list
     assert "Oren ran toward the back of the house" in a.text  # each claim on its own, name first
 
 
-async def test_the_fallback_is_for_that_section_only():
+async def test_the_fallback_is_for_that_section_only(monkeypatch):
+    monkeypatch.setattr(w, "GENTLE_FALLBACK", False)  # pinned before intro-reliability
+    monkeypatch.setattr(w, "INTRO_REPAIR", False)
     broken = Models([FIRST, Exception("the writer failed")])
     clean = Models([Prose(sentences=[
         S("Oren ran toward the back of the house, ignoring the creatures behind him.", [2], True),
@@ -262,7 +266,8 @@ async def test_the_spend_check_is_asked_before_the_repair_call():
     assert a.answer_style == "prose"
 
 
-async def test_no_room_to_spend_means_no_repair_and_no_orphan_shown():
+async def test_no_room_to_spend_means_no_repair_and_no_orphan_shown(monkeypatch):
+    monkeypatch.setattr(w, "GENTLE_FALLBACK", False)  # pinned before intro-reliability
     m = Models([FIRST, REPAIRED])
     a = await m.section(spend_ok=lambda: False)
     assert len(m.write_prompts) == 1 and len(m.check_prompts) == 1
@@ -305,7 +310,8 @@ async def test_a_rejected_opener_triggers_a_repair_that_writes_a_named_one():
     assert a.prose[0].text.startswith("Oren's household")
 
 
-async def test_an_opener_repair_that_fails_leaves_the_first_draft():
+async def test_an_opener_repair_that_fails_leaves_the_first_draft(monkeypatch):
+    monkeypatch.setattr(w, "INTRO_REPAIR", False)  # pinned before intro-reliability
     first = Prose(sentences=[
         S("The facts portray the valley as a place of endless war.", [1, 2, 3], True),
         S("Oren ran toward the back of the house, ignoring the creatures behind him.", [1]),
@@ -355,7 +361,8 @@ async def test_a_lens_section_of_a_deep_answer_is_repaired():
     assert {k for s in got for k in s.claims} == {2, 3, 4}
 
 
-async def test_a_lens_section_that_cannot_be_repaired_gives_no_prose():
+async def test_a_lens_section_that_cannot_be_repaired_gives_no_prose(monkeypatch):
+    monkeypatch.setattr(w, "GENTLE_FALLBACK", False)  # pinned before intro-reliability
     from types import SimpleNamespace
     from lore.query.deep import cited_prose
     m = Models([FIRST, REPAIRED])
