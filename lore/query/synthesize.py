@@ -162,6 +162,32 @@ _STRICT_LINKS_CHECK = """Connecting words count: a "because", "so", "since", "in
 "which led to" in a claim that the cited passage does not state makes the
 claim "{not_supported}", even when both facts it joins are true.
 """
+# ATTRIBUTION_FIDELITY (2026-11-09): a written sentence that combines claims
+# keeps who did what to whom, and how often. Measured in a blind held-out eval
+# (h9): the writer merged two facts and gave a telegram sent to one character to
+# another ("Holmes's note told Watson to go to Baker Street and wait", sent to
+# Jones), and turned one question into a repeated one ("Holmes later asked
+# again"). The writer is told (write.ATTRIBUTION_RULE) and the sentence check
+# refuses it (`_ATTRIBUTION_CHECK`, in the style of STRICT_LINKS). Needs
+# STORY_ORDER (it lives in the story writer and check). Off gives the prompts
+# before it, byte for byte.
+ATTRIBUTION_FIDELITY = True
+_ATTRIBUTION_CHECK = """- attributes an action, message or speech to a different person than its
+  cited claims name: another doer, sender, recipient, speaker or addressee;
+- states a repetition, frequency or recurrence ("again", "twice", "kept",
+  "repeatedly") that no cited claim states;
+"""
+# The same test for a claim against its passage: in h9's X3 the swapped
+# recipient was already in the claim the writer copied word for word.
+_ATTRIBUTION_CLAIM_CHECK = """People count: a claim that gives an action, message or speech to a different
+person than the cited passage does (another doer, sender, recipient, speaker
+or addressee), or that says something happened again, more than once or
+regularly when the passage tells it once, is "{not_supported}".
+"""
+
+
+def attribution_on() -> bool:
+    return ATTRIBUTION_FIDELITY and write_module.STORY_ORDER
 # ROLE_COVERAGE (2026-10-28): asked about a kind of character (a role such as
 # opponents, allies or victims), the claims named only the most prominent one
 # although the passages showed others in that role. General by design: no
@@ -784,7 +810,7 @@ wording.
   result") that no cited claim states;
 - uses an order word that the positions contradict, or that links claims
   from books whose relative order is unknown;
-- or summarises with more than the claims show, such as "always" or
+{attribution}- or summarises with more than the claims show, such as "always" or
   "every" when they show one case or some.
 Return these in sentence_judgements, one per sentence, numbered 1 to
 {count} in the claim field, with a verdict and a reason of at most
@@ -938,7 +964,9 @@ def faithfulness_prompt(
         supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS,
         strict_links=((_QUOTE_POINTER_CHECK.format(supported=SUPPORTED) if QUOTE_POINTER else "")
                       + (_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
-                         if STRICT_LINKS else "")))
+                         if STRICT_LINKS else "")
+                      + (_ATTRIBUTION_CLAIM_CHECK.format(not_supported=NOT_SUPPORTED)
+                         if attribution_on() else "")))
     if order and order.note():
         prompt += "\n" + order.note() + "\n"
     if sentences:
@@ -962,6 +990,8 @@ def faithfulness_prompt(
             for i, s in enumerate(sentences, start=1))
         summary = summary_rule(opener) if story else ""
         prompt += (_STORY_SENTENCES_BLOCK.format(summary=summary, sentences=lines,
+                                                 attribution=(_ATTRIBUTION_CHECK
+                                                              if attribution_on() else ""),
                                                  count=len(sentences), supported=SUPPORTED,
                                                  not_supported=NOT_SUPPORTED,
                                                  max_words=MAX_REASON_WORDS)

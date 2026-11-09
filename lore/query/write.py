@@ -511,6 +511,22 @@ EVENT_ORDER_RULE = """- Tell events in story order, the order the facts are list
 """
 
 
+# ATTRIBUTION_FIDELITY (synthesize.ATTRIBUTION_FIDELITY, which holds the switch):
+# a sentence that combines or restates facts keeps who did what, and how often.
+ATTRIBUTION_RULE = """- When a sentence combines or restates facts, keep exactly who did what to
+  whom: the doer, the recipient, the speaker and the one spoken to, as the
+  facts give them, and how many times and when it happened. Never move an
+  action, message or statement to a different person, and never make one
+  event a repeated one ("again", "repeatedly", "later ... too") unless a fact
+  says so.
+"""
+
+
+def attribution_on() -> bool:
+    from lore.query import synthesize  # the switch lives with the check; no cycle at call time
+    return synthesize.attribution_on()
+
+
 def story_keys(prose: Sequence, passages: Iterable[Passage],
                book_titles: dict[str, str] | None = None,
                books: dict[str, BookInfo] | None = None) -> list[tuple | None]:
@@ -1031,6 +1047,8 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
             rules += reader_rule(length)
         if story_order_prose_on(length, shape):
             rules += EVENT_ORDER_RULE
+        if attribution_on():
+            rules += ATTRIBUTION_RULE
         before = (COVERED_RULE.format(headings="\n".join(f"  - {h}" for h in covered))
                   if covered else "")
         after = (AVOID_RULE.format(sentences="\n".join(f"  - {t}" for t in avoid))

@@ -109,6 +109,10 @@ ARM_SETTINGS = {
     # mid-scene joins the evidence as its setup (scene.SCENE_SETUP).
     "scene_setup": ("lore.query.scene", "SCENE_SETUP",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A written sentence keeps who did what to whom, and how often: the writer rule
+    # and the sentence check (synthesize.ATTRIBUTION_FIDELITY).
+    "attribution_fidelity": ("lore.query.synthesize", "ATTRIBUTION_FIDELITY",
+                             lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),
