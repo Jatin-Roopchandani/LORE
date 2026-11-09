@@ -1287,6 +1287,22 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
                                                    fresh(mine), style),
              group=group_of[ri], group_title=group_titles[ri], title=titles[ri])
         emit(on_event, "step", name="section", state="done", part=ri, detail=f"{len(owned)} claims")
+    if (short and write_module.intro_repair_on()
+            and all(getattr(x, "kind", "") == "limit" for x in short)):
+        # INTRO_REPAIR for a lens answer: no reading (or fact summary) passed, so the
+        # short answer would be only code's "not enough for a clear analysis" line
+        # while the sections below hold checked prose. Their opening sentences stand
+        # in; the UI replaces the short answer it already showed.
+        opening = section_opening(sections)
+        if opening:
+            # "No clear verdict" is an honest answer to a yes/no question: it stays,
+            # and the openings follow it. "Not enough for a clear analysis" is not
+            # true when the sections hold checked prose: the openings replace it.
+            kept = [x for x in short if x.text == interpret.NO_VERDICT_LINE]
+            short = tuple(replace(x, new_paragraph=i == 0, short=True, label="")
+                          for i, x in enumerate([*kept, *opening]))
+            emit(on_event, "short_answer", prose=list(short), text=compose_text(short),
+                 claims=[c.model_dump() for c in final], passages=[])
     if not sections and not not_written:
         if failures:
             raise failures[-1]

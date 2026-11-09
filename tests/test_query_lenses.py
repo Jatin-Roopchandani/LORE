@@ -233,7 +233,7 @@ async def test_the_short_answer_is_sent_before_any_section_and_opens_the_text(co
 async def test_no_reading_means_code_says_there_is_no_clear_position_and_the_sections_still_come(config):
     reading = Prose(sentences=[S("Fact one.", [1]), S("Fact two.", [2])])
     answer, events = await ask(config, LensModels(ONE_PART, reading, quotes=QUOTE_OF))
-    assert [(s.kind, s.text) for s in answer.short_answer] == [("limit", interpret.NO_VERDICT_LINE)]
+    assert answer.short_answer[0].kind == "limit" and answer.short_answer[0].text == interpret.NO_VERDICT_LINE
     assert len(answer.sections) == 2 and answer.sections[0].prose
     assert of(events, "short_answer")[0]["prose"][0]["text"] == interpret.NO_VERDICT_LINE
 
@@ -492,3 +492,21 @@ async def test_a_lens_writer_citing_another_sections_claim_is_cut_back_to_its_ow
         assert all(sec.claims_start <= k <= sec.claims_end for p in sec.prose for k in p.claims)
         assert "Repeats an earlier fact." not in sec.text or sec.claims_start == 1
 
+
+
+async def test_no_reading_on_an_analysis_question_gives_the_sections_openings_not_a_stock_line(config, monkeypatch):
+    # Live: a lens answer about Holmes's methods had four checked sections, yet its
+    # short answer said only "not enough for a clear analysis".
+    monkeypatch.setattr(interpret.Shape, "stance", lambda self, part: "analysis")
+    reading = Prose(sentences=[S("Fact one.", [1]), S("Fact two.", [2])])
+    answer, events = await ask(config, LensModels(ONE_PART, reading, quotes=QUOTE_OF))
+    texts = [s.text for s in answer.short_answer]
+    assert interpret.NO_ANALYSIS_LINE not in texts and texts
+    assert all(s.kind == "fact" and s.claims for s in answer.short_answer)
+    assert of(events, "short_answer")[-1]["prose"][0]["text"] == texts[0]  # the UI is updated
+
+
+async def test_no_clear_verdict_stays_and_the_sections_openings_follow_it(config):
+    reading = Prose(sentences=[S("Fact one.", [1]), S("Fact two.", [2])])
+    answer, events = await ask(config, LensModels(ONE_PART, reading, quotes=QUOTE_OF))
+    assert answer.short_answer[0].text == interpret.NO_VERDICT_LINE
