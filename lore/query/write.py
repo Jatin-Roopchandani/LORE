@@ -30,7 +30,11 @@ PROSE_ANSWERS = True
 # readability gain, so off: those answers show their checked claims. Answers
 # that need the writer keep it: interpretive or beyond parts, deep sections,
 # lens and recap sections, and their short answers (each has its own eval).
-PROSE_FACTUAL = False
+# 2026-11-09: on again, by the user's call. The writer now has COVERAGE,
+# FACT_FIDELITY, ORPHAN_REPAIR, READER_PROSE, OPENER_CITES, INTRO_REPAIR,
+# CARRY_VERDICTS and QUOTE_POINTER, and a claim list read as "quotes clamped
+# together". A blind paired run (prose_factual on vs off) checks the facts.
+PROSE_FACTUAL = True
 
 # STORY_ORDER (2026-10-28): answers read as a narrative. The writer is shown
 # the facts in story order with their positions, may use order words the

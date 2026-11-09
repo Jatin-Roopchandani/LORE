@@ -1460,11 +1460,19 @@ def test_prompt_rules_name_no_character_book_or_genre() -> None:
     assert not re.findall(banned, text.lower())
 
 
-# PROSE_FACTUAL off (the shipped default since round 7): a plain factual answer
-# shows its checked claims and never calls the writer; answers that need the
-# writer (an interpretive shape, or a sized section: deep, lens, recap) keep it.
+# PROSE_FACTUAL on (the shipped default again since 2026-11-09): a plain factual
+# answer is written as prose; with it off the answer shows its checked claims.
 @pytest.mark.factual_default
-async def test_a_factual_answer_shows_claims_by_default():
+async def test_a_factual_answer_is_prose_by_default():
+    gen, _ = _gen(_TWO)
+    write, wcalls = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])]))
+    a = await synthesize("Habits?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]), write=write)
+    assert a.answer_style == "prose" and len(wcalls) == 1 and len(a.claims) == 2
+
+
+@pytest.mark.factual_default
+async def test_with_prose_factual_off_a_factual_answer_shows_claims(monkeypatch):
+    monkeypatch.setattr(__import__("lore.query.write", fromlist=["x"]), "PROSE_FACTUAL", False)
     gen, _ = _gen(_TWO)
     write, wcalls = _gen(Prose(sentences=[Sentence(text="Holmes played the violin while Watson kept a bull pup.", claims=[1, 2])]))
     a = await synthesize("Habits?", _EV, gen, mode="graph", check=_check(["supported"] * 2, ["supported"]), write=write)
