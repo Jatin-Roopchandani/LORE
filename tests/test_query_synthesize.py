@@ -1066,7 +1066,8 @@ def _new_prompt_texts() -> str:
                       write_module.EVENT_ORDER_RULE, write_module.ORDER_RULE,
                       synthesize_module._SETUP_NOTE, write_module.ATTRIBUTION_RULE,
                       synthesize_module._ATTRIBUTION_CHECK,
-                      synthesize_module._ATTRIBUTION_CLAIM_CHECK))
+                      synthesize_module._ATTRIBUTION_CLAIM_CHECK,
+                      synthesize_module._ATTRIBUTION_CLAIMS_RULE))
 
 
 def test_the_prompt_leaks_nothing_from_the_eval_set() -> None:

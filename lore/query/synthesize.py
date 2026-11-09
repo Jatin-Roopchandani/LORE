@@ -172,17 +172,36 @@ claim "{not_supported}", even when both facts it joins are true.
 # STORY_ORDER (it lives in the story writer and check). Off gives the prompts
 # before it, byte for byte.
 ATTRIBUTION_FIDELITY = True
-_ATTRIBUTION_CHECK = """- attributes an action, message or speech to a different person than its
-  cited claims name: another doer, sender, recipient, speaker or addressee;
+#
+# Widened 2026-11-09 (h9b): a claim gave a relation ("has friends who would risk
+# something for him") to the disguised visitor, while the passage gave it to the
+# man the speaker was hunting, mentioned in the same breath. The check passed it
+# ("friends ready to risk" is in the passage): the rule named actions, messages
+# and speech, not traits and relations, nor someone else the passage mentions.
+# The rules now name both and ask whom the passage gives it to; the claims
+# prompt says the same (`_ATTRIBUTION_CLAIMS_RULE`).
+_ATTRIBUTION_CHECK = """- attributes an action, message, speech, trait or relation to a different
+  person than its cited claims give it to: another doer, sender, recipient,
+  speaker or addressee, or someone else they mention ("his master", "the man
+  she works for");
 - states a repetition, frequency or recurrence ("again", "twice", "kept",
   "repeatedly") that no cited claim states;
 """
 # The same test for a claim against its passage: in h9's X3 the swapped
 # recipient was already in the claim the writer copied word for word.
-_ATTRIBUTION_CLAIM_CHECK = """People count: a claim that gives an action, message or speech to a different
-person than the cited passage does (another doer, sender, recipient, speaker
-or addressee), or that says something happened again, more than once or
-regularly when the passage tells it once, is "{not_supported}".
+_ATTRIBUTION_CLAIM_CHECK = """People count: a claim that gives an action, message, speech, trait or
+relation to a different person than the cited passage does (another doer,
+sender, recipient, speaker or addressee, or someone else the passage
+mentions, such as "his master" or "the man she works for"), or that says
+something happened again, more than once or regularly when the passage tells
+it once, is "{not_supported}". Check whom the passage gives it to, not only
+that its words are there.
+"""
+# The claims step, where h9b's swap began.
+_ATTRIBUTION_CLAIMS_RULE = """Give each action, trait or relation to the person the passage gives it to.
+What a passage says of someone it only mentions ("his master", "the man she
+works for") is not said of another person present, unless the passage says
+they are the same.
 """
 
 
@@ -365,6 +384,123 @@ def _near_duplicate(a: Claim, b: Claim) -> bool:
     return (_same_evidence(a, b)
             and _numbers(a.text) == _numbers(b.text)
             and _overlap(a.text, b.text) >= NEAR_DUPLICATE_OVERLAP)
+
+
+# DEDUP_SENTENCES (2026-11-09): no shown sentence restates an earlier one.
+# Measured in a blind held-out eval (h9b): a claim the writer had folded into a
+# sentence the check then removed was placed by COVERAGE in its own words next
+# to a second claim from another part that said the same in other words, so the
+# answer said one impression twice. Code now (1) cites a claim a shown sentence
+# already states there instead of placing it (`place_uncited(same=...)`), and
+# (2) drops a shown fact sentence that restates an earlier one, its citations
+# moving to the one kept (`dedup_sentences`). Off: the code before it (run_pair
+# arm `dedup_sentences`).
+DEDUP_SENTENCES = True
+# The share of a later sentence's content words the earlier one must use.
+DEDUP_SHARE = 0.5
+
+
+def _cited(sentence: ProseSentence, claims: Sequence[Claim]) -> list[Claim] | None:
+    if not sentence.claims or not all(1 <= k <= len(claims) for k in sentence.claims):
+        return None
+    return [claims[k - 1] for k in sentence.claims]
+
+
+def sentence_restates(earlier: ProseSentence, later: ProseSentence,
+                      claims: Sequence[Claim]) -> bool:
+    """Whether fact sentence `later` says nothing that fact sentence `earlier`
+    does not (claims: what their 1-based `claims` index). All of:
+    - every claim `later` cites shares its evidence with a claim `earlier`
+      cites (`_same_evidence`: same passage, quotes sharing MIN_QUOTE_WORDS
+      words in a row), so the two rest on one stretch of the text;
+    - `later` states no number `earlier` does not;
+    - every content word of `later` that its claims' quotes contain -- the
+      book's own words for the facts it states -- is in `earlier` too, so it
+      brings no fact of its quote that `earlier` leaves out;
+    - and `earlier` uses at least DEDUP_SHARE of `later`'s content words.
+    A sentence that adds a distinct fact fails the third test (or the first,
+    when that fact comes from other evidence) and stays."""
+    if earlier.kind != "fact" or later.kind != "fact":
+        return False
+    mine, theirs = _cited(later, claims), _cited(earlier, claims)
+    if not mine or not theirs:
+        return False
+    if not all(any(_same_evidence(c, d) for d in theirs) for c in mine):
+        return False
+    if not _numbers(later.text) <= _numbers(earlier.text):
+        return False
+    own, said = _content_words(later.text), _content_words(earlier.text)
+    if not own:
+        return False
+    quoted = frozenset().union(*(_content_words(c.quote) for c in mine))
+    if (own & quoted) - said:
+        return False
+    return len(own & said) >= DEDUP_SHARE * len(own)
+
+
+def states_claim(sentence: ProseSentence, k: int, claims: Sequence[Claim]) -> bool:
+    """Whether shown `sentence` already says claim `k` (1-based in `claims`):
+    the claim, placed as its own sentence, would restate it."""
+    if not 1 <= k <= len(claims):
+        return False
+    claim = claims[k - 1]
+    alone = ProseSentence(text=claim.text, claims=(k,), passages=(claim.passage,))
+    return sentence_restates(sentence, alone, claims)
+
+
+def restated_pairs(prose: Sequence[ProseSentence],
+                   claims: Sequence[Claim]) -> list[tuple[int, int]]:
+    """(later, earlier) 0-based indices into `prose` of each sentence
+    `dedup_sentences` drops, and the kept sentence it restates."""
+    pairs: list[tuple[int, int]] = []
+    kept: list[int] = []
+    merged: dict[int, ProseSentence] = {}
+    for i, s in enumerate(prose):
+        nxt = prose[i + 1] if i + 1 < len(prose) else None
+        hit = next((j for j in kept if sentence_restates(merged[j], s, claims)), None)
+        if hit is not None and nxt is not None and not nxt.new_paragraph \
+                and write_module.leans_back(nxt.text) \
+                and (s.new_paragraph or not kept or kept[-1] != hit):
+            hit = None  # the next sentence leans on this one: dropping it would orphan that
+        if hit is None:
+            kept.append(i)
+            merged[i] = s
+            continue
+        pairs.append((i, hit))
+        at = merged[hit]
+        ks = (*at.claims, *(k for k in s.claims if k not in at.claims))
+        merged[hit] = replace(at, claims=ks,
+                              passages=tuple(sorted({*at.passages, *s.passages})))
+    return pairs
+
+
+def dedup_sentences(prose: Sequence[ProseSentence],
+                    claims: Sequence[Claim]) -> tuple[ProseSentence, ...]:
+    """`prose` without each fact sentence that restates an earlier shown one
+    (`sentence_restates`); the dropped sentence's citations join the kept
+    one's. A paragraph a dropped sentence opened goes on from the next one. A
+    sentence the next one leans on ("He ...") stays unless the sentence it
+    restates comes right before it. Readings, counter-cases and lines written
+    by code are never compared."""
+    pairs = dict(restated_pairs(prose, claims))
+    if not pairs:
+        return tuple(prose)
+    out: list[ProseSentence] = []
+    at: dict[int, int] = {}
+    carry = False
+    for i, s in enumerate(prose):
+        if i in pairs:
+            j = at[pairs[i]]
+            kept = out[j]
+            out[j] = replace(kept, claims=(*kept.claims,
+                                           *(k for k in s.claims if k not in kept.claims)),
+                             passages=tuple(sorted({*kept.passages, *s.passages})))
+            carry = carry or s.new_paragraph
+            continue
+        at[i] = len(out)
+        out.append(replace(s, new_paragraph=s.new_paragraph or (carry and bool(out))))
+        carry = False
+    return tuple(out)
 
 
 # Across sub-questions, a claim citing the very quote an earlier part's claim
@@ -634,6 +770,7 @@ def _build_prompt(
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
                           + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else "")
                           + (_STRICT_LINKS_RULE if STRICT_LINKS else "")
+                          + (_ATTRIBUTION_CLAIMS_RULE if attribution_on() else "")
                           + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else "")
                           + (_CHANGE_RULE if write_module.STORY_ORDER else "")
                           + (_ACTIONS_RULE if write_module.readings_on() else ""),
@@ -1433,8 +1570,13 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
                                        check, write, book_titles, books, length, covered, built,
                                        opener, spend_ok)
         if built and enforce:
-            built = place_uncited(built, [c.text for c in outcome.kept],
-                                  [c.passage for c in outcome.kept])
+            shown_kept = outcome.kept
+            built = place_uncited(built, [c.text for c in shown_kept],
+                                  [c.passage for c in shown_kept],
+                                  same=((lambda s, k: states_claim(s, k, shown_kept))
+                                        if DEDUP_SENTENCES else None))
+        if built and DEDUP_SENTENCES:
+            built = dedup_sentences(built, outcome.kept)
         if built and part_claims is not None:
             numbered = [[outcome.kept.index(c) + 1 for c in cs if c in outcome.kept]
                         for cs in part_claims]

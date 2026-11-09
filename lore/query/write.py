@@ -1356,13 +1356,19 @@ def _as_sentence(text: str) -> str:
 
 
 def place_uncited(prose: Sequence[ProseSentence], claim_texts: Sequence[str],
-                  claim_passages: Sequence[int]) -> tuple[ProseSentence, ...]:
+                  claim_passages: Sequence[int],
+                  same: Callable[[ProseSentence, int], bool] | None = None,
+                  ) -> tuple[ProseSentence, ...]:
     """COVERAGE's last step: every claim (1-based, as in `ProseSentence.claims`)
     that no sentence cites is added as its own fact sentence, the claim's text
     with its citation, after the last fact sentence of the paragraph whose fact
     sentences cite its passage most often (the earliest such paragraph on a
     tie), or of the last paragraph when none does; a reading or counter-case
-    stays after the facts it follows. Nothing else changes."""
+    stays after the facts it follows. Nothing else changes.
+
+    `same(sentence, k)` (DEDUP_SENTENCES): whether a shown fact sentence, or one
+    placed before, already says claim k. Such a claim is cited by the first
+    sentence that says it instead of being said again."""
     out = list(prose)
     if not out:
         return ()
@@ -1370,6 +1376,14 @@ def place_uncited(prose: Sequence[ProseSentence], claim_texts: Sequence[str],
     for k in range(1, len(claim_texts) + 1):
         if k in cited or not claim_texts[k - 1].strip():
             continue
+        if same is not None:
+            at = next((i for i, s in enumerate(out) if s.kind == "fact" and same(s, k)), None)
+            if at is not None:
+                s = out[at]
+                out[at] = replace(s, claims=(*s.claims, k),
+                                  passages=tuple(sorted({*s.passages, claim_passages[k - 1]})))
+                cited.add(k)
+                continue
         paragraphs: list[list[int]] = []
         for i, s in enumerate(out):
             if i == 0 or s.new_paragraph:
