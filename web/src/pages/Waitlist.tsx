@@ -26,6 +26,7 @@ export function Waitlist() {
         <div className="au-head">
           <h1 ref={doneHeading} tabIndex={-1}>{AUTH.waitlistDone}</h1>
           <p className="au-sub" role="status">{AUTH.thanks}</p>
+          <p className="au-fine">{AUTH.spamHint}</p>
         </div>
         <p className="au-switch">{AUTH.haveAccount} <a href="/signin">{AUTH.signIn}</a></p>
       </AuthShell>

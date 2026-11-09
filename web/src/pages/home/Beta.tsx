@@ -58,6 +58,7 @@ export function WaitlistForm({ ready }: { ready: boolean }) {
       <button className="h-btn is-primary" type="submit" disabled={state !== "idle"}>
         {done ? HOME.done : state === "sending" ? HOME.sending : HOME.submit}
       </button>
+      {done && <p className="h-done-note">{HOME.doneNote}</p>}
       <p className="h-sr" role="status">{done ? HOME.done : ""}</p>
     </form>
   );

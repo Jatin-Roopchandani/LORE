@@ -169,6 +169,7 @@ html:has(.lh){scroll-behavior:smooth;scroll-padding-top:calc(68px + 12px)}
 .h-waitlist input[aria-invalid=true]{border-color:var(--cut)}
 .h-waitlist .h-consent{display:flex;gap:8px;align-items:flex-start;font:400 13px/1.4 var(--f-ui);color:var(--muted)}
 .h-waitlist .h-problem{margin:0;font:500 13px/1.4 var(--f-ui);color:var(--cut)}
+.h-waitlist .h-done-note{margin:0;font:400 13px/1.45 var(--f-ui);color:var(--muted)}
 .h-hp{position:absolute;left:-9999px}
 .lh footer{border-top:1px solid var(--line);padding-block:24px 40px;display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:var(--muted)}
 .lh footer a{color:var(--muted)}.lh footer .h-sp{flex:1}

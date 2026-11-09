@@ -232,6 +232,8 @@ describe("Waitlist", () => {
     await userEvent.click(screen.getByLabelText(AUTH.consentLabel));
     await userEvent.click(submit);
     expect(await screen.findByRole("status")).toHaveTextContent(AUTH.thanks);
+    // the invite may land in spam: say where it comes from and where to look
+    expect(screen.getByText(AUTH.spamHint)).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: AUTH.waitlistDone })).toHaveFocus();
     expect(calls[0]).toMatchObject({ url: "/api/waitlist", method: "POST",
       body: { email: "me@example.org", reading: "Dracula", consent: true, website: "" } });

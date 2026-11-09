@@ -179,6 +179,7 @@ describe("the waitlist form", () => {
     expect(calls).toEqual([{ url: "/api/waitlist", method: "POST", body: { email: "reader@example.org", reading: "Dune", consent: true, website: "" } }]);
     expect(await screen.findByRole("button", { name: HOME.done })).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent(HOME.done);
+    expect(screen.getByText(HOME.doneNote)).toBeInTheDocument(); // where the invite comes from, and to check spam
   });
 
   test("the honeypot goes too, when something fills it", async () => {
