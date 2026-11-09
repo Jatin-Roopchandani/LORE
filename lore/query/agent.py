@@ -19,6 +19,7 @@ from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
 from lore.query import deep as deep_module
 from lore.query import recap as recap_module
+from lore.query import scene as scene_module
 from lore.query import visible as visible_module
 from lore.query import interpret as interpret_module
 from lore.query import judge as judge_module
@@ -1046,6 +1047,10 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
                                max_chars=models.evidence_chars,
                                score_lists=score_lists,
                                book_fair=book_fair, part_books=named_books, visible=seen,
+                               # SCENE_SETUP: an event question reads a cited scene's setup.
+                               **({"scene_setup": True} if scene_module.SCENE_SETUP
+                                  and not shaped_plan and scene_module.event_question(question)
+                                  else {}),
                                **timelines)
     emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in evidence.passages],
          edge_keys=[edge_key(e) for e in evidence.edges])

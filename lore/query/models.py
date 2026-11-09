@@ -149,6 +149,9 @@ class Evidence:
     # one tuple per part. Empty when no part has an entity with an entry.
     codex: tuple[CodexLine, ...] = ()
     codexes: tuple[tuple[CodexLine, ...], ...] = ()
+    # SCENE_SETUP (lore/query/scene.py): (setup passage n, the passage n it sets
+    # up), for each passage added as the one just before a cited scene.
+    setups: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)

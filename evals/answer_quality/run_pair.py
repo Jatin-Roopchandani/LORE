@@ -100,6 +100,19 @@ ARM_SETTINGS = {
     # (write.GENTLE_FALLBACK).
     "gentle_fallback": ("lore.query.write", "GENTLE_FALLBACK",
                         lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Events in story order in narrative prose: the writer rule, then code moves a
+    # sentence told after a later event back, else one repair round
+    # (write.STORY_ORDER_PROSE).
+    "story_order_prose": ("lore.query.write", "STORY_ORDER_PROSE",
+                          lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # For an event question, the passage just before a cited passage that opens
+    # mid-scene joins the evidence as its setup (scene.SCENE_SETUP).
+    "scene_setup": ("lore.query.scene", "SCENE_SETUP",
+                    lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A written sentence keeps who did what to whom, and how often: the writer rule
+    # and the sentence check (synthesize.ATTRIBUTION_FIDELITY).
+    "attribution_fidelity": ("lore.query.synthesize", "ATTRIBUTION_FIDELITY",
+                             lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),

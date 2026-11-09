@@ -139,6 +139,31 @@ INTRO_REPAIR = True
 # gives the code before it.
 GENTLE_FALLBACK = True
 
+# STORY_ORDER_PROSE (2026-11-09, spec order-and-setup): a narrative answer tells
+# its events in story order. Measured on "how did Watson meet Holmes": the writer
+# was shown the facts in story order and still told a sentence from passage [2]
+# after the ones from [3] and [4]. The writer is told so (`EVENT_ORDER_RULE`);
+# after the check, code finds a fact sentence told after a sentence about a later
+# event in the same paragraph (`order_faults`, from the passages' story positions:
+# a sentence citing several passages counts from its earliest; the opening, a
+# flashback-marked sentence and anything but a fact are exempt; an answer with
+# most of its events out of order is organised by theme and left alone), and
+# moves it to its story-order place in its paragraph (`story_reorder`) when no
+# sentence that leans on the one before it gets a new one before it. Otherwise
+# the writer gets ONE repair round naming the fault, checked once
+# (synthesize._order_repair). Applies to a plain prose answer, a deep section and
+# a recap section (`story_order_prose_on`); not to a short answer, a lens section
+# or an interpretive answer. Needs STORY_ORDER. Off gives the code before it.
+STORY_ORDER_PROSE = True
+# The parts of an answer it applies to (see above): the whole answer, a deep
+# section, a recap section.
+ORDER_LENGTHS = (None, "section", "recap")
+
+
+def story_order_prose_on(length: str | None = None,
+                         shape: "interpret.Shape | None" = None) -> bool:
+    return STORY_ORDER_PROSE and STORY_ORDER and shape is None and length in ORDER_LENGTHS
+
 
 def opener_cites_on() -> bool:
     return OPENER_CITES and STORY_ORDER
@@ -460,6 +485,148 @@ def leans_back(text: str, language: str = "en") -> bool:
                 and words[1].lower() in _EXISTENTIAL.get(language, frozenset()))
 
 
+# STORY_ORDER_PROSE: a sentence that says it looks back ("earlier", "before
+# that", the pluperfect "had met") may come after a later event.
+_FLASHBACK = re.compile(
+    r"\b(?:earlier|before\s+(?:that|this|then)|beforehand|previously|prior\s+to\s+(?:that|this)"
+    r"|had\s+(?:(?:not|never|already|once|long|just|first|recently|since)\s+)?"
+    r"(?:[a-z]+(?:ed|en|wn)|been|come|gone|made|said|told|heard|done|had|run|won|sat|stood"
+    r"|held|led|fed|read|met|left|lost|kept|felt|thought|brought|bought|caught|taught|found"
+    r"|got|begun|become|sent|spent|built|meant|put|set|shut|let|cut|hit|struck|fought|sought"
+    r"|sold|paid|laid|slept|wept|swept|crept|dealt|knelt|lit|sung|rung|drunk|swum|flung"
+    r"|clung|hung|spun|stuck|won|wound|ground|bound))\b", re.I)
+
+
+def flashback(text: str) -> bool:
+    """Whether a sentence marks itself as telling an earlier event."""
+    return bool(_FLASHBACK.search(text))
+
+
+# The writer rule (STORY_ORDER_PROSE), with the readings and fidelity rules.
+EVENT_ORDER_RULE = """- Tell events in story order, the order the facts are listed in: within a
+  paragraph, a sentence about an event never comes after a sentence about a
+  later event, even when it fills in a detail. Put that detail where its
+  event happens. When an earlier event must be told later, say so ("earlier",
+  "before that", "had ...").
+"""
+
+
+# ATTRIBUTION_FIDELITY (synthesize.ATTRIBUTION_FIDELITY, which holds the switch):
+# a sentence that combines or restates facts keeps who did what, and how often.
+ATTRIBUTION_RULE = """- When a sentence combines or restates facts, keep exactly who did what to
+  whom: the doer, the recipient, the speaker and the one spoken to, as the
+  facts give them, and how often and when it happened. Never move an
+  action, message or statement to a different person, and never make one
+  event a repeated one ("again", "repeatedly", "later ... too") unless a fact
+  says so.
+"""
+
+
+def attribution_on() -> bool:
+    from lore.query import synthesize  # the switch lives with the check; no cycle at call time
+    return synthesize.attribution_on()
+
+
+def story_keys(prose: Sequence, passages: Iterable[Passage],
+               book_titles: dict[str, str] | None = None,
+               books: dict[str, BookInfo] | None = None) -> list[tuple | None]:
+    """Per sentence, (order group, story rank) of its earliest passage, or None
+    when it cites no passage with a position. Two sentences are comparable only
+    in one group: one book, or one series whose order is known (position.py).
+    `prose`: anything with `passages` (passage numbers), as ProseSentence."""
+    order = order_passages(list(passages), book_infos(book_titles, books))
+    rank = {pos.n: i for i, pos in enumerate(order.ordered)}
+    out: list[tuple | None] = []
+    for s in prose:
+        known = [n for n in getattr(s, "passages", ()) if n in rank]
+        if not known:
+            out.append(None)
+            continue
+        first = order.positions[min(known, key=rank.__getitem__)]
+        group = ("series", first.series.casefold()) if first.series is not None else ("book", first.book_id)
+        out.append((group, rank[first.n]))
+    return out
+
+
+def _paragraphs(prose: Sequence) -> list[list[int]]:
+    rows: list[list[int]] = []
+    for i, s in enumerate(prose):
+        if i == 0 or s.new_paragraph:
+            rows.append([])
+        rows[-1].append(i)
+    return rows
+
+
+def _events(prose: Sequence, keys: Sequence[tuple | None], opener: bool) -> list[bool]:
+    """Per sentence, whether it is an event the order rule holds: a fact with a
+    story position, not the opening (with `opener`, or one citing several
+    passages) and not marked as a flashback."""
+    out = []
+    for i, (s, key) in enumerate(zip(prose, keys)):
+        exempt_open = i == 0 and (opener or len(getattr(s, "passages", ())) > 1)
+        out.append(key is not None and getattr(s, "kind", "fact") == "fact"
+                   and not exempt_open and not flashback(s.text))
+    return out
+
+
+def order_faults(prose: Sequence, keys: Sequence[tuple | None], opener: bool = True) -> list[int]:
+    """0-based indices of the event sentences told after a sentence about a later
+    event of the same order group, in the same paragraph (`_events`)."""
+    events = _events(prose, keys, opener)
+    out = []
+    for rows in _paragraphs(prose):
+        latest: dict = {}
+        for i in rows:
+            if not events[i]:
+                continue
+            group, rank = keys[i]
+            if latest.get(group, -1) > rank:
+                out.append(i)
+            latest[group] = max(latest.get(group, -1), rank)
+    return out
+
+
+def chronological(prose: Sequence, keys: Sequence[tuple | None], opener: bool = True) -> bool:
+    """Whether the answer is told as a chronology: at most half of its events are
+    out of order. More than that and it is organised by theme, which the order
+    rule leaves alone."""
+    events = sum(_events(prose, keys, opener))
+    return 2 * len(order_faults(prose, keys, opener)) <= events
+
+
+def story_reorder(prose: Sequence, keys: Sequence[tuple | None], opener: bool = True,
+                  language: str = "en") -> tuple | None:
+    """`prose` with each paragraph's events in story order (a stable sort, per
+    order group, over the places that group's events hold; every other sentence
+    stays where it is), or None when that would give a sentence that leans on
+    the one before it (`leans_back`) a different sentence before it, or open a
+    paragraph with it. Paragraph breaks stay where they were."""
+    events = _events(prose, keys, opener)
+    order: list[int] = []
+    for rows in _paragraphs(prose):
+        slots = list(rows)
+        by_group: dict = {}
+        for i in rows:
+            if events[i]:
+                by_group.setdefault(keys[i][0], []).append(i)
+        for members in by_group.values():
+            ranked = sorted(members, key=lambda i: keys[i][1])
+            for place, i in zip(members, ranked):
+                slots[rows.index(place)] = i
+        order += slots
+    if order == list(range(len(prose))):
+        return tuple(prose)
+    starts = {rows[0] for rows in _paragraphs(prose)}
+    before = {i: (None if i in starts else i - 1) for i in range(len(prose))}
+    out = []
+    for at, i in enumerate(order):
+        now = None if at in starts else order[at - 1]
+        if now != before[i] and leans_back(prose[i].text, language):
+            return None
+        out.append(replace(prose[i], new_paragraph=at in starts and at > 0))
+    return tuple(out)
+
+
 def kept_flags(sentences: Sequence, claim_ok: Sequence[bool],
                sentence_ok: Sequence[bool]) -> list[bool]:
     """Per sentence, whether `assemble` keeps it: the check passed it and every
@@ -726,6 +893,13 @@ ORPHAN_RULE = """- Draft sentences {numbers} begin with a word ("he", "she", "it
   or that opens a paragraph. Rewrite each so it stands on its own: name the
   person, place or thing it is about, with the same facts in `claims`.
 """
+# STORY_ORDER_PROSE: a draft sentence told after a sentence about a later event.
+ORDER_RULE = """- Draft sentences {numbers} tell an event that happens earlier in the story
+  than an event told before them in the same paragraph. Move each to its place
+  in story order, the order the facts are listed in, with the same facts in
+  `claims`, and reword it or its neighbours only as far as needed for every
+  sentence to say clearly who it is about. Change nothing else.
+"""
 INTRO_RULE = """- The draft's opening sentence was removed. Write a new first sentence that
   introduces the subject by name: who, what or where it is and where it stands
   in the story. Build it only from the facts listed above, and list every fact
@@ -752,6 +926,8 @@ class Repair:
     orphans: tuple[int, ...] = ()
     intro: bool = False
     removed: tuple[tuple[str, str], ...] = ()
+    # STORY_ORDER_PROSE: draft sentences (1-based) told after a later event.
+    order: tuple[int, ...] = ()
 
 
 def repair_block(repair: Repair, shown_number: dict[int, int]) -> str:
@@ -780,6 +956,8 @@ def repair_block(repair: Repair, shown_number: dict[int, int]) -> str:
         rules += ORPHAN_RULE.format(numbers=", ".join(str(i) for i in repair.orphans))
     if repair.intro:
         rules += INTRO_RULE
+    if repair.order:
+        rules += ORDER_RULE.format(numbers=", ".join(str(i) for i in repair.order))
     return REPAIR_RULE.format(lead=REPAIR_LEAD, draft="\n".join(lines) or "  (no sentence passed)",
                               rules=rules)
 
@@ -867,6 +1045,10 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
                                   else NO_READINGS_RULE)
         if reader_prose_on():
             rules += reader_rule(length)
+        if story_order_prose_on(length, shape):
+            rules += EVENT_ORDER_RULE
+        if attribution_on():
+            rules += ATTRIBUTION_RULE
         before = (COVERED_RULE.format(headings="\n".join(f"  - {h}" for h in covered))
                   if covered else "")
         after = (AVOID_RULE.format(sentences="\n".join(f"  - {t}" for t in avoid))

@@ -162,6 +162,32 @@ _STRICT_LINKS_CHECK = """Connecting words count: a "because", "so", "since", "in
 "which led to" in a claim that the cited passage does not state makes the
 claim "{not_supported}", even when both facts it joins are true.
 """
+# ATTRIBUTION_FIDELITY (2026-11-09): a written sentence that combines claims
+# keeps who did what to whom, and how often. Measured in a blind held-out eval
+# (h9): the writer merged two facts and gave a telegram sent to one character to
+# another ("Holmes's note told Watson to go to Baker Street and wait", sent to
+# Jones), and turned one question into a repeated one ("Holmes later asked
+# again"). The writer is told (write.ATTRIBUTION_RULE) and the sentence check
+# refuses it (`_ATTRIBUTION_CHECK`, in the style of STRICT_LINKS). Needs
+# STORY_ORDER (it lives in the story writer and check). Off gives the prompts
+# before it, byte for byte.
+ATTRIBUTION_FIDELITY = True
+_ATTRIBUTION_CHECK = """- attributes an action, message or speech to a different person than its
+  cited claims name: another doer, sender, recipient, speaker or addressee;
+- states a repetition, frequency or recurrence ("again", "twice", "kept",
+  "repeatedly") that no cited claim states;
+"""
+# The same test for a claim against its passage: in h9's X3 the swapped
+# recipient was already in the claim the writer copied word for word.
+_ATTRIBUTION_CLAIM_CHECK = """People count: a claim that gives an action, message or speech to a different
+person than the cited passage does (another doer, sender, recipient, speaker
+or addressee), or that says something happened again, more than once or
+regularly when the passage tells it once, is "{not_supported}".
+"""
+
+
+def attribution_on() -> bool:
+    return ATTRIBUTION_FIDELITY and write_module.STORY_ORDER
 # ROLE_COVERAGE (2026-10-28): asked about a kind of character (a role such as
 # opponents, allies or victims), the claims named only the most prominent one
 # although the passages showed others in that role. General by design: no
@@ -551,7 +577,20 @@ def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
     block = "\n\n".join(f"[{pos.n}] ({pos.label(detail=True)})\n{by_n[pos.n].text}"
                          for pos in order.ordered)
     note = order.note()
-    return f"Passages are in story order.{' ' + note if note else ''}\n\n{block}"
+    setup = _setup_note(evidence)
+    return f"Passages are in story order.{' ' + note if note else ''}{setup}\n\n{block}"
+
+
+# SCENE_SETUP (scene.py): what a setup passage is for, said once per pair shown.
+_SETUP_NOTE = (" Passage [{setup}] comes just before passage [{scene}] in the book and sets up"
+               " its scene: what it tells about how that scene came about, or why, helps"
+               " answer the question.")
+
+
+def _setup_note(evidence: Evidence) -> str:
+    shown = {p.n for p in evidence.passages}
+    return "".join(_SETUP_NOTE.format(setup=s, scene=a) for s, a in evidence.setups
+                   if s in shown and a in shown)
 
 
 def _build_prompt(
@@ -771,7 +810,7 @@ wording.
   result") that no cited claim states;
 - uses an order word that the positions contradict, or that links claims
   from books whose relative order is unknown;
-- or summarises with more than the claims show, such as "always" or
+{attribution}- or summarises with more than the claims show, such as "always" or
   "every" when they show one case or some.
 Return these in sentence_judgements, one per sentence, numbered 1 to
 {count} in the claim field, with a verdict and a reason of at most
@@ -925,7 +964,9 @@ def faithfulness_prompt(
         supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS,
         strict_links=((_QUOTE_POINTER_CHECK.format(supported=SUPPORTED) if QUOTE_POINTER else "")
                       + (_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
-                         if STRICT_LINKS else "")))
+                         if STRICT_LINKS else "")
+                      + (_ATTRIBUTION_CLAIM_CHECK.format(not_supported=NOT_SUPPORTED)
+                         if attribution_on() else "")))
     if order and order.note():
         prompt += "\n" + order.note() + "\n"
     if sentences:
@@ -949,6 +990,8 @@ def faithfulness_prompt(
             for i, s in enumerate(sentences, start=1))
         summary = summary_rule(opener) if story else ""
         prompt += (_STORY_SENTENCES_BLOCK.format(summary=summary, sentences=lines,
+                                                 attribution=(_ATTRIBUTION_CHECK
+                                                              if attribution_on() else ""),
                                                  count=len(sentences), supported=SUPPORTED,
                                                  not_supported=NOT_SUPPORTED,
                                                  max_words=MAX_REASON_WORDS)
@@ -1384,6 +1427,11 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
                 question, sub_questions, kept, evidence.passages, check, write, book_titles,
                 books, shape, length, covered, sentences, written, outcome, gaps, built, build,
                 kept_mask, spend_ok)
+        if built and write_module.story_order_prose_on(length, shape):
+            # STORY_ORDER_PROSE: events in story order, by code where it can.
+            built = await _story_order(question, sub_questions, outcome.kept, evidence.passages,
+                                       check, write, book_titles, books, length, covered, built,
+                                       opener, spend_ok)
         if built and enforce:
             built = place_uncited(built, [c.text for c in outcome.kept],
                                   [c.passage for c in outcome.kept])
@@ -1410,6 +1458,74 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
         prose, shown_gaps = interpret.close_answer(prose, shape, shown_gaps, survivors), ()
     return (outcome.kept, [c for c, _ in outcome.dropped], prose, skipped, prose_note,
             tuple(missing) if prose else (), shown_gaps)
+
+
+async def _story_order(question, sub_questions, claims, passages, check, write, book_titles,
+                       books, length, covered, built, opener, spend_ok=None):
+    """STORY_ORDER_PROSE: `built` (the shown prose, its claims numbered as
+    `claims`, the claims the check kept) with its events in story order. An
+    answer with no fault, or organised by theme, is returned as it is; a fault
+    is fixed by moving the sentence (`write.story_reorder`) when that orphans
+    nothing, else by one repair round (`_order_repair`); if that fails too the
+    prose stands as it was."""
+    keys = write_module.story_keys(built, passages, book_titles, books)
+    faults = write_module.order_faults(built, keys, opener)
+    if not faults or not write_module.chronological(built, keys, opener):
+        return built
+    moved = write_module.story_reorder(built, keys, opener)
+    if moved is not None:
+        return moved
+    fixed = await _order_repair(question, sub_questions, claims, passages, check, write,
+                                book_titles, books, length, covered, built, faults, opener,
+                                spend_ok)
+    return fixed if fixed else built
+
+
+async def _order_repair(question, sub_questions, claims, passages, check, write, book_titles,
+                        books, length, covered, built, faults, opener, spend_ok=None):
+    """STORY_ORDER_PROSE's one repair round: the writer sees the shown prose
+    with the out-of-order sentences named (`Repair.order`); its revision is
+    checked once, the claims' verdicts carried (they all passed). Returns the
+    revised prose, or None when the spend check says no, the round fails, or
+    the revision is no better: it must assemble, orphan nothing, cite every
+    claim the prose cited, and have fewer order faults."""
+    if write is None or check is None or (spend_ok is not None and not spend_ok()):
+        return None
+    if any(s.kind not in ("fact", "reading") for s in built):
+        return None
+    from lore.query.write import Sentence  # write.py never imports this module
+    draft = tuple(Sentence(text=s.text, claims=list(s.claims), new_paragraph=s.new_paragraph,
+                           kind=s.kind) for s in built)
+    repair = Repair(draft=draft, order=tuple(i + 1 for i in faults))
+    again = await write_answer(question, sub_questions, claims, passages, write,
+                               book_titles=book_titles, books=books, length=length,
+                               covered=covered, repair=repair)
+    second = (verify_prose(again, len(claims), [c.text for c in claims])
+              if again is not None else [])
+    if not second:
+        return None
+    checked = await check_answer(claims, passages, check, book_titles=book_titles,
+                                 sentences=second, books=books, opener=opener)
+    if not (checked.ran and checked.sentence_ok is not None
+            and len(checked.sentence_ok) == len(second)):
+        return None
+    second = with_opener(second, checked)
+    ok = list(checked.sentence_ok)
+    if write_module.fidelity_on() and checked.inference and len(checked.inference) == len(ok):
+        ok = [good and not (flag and getattr(s, "kind", "fact") == "fact")
+              for s, good, flag in zip(second, ok, checked.inference)]
+    every = [True] * len(claims)  # CARRY_VERDICTS: these claims all passed the check
+    rebuilt = assemble(second, len(split_items(again)), every, ok, [c.passage for c in claims])
+    if not rebuilt:
+        return None
+    if write_module.orphans(second, write_module.kept_flags(second, every, ok)):
+        return None
+    if not {k for s in built for k in s.claims} <= {k for s in rebuilt for k in s.claims}:
+        return None
+    keys = write_module.story_keys(rebuilt, passages, book_titles, books)
+    if len(write_module.order_faults(rebuilt, keys, opener)) >= len(faults):
+        return None
+    return rebuilt
 
 
 def uncited_claims(sentences: Sequence["Sentence"], outcome: CheckOutcome) -> list[int]:
@@ -1819,7 +1935,8 @@ async def synthesize_parts(
                        timeline=(evidence.timelines[index]
                                  if len(evidence.timelines) == len(sub_questions) else ()),
                        codex=(evidence.codexes[index]
-                              if len(evidence.codexes) == len(sub_questions) else ()))
+                              if len(evidence.codexes) == len(sub_questions) else ()),
+                       setups=evidence.setups)
         result = await generate(
             _build_prompt(part, own, book_titles, part_of=question, books=books), Synthesis)
         verified, _ = verify_claims(_capped(result), passages)
@@ -1897,7 +2014,8 @@ async def shaped_claims(question: str, plan: Sequence, retrieval: Sequence, evid
             per_part.append([])
             continue
         own = Evidence(edges=evidence.edges, passages=passages, truncated=evidence.truncated,
-                       timeline=timelines[index], codex=codexes[index])
+                       timeline=timelines[index], codex=codexes[index],
+                       setups=evidence.setups)
         served = plan[part.part]
         role = ("lens" if part.lens else "beyond" if served.kind == "beyond" else "part")
         spec = (SectionSpec(part_of=question, max_claims=max_claims, length="section")
