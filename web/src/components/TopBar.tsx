@@ -6,7 +6,7 @@ import { AddBookDialog } from "./AddBookDialog";
 import { LibraryPanel } from "./LibraryPanel";
 import { BooksDropdown } from "./BooksDropdown";
 import { QuotaChip } from "./QuotaChip";
-import { ReadingPosition } from "./ReadingPosition";
+import { ReadingProgress } from "./ReadingProgress";
 import { WorldSelector } from "./WorldSelector";
 import { AccountMenu } from "./AccountMenu";
 import { SETTINGS_BUTTON_ID, SettingsDialog } from "./SettingsDialog";
@@ -15,10 +15,11 @@ import { isMulti } from "../routing";
 import { openSettings } from "../settings";
 import type { Depth, Me } from "../types";
 
-export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange, onPositionChange, historyOpen = false, onToggleHistory,
+export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refreshKey, worlds = [], world = "all", onWorldChange = () => {}, onLibraryChange, onPositionChange, onLimited, libraryKey = 0, historyOpen = false, onToggleHistory,
   depth, onDepth, onShowInternals, me = null }:
   { books: Book[]; hiddenBooks: Set<string>; onBooksChange: (s: Set<string>) => void; showInternals: boolean; refreshKey: number;
     worlds?: World[]; world?: string; onWorldChange?: (w: string) => void; onLibraryChange?: () => void; onPositionChange?: () => void;
+    onLimited?: (limited: boolean) => void; libraryKey?: number;
     historyOpen?: boolean; onToggleHistory?: () => void; depth?: Depth; onDepth?: (d: Depth) => void; onShowInternals?: (on: boolean) => void; me?: Me | null }) {
   const multi = isMulti();
   const [adding, setAdding] = useState(false);
@@ -36,7 +37,7 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
       <span className="spacer" />
       <div className="tools">
         <WorldSelector worlds={worlds} world={world} onChange={onWorldChange} />
-        <ReadingPosition world={world} onChange={onPositionChange} />
+        <ReadingProgress world={world} worlds={worlds} refreshKey={libraryKey} onChange={onPositionChange} onLimited={onLimited} />
         <BooksDropdown books={books} hiddenBooks={hiddenBooks} onChange={onBooksChange} onOpenLibrary={() => setLibrary(true)} />
         <button className="tbtn" type="button" onClick={() => { setFocusBook(null); setLibrary(true); }}>{LIBRARY.open}</button>
         <button className="tbtn primary" type="button" onClick={() => setAdding(true)}>+ Add book</button>

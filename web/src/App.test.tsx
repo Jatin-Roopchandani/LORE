@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { ONBOARD, PROVIDERS } from "./messages";
@@ -190,31 +190,28 @@ test("local mode never asks about a key", async () => {
   expect(keyStatus).not.toHaveBeenCalled();
 });
 
-test("moving the reading position refetches the book list and the graph for that world, once", async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
-  try {
-    position = { enabled: true, book_id: "b1", chapter: 2, read_books: [],
-      books: [{ id: "b1", title: "Hollow Gate", series: null, series_index: null, chapters: 9, order: "current" }] };
-    localStorage.setItem("lore-world-v1", "1");
-    overview.mockClear(); library.mockClear();
-    render(<App />);
-    await waitFor(() => expect(overview).toHaveBeenCalledWith("1"));
-    expect(await screen.findByText("Up to Hollow Gate ch. 2")).toBeInTheDocument();
-    const before = { overview: overview.mock.calls.length, library: library.mock.calls.length };
-    fireEvent.click(screen.getByRole("button", { name: /Reading position/ }));
-    const slider = await screen.findByRole("slider");
-    fireEvent.change(slider, { target: { value: "4" } });
-    fireEvent.change(slider, { target: { value: "5" } });
-    expect(overview.mock.calls.length).toBe(before.overview);  // nothing until the slider settles
-    act(() => { vi.advanceTimersByTime(500); });
-    await waitFor(() => expect(overview.mock.calls.length).toBe(before.overview + 1));
-    expect(library.mock.calls.length).toBe(before.library + 1);
-    expect(setPosition).toHaveBeenCalledTimes(1);
-    expect(setPosition).toHaveBeenCalledWith("1", { enabled: true, book_id: "b1", chapter: 5, read_books: [] });
-    expect(overview).toHaveBeenLastCalledWith("1");
-  } finally {
-    vi.useRealTimers();
-  }
+test("changing the reading progress refetches the book list and the graph for that world, once", async () => {
+  const book = { id: "b1", title: "Hollow Gate", series: null, series_index: null, chapters: 9, order: "current" };
+  position = { enabled: true, book_id: "b1", chapter: 2, read_books: [], books: [{ ...book, state: "reading", progress_chapter: 2 }] };
+  setPosition.mockImplementationOnce((_w: string, body: Record<string, unknown>) => {
+    const change = body.change as { chapter: number };
+    position = { ...position, chapter: change.chapter, books: [{ ...book, state: "reading", progress_chapter: change.chapter }] };
+    return Promise.resolve({ world: { id: 1, name: "Alpha Saga" }, ...position });
+  });
+  localStorage.setItem("lore-world-v1", "1");
+  overview.mockClear(); library.mockClear();
+  render(<App />);
+  await waitFor(() => expect(overview).toHaveBeenCalledWith("1"));
+  expect(await screen.findByRole("button", { name: "Reading progress: Ch. 2 · Hollow Gate" })).toBeInTheDocument();
+  const before = { overview: overview.mock.calls.length, library: library.mock.calls.length };
+  fireEvent.click(screen.getByRole("button", { name: /Reading progress/ }));
+  fireEvent.change(await screen.findByRole("combobox", { name: /Chapter you have reached in Hollow Gate/ }), { target: { value: "5" } });
+  await waitFor(() => expect(overview.mock.calls.length).toBe(before.overview + 1));
+  expect(library.mock.calls.length).toBe(before.library + 1);
+  expect(setPosition).toHaveBeenCalledTimes(1);
+  expect(setPosition).toHaveBeenCalledWith("1", { change: { book_id: "b1", state: "reading", chapter: 5 } });
+  expect(overview).toHaveBeenLastCalledWith("1");
+  expect(await screen.findByRole("button", { name: "Reading progress: Ch. 5 · Hollow Gate" })).toBeInTheDocument();
 });
 
 test("browser-only chats are offered for import in a banner; Import posts them and the banner goes", async () => {

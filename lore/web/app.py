@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import shlex
@@ -52,7 +53,9 @@ from lore.orchestrator.jobs import JobRefused
 from lore.orchestrator.move import prepare_move
 from lore.orchestrator.pipeline import processing_budget_left
 from lore.query import explore, visible
-from lore.reading_position import ReadingPosition, get_position, set_position
+from lore.reading_position import (
+    Progress, ReadingPosition, get_position, progress_position, set_position,
+)
 from lore.tenancy import (
     LOCAL_USER_ID, CurrentUser, InvalidUserId, config_for, multi_user_enabled,
     require_session_user, resolve_user as default_resolver, validate_user_id,
@@ -92,16 +95,37 @@ class WorldBody(BaseModel):
     name: str
 
 
+class ProgressChange(BaseModel):
+    """One book of the progress list set to a state (lore/query/visible.py):
+    the series order fills in the books around it."""
+
+    book_id: str
+    state: Literal["finished", "reading", "not_started"]
+    # READING: the chapter_seq reached; none: the book's first story chapter.
+    chapter: int | None = Field(None, ge=0)
+
+
 class PositionBody(BaseModel):
-    enabled: bool
+    # The progress list: the change the reader made.
+    change: ProgressChange | None = None
+    # The older shape (the book being read, its chapter, the read toggles of
+    # books of unknown order and the switch), still accepted and stored as
+    # the progress list that shows the same (visible.legacy_progress).
+    enabled: bool = False
     book_id: str | None = None
     chapter: int = Field(0, ge=0)
-    # Books of unknown order the reader has read (the position ignores any other).
     read_books: list[str] = []
 
 
 def _invalid_position(body: PositionBody, rows: dict, chapters: dict) -> str | None:
     """Why `body` cannot be stored for a world whose books are `rows`, or None."""
+    if body.change is not None:
+        change = body.change
+        if change.book_id not in rows:
+            return f"no book {change.book_id!r} in this world"
+        if change.chapter is not None and change.chapter > int(chapters.get(change.book_id) or 0):
+            return f"{rows[change.book_id]['title']} has no chapter {change.chapter}"
+        return None
     if body.book_id is not None and body.book_id not in rows:
         return f"no book {body.book_id!r} in this world"
     if body.enabled and body.book_id is None:
@@ -235,18 +259,41 @@ def _gemini_use(conn: sqlite3.Connection, config: LoreConfig, now: datetime) -> 
             "answer_reserve": config.processing.answer_reserve}
 
 
+@dataclasses.dataclass(frozen=True)
+class _RunningAsk:
+    """A question being answered: whose it is, and how to stop it. `cancel`
+    may be called from any thread (a sync route runs in the thread pool)."""
+
+    owner: str
+    loop: asyncio.AbstractEventLoop
+    stop: asyncio.Event
+
+    def cancel(self) -> None:
+        try:
+            self.loop.call_soon_threadsafe(self.stop.set)
+        except RuntimeError:  # the loop is closed: nothing is running to stop
+            pass
+
+
 class _Releasing:
     """The answer stream, giving the question's in-flight slots back when it
     ends however it ends: finished, failed, the client gone, or never started
-    (a response dropped before its first chunk is only garbage collected)."""
+    (a response dropped before its first chunk is only garbage collected).
+    `on_done`, when given, runs once then too (the question leaves the list
+    of running ones that Stop can reach)."""
 
-    def __init__(self, inner, grant) -> None:
-        self._inner, self._grant = inner, grant
+    def __init__(self, inner, grant, on_done: Callable[[], None] | None = None) -> None:
+        self._inner, self._grant, self._on_done = inner, grant, on_done
 
     def _done(self) -> None:
         grant, self._grant = self._grant, None
-        if grant is not None:
-            grant.release()
+        on_done, self._on_done = self._on_done, None
+        try:
+            if grant is not None:
+                grant.release()
+        finally:
+            if on_done is not None:
+                on_done()
 
     def __aiter__(self):
         return self
@@ -524,32 +571,66 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             chapters = dict(conn.execute(
                 "SELECT book_id, MAX(chapter_seq) FROM chunks GROUP BY book_id").fetchall())
             story = {b: story_chapters(conn, b) for b in rows}
+            infos = book_rows(conn)
+            stored = get_position(conn, found.id)
+            progress = _progress_of(stored, rows, infos)
+            filled: dict[str, str] = {}
             if body is not None:
                 bad = _invalid_position(body, rows, chapters)
                 if bad:
                     return _api_error(400, "invalid_position", bad)
-                set_position(conn, ReadingPosition(
-                    found.id, body.book_id, body.chapter,
-                    tuple(b for b in body.read_books if b != body.book_id), body.enabled))
-            stored = get_position(conn, found.id)
-            infos = book_rows(conn)
+                if body.change is not None:
+                    change = body.change
+                    chapter = change.chapter
+                    if chapter is None:  # the first story chapter
+                        chapter = story[change.book_id][0]["seq"] if story[change.book_id] else 0
+                    progress, filled = visible.change_progress(
+                        rows, progress, infos, change.book_id, change.state, chapter)
+                else:
+                    progress = visible.legacy_progress(ReadingPosition(
+                        found.id, body.book_id, body.chapter,
+                        tuple(b for b in body.read_books if b != body.book_id), body.enabled),
+                        rows, infos)
+                set_position(conn, progress_position(found.id, progress))
         finally:
             conn.close()
-        current = stored.book_id if stored and stored.book_id in rows else None
+        order = visible.series_order(infos, rows)
+        states = visible.book_states(order, progress, infos)
+        reading = [b for b in order if states[b].state == visible.READING]
+        current = reading[0] if reading else None
         relation = visible.order_against(infos, rows, current) if current else {}
         return {
             "world": {"id": found.id, "name": found.name},
-            "enabled": bool(stored and stored.enabled and current),
+            # The older shape, kept for its readers: whether anything is
+            # limited, the first book in progress, and the books of unknown
+            # order against it that are finished.
+            "enabled": progress.limits() and any(s.state != visible.FINISHED
+                                                 for s in states.values()),
             "book_id": current,
-            "chapter": stored.chapter if stored and current else 0,
-            "read_books": [b for b in (stored.read_books if stored else ()) if b in rows],
+            "chapter": states[current].chapter if current else 0,
+            "read_books": [b for b in order if relation.get(b) == "unknown"
+                           and states[b].state == visible.FINISHED],
             "books": [{"id": b, "title": rows[b]["title"], "series": rows[b]["series"],
                        "series_index": rows[b]["series_index"],
                        "chapters": len(story[b]),
                        "sections": story[b],
-                       "order": "current" if b == current else relation.get(b, "unknown")}
-                      for b in visible.series_order(infos, rows)],
+                       "order": "current" if b == current else relation.get(b, "unknown"),
+                       # The progress list: what the reader set (or a series kept).
+                       "state": states[b].state,
+                       "progress_chapter": states[b].chapter,
+                       "forced": states[b].forced}
+                      for b in order],
+            # The books the last change also set, by the series order.
+            "filled": [{"id": b, "state": s} for b, s in filled.items()],
         }
+
+    def _progress_of(stored, rows: dict, infos) -> Progress:
+        """The world's progress list (every book finished when none is stored)."""
+        if stored is None:
+            return Progress()
+        if stored.progress is not None:
+            return stored.progress
+        return visible.legacy_progress(stored, rows, infos)
 
     @api.get("/api/books")
     def books(config: LoreConfig = Depends(user_config),
@@ -1093,6 +1174,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     # One question at a time PER USER: one user's long answer must not make
     # another's `busy`. Locks only; no store handle is held across requests.
     locks: dict[str, asyncio.Lock] = {}
+    # The questions being answered in this process, by request id: what Stop
+    # (POST /api/ask/{request_id}/cancel) reaches. One web process serves the
+    # app (deploy/compose.yaml); a cancel that lands in another finds nothing
+    # and is 404, and the stream's own disconnect still stops the run.
+    running_asks: dict[str, _RunningAsk] = {}
 
     def _position_note_now(cfg, world, spoilers: bool) -> str | None:
         """The note a question asked now would carry: None with spoilers shown or
@@ -1151,7 +1237,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             """The finished question: appended to the user's chat when it was
             answered, and its trace stored either way. Returns the chat it
             went to, for the answer event."""
-            if trace.finished_s is None or (error and not trace.error):
+            # A stopped or abandoned question is recorded as that, whatever the
+            # cancelled run itself last wrote (a CancelledError).
+            ended = error is not None and error.get("code") in ("stopped", "cancelled")
+            if trace.finished_s is None or (error and not trace.error) or ended:
                 trace.finish(answer=result if trace.answer is None else trace.answer,
                              error=f"{error.get('code')}: {error.get('message')}"
                              if error else None)
@@ -1186,14 +1275,39 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             grant = throttle.start_question(user.id)
             if isinstance(grant, JSONResponse):
                 return grant
+        # Stop reaches the question through here until its stream ends.
+        stop = asyncio.Event()
+        rid = trace.request_id
+        running = _RunningAsk(owner=owner, loop=asyncio.get_running_loop(), stop=stop)
+        running_asks[rid] = running
+
+        def forget() -> None:
+            if running_asks.get(rid) is running:
+                del running_asks[rid]
+
         return StreamingResponse(
             _Releasing(ask_events(cfg, body.question, lock, search=search,
                        world=body.world, depth=body.depth, on_finish=save, history=history,
-                       request_id=trace.request_id,
+                       request_id=rid, stop=stop,
                        public=friendly.public_event if multi else None,
-                       **_bypass(spoilers)), grant),
+                       **_bypass(spoilers)), grant, on_done=forget),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    @api.post("/api/ask/{request_id}/cancel")
+    def cancel_ask(request: Request, request_id: str):
+        """Stop: the asker's own question, still running, is cancelled (no
+        further model call), its slots freed as its stream ends. The UI calls
+        this as well as aborting the stream, because a proxy (Cloudflare
+        Tunnel) may not pass a client's disconnect on for a while. Another
+        user's question, or one already over, is 404: the same answer, so a
+        request id says nothing about whose it is. CSRF-checked as every POST."""
+        owner = central_user(request)
+        running = running_asks.get(request_id)
+        if running is None or running.owner != owner:
+            return _api_error(404, "not_found", "no such question is being answered")
+        running.cancel()
+        return {"cancelled": True}
 
     # Decided per request, not once here: building the frontend while the
     # server runs and reloading must serve it, as the not-built page says.

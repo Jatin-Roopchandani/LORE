@@ -101,10 +101,14 @@ def _with_position(conn: sqlite3.Connection, scopes: list[Scope]) -> list[Scope]
 
 def _counted(conn: sqlite3.Connection, view: visible.PositionView) -> visible.PositionView:
     """The view with the story chapter its stored chapter_seq falls in, as the
-    reader counts chapters (front matter is not one)."""
+    reader counts chapters (front matter is not one); so for every book in
+    progress. A view with no book in progress is unchanged."""
+    if view.book_id is None:
+        return view
     place = story_place(story_chapters(conn, view.book_id), view.chapter)
     return replace(view, number=place["number"] if place else 0,
-                   heading=place["heading"] if place else None)
+                   heading=place["heading"] if place else None,
+                   others=tuple(_counted(conn, o) for o in view.others))
 
 
 def resolve_scopes(conn: sqlite3.Connection, world: int | str | None = None, *,

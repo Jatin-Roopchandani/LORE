@@ -19,6 +19,7 @@ from lore.query.select import TemplateChoice
 from lore.query.synthesize import Synthesis
 from tests.position_fixtures import HOLLOW, build_position_library
 from tests.worlds_fixtures import QUESTION_VECTOR
+from tests.precision_pins import before_prose_precision
 
 GOLDEN = Path(__file__).parent / "golden" / "followups_none.json"
 CASES = {
@@ -72,12 +73,17 @@ async def capture(config, **extra) -> dict:
     return json.loads(json.dumps(out, sort_keys=True, default=str))
 
 
-async def test_without_history_every_call_event_and_result_is_golden(tmp_path) -> None:
+async def test_without_history_every_call_event_and_result_is_golden(tmp_path, monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
+    # pinned before quote_pointer (the golden predates it)
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
     config = build_position_library(tmp_path)
     got = await capture(config)
     assert got == json.loads(GOLDEN.read_text())
 
 
-async def test_an_empty_history_is_no_history(tmp_path) -> None:
+async def test_an_empty_history_is_no_history(tmp_path, monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
     config = build_position_library(tmp_path)
     assert await capture(config, history=[]) == json.loads(GOLDEN.read_text())

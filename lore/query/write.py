@@ -30,7 +30,11 @@ PROSE_ANSWERS = True
 # readability gain, so off: those answers show their checked claims. Answers
 # that need the writer keep it: interpretive or beyond parts, deep sections,
 # lens and recap sections, and their short answers (each has its own eval).
-PROSE_FACTUAL = False
+# 2026-11-09: on again, by the user's call. The writer now has COVERAGE,
+# FACT_FIDELITY, ORPHAN_REPAIR, READER_PROSE, OPENER_CITES, INTRO_REPAIR,
+# CARRY_VERDICTS and QUOTE_POINTER, and a claim list read as "quotes clamped
+# together". A blind paired run (prose_factual on vs off) checks the facts.
+PROSE_FACTUAL = True
 
 # STORY_ORDER (2026-10-28): answers read as a narrative. The writer is shown
 # the facts in story order with their positions, may use order words the
@@ -75,6 +79,131 @@ COVERAGE = True
 # answer with no interpretive part carries no readings at all. Needs
 # STORY_ORDER (`fidelity_on`). Off gives the code before it.
 FACT_FIDELITY = True
+
+# ORPHAN_REPAIR (2026-11-08, spec orphan-repair): no shown sentence leans on a
+# sentence that is not shown. When the check removes a sentence, the next kept
+# one may open with "He ..." or "Then ..." whose meaning was in the removed
+# one; a paragraph or section may also open that way. Code finds such a
+# sentence (`orphans`, a small word list per language, `CONTEXT_WORDS`), and a
+# section (or whole answer) whose opening sentence the check removed
+# (`opener_cut`). The writer gets ONE repair round for it, over the claims the
+# check kept only, told what was removed and why; the repair is checked once.
+# A repair that still leaves an orphan, or fails, makes that section (or
+# answer) fall back to its claim list: an orphaned opening is never shown. A
+# removed opening that the repair does not mend leaves the first draft. Needs
+# STORY_ORDER (`orphan_repair_on`). Off gives the code before it.
+ORPHAN_REPAIR = True
+
+# READER_PROSE (2026-11-08, spec orphan-repair): the writer writes for a reader
+# of the book. Connected paragraphs that group related facts into fuller
+# sentences and situate them in the story, depth over brevity, no remark about
+# "the facts" themselves, each sentence understandable if the one before it
+# were cut, and a section's opening a plain topic sentence that names its
+# subject (`READER_RULE`, the reader opening in `length_rule`). Citation rules
+# are unchanged. Needs STORY_ORDER (`reader_prose_on`). Off gives the prompts
+# before it, byte for byte.
+READER_PROSE = True
+
+# OPENER_CITES (2026-11-08, spec intro-reliability): an opening sentence cites
+# every claim it sums up. Measured on a deep answer: the writer's opening
+# ("The X are tall, learned builders bound to their homes ...") cited only the
+# height claim, so the check rejected it as overreach although other claims of
+# the same unit stated the rest. The writer is told to cite every fact an
+# opening or summary draws on (`OPENER_RULE`), and the check judges the opening
+# sentence of a gist, section or lens (`opener_on`) against ALL the unit's
+# claims, naming the claims that support it (`supported_by`); a supported
+# opening is kept citing those claims (synthesize.with_opener). An opening that
+# says what no claim states still fails. Needs STORY_ORDER. Off gives the
+# prompts, schemas and calls before it.
+OPENER_CITES = True
+
+# INTRO_REPAIR (2026-11-08, spec intro-reliability): when a unit's opening is
+# still rejected after the rounds above, one focused call asks for an
+# introduction only (`INTRO_PROMPT`: one or two sentences that tell a reader
+# what or who the subject is and how it figures in the story), over all the
+# unit's kept claims, checked once (synthesize._intro_repair); a supported
+# introduction is put first. A deep or recap answer whose gist still has no
+# supported opening takes its short answer from the first supported sentences of
+# its sections instead of code's "no direct summary" line (deep.short_answer).
+# Needs ORPHAN_REPAIR. Off gives the code before it.
+INTRO_REPAIR = True
+
+# GENTLE_FALLBACK (2026-11-08, spec intro-reliability): when the orphan repair
+# round fails, the unit is not replaced by its claim list for one bad sentence.
+# In order: the repaired draft minus its rejected sentences (however many, as
+# long as half of it stands: `assemble(lenient=True)`), if nothing in it is
+# orphaned; else the first draft minus its rejected sentences, each orphaned
+# sentence dropped on its own (and the one leaning on that, and so on:
+# `drop_orphans`), with the repair's new opening put first when it was supported;
+# only an empty remainder falls back to the claim list. Needs ORPHAN_REPAIR. Off
+# gives the code before it.
+GENTLE_FALLBACK = True
+
+# STORY_ORDER_PROSE (2026-11-09, spec order-and-setup): a narrative answer tells
+# its events in story order. Measured on "how did Watson meet Holmes": the writer
+# was shown the facts in story order and still told a sentence from passage [2]
+# after the ones from [3] and [4]. The writer is told so (`EVENT_ORDER_RULE`);
+# after the check, code finds a fact sentence told after a sentence about a later
+# event in the same paragraph (`order_faults`, from the passages' story positions:
+# a sentence citing several passages counts from its earliest; the opening, a
+# flashback-marked sentence and anything but a fact are exempt; an answer with
+# most of its events out of order is organised by theme and left alone), and
+# moves it to its story-order place in its paragraph (`story_reorder`) when no
+# sentence that leans on the one before it gets a new one before it. Otherwise
+# the writer gets ONE repair round naming the fault, checked once
+# (synthesize._order_repair). Applies to a plain prose answer, a deep section and
+# a recap section (`story_order_prose_on`); not to a short answer, a lens section
+# or an interpretive answer. Needs STORY_ORDER. Off gives the code before it.
+STORY_ORDER_PROSE = True
+# The parts of an answer it applies to (see above): the whole answer, a deep
+# section, a recap section.
+ORDER_LENGTHS = (None, "section", "recap")
+
+
+def story_order_prose_on(length: str | None = None,
+                         shape: "interpret.Shape | None" = None) -> bool:
+    return STORY_ORDER_PROSE and STORY_ORDER and shape is None and length in ORDER_LENGTHS
+
+
+def opener_cites_on() -> bool:
+    return OPENER_CITES and STORY_ORDER
+
+
+def intro_repair_on() -> bool:
+    return INTRO_REPAIR and orphan_repair_on()
+
+
+def gentle_fallback_on() -> bool:
+    return GENTLE_FALLBACK and orphan_repair_on()
+
+
+# The units whose first sentence is an opening (OPENER_CITES): a deep or lens
+# section, a gist (deep or recap), and a whole answer with no interpretive shape
+# (whose prose opens with its short answer instead). A recap section opens with
+# its first event.
+OPENER_LENGTHS = ("section", "lens", "short", "recap_short")
+
+
+def opener_on(length: str | None, shape: "interpret.Shape | None" = None) -> bool:
+    """Whether the check judges the first sentence of this unit as its opening."""
+    return opener_cites_on() and (length in OPENER_LENGTHS or (length is None and shape is None))
+
+
+def intro_wanted(length: str | None, shape: "interpret.Shape | None" = None) -> bool:
+    """INTRO_REPAIR: whether this unit gets its own introduction call when its
+    opening is still rejected: a deep or lens section, a deep answer's gist, and
+    a whole answer with no interpretive shape. A recap section opens with its
+    first event, and a recap's gist is not an introduction."""
+    return intro_repair_on() and (length in ("section", "lens", "short")
+                                  or (length is None and shape is None))
+
+
+def orphan_repair_on() -> bool:
+    return ORPHAN_REPAIR and STORY_ORDER
+
+
+def reader_prose_on() -> bool:
+    return READER_PROSE and STORY_ORDER
 
 
 def readings_on() -> bool:
@@ -256,6 +385,382 @@ LENGTH_RULES = {None: _LENGTH_RULE, "section": SECTION_LENGTH_RULE,
                 "short": SHORT_LENGTH_RULE, "lens": LENS_LENGTH_RULE,
                 "recap": RECAP_LENGTH_RULE, "recap_short": RECAP_SHORT_RULE}
 
+# READER_PROSE: how a section (or lens) opens. The rule it replaces asked for a
+# sentence saying "how these facts answer" the aspect, and the writer took that
+# literally ("The facts show ..."). The opening introduces the subject instead.
+_READER_OPENING = """- Open with a plain topic sentence that introduces the subject of this section by
+  name: who, what or where it is and where it stands in the story. Build it only
+  from the facts given and list every fact it draws on in `claims`. If no fact
+  can open that way, begin with the first fact, naming who or what it is about.
+"""
+_OLD_SECTION_OPENING = """- Open with one sentence that says how these facts answer that aspect. It must
+  itself state what the facts show and list those facts in `claims`; never open
+  with a remark that no fact supports. If no fact can open that way, leave the
+  opening out and begin with the first fact.
+"""
+_OLD_LENS_OPENING = """- Open with one sentence that says how these facts bear on the question. It must
+  itself state what the facts show (for example what a person does, chooses or
+  hides) and list those facts in `claims`; never open with a remark that no fact
+  supports. If no fact can open that way, leave the opening out and begin with
+  the first fact.
+"""
+READER_LENGTH_RULES = {
+    "section": SECTION_LENGTH_RULE.replace(_OLD_SECTION_OPENING, _READER_OPENING),
+    "lens": LENS_LENGTH_RULE.replace(_OLD_LENS_OPENING, _READER_OPENING),
+}
+assert all(READER_LENGTH_RULES[k] != LENGTH_RULES[k] for k in READER_LENGTH_RULES)
+
+# READER_PROSE: added to the story writer's rules (every answer it writes).
+READER_RULE = """- Write for a reader of the book, as a thoughtful companion to it: connected
+  paragraphs that carry the reader from one point to the next with
+  transitions, not a stack of one-fact sentences. Group related facts into
+  fuller sentences, and place events in the story (when they happen, who is
+  involved, why they matter) wherever the facts say so.
+{depth}- Write about the story, never about the facts: no "The facts show", "The
+  passages say", "According to the evidence" or the like.
+- Each sentence must still be understandable if the sentence before it were
+  removed. Name the person or thing at the start of every paragraph and in
+  any sentence whose subject only the sentence before names; never begin a
+  paragraph with "he", "she", "they", "it", "this" or "then".
+"""
+# Not for a short answer, which has its own length.
+READER_DEPTH_RULE = """- Prefer depth to brevity: give every fact its due, gracefully, rather than
+  tersely.
+"""
+
+
+def reader_rule(length: str | None) -> str:
+    return READER_RULE.format(
+        depth="" if length in ("short", "recap_short") else READER_DEPTH_RULE)
+
+
+def length_rule(length: str | None) -> str:
+    """The length rule for `length`, with the reader opening under READER_PROSE
+    and the opening's citations under OPENER_CITES."""
+    if reader_prose_on() and length in READER_LENGTH_RULES:
+        rule = READER_LENGTH_RULES[length]
+    else:
+        rule = LENGTH_RULES[length]
+    if opener_cites_on() and (length is None or length in OPENER_LENGTHS):
+        rule += OPENER_RULE
+    return rule
+
+
+# OPENER_CITES: an opening or summary sentence cites everything it draws on.
+OPENER_RULE = """- An opening or summary sentence is held to the same rule as every other: list
+  in `claims` EVERY fact it draws on, not only the most specific one, and say
+  only what those facts state. A trait, role or description that no listed fact
+  gives does not belong in it.
+"""
+
+
+# ORPHAN_REPAIR: words that, opening a sentence, lean on what came before it.
+# Per language (books are read in English today; another language adds its own
+# list). Personal and possessive pronouns, demonstratives, and sequencing or
+# contrast connectives. "There" followed by a form of "be" (or a modal) is the
+# existential "there is", which leans on nothing, so it is not counted.
+CONTEXT_WORDS = {
+    "en": frozenset("""he she they it his her their its him them hers theirs
+        this that these those
+        then later afterwards afterward also still but however meanwhile there
+        thereafter subsequently""".split()),
+}
+_EXISTENTIAL = {
+    "en": frozenset("""is are was were be been being has have had will would
+        may might must can could seems seemed seem appears appeared""".split()),
+}
+_LEAD_WORD = re.compile(r"[^\W\d_]+")
+
+
+def leans_back(text: str, language: str = "en") -> bool:
+    """Whether a sentence opens with a word whose meaning is in an earlier
+    sentence ("He ran ...", "Then the ...", "This village ...")."""
+    words = _LEAD_WORD.findall(text[:80])
+    if not words:
+        return False
+    first = words[0].lower()
+    if first not in CONTEXT_WORDS.get(language, frozenset()):
+        return False
+    return not (first == "there" and len(words) > 1
+                and words[1].lower() in _EXISTENTIAL.get(language, frozenset()))
+
+
+# STORY_ORDER_PROSE: a sentence that says it looks back ("earlier", "before
+# that", the pluperfect "had met") may come after a later event.
+_FLASHBACK = re.compile(
+    r"\b(?:earlier|before\s+(?:that|this|then)|beforehand|previously|prior\s+to\s+(?:that|this)"
+    r"|had\s+(?:(?:not|never|already|once|long|just|first|recently|since)\s+)?"
+    r"(?:[a-z]+(?:ed|en|wn)|been|come|gone|made|said|told|heard|done|had|run|won|sat|stood"
+    r"|held|led|fed|read|met|left|lost|kept|felt|thought|brought|bought|caught|taught|found"
+    r"|got|begun|become|sent|spent|built|meant|put|set|shut|let|cut|hit|struck|fought|sought"
+    r"|sold|paid|laid|slept|wept|swept|crept|dealt|knelt|lit|sung|rung|drunk|swum|flung"
+    r"|clung|hung|spun|stuck|won|wound|ground|bound))\b", re.I)
+
+
+def flashback(text: str) -> bool:
+    """Whether a sentence marks itself as telling an earlier event."""
+    return bool(_FLASHBACK.search(text))
+
+
+# The writer rule (STORY_ORDER_PROSE), with the readings and fidelity rules.
+EVENT_ORDER_RULE = """- Tell events in story order, the order the facts are listed in: within a
+  paragraph, a sentence about an event never comes after a sentence about a
+  later event, even when it fills in a detail. Put that detail where its
+  event happens. When an earlier event must be told later, say so ("earlier",
+  "before that", "had ...").
+"""
+
+
+# ATTRIBUTION_FIDELITY (synthesize.ATTRIBUTION_FIDELITY, which holds the switch):
+# a sentence that combines or restates facts keeps who did what, and how often.
+ATTRIBUTION_RULE = """- When a sentence combines or restates facts, keep exactly who did what to
+  whom: the doer, the recipient, the speaker and the one spoken to, as the
+  facts give them, and how often and when it happened. Never move an
+  action, message or statement to a different person, and never make one
+  event a repeated one ("again", "repeatedly", "later ... too") unless a fact
+  says so.
+"""
+
+
+def attribution_on() -> bool:
+    from lore.query import synthesize  # the switch lives with the check; no cycle at call time
+    return synthesize.attribution_on()
+
+
+def story_keys(prose: Sequence, passages: Iterable[Passage],
+               book_titles: dict[str, str] | None = None,
+               books: dict[str, BookInfo] | None = None) -> list[tuple | None]:
+    """Per sentence, (order group, story rank) of its earliest passage, or None
+    when it cites no passage with a position. Two sentences are comparable only
+    in one group: one book, or one series whose order is known (position.py).
+    `prose`: anything with `passages` (passage numbers), as ProseSentence."""
+    order = order_passages(list(passages), book_infos(book_titles, books))
+    rank = {pos.n: i for i, pos in enumerate(order.ordered)}
+    out: list[tuple | None] = []
+    for s in prose:
+        known = [n for n in getattr(s, "passages", ()) if n in rank]
+        if not known:
+            out.append(None)
+            continue
+        first = order.positions[min(known, key=rank.__getitem__)]
+        group = ("series", first.series.casefold()) if first.series is not None else ("book", first.book_id)
+        out.append((group, rank[first.n]))
+    return out
+
+
+def _paragraphs(prose: Sequence) -> list[list[int]]:
+    rows: list[list[int]] = []
+    for i, s in enumerate(prose):
+        if i == 0 or s.new_paragraph:
+            rows.append([])
+        rows[-1].append(i)
+    return rows
+
+
+def _events(prose: Sequence, keys: Sequence[tuple | None], opener: bool) -> list[bool]:
+    """Per sentence, whether it is an event the order rule holds: a fact with a
+    story position, not the opening (with `opener`, or one citing several
+    passages) and not marked as a flashback."""
+    out = []
+    for i, (s, key) in enumerate(zip(prose, keys)):
+        exempt_open = i == 0 and (opener or len(getattr(s, "passages", ())) > 1)
+        out.append(key is not None and getattr(s, "kind", "fact") == "fact"
+                   and not exempt_open and not flashback(s.text))
+    return out
+
+
+def order_faults(prose: Sequence, keys: Sequence[tuple | None], opener: bool = True) -> list[int]:
+    """0-based indices of the event sentences told after a sentence about a later
+    event of the same order group, in the same paragraph (`_events`)."""
+    events = _events(prose, keys, opener)
+    out = []
+    for rows in _paragraphs(prose):
+        latest: dict = {}
+        for i in rows:
+            if not events[i]:
+                continue
+            group, rank = keys[i]
+            if latest.get(group, -1) > rank:
+                out.append(i)
+            latest[group] = max(latest.get(group, -1), rank)
+    return out
+
+
+def chronological(prose: Sequence, keys: Sequence[tuple | None], opener: bool = True) -> bool:
+    """Whether the answer is told as a chronology: at most half of its events are
+    out of order. More than that and it is organised by theme, which the order
+    rule leaves alone."""
+    events = sum(_events(prose, keys, opener))
+    return 2 * len(order_faults(prose, keys, opener)) <= events
+
+
+def story_reorder(prose: Sequence, keys: Sequence[tuple | None], opener: bool = True,
+                  language: str = "en") -> tuple | None:
+    """`prose` with each paragraph's events in story order (a stable sort, per
+    order group, over the places that group's events hold; every other sentence
+    stays where it is), or None when that would give a sentence that leans on
+    the one before it (`leans_back`) a different sentence before it, or open a
+    paragraph with it. Paragraph breaks stay where they were."""
+    events = _events(prose, keys, opener)
+    order: list[int] = []
+    for rows in _paragraphs(prose):
+        slots = list(rows)
+        by_group: dict = {}
+        for i in rows:
+            if events[i]:
+                by_group.setdefault(keys[i][0], []).append(i)
+        for members in by_group.values():
+            ranked = sorted(members, key=lambda i: keys[i][1])
+            for place, i in zip(members, ranked):
+                slots[rows.index(place)] = i
+        order += slots
+    if order == list(range(len(prose))):
+        return tuple(prose)
+    starts = {rows[0] for rows in _paragraphs(prose)}
+    before = {i: (None if i in starts else i - 1) for i in range(len(prose))}
+    out = []
+    for at, i in enumerate(order):
+        now = None if at in starts else order[at - 1]
+        if now != before[i] and leans_back(prose[i].text, language):
+            return None
+        out.append(replace(prose[i], new_paragraph=at in starts and at > 0))
+    return tuple(out)
+
+
+def kept_flags(sentences: Sequence, claim_ok: Sequence[bool],
+               sentence_ok: Sequence[bool]) -> list[bool]:
+    """Per sentence, whether `assemble` keeps it: the check passed it and every
+    claim it cites survived."""
+    return [bool(ok) and all(1 <= k <= len(claim_ok) and claim_ok[k - 1] for k in s.claims)
+            for s, ok in zip(sentences, sentence_ok)]
+
+
+def orphans(sentences: Sequence, keep: Sequence[bool], language: str = "en") -> list[int]:
+    """0-based indices of the kept sentences that lean on a sentence not shown:
+    one opening with a context word (`leans_back`) that is the first kept
+    sentence, opens a paragraph, or follows a sentence that was removed."""
+    out, any_kept = [], False
+    for i, (s, k) in enumerate(zip(sentences, keep)):
+        if not k:
+            continue
+        if (getattr(s, "kind", "fact") != "limit" and leans_back(s.text, language)
+                and (not any_kept or s.new_paragraph or not keep[i - 1])):
+            out.append(i)
+        any_kept = True
+    return out
+
+
+def opener_cut(keep: Sequence[bool]) -> bool:
+    """Whether the opening sentence was removed while others stand."""
+    return bool(keep) and not keep[0] and any(keep)
+
+
+def drop_orphans(sentences: Sequence, keep: Sequence[bool], language: str = "en") -> list[bool]:
+    """GENTLE_FALLBACK: `keep` with every orphaned sentence dropped on its own,
+    then any sentence that leaned on a dropped one, and so on, until no kept
+    sentence is orphaned (`orphans`)."""
+    keep = list(keep)
+    while True:
+        found = orphans(sentences, keep, language)
+        if not found:
+            return keep
+        for i in found:
+            keep[i] = False
+
+
+# An introduction put before a draft written without it may say what the draft's
+# own first sentences say ("X, so tall that ..." before "X is so tall that ...").
+# A sentence whose claims the introduction cites, and most of whose content words
+# it uses, is the same sentence again.
+RESTATED_SHARE = 0.6
+
+
+def drop_restated(intro: Sequence[ProseSentence],
+                  shown: Sequence[ProseSentence]) -> list[ProseSentence]:
+    """`shown` without the sentences `intro` already says: every claim cited by
+    the introduction, and at least RESTATED_SHARE of the sentence's content
+    words in it. A paragraph a dropped sentence opened goes on from the next."""
+    cited = {k for s in intro for k in s.claims}
+    words = set().union(*(_content_words(s.text) for s in intro)) if intro else set()
+    out: list[ProseSentence] = []
+    carry = False
+    for s in shown:
+        own = _content_words(s.text)
+        same = (s.kind == "fact" and s.claims and set(s.claims) <= cited and own
+                and len(own & words) >= RESTATED_SHARE * len(own))
+        if same:
+            carry = carry or s.new_paragraph
+            continue
+        out.append(replace(s, new_paragraph=bool(out) and (s.new_paragraph or carry)))
+        carry = False
+    return out
+
+
+# INTRO_REPAIR: the one focused call for an introduction, over the unit's kept
+# claims (listed as the writer prompt lists facts).
+INTRO_PROMPT = """Write the introduction to {unit} about this subject: {subject}
+
+The numbered facts below were each checked against the book. Write one or two
+sentences that tell a reader what or who the subject is and how it figures in
+the story, as the opening of the {unit}. Nothing else: no detail beyond what an
+introduction needs, no list of events.
+
+- Use only what the facts say. Never add a name, trait, role, number, detail,
+  reason or event they do not state, including what you know about the story.
+- Every sentence lists in `claims` the number of EVERY fact it draws on.
+- Name the subject in the first sentence; never begin with "he", "she",
+  "they", "it", "this" or "then", or with a remark about the facts ("The facts
+  show", "The passages say").
+- Never put fact numbers or any citation inside the sentence text.
+- Each item in `sentences` is exactly one sentence.
+{order_note}
+Facts:
+{facts}
+"""
+INTRO_UNITS = {"section": "a section of a longer answer", "lens": "a section of a longer answer",
+               "short": "the short answer that opens a longer answer", None: "an answer"}
+MAX_INTRO_SENTENCES = 2
+
+
+def intro_prompt(subject: str, claims: Sequence[Claim], passages: Iterable[Passage],
+                 book_titles: dict[str, str] | None, books: dict[str, BookInfo] | None,
+                 length: str | None) -> tuple[str, list[int]]:
+    """(INTRO_PROMPT, the claims' indices in the order shown)."""
+    indices, positions, note = story_plan(claims, list(passages), book_titles, books)
+    lines = []
+    for shown, i in enumerate(indices, start=1):
+        where = f" ({positions[i].label()})" if positions[i] else ""
+        lines.append(f"{shown}. {claims[i].text.strip()}{where}\n   quote: {claims[i].quote.strip()}")
+    return INTRO_PROMPT.format(unit=INTRO_UNITS.get(length, "an answer"), subject=subject.strip(),
+                               order_note=(note + "\n") if note else "",
+                               facts="\n".join(lines)), indices
+
+
+async def write_intro(subject: str, claims: Sequence[Claim], passages: Iterable[Passage],
+                      generate: Generate, *, book_titles: dict[str, str] | None = None,
+                      books: dict[str, BookInfo] | None = None,
+                      length: str | None = None) -> list[Sentence]:
+    """INTRO_REPAIR's writer: at most MAX_INTRO_SENTENCES fact sentences citing
+    `claims` (1-based, their own numbering), or [] on any failure. A sentence
+    citing nothing, or a number outside the list, is dropped; so is one that
+    leans on a sentence before it, when it comes first."""
+    prompt, indices = intro_prompt(subject, claims, passages, book_titles, books, length)
+    try:
+        reply = await generate(prompt, _StoryProse)
+    except Exception:  # noqa: BLE001 -- a failed extra step costs only the introduction
+        return []
+    back = {shown: i + 1 for shown, i in enumerate(indices, start=1)}
+    out: list[Sentence] = []
+    for s in getattr(reply, "sentences", None) or []:
+        cited = [back.get(k, 0) for k in s.claims]
+        text = strip_residue(_FLAG_IN_TEXT.sub("", s.text))
+        if not cited or 0 in cited or not re.search(r"\w", text):
+            continue
+        if not out and leans_back(text):
+            continue
+        out.append(Sentence(text=text, claims=sorted(set(cited)), new_paragraph=False))
+    return out[:MAX_INTRO_SENTENCES]
+
 
 STORY_WRITER_PROMPT = """Write the answer to the question from the numbered facts below.
 
@@ -378,6 +883,29 @@ REDUCE_RULE = """- Draft sentences {numbers} state an interpretation their facts
 AS_READING_RULE = """  If that interpretation is worth keeping, you may also give it as a sentence
   of kind "reading", worded visibly as one, as the reading rules above allow.
 """
+# ORPHAN_REPAIR: what was removed, a sentence that leaned on it, a lost opening.
+REMOVED_RULE = """- These sentences of an earlier draft were removed because the facts do not
+  support them; do not say again what made them fail:
+{sentences}
+"""
+ORPHAN_RULE = """- Draft sentences {numbers} begin with a word ("he", "she", "it", "they",
+  "this", "then" and the like) whose meaning was in a sentence that is gone,
+  or that opens a paragraph. Rewrite each so it stands on its own: name the
+  person, place or thing it is about, with the same facts in `claims`.
+"""
+# STORY_ORDER_PROSE: a draft sentence told after a sentence about a later event.
+ORDER_RULE = """- Draft sentences {numbers} tell an event that happens earlier in the story
+  than an event told before them in the same paragraph. Move each to its place
+  in story order, the order the facts are listed in, with the same facts in
+  `claims`, and reword it or its neighbours only as far as needed for every
+  sentence to say clearly who it is about. Change nothing else.
+"""
+INTRO_RULE = """- The draft's opening sentence was removed. Write a new first sentence that
+  introduces the subject by name: who, what or where it is and where it stands
+  in the story. Build it only from the facts listed above, and list every fact
+  it draws on in `claims`. Never begin with "The facts show" or any remark
+  about the facts.
+"""
 
 
 @dataclass(frozen=True)
@@ -392,6 +920,14 @@ class Repair:
     # and whether the writer may keep the interpretation as a reading instead.
     reduce: tuple[int, ...] = ()
     as_reading: bool = False
+    # ORPHAN_REPAIR: draft sentences (1-based) that lean on a removed sentence,
+    # whether the opening was removed and a new one is wanted, and the
+    # sentences the check removed, each with its reason.
+    orphans: tuple[int, ...] = ()
+    intro: bool = False
+    removed: tuple[tuple[str, str], ...] = ()
+    # STORY_ORDER_PROSE: draft sentences (1-based) told after a later event.
+    order: tuple[int, ...] = ()
 
 
 def repair_block(repair: Repair, shown_number: dict[int, int]) -> str:
@@ -412,6 +948,16 @@ def repair_block(repair: Repair, shown_number: dict[int, int]) -> str:
         rules += REDUCE_RULE.format(numbers=", ".join(str(i) for i in repair.reduce))
         if repair.as_reading:
             rules += AS_READING_RULE
+    if repair.removed:
+        rules += REMOVED_RULE.format(sentences="\n".join(
+            f"  - {text.strip()}" + (f" ({reason.strip()})" if reason.strip() else "")
+            for text, reason in repair.removed))
+    if repair.orphans:
+        rules += ORPHAN_RULE.format(numbers=", ".join(str(i) for i in repair.orphans))
+    if repair.intro:
+        rules += INTRO_RULE
+    if repair.order:
+        rules += ORDER_RULE.format(numbers=", ".join(str(i) for i in repair.order))
     return REPAIR_RULE.format(lead=REPAIR_LEAD, draft="\n".join(lines) or "  (no sentence passed)",
                               rules=rules)
 
@@ -497,13 +1043,19 @@ def writer_prompt(question: str, sub_questions: Sequence[str], claims: Sequence[
         if fidelity_on():
             rules += FACT_RULE + (READING_HOME_RULE if shape is not None and shape.interpretive
                                   else NO_READINGS_RULE)
+        if reader_prose_on():
+            rules += reader_rule(length)
+        if story_order_prose_on(length, shape):
+            rules += EVENT_ORDER_RULE
+        if attribution_on():
+            rules += ATTRIBUTION_RULE
         before = (COVERED_RULE.format(headings="\n".join(f"  - {h}" for h in covered))
                   if covered else "")
         after = (AVOID_RULE.format(sentences="\n".join(f"  - {t}" for t in avoid))
                  if avoid else "")
         prompt = STORY_WRITER_PROMPT.format(question=question, parts=parts, facts="\n".join(lines),
                                             order_note=note, readings=rules,
-                                            length=LENGTH_RULES[length] + before + after)
+                                            length=length_rule(length) + before + after)
         if repair is not None:
             prompt += repair_block(repair, {i + 1: shown for shown, i in enumerate(indices, start=1)})
         return prompt
@@ -725,8 +1277,12 @@ def valid_unanswered(prose: Prose, n_parts: int) -> list[int]:
 
 
 def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[bool],
-             sentence_ok: Sequence[bool], passage_of: Sequence[int]) -> tuple[ProseSentence, ...] | None:
+             sentence_ok: Sequence[bool], passage_of: Sequence[int], *,
+             lenient: bool = False) -> tuple[ProseSentence, ...] | None:
     """The prose to show, or None to fall back to the claim list.
+
+    `lenient` (GENTLE_FALLBACK, after a failed repair round only): any number of
+    rejected sentences may be removed, as long as half of what was written stands.
 
     `written`: how many sentences the writer produced (split_items), before
     verify_prose.
@@ -749,7 +1305,7 @@ def assemble(sentences: Sequence[Sentence], written: int, claim_ok: Sequence[boo
     # Only facts count: a reading or counter-case is an optional extra, and one
     # the check rejects is simply dropped (2026-10-29).
     facts = [ok for s, ok in standing if getattr(s, "kind", "fact") == "fact"]
-    if sum(not ok for ok in facts) > max(1, len(facts) // 4):
+    if not lenient and sum(not ok for ok in facts) > max(1, len(facts) // 4):
         return None
     kept = [s for s, ok in standing if ok]
     if not kept or 2 * len(kept) < written:
@@ -800,13 +1356,19 @@ def _as_sentence(text: str) -> str:
 
 
 def place_uncited(prose: Sequence[ProseSentence], claim_texts: Sequence[str],
-                  claim_passages: Sequence[int]) -> tuple[ProseSentence, ...]:
+                  claim_passages: Sequence[int],
+                  same: Callable[[ProseSentence, int], bool] | None = None,
+                  ) -> tuple[ProseSentence, ...]:
     """COVERAGE's last step: every claim (1-based, as in `ProseSentence.claims`)
     that no sentence cites is added as its own fact sentence, the claim's text
     with its citation, after the last fact sentence of the paragraph whose fact
     sentences cite its passage most often (the earliest such paragraph on a
     tie), or of the last paragraph when none does; a reading or counter-case
-    stays after the facts it follows. Nothing else changes."""
+    stays after the facts it follows. Nothing else changes.
+
+    `same(sentence, k)` (DEDUP_SENTENCES): whether a shown fact sentence, or one
+    placed before, already says claim k. Such a claim is cited by the first
+    sentence that says it instead of being said again."""
     out = list(prose)
     if not out:
         return ()
@@ -814,6 +1376,14 @@ def place_uncited(prose: Sequence[ProseSentence], claim_texts: Sequence[str],
     for k in range(1, len(claim_texts) + 1):
         if k in cited or not claim_texts[k - 1].strip():
             continue
+        if same is not None:
+            at = next((i for i, s in enumerate(out) if s.kind == "fact" and same(s, k)), None)
+            if at is not None:
+                s = out[at]
+                out[at] = replace(s, claims=(*s.claims, k),
+                                  passages=tuple(sorted({*s.passages, claim_passages[k - 1]})))
+                cited.add(k)
+                continue
         paragraphs: list[list[int]] = []
         for i, s in enumerate(out):
             if i == 0 or s.new_paragraph:

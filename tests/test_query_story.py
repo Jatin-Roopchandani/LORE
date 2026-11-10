@@ -13,6 +13,7 @@ from lore.query.write import (
     UNANSWERED_LEAD, WRITER_PROMPT, Prose, Sentence, clean_gaps, compose_text, write_answer,
     writer_prompt,
 )
+from tests.precision_pins import before_prose_precision
 
 # Three passages in two books of one series, and one from a book with no series.
 PS = (
@@ -376,9 +377,11 @@ async def test_gaps_do_not_survive_a_fallback_to_claims():
 def test_switch_off_is_byte_identical_to_the_previous_release(monkeypatch):
     """tests/golden_story_off.json was dumped from the commit before this
     feature (12e9dbc) for the same inputs."""
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     import json
     from pathlib import Path
     monkeypatch.setattr(write_module, "STORY_ORDER", False)
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
     golden = json.loads((Path(__file__).parent / "golden_story_off.json").read_text())
     ps = (Passage(n=1, chunk_id="b2:5:0", book_id="b2", chapter_seq=5, text="Rin trained with the sword."),
           Passage(n=2, chunk_id="b1:1:0", book_id="b1", chapter_seq=1, text="Rin met the old teacher."),

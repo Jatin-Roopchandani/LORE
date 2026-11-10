@@ -42,7 +42,9 @@ export interface SearchResult { answer: string; mode: string; template: string |
   // Sections of a sectioned answer that failed or found nothing: they are left out of `sections`, counted here.
   unwritten_sections?: number;
   // Present only when a reading position limited the answer: "Answered from what you've read: up to chapter 9 of <book>".
-  position_note?: string }
+  position_note?: string;
+  // True when the reading position held the answer back: the books further on answer it, what has been read does not.
+  ahead?: boolean }
 export interface PlanSection { index: number; heading: string; group?: string; group_title?: string; title?: string;
   entities: { id: string; name: string; kind: string }[] }
 export interface SectionEvent { type: "section"; t: number; index: number; kind: "section" | "close"; heading: string;
@@ -70,7 +72,9 @@ export type AskEvent =
   // The first event of every question: its id, which a report of the answer quotes (release step 4).
   | { type: "request"; t: number; request_id: string }
   // A follow-up rewritten to stand alone from the chat's earlier turns, sent only when it differs from what was typed.
-  | { type: "understood"; t: number; standalone: string };
+  | { type: "understood"; t: number; standalone: string }
+  // The reader pressed Stop: the server's last event when it ends the run, and what the page records at once.
+  | { type: "stopped"; t: number };
 export interface Book { id: string; title: string; author: string | null; status: string;
   chunk_count: number; entity_count: number | null; world?: string | null }
 // Set on nodes and entities only when several worlds are shown together (the "all worlds" view).
@@ -185,16 +189,21 @@ export interface ProcessEstimate { provider: ProviderId; model: string | null; c
 export interface UsageToday { day: string; requests: number; limit: number; models: Record<string, number>;
   provider?: ProviderId; tokens?: UsageSummary; gemini_paid?: boolean }
 export interface NewInvite { code: string; link: string; expires_at: string }
-// A world's reading position: where the reader is, so the graph, panels and answers stay within what they have read.
-// `order` is each book against the one being read: "before"/"after" in its series, "unknown" (it has its own read toggle).
+// A world's reading progress: each book finished (the default), being read up to a chapter, or not started. The graph,
+// panels and answers use only what it allows (lore/query/visible.py). `order` is each book against the first book being
+// read ("before"/"after" in its series, else "unknown"); `forced` says a book being read earlier in its series keeps it
+// not started. `enabled`, `book_id`, `chapter` and `read_books` are the older shape, still sent by the server.
 /** A story chapter of a book: `seq` is the raw section a position stores, `number` the chapter as the reader counts it
  *  (front and back matter are not counted), `heading` its name when the book gives one. */
 export interface PositionSection { seq: number; number: number; heading: string | null }
+export type ProgressState = "finished" | "reading" | "not_started";
 export interface PositionBook { id: string; title: string; series: string | null; series_index: number | null; chapters: number;
-  order: "current" | "before" | "after" | "unknown"; sections?: PositionSection[] }
+  order: "current" | "before" | "after" | "unknown"; sections?: PositionSection[];
+  state: ProgressState; progress_chapter: number; forced?: boolean }
 export interface ReadingPositionData { world: WorldRef; enabled: boolean; book_id: string | null; chapter: number;
-  read_books: string[]; books: PositionBook[] }
-export interface ReadingPositionBody { enabled: boolean; book_id: string | null; chapter: number; read_books: string[] }
+  read_books: string[]; books: PositionBook[]; filled?: { id: string; state: ProgressState }[] }
+/** One book set to a state; the server fills in the series order around it. `chapter` (reading): the raw section reached. */
+export interface ReadingPositionBody { change: { book_id: string; state: ProgressState; chapter?: number } }
 
 // Server-side history (release step 4): each chat with its messages, a question and its answer each (follow-ups append).
 // `answer` is what the stream showed: the result and its other events, or a marker when it was too large to keep.

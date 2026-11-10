@@ -13,7 +13,7 @@ from lore.central.models import Invite, RateHit, User, Waitlist
 from lore.cli import app as cli
 from lore.config import LoreConfig
 from tests.auth_fixtures import (
-    BASE_URL, NOW, Clock, FakeMailer, FakeProvider, make_app, sign_in,
+    BASE_URL, NOW, Clock, FakeMailer, FakeProvider, make_app, make_settings, sign_in,
 )
 from tests.central_fixtures import central_sessions
 
@@ -53,6 +53,48 @@ def test_joining_the_waitlist_is_202_and_stored(env):
     assert r.status_code == 202
     (row,) = entries(sessions)
     assert (row.email, row.reading, row.status) == ("reader@example.org", "Dracula", "pending")
+
+
+def notified_env(tmp_path, notify="owner@example.com"):
+    root = LoreConfig(data_dir=tmp_path / "root")
+    sessions, _url = central_sessions(tmp_path, users=("root", "alice"))
+    mailer = FakeMailer()
+    app = make_app(root, sessions, mailer=mailer, auth_clock=Clock(),
+                   auth=make_settings(notify_email=notify), providers={"google": FakeProvider()})
+    return app, sessions, mailer
+
+
+def test_a_new_request_emails_the_owner_with_the_address_and_the_reading(tmp_path):
+    app, sessions, mailer = notified_env(tmp_path)
+    assert join(anon(app)).status_code == 202
+    (mail,) = mailer.sent
+    assert mail["to"] == "owner@example.com"
+    assert "reader@example.org" in mail["subject"]
+    assert "reader@example.org" in mail["text"] and "Dracula" in mail["text"]
+    assert f"{BASE_URL}/admin" in mail["text"]
+
+
+def test_only_a_stored_request_emails_the_owner(tmp_path):
+    app, sessions, mailer = notified_env(tmp_path)
+    client = anon(app)
+    join(client)
+    join(client)  # a duplicate
+    join(client, email="bot@example.org", website="spam")  # the honeypot
+    join(client, email="noconsent@example.org", consent=False)
+    assert len(mailer.sent) == 1
+
+
+def test_without_a_notify_address_nothing_is_mailed(env):
+    app, sessions, mailer, _ = env
+    join(anon(app))
+    assert mailer.sent == [] and len(entries(sessions)) == 1
+
+
+def test_a_failed_notification_still_stores_the_request_and_says_202(tmp_path):
+    app, sessions, mailer = notified_env(tmp_path)
+    mailer.fail = True
+    assert join(anon(app)).status_code == 202
+    assert len(entries(sessions)) == 1
 
 
 def test_it_needs_no_session_and_no_csrf_token(env):

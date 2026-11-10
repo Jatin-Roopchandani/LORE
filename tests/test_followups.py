@@ -15,6 +15,7 @@ from lore.query.decompose import (
 )
 from tests.position_fixtures import HOLLOW, build_position_library
 from tests.test_followups_golden import recording_models
+from tests.precision_pins import before_prose_precision
 
 HISTORY = [Turn("Who is Ren Ashby?", "Ren Ashby is a ranger who serves Dorn.")]
 
@@ -207,6 +208,7 @@ def test_the_trace_keeps_the_rewrite_with_the_decomposition() -> None:
 
 
 async def test_followups_off_answers_as_without_history(tmp_path, monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     from tests.test_followups_golden import GOLDEN, capture
     import json
     monkeypatch.setattr(decompose_module, "FOLLOWUPS", False)

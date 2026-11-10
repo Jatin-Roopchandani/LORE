@@ -4,6 +4,7 @@ import { AUTH } from "../messages";
 import type { AuthProviders } from "../types";
 import { AgreeLine, Alert, AuthShell, PrimaryButton } from "./AuthShell";
 import { GithubMark, GoogleMark, InviteIcon, MailIcon } from "./authIcons";
+import { EmailSuggestion } from "../components/EmailSuggestion";
 
 export const RESEND_AFTER = 30; // seconds before "Resend link" is offered
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -132,6 +133,7 @@ export function SignIn({ search = window.location.search }: { search?: string })
             aria-describedby={fieldError ? "signin-email-error" : undefined}
             onChange={(e) => { setEmail(e.target.value); if (fieldError) setFieldError(""); }} />
           {fieldError && <p id="signin-email-error" className="au-field-error" role="alert">{fieldError}</p>}
+          <EmailSuggestion email={email} onUse={setEmail} />
         </div>
         {problem && <Alert>{problem}</Alert>}
         <PrimaryButton busy={state === "sending"} busyLabel={AUTH.sending}>{AUTH.sendLink}</PrimaryButton>

@@ -1,5 +1,29 @@
 import type { AskEvent } from "./types";
-import { adminApi, api, authApi, csrfHeaders, keyApi, nav, onKeyProblem, parseSse, streamAsk } from "./api";
+import { adminApi, api, authApi, cancelAsk, csrfHeaders, keyApi, nav, onKeyProblem, parseSse, streamAsk } from "./api";
+
+test("Stop's cancel is a CSRF-carrying POST for the question's request id; a 404 or no network is only false", async () => {
+  document.cookie = "lore_csrf=tok; path=/";
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ cancelled: true }), { status: 200 })));
+  expect(await cancelAsk("r/1")).toBe(true);
+  const [url, init] = (fetch as any).mock.calls[0];
+  expect(url).toBe("/api/ask/r%2F1/cancel");
+  expect(init.method).toBe("POST");
+  expect(init.headers["X-CSRF-Token"]).toBe("tok");
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
+  expect(await cancelAsk("r1")).toBe(false);
+  vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("offline"); }));
+  expect(await cancelAsk("r1")).toBe(false);
+  vi.unstubAllGlobals();
+  document.cookie = "lore_csrf=; path=/; max-age=0";
+});
+
+test("a stopped event ends the stream cleanly (not 'interrupted')", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("event: stopped\ndata: {\"t\": 1}\n\n", { status: 200 })));
+  const out: AskEvent[] = [];
+  for await (const e of streamAsk("q", new AbortController().signal)) out.push(e);
+  expect(out).toEqual([{ type: "stopped", t: 1 }]);
+  vi.unstubAllGlobals();
+});
 
 const frame = (event: string, data: object) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 

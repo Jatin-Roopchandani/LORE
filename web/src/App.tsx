@@ -55,6 +55,8 @@ function ReadingApp({ me }: { me: Me | null }) {
   const chooseInternals = useCallback((on: boolean) => { saveInternals(on); setInternalsChoice(on); }, []);
   const [hiddenBooks, setHiddenBooks] = useState<Set<string>>(new Set());
   const [hoverChunks, setHoverChunks] = useState<string[]>([]);
+  // The deep answer's section being read (for the graph), tagged with its ask so a new one starts with none.
+  const [reading, setReading] = useState<{ run: number; index: number | null }>({ run: -1, index: null });
   const [refreshKey, setRefreshKey] = useState(0);
   const [resetsAt, setResetsAt] = useState<string | undefined>();
   // The library overview, fetched once for both panes: undefined while loading, null if unavailable or empty.
@@ -64,6 +66,8 @@ function ReadingApp({ me }: { me: Me | null }) {
   // Bumped when the reading position changed: the book list, the overview and the open panels refetch under it.
   const [positionVersion, setPositionVersion] = useState(0);
   const positionChanged = useCallback(() => setPositionVersion((v) => v + 1), []);
+  // Whether the reading progress holds anything back: the ask box then offers to show spoilers for one question.
+  const [limited, setLimited] = useState(false);
   // History is a drawer over the page at every width (never a column); Ctrl/Cmd+K opens the quick switcher.
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -101,8 +105,8 @@ function ReadingApp({ me }: { me: Me | null }) {
     chooseWorld(w);
   }, [world, ask.clear, chooseWorld]);
   useEffect(() => {
-    // "interrupted" too: a dropped stream may still have spent requests.
-    if (ask.state.status !== "done" && ask.state.status !== "error" && ask.state.status !== "interrupted") return;
+    // "interrupted" and "stopped" too: a dropped or stopped stream may still have spent requests.
+    if (ask.state.status === "idle" || ask.state.status === "running") return;
     setRefreshKey((k) => k + 1);
     api.quota().then((q) => { if (!isError(q)) setResetsAt(q.resets_at); });
   }, [ask.state.status]);
@@ -119,6 +123,7 @@ function ReadingApp({ me }: { me: Me | null }) {
     <div className="app">
       <TopBar books={books} hiddenBooks={hiddenBooks} onBooksChange={setHiddenBooks} showInternals={showInternals} refreshKey={refreshKey}
         worlds={worlds ?? []} world={world} onWorldChange={switchWorld} onLibraryChange={() => setLibraryVersion((v) => v + 1)} onPositionChange={positionChanged}
+        libraryKey={libraryVersion} onLimited={setLimited}
         historyOpen={drawerOpen} onToggleHistory={toggleHistory} depth={ask.depth} onDepth={ask.setDepth} onShowInternals={chooseInternals} me={me} />
       {ask.importable > 0 && (
         <div className="import-offer" role="status">
@@ -132,8 +137,10 @@ function ReadingApp({ me }: { me: Me | null }) {
           <HistorySidebar items={ask.history} current={ask.current} world={world} worlds={worlds ?? []} onReplay={replay} onDelete={ask.remove}
             onClear={ask.clearHistory} onNew={newQuestion} onClose={closeDrawer} />
         )}
-        <ChatPane ask={ask} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview} />
-        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} positionVersion={positionVersion} onAsk={ask.ask} />
+        <ChatPane ask={ask} limited={limited} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview}
+          onSection={(index) => setReading((r) => (r.run === ask.run && r.index === index ? r : { run: ask.run, index }))} />
+        <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} positionVersion={positionVersion} onAsk={ask.ask}
+          section={reading.run === ask.run ? reading.index : null} />
       </div>
       {quickOpen && <QuickSwitcher items={ask.history} onReplay={ask.replay} onAsk={(q) => ask.ask(q)} onClose={closeQuick} />}
     </div>

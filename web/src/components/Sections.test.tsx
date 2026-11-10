@@ -47,6 +47,16 @@ test("the contents list links to real anchors for every section that has started
   expect(document.activeElement).toBe(screen.getByRole("heading", { name: "The council" }));
 });
 
+test("picking a section in the contents tells the graph which section is being read", () => {
+  const onSection = vi.fn();
+  render(<ChatPane ask={askWith([...deep.head, ...deep.sec0, ...deep.sec1])} showInternals onHoverChunks={() => {}} onSection={onSection} />);
+  const nav = screen.getByRole("navigation", { name: DEEP.contents });
+  fireEvent.click(within(nav).getByRole("link", { name: "The guild" }));
+  expect(onSection).toHaveBeenLastCalledWith(1);
+  fireEvent.click(within(nav).getByRole("link", { name: "The council" }));
+  expect(onSection).toHaveBeenLastCalledWith(0);
+});
+
 test("a section not yet started is listed but not linked", () => {
   view(deep.head);
   const nav = screen.getByRole("navigation", { name: DEEP.contents });

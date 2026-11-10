@@ -86,8 +86,8 @@ def test_the_switch_is_on_by_default_and_prose_factual_stays_off():
 
 
 @pytest.mark.factual_default
-def test_prose_factual_ships_off():
-    assert w.PROSE_FACTUAL is False
+def test_prose_factual_ships_on():
+    assert w.PROSE_FACTUAL is True
 
 
 def test_run_pair_has_a_fact_fidelity_arm():

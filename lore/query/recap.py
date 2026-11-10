@@ -49,6 +49,7 @@ from lore.extract.embed import QUERY_PREFIX
 from lore.ingest.registry import story_chapters
 from lore.query import deep as deep_module
 from lore.query import visible as visible_module
+from lore.query import write as write_module
 from lore.query.decompose import Recap
 from lore.query.events import EDGES_PER_PART_CAP, edge_key, emit
 from lore.query.models import (
@@ -546,12 +547,15 @@ async def short_gist(question: str, sections: Sequence[AnswerSection], claims: S
     except Exception:  # noqa: BLE001 -- the sections are written; the gist is an extra
         log.exception("the recap's short answer failed")
         got = None
-    chosen = [s for s in got or () if s.kind == "fact"][:sentences]
+    chosen = [replace(s, claims=tuple(numbers[k - 1] for k in s.claims))
+              for s in got or () if s.kind == "fact"][:sentences]
+    if not chosen and write_module.intro_repair_on():
+        # INTRO_REPAIR: never "no direct summary" while the sections hold checked prose.
+        chosen = deep_module.section_opening(sections, sentences)
     if not chosen:
         return (ProseSentence(text=deep_module.NO_SUMMARY_LINE, claims=(), passages=(),
                               new_paragraph=True, kind="limit", short=True),)
-    return tuple(replace(s, claims=tuple(numbers[k - 1] for k in s.claims),
-                         new_paragraph=i == 0, short=True) for i, s in enumerate(chosen))
+    return tuple(replace(s, new_paragraph=i == 0, short=True) for i, s in enumerate(chosen))
 
 
 def compose_recap(sections: Sequence[AnswerSection], short: Sequence[ProseSentence]) -> str:
@@ -582,7 +586,8 @@ async def draft_stretch(stretch: Stretch, span: Span, *, question: str, models,
                        focus=stretch.focus, covered=tuple(covered), skip=unseen)
     answer = await synthesize(f"What happens in {stretch.focus}?", evidence, models.synthesize,
                               mode="graph", check=models.check, write=models.write,
-                              book_titles=dict(titles), books=dict(books), section=spec)
+                              book_titles=dict(titles), books=dict(books), section=spec,
+                              spend_ok=getattr(models, "spend_ok", None))
     return (answer if answer.claims else None), evidence
 
 
@@ -658,6 +663,12 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
     models = replace(models, synthesize=spend.counted(models.synthesize),
                      write=spend.counted(models.write) if models.write else None,
                      check=spend.counted(models.check) if models.check else None)
+    day_ok = models.spend_ok  # starting a section asks the day's reserve alone
+
+    def repair_ok() -> bool:  # an ORPHAN_REPAIR round: two requests, the tail kept back
+        return (spend.n + 2 + deep_module.TAIL_REQUESTS <= RECAP_MAX_REQUESTS
+                and (day_ok is None or bool(day_ok())))
+    models = replace(models, spend_ok=repair_ok)
     emit(on_event, "step", name="recap", state="start", part=None, detail=None)
     span = await gather_span(conn, lance, recap, scope=scope, question=question, titles=titles,
                              books=books, embed=models.embed, book_ids=book_ids)
@@ -697,7 +708,7 @@ async def answer_recap(conn, kuzu, lance, question: str, models, recap: Recap, *
         async with gate:
             if spend.n + deep_module.SECTION_REQUESTS + deep_module.TAIL_REQUESTS > RECAP_MAX_REQUESTS:
                 return ("skipped", "budget")
-            if models.spend_ok is not None and not models.spend_ok():
+            if day_ok is not None and not day_ok():
                 return ("skipped", "reserve")
             emit(on_event, "step", name="section", state="start", part=index, detail=None)
             emit(on_event, "section", index=index, state="start", kind="section",

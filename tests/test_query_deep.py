@@ -27,6 +27,7 @@ from tests.deep_fixtures import (
     QUESTION, Scripted, add_codex, build_deep_library, run_scenario, snapshot,
 )
 from tests.worlds_fixtures import ALPHA
+from tests.precision_pins import before_prose_precision
 
 GENERAL = "Tell me everything about this world."  # names no entity: planned from the whole scope
 
@@ -242,7 +243,9 @@ async def test_the_short_answer_is_written_after_the_sections_from_all_their_cla
         assert set(s.passages) == {answer.claims[k - 1].passage for k in s.claims}
 
 
-async def test_a_short_answer_that_cannot_be_verified_says_so_and_keeps_the_sections(config):
+async def test_a_short_answer_that_cannot_be_verified_says_so_and_keeps_the_sections(config, monkeypatch):
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "INTRO_REPAIR", False)  # pinned before intro-reliability
     scripted = deep_models(reject=("Tell me everything",))  # the short answer's sentences are tagged with the question
     answer, events = await ask(config, scripted)
     (line,) = answer.short_answer
@@ -253,7 +256,9 @@ async def test_a_short_answer_that_cannot_be_verified_says_so_and_keeps_the_sect
     assert event["text"] == deep.NO_SUMMARY_LINE and [p["text"] for p in event["prose"]] == [deep.NO_SUMMARY_LINE]
 
 
-async def test_a_short_answer_whose_writer_fails_says_so_too(config):
+async def test_a_short_answer_whose_writer_fails_says_so_too(config, monkeypatch):
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "INTRO_REPAIR", False)  # pinned before intro-reliability
     scripted = deep_models(fail=("short answer that opens a long answer",))
     answer, _ = await ask(config, scripted)
     assert [s.text for s in answer.short_answer] == [deep.NO_SUMMARY_LINE]
@@ -375,12 +380,26 @@ async def test_each_sections_claims_step_gets_the_question_its_focus_and_the_rel
         assert "skip incidental plot detail" in flat
 
 
-async def test_each_section_writer_opens_with_how_the_section_answers_its_aspect(config):
+async def test_each_section_writer_opens_with_a_topic_sentence_naming_its_subject(config):
+    # READER_PROSE (orphan-repair): the opening introduces the subject; the rule
+    # before it ("says how these facts answer that aspect") gave "The facts show ...".
     scripted = deep_models()
     await ask(config, scripted)
     for prompt, focus in zip(scripted.prompts("write")[:2], (TRAVELLER, ROAD)):
         flat = " ".join(prompt.split())
         assert f"Question: {focus}" in flat and f"one aspect of the larger question: {GENERAL}" in flat
+        assert "Open with a plain topic sentence that introduces the subject of this section" in flat
+        assert "list every fact it draws on in `claims`" in flat
+        assert "says how these facts answer that aspect" not in flat
+
+
+async def test_with_reader_prose_off_the_section_opening_is_as_before(config, monkeypatch):
+    from lore.query import write as write_module
+    monkeypatch.setattr(write_module, "READER_PROSE", False)
+    scripted = deep_models()
+    await ask(config, scripted)
+    for prompt in scripted.prompts("write")[:2]:
+        flat = " ".join(prompt.split())
         assert "Open with one sentence that says how these facts answer that aspect" in flat
         assert "list those facts in `claims`" in flat and "leave the opening out" in flat
 
@@ -755,10 +774,21 @@ async def test_with_deep_off_everything_is_what_it_was(tmp_path, monkeypatch, na
     """Events, prompts and the answer, with codex rows in the library and depth
     asked for, are byte-identical to the code before deep answers (pinned from
     6d931a7)."""
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     monkeypatch.setattr(decompose_module, "DEEP", False)
     from lore.query import write as write_module
     monkeypatch.setattr(write_module, "COVERAGE", False)  # pinned before coverage existed
     monkeypatch.setattr(write_module, "FACT_FIDELITY", False)
+    monkeypatch.setattr(write_module, "READER_PROSE", False)  # pinned before orphan-repair
+    monkeypatch.setattr(write_module, "ORPHAN_REPAIR", False)
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "SUMMARY_CHECK", False)
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
+    monkeypatch.setattr(write_module, "OPENER_CITES", False)  # pinned before intro-reliability
+    monkeypatch.setattr(write_module, "INTRO_REPAIR", False)
+    monkeypatch.setattr(write_module, "GENTLE_FALLBACK", False)
+    monkeypatch.setattr(write_module, "STORY_ORDER_PROSE", False)  # pinned before order-and-setup
+    monkeypatch.setattr("lore.query.scene.SCENE_SETUP", False)
+    monkeypatch.setattr("lore.query.synthesize.ATTRIBUTION_FIDELITY", False)
     config = build_deep_library(tmp_path)
     scripted = Scripted(plan)
     answer, events = await run_scenario(config, scripted, depth="deep")

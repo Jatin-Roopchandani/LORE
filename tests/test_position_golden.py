@@ -18,6 +18,7 @@ from lore.mcp import tools
 from lore.reading_position import ReadingPosition, set_position
 from tests.position_fixtures import HOLLOW, build_position_library
 from tests.worlds_fixtures import scripted_models
+from tests.precision_pins import before_prose_precision
 
 GOLDEN = Path(__file__).parent / "golden" / "position_off.json"
 CASES = {
@@ -39,6 +40,7 @@ async def capture(config) -> dict:
 
 
 async def test_with_the_position_off_outputs_are_golden(tmp_path, monkeypatch) -> None:
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     # The golden predates recap answers, whose rule the decomposer prompt carries.
     monkeypatch.setattr("lore.query.decompose.RECAP", False)
     config = build_position_library(tmp_path)

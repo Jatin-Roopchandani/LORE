@@ -164,11 +164,10 @@ describe("the pinned answer scene", () => {
 });
 
 describe("the waitlist form", () => {
-  const fill = async (email: string, { consent = true, honeypot = "" } = {}) => {
+  const fill = async (email: string, { honeypot = "" } = {}) => {
     await userEvent.type(screen.getByLabelText(HOME.emailLabel), email);
     await userEvent.type(screen.getByLabelText(new RegExp(HOME.readingLabel.replace("?", "\\?"))), "Dune");
     if (honeypot) await userEvent.type(document.querySelector('input[name="website"]') as HTMLInputElement, honeypot);
-    if (consent) await userEvent.click(screen.getByLabelText(HOME.consent));
     await userEvent.click(screen.getByRole("button", { name: HOME.submit }));
   };
 
@@ -179,6 +178,7 @@ describe("the waitlist form", () => {
     expect(calls).toEqual([{ url: "/api/waitlist", method: "POST", body: { email: "reader@example.org", reading: "Dune", consent: true, website: "" } }]);
     expect(await screen.findByRole("button", { name: HOME.done })).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent(HOME.done);
+    expect(screen.getByText(HOME.doneNote)).toBeInTheDocument(); // where the invite comes from, and to check spam
   });
 
   test("the honeypot goes too, when something fills it", async () => {
@@ -202,12 +202,11 @@ describe("the waitlist form", () => {
     expect(screen.getByLabelText(HOME.emailLabel)).toHaveFocus();
   });
 
-  test("the consent box must be ticked", async () => {
-    const calls = serve(() => ({ status: 202 }));
+  test("there is no consent box: the line under the button says what sending allows", () => {
+    serve(() => ({ status: 202 }));
     render(<Home signedIn={false} />);
-    await fill("reader@example.org", { consent: false });
-    expect(calls).toHaveLength(0);
-    expect(screen.getByRole("alert")).toHaveTextContent(HOME.needConsent);
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.getByText(HOME.consentLine)).toBeInTheDocument();
   });
 
   test("a rate limit gets a friendly message, and the form can be sent again", async () => {

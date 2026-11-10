@@ -17,6 +17,7 @@ from lore.query.write import (
     Prose, Sentence, assemble, compose_text, split_items, verify_prose, write_answer, writer_prompt,
 )
 from tests.test_query_story import BOOKS, CS, PS, TITLES, _claims_prompt_fixture
+from tests.precision_pins import before_prose_precision
 
 GOLDEN = json.loads((Path(__file__).parent / "golden_readings_off.json").read_text())
 
@@ -255,6 +256,7 @@ def test_the_claims_step_asks_for_what_characters_do_and_choose():
 
 
 def test_the_claims_prompt_is_unchanged_when_off(monkeypatch):
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     monkeypatch.setattr(w, "READINGS", False)
     evidence, books = _claims_prompt_fixture()
     assert _build_prompt("how did it change?", evidence, books=books) == GOLDEN["claims"]
@@ -288,8 +290,12 @@ def test_an_answer_of_facts_alone_is_checked_exactly_as_before():
 
 
 def test_the_check_prompt_is_unchanged_when_off(monkeypatch):
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     monkeypatch.setattr(w, "READINGS", False)
     monkeypatch.setattr(w, "COVERAGE", False)
+    monkeypatch.setattr(synth, "SUMMARY_CHECK", False)  # pinned before it existed
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
+    monkeypatch.setattr(synth, "ATTRIBUTION_FIDELITY", False)  # pinned before it existed
     sents = [S("Rin met a teacher and trained.", [1, 2]), S("Rin trained.", [3])]
     assert faithfulness_prompt(CS, PS, TITLES, books=BOOKS) == GOLDEN["check_plain"]
     assert faithfulness_prompt(CS, PS, TITLES, sents, books=BOOKS, gaps=["x"]) == GOLDEN["check_sentences"]
@@ -301,7 +307,12 @@ def test_the_check_prompt_is_unchanged_when_off(monkeypatch):
 
 def test_switch_off_is_byte_identical_to_the_previous_release(monkeypatch):
     """tests/golden_readings_off.json was dumped from e9471a1 (STORY_ORDER on)."""
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     monkeypatch.setattr(w, "READINGS", False)
+    monkeypatch.setattr(w, "READER_PROSE", False)  # pinned before it existed
+    monkeypatch.setattr(w, "OPENER_CITES", False)
+    monkeypatch.setattr(w, "STORY_ORDER_PROSE", False)  # pinned before order-and-setup
+    monkeypatch.setattr(synth, "ATTRIBUTION_FIDELITY", False)
     assert writer_prompt("How did Rin grow?", ["How did Rin grow?", "Who taught Rin?"], CS, PS, TITLES,
                          books=BOOKS) == GOLDEN["writer"]
     assert writer_prompt("Q?", [], CS, PS, None, books=BOOKS) == GOLDEN["writer_one_part"]

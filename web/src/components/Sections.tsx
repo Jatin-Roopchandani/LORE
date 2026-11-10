@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { citationSource, unwrittenCount, type AskState, type SectionView } from "../askReducer";
 import { DEEP } from "../messages";
 import { cap } from "../text";
@@ -66,9 +66,40 @@ const subtitleOf = (title: string | undefined, heading: string) =>
 // A top-level number reads "1.", a nested one "1.1".
 const label = (num: string) => (num.includes(".") ? num : `${num}.`);
 
-export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChunks: (chunks: string[]) => void }) {
+// The section being read, for the graph (`onSection`): the one picked in the contents, or, once the reader scrolls,
+// the first section in the upper part of the view (null when none is: above the sections, or below them all).
+// Before any scroll of the reader's own nothing is reported, so a fresh answer's graph shows every section.
+const READING_ZONE = "0px 0px -55% 0px";
+function useSectionInView(root: React.RefObject<HTMLElement>, key: string, onSection?: (index: number | null) => void) {
+  const report = useRef(onSection);
+  report.current = onSection;
+  useEffect(() => {
+    const el = root.current;
+    if (!el || !report.current || typeof IntersectionObserver === "undefined") return;
+    const visible = new Set<number>();
+    let armed = false;
+    const tell = () => { if (armed) report.current?.(visible.size ? Math.min(...visible) : null); };
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        const i = Number((e.target as HTMLElement).dataset.index);
+        if (e.isIntersecting) visible.add(i); else visible.delete(i);
+      }
+      tell();
+    }, { rootMargin: READING_ZONE });
+    el.querySelectorAll<HTMLElement>("section.answer-section[data-index]").forEach((s) => io.observe(s));
+    const arm = () => { if (!armed) { armed = true; tell(); } };
+    const events = ["wheel", "touchmove", "keydown"] as const;
+    events.forEach((t) => window.addEventListener(t, arm, { capture: true, passive: true }));
+    return () => { io.disconnect(); events.forEach((t) => window.removeEventListener(t, arm, { capture: true })); };
+  }, [root, key]);
+}
+
+export function Sections({ state, onHoverChunks, onSection }:
+  { state: AskState; onHoverChunks: (chunks: string[]) => void; onSection?: (index: number | null) => void }) {
   const source = citationSource(state);
   const views = viewsOf(state);
+  const root = useRef<HTMLDivElement>(null);
+  useSectionInView(root, views.map((v) => v.index).join(","), onSection);
   const started = new Set(views.map((v) => v.index));
   const gone = new Set(state.sections.filter((v) => !written(v)).map((v) => v.index));
   // Every section the plan promised (minus any that came back failed or empty), then any (the closing one) it did
@@ -94,14 +125,14 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
       <span className="entry">
         <span className="num">{label(num)}</span>{" "}
         {started.has(c.index)
-          ? <a href={`#${anchor(c.index)}`} title={c.title || undefined} onClick={(e) => jump(e, anchor(c.index))}>{cap(c.heading)}</a>
+          ? <a href={`#${anchor(c.index)}`} title={c.title || undefined} onClick={(e) => { jump(e, anchor(c.index)); onSection?.(c.index); }}>{cap(c.heading)}</a>
           : <span className="pending" title={c.title || undefined}>{cap(c.heading)}</span>}
       </span>
     </li>
   );
   let lastGroup = "";
   return (
-    <div className="sectioned">
+    <div className="sectioned" ref={root}>
       {entries.length > 0 && (
         <nav className="contents" aria-labelledby="answer-contents">
           <p className="contents-title" id="answer-contents">{DEEP.contents}</p>
@@ -137,7 +168,7 @@ export function Sections({ state, onHoverChunks }: { state: AskState; onHoverChu
         return (
           <Fragment key={v.index}>
             {part}
-            <section id={anchor(v.index)} className={`answer-section ${v.state}${Heading === "h2" ? " standalone" : ""}`}
+            <section id={anchor(v.index)} data-index={v.index} className={`answer-section ${v.state}${Heading === "h2" ? " standalone" : ""}`}
               aria-labelledby={`${anchor(v.index)}-h`} data-num={numOf.get(v.index)}>
               <div className="section-head">
                 <Heading id={`${anchor(v.index)}-h`} className={Heading === "h2" ? "part-heading section-heading" : "section-heading"}

@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Awaitable, Callable, Iterable, Sequence
 
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, ConfigDict, create_model
 
 from lore.query import interpret
 from lore.query import write as write_module
@@ -148,10 +148,65 @@ _STRICT_LINKS_RULE = """Give a reason, motive or consequence only when the quote
 Two facts from one passage stay two claims: never join them with "because",
 "so", "since", "in order to" or "which led to" unless the passage says so.
 """
+# QUOTE_POINTER: the quote under a claim only shows where to look. Measured
+# live: the checker failed claims whose quote covered part of them while the
+# cited passage stated the rest a line later ("dim, madness, Machin Shin are
+# later lines"). Off: the prompt as before (run_pair arm `quote_pointer`).
+QUOTE_POINTER = True
+_QUOTE_POINTER_CHECK = """The quote under a claim only shows where in the passage to look. Judge the
+claim against the whole cited passage: if that passage states everything the
+claim says, the claim is "{supported}" even when its quote covers only part.
+"""
+
 _STRICT_LINKS_CHECK = """Connecting words count: a "because", "so", "since", "in order to" or
 "which led to" in a claim that the cited passage does not state makes the
 claim "{not_supported}", even when both facts it joins are true.
 """
+# ATTRIBUTION_FIDELITY (2026-11-09): a written sentence that combines claims
+# keeps who did what to whom, and how often. Measured in a blind held-out eval
+# (h9): the writer merged two facts and gave a telegram sent to one character to
+# another ("Holmes's note told Watson to go to Baker Street and wait", sent to
+# Jones), and turned one question into a repeated one ("Holmes later asked
+# again"). The writer is told (write.ATTRIBUTION_RULE) and the sentence check
+# refuses it (`_ATTRIBUTION_CHECK`, in the style of STRICT_LINKS). Needs
+# STORY_ORDER (it lives in the story writer and check). Off gives the prompts
+# before it, byte for byte.
+ATTRIBUTION_FIDELITY = True
+#
+# Widened 2026-11-09 (h9b): a claim gave a relation ("has friends who would risk
+# something for him") to the disguised visitor, while the passage gave it to the
+# man the speaker was hunting, mentioned in the same breath. The check passed it
+# ("friends ready to risk" is in the passage): the rule named actions, messages
+# and speech, not traits and relations, nor someone else the passage mentions.
+# The rules now name both and ask whom the passage gives it to; the claims
+# prompt says the same (`_ATTRIBUTION_CLAIMS_RULE`).
+_ATTRIBUTION_CHECK = """- attributes an action, message, speech, trait or relation to a different
+  person than its cited claims give it to: another doer, sender, recipient,
+  speaker or addressee, or someone else they mention ("his master", "the man
+  she works for");
+- states a repetition, frequency or recurrence ("again", "twice", "kept",
+  "repeatedly") that no cited claim states;
+"""
+# The same test for a claim against its passage: in h9's X3 the swapped
+# recipient was already in the claim the writer copied word for word.
+_ATTRIBUTION_CLAIM_CHECK = """People count: a claim that gives an action, message, speech, trait or
+relation to a different person than the cited passage does (another doer,
+sender, recipient, speaker or addressee, or someone else the passage
+mentions, such as "his master" or "the man she works for"), or that says
+something happened again, more than once or regularly when the passage tells
+it once, is "{not_supported}". Check whom the passage gives it to, not only
+that its words are there.
+"""
+# The claims step, where h9b's swap began.
+_ATTRIBUTION_CLAIMS_RULE = """Give each action, trait or relation to the person the passage gives it to.
+What a passage says of someone it only mentions ("his master", "the man she
+works for") is not said of another person present, unless the passage says
+they are the same.
+"""
+
+
+def attribution_on() -> bool:
+    return ATTRIBUTION_FIDELITY and write_module.STORY_ORDER
 # ROLE_COVERAGE (2026-10-28): asked about a kind of character (a role such as
 # opponents, allies or victims), the claims named only the most prominent one
 # although the passages showed others in that role. General by design: no
@@ -329,6 +384,123 @@ def _near_duplicate(a: Claim, b: Claim) -> bool:
     return (_same_evidence(a, b)
             and _numbers(a.text) == _numbers(b.text)
             and _overlap(a.text, b.text) >= NEAR_DUPLICATE_OVERLAP)
+
+
+# DEDUP_SENTENCES (2026-11-09): no shown sentence restates an earlier one.
+# Measured in a blind held-out eval (h9b): a claim the writer had folded into a
+# sentence the check then removed was placed by COVERAGE in its own words next
+# to a second claim from another part that said the same in other words, so the
+# answer said one impression twice. Code now (1) cites a claim a shown sentence
+# already states there instead of placing it (`place_uncited(same=...)`), and
+# (2) drops a shown fact sentence that restates an earlier one, its citations
+# moving to the one kept (`dedup_sentences`). Off: the code before it (run_pair
+# arm `dedup_sentences`).
+DEDUP_SENTENCES = True
+# The share of a later sentence's content words the earlier one must use.
+DEDUP_SHARE = 0.5
+
+
+def _cited(sentence: ProseSentence, claims: Sequence[Claim]) -> list[Claim] | None:
+    if not sentence.claims or not all(1 <= k <= len(claims) for k in sentence.claims):
+        return None
+    return [claims[k - 1] for k in sentence.claims]
+
+
+def sentence_restates(earlier: ProseSentence, later: ProseSentence,
+                      claims: Sequence[Claim]) -> bool:
+    """Whether fact sentence `later` says nothing that fact sentence `earlier`
+    does not (claims: what their 1-based `claims` index). All of:
+    - every claim `later` cites shares its evidence with a claim `earlier`
+      cites (`_same_evidence`: same passage, quotes sharing MIN_QUOTE_WORDS
+      words in a row), so the two rest on one stretch of the text;
+    - `later` states no number `earlier` does not;
+    - every content word of `later` that its claims' quotes contain -- the
+      book's own words for the facts it states -- is in `earlier` too, so it
+      brings no fact of its quote that `earlier` leaves out;
+    - and `earlier` uses at least DEDUP_SHARE of `later`'s content words.
+    A sentence that adds a distinct fact fails the third test (or the first,
+    when that fact comes from other evidence) and stays."""
+    if earlier.kind != "fact" or later.kind != "fact":
+        return False
+    mine, theirs = _cited(later, claims), _cited(earlier, claims)
+    if not mine or not theirs:
+        return False
+    if not all(any(_same_evidence(c, d) for d in theirs) for c in mine):
+        return False
+    if not _numbers(later.text) <= _numbers(earlier.text):
+        return False
+    own, said = _content_words(later.text), _content_words(earlier.text)
+    if not own:
+        return False
+    quoted = frozenset().union(*(_content_words(c.quote) for c in mine))
+    if (own & quoted) - said:
+        return False
+    return len(own & said) >= DEDUP_SHARE * len(own)
+
+
+def states_claim(sentence: ProseSentence, k: int, claims: Sequence[Claim]) -> bool:
+    """Whether shown `sentence` already says claim `k` (1-based in `claims`):
+    the claim, placed as its own sentence, would restate it."""
+    if not 1 <= k <= len(claims):
+        return False
+    claim = claims[k - 1]
+    alone = ProseSentence(text=claim.text, claims=(k,), passages=(claim.passage,))
+    return sentence_restates(sentence, alone, claims)
+
+
+def restated_pairs(prose: Sequence[ProseSentence],
+                   claims: Sequence[Claim]) -> list[tuple[int, int]]:
+    """(later, earlier) 0-based indices into `prose` of each sentence
+    `dedup_sentences` drops, and the kept sentence it restates."""
+    pairs: list[tuple[int, int]] = []
+    kept: list[int] = []
+    merged: dict[int, ProseSentence] = {}
+    for i, s in enumerate(prose):
+        nxt = prose[i + 1] if i + 1 < len(prose) else None
+        hit = next((j for j in kept if sentence_restates(merged[j], s, claims)), None)
+        if hit is not None and nxt is not None and not nxt.new_paragraph \
+                and write_module.leans_back(nxt.text) \
+                and (s.new_paragraph or not kept or kept[-1] != hit):
+            hit = None  # the next sentence leans on this one: dropping it would orphan that
+        if hit is None:
+            kept.append(i)
+            merged[i] = s
+            continue
+        pairs.append((i, hit))
+        at = merged[hit]
+        ks = (*at.claims, *(k for k in s.claims if k not in at.claims))
+        merged[hit] = replace(at, claims=ks,
+                              passages=tuple(sorted({*at.passages, *s.passages})))
+    return pairs
+
+
+def dedup_sentences(prose: Sequence[ProseSentence],
+                    claims: Sequence[Claim]) -> tuple[ProseSentence, ...]:
+    """`prose` without each fact sentence that restates an earlier shown one
+    (`sentence_restates`); the dropped sentence's citations join the kept
+    one's. A paragraph a dropped sentence opened goes on from the next one. A
+    sentence the next one leans on ("He ...") stays unless the sentence it
+    restates comes right before it. Readings, counter-cases and lines written
+    by code are never compared."""
+    pairs = dict(restated_pairs(prose, claims))
+    if not pairs:
+        return tuple(prose)
+    out: list[ProseSentence] = []
+    at: dict[int, int] = {}
+    carry = False
+    for i, s in enumerate(prose):
+        if i in pairs:
+            j = at[pairs[i]]
+            kept = out[j]
+            out[j] = replace(kept, claims=(*kept.claims,
+                                           *(k for k in s.claims if k not in kept.claims)),
+                             passages=tuple(sorted({*kept.passages, *s.passages})))
+            carry = carry or s.new_paragraph
+            continue
+        at[i] = len(out)
+        out.append(replace(s, new_paragraph=s.new_paragraph or (carry and bool(out))))
+        carry = False
+    return tuple(out)
 
 
 # Across sub-questions, a claim citing the very quote an earlier part's claim
@@ -541,7 +713,20 @@ def _passage_block(evidence: Evidence, book_titles: dict[str, str] | None,
     block = "\n\n".join(f"[{pos.n}] ({pos.label(detail=True)})\n{by_n[pos.n].text}"
                          for pos in order.ordered)
     note = order.note()
-    return f"Passages are in story order.{' ' + note if note else ''}\n\n{block}"
+    setup = _setup_note(evidence)
+    return f"Passages are in story order.{' ' + note if note else ''}{setup}\n\n{block}"
+
+
+# SCENE_SETUP (scene.py): what a setup passage is for, said once per pair shown.
+_SETUP_NOTE = (" Passage [{setup}] comes just before passage [{scene}] in the book and sets up"
+               " its scene: what it tells about how that scene came about, or why, helps"
+               " answer the question.")
+
+
+def _setup_note(evidence: Evidence) -> str:
+    shown = {p.n for p in evidence.passages}
+    return "".join(_SETUP_NOTE.format(setup=s, scene=a) for s, a in evidence.setups
+                   if s in shown and a in shown)
 
 
 def _build_prompt(
@@ -585,6 +770,7 @@ def _build_prompt(
                           + (_NO_RESTATE_RULE if NO_RESTATE else "")
                           + (_ATTRIBUTE_SPEECH_RULE if ATTRIBUTE_SPEECH else "")
                           + (_STRICT_LINKS_RULE if STRICT_LINKS else "")
+                          + (_ATTRIBUTION_CLAIMS_RULE if attribution_on() else "")
                           + (_ROLE_COVERAGE_RULE if ROLE_COVERAGE else "")
                           + (_CHANGE_RULE if write_module.STORY_ORDER else "")
                           + (_ACTIONS_RULE if write_module.readings_on() else ""),
@@ -619,12 +805,75 @@ def _build_prompt(
 
 SUPPORTED = "supported"
 NOT_SUPPORTED = "not_supported"
-# Asked for, not enforced: the reason is shown to a human, never parsed.
+# Asked for, not enforced: the reason is shown to a human, and read only by
+# VERDICT_GUARD.
 MAX_REASON_WORDS = 12
 CHECK_SKIPPED_NOTE = "the faithfulness check did not run"
 
+# REASON_FIRST (2026-11-09): the check gives its reason before its verdict.
+# Measured live (a production trace, Claude Sonnet as checker): asked for
+# claim, verdict, reason in that order, the model committed to a verdict and
+# then reasoned its way out of it -- four of eight claims "not_supported" with
+# reasons such as "fully stated" -- and the answer fell to its claim list. Every
+# judgement the check returns (claims, sentences, gaps, the opening and the
+# introduction check) now lists claim, reason, verdict, then its other fields,
+# in the JSON schema and in the prompt, and the reason may run to
+# REASON_FIRST_WORDS so it can hold the comparison. The classes are the same
+# (only their JSON schema's property order changes), so a reply validates as
+# before. Off: the schemas and prompts before it, byte for byte (run_pair arm
+# `reason_first`).
+REASON_FIRST = True
+REASON_FIRST_WORDS = 20
+
+
+def reason_words() -> int:
+    return REASON_FIRST_WORDS if REASON_FIRST else MAX_REASON_WORDS
+
+
+_LEADING = ("claim", "reason", "verdict")
+
+
+def _reason_first_order(schema: dict, _cls=None) -> None:
+    """A judgement's JSON schema with REASON_FIRST: its properties in the order
+    claim, reason, verdict, then the rest as they were, and the reason asked
+    for, not optional (a reply without one still validates, as "").
+    Untouched when the switch is off."""
+    if not REASON_FIRST:
+        return
+    props = schema.get("properties")
+    if not isinstance(props, dict) or not {"reason", "verdict"} <= set(props):
+        return
+    order = [k for k in _LEADING if k in props] + [k for k in props if k not in _LEADING]
+    schema["properties"] = {k: props[k] for k in order}
+    required = {*schema.get("required", []), "reason"}
+    schema["required"] = [k for k in order if k in required]
+
+
+# The prompt's list of fields. Off: the wording before REASON_FIRST.
+_CLAIM_FIELDS = '- verdict: "{supported}" or "{not_supported}"\n- reason: at most {max_words} words.'
+_CLAIM_FIELDS_FIRST = """- reason: at most {max_words} words, written first: what the passage states,
+  set against what the claim says;
+- verdict: "{supported}" or "{not_supported}", the one that reason finds."""
+_ITEM_FIELDS_FIRST = """with a reason of at most {max_words} words, written first (what the
+claims state, set against what is judged), then the verdict that reason finds."""
+_SENTENCE_FIELDS = "with a verdict and a\nreason of at most {max_words} words."
+_STORY_FIELDS = "with a verdict and a reason of at most\n{max_words} words."
+_GAP_FIELDS = "with a verdict and a reason of at most {max_words} words."
+_INTRO_FIELDS = ('with a verdict ("{supported}" or "{not_supported}"), a reason\n'
+                 "of at most {max_words} words, and supported_by.")
+_INTRO_FIELDS_FIRST = """with a reason of at most {max_words} words, written first (what the
+claims state, set against the sentence), then a verdict ("{supported}" or
+"{not_supported}") that reason finds, and supported_by."""
+
+
+def _fields(off: str, first: str = _ITEM_FIELDS_FIRST) -> str:
+    return (first if REASON_FIRST else off).format(
+        max_words=reason_words(), supported=SUPPORTED, not_supported=NOT_SUPPORTED)
+
 
 class Judgement(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_reason_first_order)
+
     claim: int
     verdict: str
     reason: str = ""
@@ -654,30 +903,46 @@ class FlaggedJudgement(Judgement):
     inference_in_fact: bool = False
 
 
-def _fidelity_schema(restated: bool, inference: bool) -> type[BaseModel]:
-    """The check's reply when it also judges coverage (write.COVERAGE) or
-    interpretation in facts (write.FACT_FIDELITY). Shown to the model as
-    "Faithfulness", like the schema it extends."""
+class OpenerJudgement(Judgement):
+    # OPENER_CITES: for the opening sentence, the claims (1-based) that state what
+    # it says, judged against every claim; empty for any other sentence. A reply
+    # without it reads as empty (the verdict then stands on the sentence's own claims).
+    supported_by: list[int] = []
+
+
+class FlaggedOpenerJudgement(FlaggedJudgement):
+    supported_by: list[int] = []
+
+
+def _fidelity_schema(restated: bool, inference: bool, opener: bool = False) -> type[BaseModel]:
+    """The check's reply when it also judges coverage (write.COVERAGE),
+    interpretation in facts (write.FACT_FIDELITY) or an opening against every
+    claim (write.OPENER_CITES). Shown to the model as "Faithfulness", like the
+    schema it extends."""
     fields = {}
     if restated:
         fields["judgements"] = (list[RestatedJudgement], ...)
-    if inference:
-        fields["sentence_judgements"] = (list[FlaggedJudgement], [])
+    if inference or opener:
+        item = ((FlaggedOpenerJudgement if inference else OpenerJudgement) if opener
+                else FlaggedJudgement)
+        fields["sentence_judgements"] = (list[item], [])
     return create_model("Faithfulness", __base__=Faithfulness, __module__=__name__, **fields)
 
 
-_FIDELITY_SCHEMAS = {(r, i): _fidelity_schema(r, i)
-                     for r in (True, False) for i in (True, False) if r or i}
+_FIDELITY_SCHEMAS = {(r, i, o): _fidelity_schema(r, i, o)
+                     for r in (True, False) for i in (True, False) for o in (True, False)
+                     if r or i or o}
 
 
-def check_schema(with_sentences: bool) -> type[BaseModel]:
+def check_schema(with_sentences: bool, opener: bool = False) -> type[BaseModel]:
     """The schema the check is asked for: the plain one without STORY_ORDER,
     and with sentences to judge, the one carrying the verdicts that are
-    switched on."""
+    switched on (`opener`: the first sentence is judged as an opening)."""
     if not write_module.STORY_ORDER:
         return _PlainFaithfulness
     key = (with_sentences and write_module.coverage_on(),
-           with_sentences and write_module.fidelity_on())
+           with_sentences and write_module.fidelity_on(),
+           with_sentences and opener and write_module.opener_cites_on())
     return _FIDELITY_SCHEMAS[key] if any(key) else Faithfulness
 
 
@@ -700,8 +965,7 @@ each claim against its own cited passage alone: what another passage says,
 or what you already know about the story, cannot make a claim supported.
 {strict_links}
 Return one entry per claim, in the same order, each with its claim number:
-- verdict: "{supported}" or "{not_supported}"
-- reason: at most {max_words} words.
+{fields}
 
 Answer every claim: give exactly {count} entries, numbered 1 to {count}, in order.
 """
@@ -716,8 +980,7 @@ together, state everything the sentence says. "{not_supported}": the
 sentence says more than they do. Connecting words count: a "because",
 "so", "later" or "which led to" that no cited claim states makes the
 sentence "{not_supported}". Return these in sentence_judgements, one per
-sentence, numbered 1 to {count} in the claim field, with a verdict and a
-reason of at most {max_words} words.
+sentence, numbered 1 to {count} in the claim field, {fields}
 """
 
 # STORY_ORDER (write.STORY_ORDER): the sentence rule judges meaning, not
@@ -734,7 +997,7 @@ wording.
 "{supported}": those claims, together, support what the sentence means.
 - Paraphrase, summary and combining claims are supported when they add
   nothing.
-- An order word ("at first", "earlier", "later", "by the end", "in the next
+{summary}- An order word ("at first", "earlier", "later", "by the end", "in the next
   book") is supported when the positions of the cited claims show that
   order.
 - Contrast and addition words ("also", "however", "although", "in
@@ -745,12 +1008,57 @@ wording.
   result") that no cited claim states;
 - uses an order word that the positions contradict, or that links claims
   from books whose relative order is unknown;
-- or summarises with more than the claims show, such as "always" or
+{attribution}- or summarises with more than the claims show, such as "always" or
   "every" when they show one case or some.
 Return these in sentence_judgements, one per sentence, numbered 1 to
-{count} in the claim field, with a verdict and a reason of at most
-{max_words} words.
+{count} in the claim field, {fields}
 """
+
+# SUMMARY_CHECK (2026-11-08, spec orphan-repair): an introduction or summary
+# sentence cites several claims and says in general words what they show
+# together. Measured on a deep answer: the check rejected such openings ("adds
+# ordering", "beyond"), so sections began with a stray detail. With this on,
+# the sentence rule says outright that such a sentence is judged against the
+# union of its claims; what it still refuses is a real addition. Needs
+# STORY_ORDER (it lives in the story block). Off gives the prompt before it.
+SUMMARY_CHECK = True
+_SUMMARY_RULE = """- A sentence that introduces or sums up, citing several claims, is judged
+  against all of them together, as one body of evidence. It is supported when
+  everything it says is stated by at least one of its cited claims, or is
+  what they show together put in general words (several claims describing
+  the same place, person or event may be summed up in one phrase). It is
+  "{not_supported}" only when it adds a fact, cause, order or evaluation that
+  none of its cited claims states.
+"""
+
+
+# OPENER_CITES (write.OPENER_CITES) extends the summary rule above for the
+# opening sentence of a gist, section or lens: it introduces its subject, often
+# in words several claims share, so it is judged as a summary against EVERY
+# claim of the unit, not only those it lists, and the check names the claims
+# that support it, which code then attaches as its citations (`with_opener`).
+# What no claim states still fails it.
+_SUMMARY_OPENER = """- {which} opens the text: it introduces or sums up the subject. It is
+  judged as such a sentence, but against ALL the claims above together, not
+  only the ones it lists. It is still "{not_supported}" when it adds a fact,
+  name, trait, role, detail, cause, order or evaluation that no claim above
+  states. Give {it} supported_by: the numbers of EVERY claim above that states
+  something it says, listed or not (empty when it is "{not_supported}").{rest}
+"""
+
+
+def summary_rule(opener: bool = False, every_sentence: bool = False) -> str:
+    """The summary rule of the sentence check (SUMMARY_CHECK), extended for the
+    opening sentence under OPENER_CITES (`opener`). `every_sentence`: the
+    introduction check (INTRO_REPAIR), where every sentence is an opening."""
+    rule = _SUMMARY_RULE.format(not_supported=NOT_SUPPORTED) if SUMMARY_CHECK else ""
+    if opener and (every_sentence or write_module.opener_cites_on()):
+        rule += _SUMMARY_OPENER.format(
+            which="Each sentence" if every_sentence else "Sentence 1",
+            it="each" if every_sentence else "it", not_supported=NOT_SUPPORTED,
+            rest="" if every_sentence else "\n  For every other sentence leave supported_by empty.")
+    return rule
+
 
 # READINGS: a sentence marked "(reading)" interprets its claims instead of
 # restating them, so it gets this test in place of the one above.
@@ -797,7 +1105,7 @@ about. Judge each against all of the claims above.
 gap.
 "{not_supported}": some claim, or the claims together, do answer it.
 Return these in gap_judgements, one per gap, numbered 1 to {count} in the
-claim field, with a verdict and a reason of at most {max_words} words.
+claim field, {fields}
 """
 
 
@@ -809,8 +1117,12 @@ def faithfulness_prompt(
     books: dict[str, BookInfo] | None = None,
     gaps: Sequence[str] | None = None,
     shape: "interpret.Shape | None" = None,
+    opener: bool = False,
 ) -> str:
     """The one batched prompt: the cited passages, then the numbered claims.
+
+    `opener` (write.OPENER_CITES): sentence 1 is the unit's opening, judged
+    against every claim (`summary_rule`).
 
     `shape`: the interpretive answer's shape (interpret.py). A reading or a
     counter-case among the sentences is then labelled and given its own test,
@@ -846,9 +1158,13 @@ def faithfulness_prompt(
                      f"   quote: {claim.quote.strip()}")
     prompt = _CHECK_PROMPT.format(
         passages=shown, claims="\n\n".join(items), count=len(claims),
-        supported=SUPPORTED, not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS,
-        strict_links=(_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
-                      if STRICT_LINKS else ""))
+        supported=SUPPORTED, not_supported=NOT_SUPPORTED,
+        fields=_fields(_CLAIM_FIELDS, _CLAIM_FIELDS_FIRST),
+        strict_links=((_QUOTE_POINTER_CHECK.format(supported=SUPPORTED) if QUOTE_POINTER else "")
+                      + (_STRICT_LINKS_CHECK.format(not_supported=NOT_SUPPORTED)
+                         if STRICT_LINKS else "")
+                      + (_ATTRIBUTION_CLAIM_CHECK.format(not_supported=NOT_SUPPORTED)
+                         if attribution_on() else "")))
     if order and order.note():
         prompt += "\n" + order.note() + "\n"
     if sentences:
@@ -870,9 +1186,17 @@ def faithfulness_prompt(
             f"{i}. sentence{label(s)}: {s.text.strip()}\n"
             f"   uses claims {', '.join(str(k) for k in s.claims)}"
             for i, s in enumerate(sentences, start=1))
-        prompt += (_STORY_SENTENCES_BLOCK if story else _SENTENCES_BLOCK).format(
-            sentences=lines, count=len(sentences), supported=SUPPORTED,
-            not_supported=NOT_SUPPORTED, max_words=MAX_REASON_WORDS)
+        summary = summary_rule(opener) if story else ""
+        prompt += (_STORY_SENTENCES_BLOCK.format(summary=summary, sentences=lines,
+                                                 attribution=(_ATTRIBUTION_CHECK
+                                                              if attribution_on() else ""),
+                                                 count=len(sentences), supported=SUPPORTED,
+                                                 not_supported=NOT_SUPPORTED,
+                                                 fields=_fields(_STORY_FIELDS))
+                   if story else
+                   _SENTENCES_BLOCK.format(sentences=lines, count=len(sentences),
+                                           supported=SUPPORTED, not_supported=NOT_SUPPORTED,
+                                           fields=_fields(_SENTENCE_FIELDS)))
         if readings:
             prompt += _READINGS_BLOCK.format(supported=SUPPORTED, not_supported=NOT_SUPPORTED)
         if shape is not None:
@@ -885,7 +1209,7 @@ def faithfulness_prompt(
             prompt += _GAPS_BLOCK.format(
                 gaps="\n".join(f"{i}. gap: {g}" for i, g in enumerate(gaps, start=1)),
                 count=len(gaps), supported=SUPPORTED, not_supported=NOT_SUPPORTED,
-                max_words=MAX_REASON_WORDS)
+                fields=_fields(_GAP_FIELDS))
     return prompt
 
 
@@ -957,6 +1281,118 @@ class CheckOutcome:
     # FACT_FIDELITY, per sentence: True when the check says it is a fact
     # stating an interpretation its claims do not. None when not asked.
     inference: list[bool] | None = None
+    # Per sentence, the check's reason (shown to the writer in a repair, never
+    # parsed). None when the sentence verdicts are None.
+    sentence_reasons: list[str] | None = None
+    # OPENER_CITES: the claims (1-based, in range) the check says support the
+    # opening sentence, judged against every claim. None when not asked.
+    opener_support: list[int] | None = None
+
+
+# CARRY_VERDICTS: a fact the first check passed stays passed in every later
+# round of the same answer (a section rewrite, a repair, an orphan or intro
+# repair); those rounds judge only their new sentences. Measured live: a
+# repair's second check failed a claim the first had passed ("or five hundred"
+# was in the same passage), and the section's verified prose fell to a list.
+# Off: every round re-judges every claim, as before (run_pair arm).
+CARRY_VERDICTS = True
+
+
+def carry_verdicts(later: "CheckOutcome", first: "CheckOutcome",
+                   claims: Sequence[Claim]) -> "CheckOutcome":
+    """`later` with `first`'s claim verdicts, when both judged the same claims."""
+    if (not CARRY_VERDICTS or not later.ran or not first.ran
+            or len(first.claim_ok) != len(claims) or len(later.claim_ok) != len(claims)):
+        return later
+    kept = [c for c, ok in zip(claims, first.claim_ok) if ok]
+    return replace(later, kept=kept, dropped=list(first.dropped), claim_ok=list(first.claim_ok))
+
+
+# VERDICT_GUARD (2026-11-09): a "not_supported" whose own reason says the
+# opposite is asked again. Measured live (the trace REASON_FIRST cites): "Passage
+# 12 states noon meeting and thanks and interest; fully stated" came back
+# not_supported. Code reads the reason only for this: an affirmation (_AFFIRMS)
+# and no negation (_NEGATES) makes the verdict inconsistent. The inconsistent
+# claims and fact sentences (not an opening, which is judged against every
+# claim) are re-asked in ONE small call, after the spend check; a "supported"
+# then replaces the verdict, anything else (another "not_supported", a failed
+# or garbled call) keeps it -- rejecting stays the safe direction. Lists kept
+# short on purpose: a rejection whose reason names what is wrong ("adds",
+# "not", "only", "beyond") is never re-asked. Off: no re-ask (run_pair arm
+# `verdict_guard`).
+VERDICT_GUARD = True
+_AFFIRMS = re.compile(r"\b(?:supported|stated|states (?:this|it|that|all|both|everything)"
+                      r"|matches|match|correct)\b", re.I)
+_NEGATES = re.compile(r"n't\b|\b(?:not|no|never|nothing|none|only|adds?|added|beyond|lacks?"
+                      r"|missing|contradicts?|contradicted|unsupported|not_supported"
+                      r"|invents?|invented|wrong|differs?|different|instead)\b", re.I)
+REASK_LEAD = """A first check of the items below gave a verdict that its own reason
+disagreed with. Check them again from the passages: write the reason first,
+then the verdict that reason finds.
+
+"""
+
+
+def inconsistent_verdict(verdict: str, reason: str) -> bool:
+    """A "not_supported" whose reason affirms the claim and negates nothing."""
+    word = _SPACE.sub("_", str(verdict).strip().lower().strip(".")).strip("_")
+    reason = str(reason or "")
+    return (word == NOT_SUPPORTED and bool(_AFFIRMS.search(reason))
+            and not _NEGATES.search(reason))
+
+
+def inconsistent_items(result, sentences: Sequence["Sentence"] | None = None,
+                       opener: bool = False) -> tuple[list[int], list[int]]:
+    """0-based (claims, sentences) of `result` whose verdict its reason
+    contradicts; only fact sentences, never an opening (`opener`)."""
+    claims = [i for i, j in enumerate(getattr(result, "judgements", None) or [])
+              if inconsistent_verdict(j.verdict, j.reason)]
+    sents = [i for i, j in enumerate(getattr(result, "sentence_judgements", None) or [])
+             if sentences and i < len(sentences)
+             and getattr(sentences[i], "kind", "fact") == "fact" and not (opener and i == 0)
+             and inconsistent_verdict(j.verdict, j.reason)]
+    return claims, sents
+
+
+async def _guard_verdicts(claims, passages, check, result, verdicts, sentence_ok, sentences, *,
+                          book_titles=None, books=None, opener=False, spend_ok=None):
+    """VERDICT_GUARD: (verdicts, sentence_ok), with each inconsistent rejection
+    asked again in one call and replaced only by a "supported"."""
+    bad_claims, bad_sents = inconsistent_items(
+        result, sentences if sentence_ok is not None else None, opener)
+    if not bad_claims and not bad_sents:
+        return verdicts, sentence_ok
+    if spend_ok is not None and not spend_ok():
+        return verdicts, sentence_ok
+    try:
+        wanted = sorted({*bad_claims, *(k - 1 for i in bad_sents for k in sentences[i].claims
+                                        if 1 <= k <= len(claims))})
+        number = {i: n for n, i in enumerate(wanted, start=1)}
+        sub = [claims[i] for i in wanted]
+        again = [sentences[i].model_copy(update={"claims": [number[k - 1] for k in
+                                                            sentences[i].claims
+                                                            if k - 1 in number]})
+                 for i in bad_sents]
+        reply = await check(REASK_LEAD + faithfulness_prompt(sub, passages, book_titles,
+                                                             again or None, books),
+                            check_schema(bool(again)))
+        sub_verdicts = validated_verdicts(reply, len(sub))
+        sub_sentences = (validated_sentence_verdicts(reply, len(again))
+                         if again and sub_verdicts is not None else None)
+    except Exception:  # noqa: BLE001 -- a failed re-ask keeps the first verdicts
+        return verdicts, sentence_ok
+    verdicts = list(verdicts)
+    if sub_verdicts is not None:
+        for i in bad_claims:
+            ok, reason = sub_verdicts[number[i] - 1]
+            if ok:
+                verdicts[i] = (True, reason)
+    if sentence_ok is not None and sub_sentences is not None:
+        sentence_ok = list(sentence_ok)
+        for n, i in enumerate(bad_sents):
+            if sub_sentences[n]:
+                sentence_ok[i] = True
+    return verdicts, sentence_ok
 
 
 async def check_answer(
@@ -969,25 +1405,41 @@ async def check_answer(
     books: dict[str, BookInfo] | None = None,
     gaps: Sequence[str] | None = None,
     shape: "interpret.Shape | None" = None,
+    opener: bool = False,
+    spend_ok=None,
 ) -> CheckOutcome:
     """`check_claims`, plus one verdict per prose sentence in the same call.
+
+    `spend_ok`: asked before VERDICT_GUARD's re-ask (False: no re-ask). None:
+    always allowed.
 
     Claim and sentence verdicts are validated separately: garbled sentence
     verdicts cost only the prose (`sentence_ok=None`), never the claim check.
     Gap verdicts likewise: garbled ones cost only the gaps (`gap_ok=None`).
+
+    `opener` (write.OPENER_CITES): the first sentence, when it is a fact, is the
+    unit's opening, judged against every claim; the claims the check says support
+    it come back in `opener_support` (`with_opener` attaches them).
     """
     claims = list(claims)
     if not claims:
         return CheckOutcome([], [], True, [], None)
     passages = list(passages)
-    gap_ok = restated = inference = None
+    opener = bool(opener and sentences and write_module.opener_cites_on()
+                  and getattr(sentences[0], "kind", "fact") == "fact")
+    gap_ok = restated = inference = reasons = support = None
     try:
         result = await check(
-            faithfulness_prompt(claims, passages, book_titles, sentences, books, gaps, shape),
-            check_schema(bool(sentences)))
+            faithfulness_prompt(claims, passages, book_titles, sentences, books, gaps, shape,
+                                opener=opener),
+            check_schema(bool(sentences), opener))
         verdicts = validated_verdicts(result, len(claims))
         sentence_ok = (validated_sentence_verdicts(result, len(sentences))
                        if sentences and verdicts is not None else None)
+        if VERDICT_GUARD and verdicts is not None:
+            verdicts, sentence_ok = await _guard_verdicts(
+                claims, passages, check, result, verdicts, sentence_ok, sentences,
+                book_titles=book_titles, books=books, opener=opener, spend_ok=spend_ok)
         if gaps and sentences and verdicts is not None and write_module.STORY_ORDER:
             gap_ok = validated_gap_verdicts(result, len(gaps))
         if sentence_ok is not None and write_module.coverage_on():
@@ -996,6 +1448,12 @@ async def check_answer(
         if sentence_ok is not None and write_module.fidelity_on():
             inference = [getattr(j, "inference_in_fact", False) is True
                          for j in result.sentence_judgements]
+        if sentence_ok is not None:
+            reasons = [" ".join(str(getattr(j, "reason", "") or "").split())
+                       for j in result.sentence_judgements]
+        if sentence_ok is not None and opener:
+            support = supporting_claims(getattr(result.sentence_judgements[0], "supported_by", None),
+                                        len(claims))
     except Exception:  # noqa: BLE001 -- see check_claims
         verdicts, sentence_ok = None, None
     if verdicts is None:
@@ -1005,7 +1463,103 @@ async def check_answer(
     for claim, (supported, reason) in zip(claims, verdicts):
         (kept.append(claim) if supported else dropped.append((claim, reason)))
     return CheckOutcome(kept, dropped, True, [ok for ok, _ in verdicts], sentence_ok, gap_ok,
-                        restated, inference)
+                        restated, inference, reasons, support)
+
+
+def supporting_claims(value, count: int) -> list[int]:
+    """The claim numbers in `value` that are among 1..count, in order, once each;
+    [] for anything that is not a list of numbers."""
+    if not isinstance(value, (list, tuple)):
+        return []
+    out: list[int] = []
+    for v in value:
+        n = _sentence_number(v, count)
+        if n and n not in out:
+            out.append(n)
+    return out
+
+
+# INTRO_REPAIR: the check of an introduction written by its own call. The claims
+# were checked against their passages already, so only the sentences are judged,
+# each against every claim, as an opening is under OPENER_CITES.
+_INTRO_CHECK_PROMPT = """Check an introduction against the numbered claims below. Each claim was already
+checked against the book; judge only the sentences.
+
+Claims:
+{claims}
+{order_note}
+Sentences:
+{sentences}
+
+Judge each sentence against ALL the claims above, together. Judge meaning, not
+wording.
+{summary}- A sentence that sums up with more than the claims show, such as "always" or
+  "every" when they show one case or some, is "{not_supported}".
+- Sentence 1 must introduce the subject: say what or who it is, and how it
+  figures in the story. A sentence 1 that gives only one detail or event of
+  the subject instead is "{not_supported}" (reason: "not an introduction").
+Return these in sentence_judgements, one per sentence, numbered 1 to {count} in
+the claim field, {fields}
+"""
+
+
+class IntroCheck(BaseModel):
+    sentence_judgements: list[OpenerJudgement]
+
+
+def intro_check_prompt(claims: Sequence[Claim], passages: Iterable[Passage],
+                       sentences: Sequence["Sentence"], book_titles: dict[str, str] | None = None,
+                       books: dict[str, BookInfo] | None = None) -> str:
+    by_number = {p.n: p for p in passages}
+    cited = [by_number[n] for n in sorted({c.passage for c in claims}) if n in by_number]
+    order = order_passages(cited, book_infos(book_titles, books))
+    items = []
+    for number, claim in enumerate(claims, start=1):
+        where = order.positions.get(claim.passage)
+        items.append(f"{number}. claim: {claim.text.strip()}"
+                     + (f" ({where.label(detail=True)})" if where else "")
+                     + f"\n   quote: {claim.quote.strip()}")
+    lines = "\n".join(f"{i}. sentence: {s.text.strip()}\n   uses claims {', '.join(map(str, s.claims))}"
+                      for i, s in enumerate(sentences, start=1))
+    return _INTRO_CHECK_PROMPT.format(
+        claims="\n".join(items), order_note=("\n" + order.note() + "\n") if order.note() else "",
+        sentences=lines, summary=summary_rule(opener=True, every_sentence=True), count=len(sentences),
+        supported=SUPPORTED, not_supported=NOT_SUPPORTED,
+        fields=_fields(_INTRO_FIELDS, _INTRO_FIELDS_FIRST))
+
+
+async def check_intro(claims: Sequence[Claim], passages: Iterable[Passage],
+                      sentences: Sequence["Sentence"], check: Generate, *,
+                      book_titles: dict[str, str] | None = None,
+                      books: dict[str, BookInfo] | None = None) -> list[tuple[bool, list[int]]] | None:
+    """INTRO_REPAIR's check: per sentence, (supported, the claims supporting it),
+    or None when the call failed or its verdicts do not line up."""
+    try:
+        result = await check(intro_check_prompt(claims, list(passages), sentences, book_titles, books),
+                             IntroCheck)
+        flags = validated_sentence_verdicts(result, len(sentences))
+    except Exception:  # noqa: BLE001 -- a failed extra check shows no introduction
+        return None
+    if flags is None:
+        return None
+    return [(ok, supporting_claims(getattr(j, "supported_by", None), len(claims)))
+            for ok, j in zip(flags, result.sentence_judgements)]
+
+
+def with_opener(sentences: Sequence["Sentence"], outcome: CheckOutcome) -> list["Sentence"]:
+    """OPENER_CITES: the sentences with the opening's citations replaced by what
+    the check found supporting it against every claim (`outcome.opener_support`)
+    plus those of its own claims the check kept, when the check passed it. An
+    opening the check rejected, or one it gave no supporting claims for, keeps the
+    citations the writer gave (and its verdict). A supporting claim the check cut
+    is still cited, so the opening falls with it, as any sentence would."""
+    out = list(sentences)
+    ok = outcome.sentence_ok or []
+    if not (out and outcome.opener_support and ok and ok[0]):
+        return out
+    own = [k for k in out[0].claims if 1 <= k <= len(outcome.claim_ok) and outcome.claim_ok[k - 1]]
+    out[0] = out[0].model_copy(update={"claims": sorted(set(outcome.opener_support) | set(own))})
+    return out
 
 
 def _sentence_number(value, count: int) -> int:
@@ -1043,7 +1597,8 @@ PROSE_FALLBACK_NOTE = "the written answer did not pass verification; showing the
 
 
 async def _finish(question, sub_questions, kept, evidence, check, write, book_titles,
-                  part_claims=None, books=None, shape=None, length=None, covered=()):
+                  part_claims=None, books=None, shape=None, length=None, covered=(),
+                  spend_ok=None):
     """Writer (when it applies) and the faithfulness check, in one place for
     all synthesize paths. Returns (kept, cut, prose, skipped_note, prose_note,
     unanswered part texts, gaps -- both set only when the prose is shown).
@@ -1054,7 +1609,10 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     and so are not returned separately.
 
     `length` ("section", "short", "lens" or "recap"): the writer sizes the prose for a deep
-    answer's section or its short answer (write.py) instead of the default cap."""
+    answer's section or its short answer (write.py) instead of the default cap.
+
+    `spend_ok`: asked before an ORPHAN_REPAIR round (False: no round, and an
+    orphaned prose falls back to its claim list). None: always allowed."""
     needs_writer = (write_module.PROSE_FACTUAL or length is not None
                     or (shape is not None and (shape.interpretive or bool(shape.beyond))))
     try_prose = (write_module.PROSE_ANSWERS and needs_writer and write is not None
@@ -1080,9 +1638,13 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     if check is None or not kept:
         return kept, [], (), None, prose_note, (), ()
     passage_of = [c.passage for c in kept]
+    opener = write_module.opener_on(length, shape)
     outcome = await check_answer(kept, evidence.passages, check, book_titles=book_titles,
                                  sentences=sentences or None, books=books,
-                                 gaps=gaps if sentences else None, shape=shape)
+                                 gaps=gaps if sentences else None, shape=shape, opener=opener,
+                                 spend_ok=spend_ok)
+    if sentences:
+        sentences = with_opener(sentences, outcome)
     skipped = None if outcome.ran else CHECK_SKIPPED_NOTE
     prose: tuple[ProseSentence, ...] = ()
     # COVERAGE: every kept claim the check did not cut reaches the shown prose.
@@ -1091,19 +1653,31 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
     # FACT_FIDELITY: a fact sentence stating an interpretation is repaired, or not shown.
     fix_facts = write_module.fidelity_on()
 
-    def build(sents, n_written, outc):
+    def prepare(sents, n_written, outc):
         sents, ok = list(sents), list(outc.sentence_ok or [])
         if enforce:
             sents = cite_restated(sents, outc.claim_ok, ok, outc.restated)
         if fix_facts and outc.inference and len(outc.inference) == len(sents) == len(ok):
             # Not shown, and not counted against the prose: its claims are
-            # true, and COVERAGE places them in their own words.
+            # true, and COVERAGE places them in their own words. For
+            # ORPHAN_REPAIR it is a removed sentence like any other.
             flagged = [flag and getattr(s, "kind", "fact") == "fact"
                        for s, flag in zip(sents, outc.inference)]
             n_written -= sum(flagged)
-            sents = [s for s, f in zip(sents, flagged) if not f]
-            ok = [g for g, f in zip(ok, flagged) if not f]
-        return assemble(sents, n_written, outc.claim_ok, ok, passage_of)
+            ok = [g and not f for g, f in zip(ok, flagged)]
+            sents = [s if not f else s.model_copy(update={"kind": "removed"})
+                     for s, f in zip(sents, flagged)]
+        return sents, ok, n_written
+
+    def build(sents, n_written, outc, lenient=False):
+        sents, ok, n_written = prepare(sents, n_written, outc)
+        shown = [(s, g) for s, g in zip(sents, ok) if getattr(s, "kind", "fact") != "removed"]
+        return assemble([s for s, _ in shown], n_written, outc.claim_ok, [g for _, g in shown],
+                        passage_of, lenient=lenient)
+
+    def kept_mask(sents, n_written, outc):
+        sents, ok, _ = prepare(sents, n_written, outc)
+        return sents, write_module.kept_flags(sents, outc.claim_ok, ok)
 
     if sentences is not None:
         ready = bool(sentences) and outcome.ran and outcome.sentence_ok is not None
@@ -1113,7 +1687,7 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
             # takes the fallback (or a section's rewrite) as before.
             repaired = await _repair(question, sub_questions, kept, evidence, check, write,
                                      book_titles, books, shape, length, covered, sentences,
-                                     outcome, gaps, enforce)
+                                     outcome, gaps, enforce, opener)
             better = build(*repaired) if repaired is not None else None
             if better:  # used only if it passes too; else the first draft stands
                 built, (sentences, written, outcome) = better, repaired
@@ -1131,14 +1705,36 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
             if second:
                 outcome2 = await check_answer(kept, evidence.passages, check,
                                               book_titles=book_titles, sentences=second,
-                                              books=books, shape=shape)
+                                              books=books, shape=shape, opener=opener,
+                                              spend_ok=spend_ok)
+                outcome2 = carry_verdicts(outcome2, outcome, kept)
+                second = with_opener(second, outcome2)
                 if outcome2.ran and outcome2.sentence_ok is not None:
                     built = build(second, len(split_items(again)), outcome2)
                     if built:
+                        sentences, written = second, len(split_items(again))
                         outcome, gaps = outcome2, []
+        if built and write_module.orphan_repair_on():
+            # ORPHAN_REPAIR: no shown sentence leans on one the check removed,
+            # and a section whose opening was removed gets a new one
+            # (GENTLE_FALLBACK, INTRO_REPAIR: `_mend`).
+            built, sentences, written, outcome, _opened = await _mend(
+                question, sub_questions, kept, evidence.passages, check, write, book_titles,
+                books, shape, length, covered, sentences, written, outcome, gaps, built, build,
+                kept_mask, spend_ok)
+        if built and write_module.story_order_prose_on(length, shape):
+            # STORY_ORDER_PROSE: events in story order, by code where it can.
+            built = await _story_order(question, sub_questions, outcome.kept, evidence.passages,
+                                       check, write, book_titles, books, length, covered, built,
+                                       opener, spend_ok)
         if built and enforce:
-            built = place_uncited(built, [c.text for c in outcome.kept],
-                                  [c.passage for c in outcome.kept])
+            shown_kept = outcome.kept
+            built = place_uncited(built, [c.text for c in shown_kept],
+                                  [c.passage for c in shown_kept],
+                                  same=((lambda s, k: states_claim(s, k, shown_kept))
+                                        if DEDUP_SENTENCES else None))
+        if built and DEDUP_SENTENCES:
+            built = dedup_sentences(built, outcome.kept)
         if built and part_claims is not None:
             numbered = [[outcome.kept.index(c) + 1 for c in cs if c in outcome.kept]
                         for cs in part_claims]
@@ -1164,6 +1760,75 @@ async def _finish(question, sub_questions, kept, evidence, check, write, book_ti
             tuple(missing) if prose else (), shown_gaps)
 
 
+async def _story_order(question, sub_questions, claims, passages, check, write, book_titles,
+                       books, length, covered, built, opener, spend_ok=None):
+    """STORY_ORDER_PROSE: `built` (the shown prose, its claims numbered as
+    `claims`, the claims the check kept) with its events in story order. An
+    answer with no fault, or organised by theme, is returned as it is; a fault
+    is fixed by moving the sentence (`write.story_reorder`) when that orphans
+    nothing, else by one repair round (`_order_repair`); if that fails too the
+    prose stands as it was."""
+    keys = write_module.story_keys(built, passages, book_titles, books)
+    faults = write_module.order_faults(built, keys, opener)
+    if not faults or not write_module.chronological(built, keys, opener):
+        return built
+    moved = write_module.story_reorder(built, keys, opener)
+    if moved is not None:
+        return moved
+    fixed = await _order_repair(question, sub_questions, claims, passages, check, write,
+                                book_titles, books, length, covered, built, faults, opener,
+                                spend_ok)
+    return fixed if fixed else built
+
+
+async def _order_repair(question, sub_questions, claims, passages, check, write, book_titles,
+                        books, length, covered, built, faults, opener, spend_ok=None):
+    """STORY_ORDER_PROSE's one repair round: the writer sees the shown prose
+    with the out-of-order sentences named (`Repair.order`); its revision is
+    checked once, the claims' verdicts carried (they all passed). Returns the
+    revised prose, or None when the spend check says no, the round fails, or
+    the revision is no better: it must assemble, orphan nothing, cite every
+    claim the prose cited, and have fewer order faults."""
+    if write is None or check is None or (spend_ok is not None and not spend_ok()):
+        return None
+    if any(s.kind not in ("fact", "reading") for s in built):
+        return None
+    from lore.query.write import Sentence  # write.py never imports this module
+    draft = tuple(Sentence(text=s.text, claims=list(s.claims), new_paragraph=s.new_paragraph,
+                           kind=s.kind) for s in built)
+    repair = Repair(draft=draft, order=tuple(i + 1 for i in faults))
+    again = await write_answer(question, sub_questions, claims, passages, write,
+                               book_titles=book_titles, books=books, length=length,
+                               covered=covered, repair=repair)
+    second = (verify_prose(again, len(claims), [c.text for c in claims])
+              if again is not None else [])
+    if not second:
+        return None
+    checked = await check_answer(claims, passages, check, book_titles=book_titles,
+                                 sentences=second, books=books, opener=opener,
+                                 spend_ok=spend_ok)
+    if not (checked.ran and checked.sentence_ok is not None
+            and len(checked.sentence_ok) == len(second)):
+        return None
+    second = with_opener(second, checked)
+    ok = list(checked.sentence_ok)
+    if write_module.fidelity_on() and checked.inference and len(checked.inference) == len(ok):
+        ok = [good and not (flag and getattr(s, "kind", "fact") == "fact")
+              for s, good, flag in zip(second, ok, checked.inference)]
+    every = [True] * len(claims)  # CARRY_VERDICTS: these claims all passed the check
+    rebuilt = assemble(second, len(split_items(again)), every, ok, [c.passage for c in claims])
+    if not rebuilt:
+        return None
+    if write_module.orphans(second, write_module.kept_flags(second, every, ok)):
+        return None
+    if not {k for s in built for k in s.claims} <= {k for s in rebuilt for k in s.claims}:
+        return None
+    keys = write_module.story_keys(rebuilt, passages, book_titles, books)
+    if len(write_module.order_faults(rebuilt, keys, opener)) >= len(faults):
+        return None
+    return rebuilt
+
+
 def uncited_claims(sentences: Sequence["Sentence"], outcome: CheckOutcome) -> list[int]:
     """The kept claims (1-based) that no sentence the check passed cites, and
     that the check does not say a passing fact sentence restates."""
@@ -1181,7 +1846,7 @@ def uncited_claims(sentences: Sequence["Sentence"], outcome: CheckOutcome) -> li
 
 
 async def _repair(question, sub_questions, kept, evidence, check, write, book_titles, books,
-                  shape, length, covered, sentences, outcome, gaps, enforce=True):
+                  shape, length, covered, sentences, outcome, gaps, enforce=True, opener=False):
     """The repair round: (sentences, written, outcome) of the writer's revised
     draft, checked again, or None when nothing needs repair or the round
     failed (the first draft then stands, and code places what it left out).
@@ -1210,10 +1875,210 @@ async def _repair(question, sub_questions, kept, evidence, check, write, book_ti
     if not second:
         return None
     outcome2 = await check_answer(kept, evidence.passages, check, book_titles=book_titles,
-                                  sentences=second, books=books, gaps=gaps or None, shape=shape)
+                                  sentences=second, books=books, gaps=gaps or None, shape=shape,
+                                  opener=opener)
     if not (outcome2.ran and outcome2.sentence_ok is not None):
         return None
-    return second, len(split_items(again)), outcome2
+    outcome2 = carry_verdicts(outcome2, outcome, kept)
+    return with_opener(second, outcome2), len(split_items(again)), outcome2
+
+
+# ORPHAN_REPAIR: the parts whose opening sentence, removed by the check, is
+# written again (an introduction). A short answer, a recap section (which opens
+# with its first event) and an interpretive answer (whose opening is its
+# readings) are left as they are; their orphans are still repaired.
+INTRO_LENGTHS = (None, "section", "lens")
+
+
+async def _orphan_repair(question, sub_questions, kept, passages, check, write, book_titles,
+                         books, shape, length, covered, sentences, keep, outcome, gaps, intro,
+                         spend_ok=None):
+    """ORPHAN_REPAIR's one round: (sentences, written, outcome) of the writer's
+    revised draft, checked once, in the numbering of `kept`; or None when the
+    spend check says no or the round failed.
+
+    The writer sees only the claims the check kept (renumbered for it), the
+    sentences that were shown (the orphans among them marked), the sentences
+    the check removed with its reasons, and, with `intro`, that the opening was
+    removed. `sentences`/`keep`: the draft as shown, and which were kept."""
+    if write is None or check is None or (spend_ok is not None and not spend_ok()):
+        return None
+    idx = [i for i, ok in enumerate(outcome.claim_ok) if ok]
+    if not idx:
+        return None
+    sub_claims = [kept[i] for i in idx]
+    to_sub = {i + 1: j + 1 for j, i in enumerate(idx)}
+    orphaned = set(write_module.orphans(sentences, keep))
+    shown = [i for i, k in enumerate(keep) if k]
+    draft = tuple(sentences[i].model_copy(update={"claims": [to_sub[k] for k in sentences[i].claims]})
+                  for i in shown)
+    reasons, verdicts = outcome.sentence_reasons or [], outcome.sentence_ok or []
+
+    def why(i: int) -> str:
+        if getattr(sentences[i], "kind", "fact") == "removed":
+            return "states an interpretation its facts do not"
+        if i < len(verdicts) and not verdicts[i]:
+            return reasons[i] if i < len(reasons) else ""
+        return "rests on a fact that did not check out"
+
+    removed = tuple((s.text, why(i)) for i, s in enumerate(sentences)
+                    if not keep[i] and getattr(s, "kind", "fact") in ("fact", "removed"))
+    sub_shape = (shape.with_claims([shape.claim_parts[i] for i in idx])
+                 if shape is not None and len(shape.claim_parts) == len(kept) else shape)
+    repair = Repair(draft=draft, orphans=tuple(n for n, i in enumerate(shown, start=1)
+                                               if i in orphaned),
+                    intro=intro, removed=removed)
+    again = await write_answer(question, sub_questions, sub_claims, passages, write,
+                               book_titles=book_titles, books=books, shape=sub_shape,
+                               length=length, covered=covered, repair=repair)
+    second = (verify_prose(again, len(sub_claims), [c.text for c in sub_claims], sub_shape)
+              if again is not None else [])
+    if not second:
+        return None
+    checked = await check_answer(sub_claims, passages, check, book_titles=book_titles,
+                                 sentences=second, books=books, gaps=gaps or None, shape=sub_shape,
+                                 opener=write_module.opener_on(length, sub_shape),
+                                 spend_ok=spend_ok)
+    if not (checked.ran and checked.sentence_ok is not None):
+        return None
+    second = with_opener(second, checked)
+    # Back to the numbering of `kept`: a claim cut before the round stays cut.
+    lifted = [s.model_copy(update={"claims": [idx[k - 1] + 1 for k in s.claims]}) for s in second]
+    claim_ok = [False] * len(kept)
+    for j, i in enumerate(idx):
+        # CARRY_VERDICTS: these claims all passed the first check; only the
+        # repaired sentences are judged in this round.
+        claim_ok[i] = True if CARRY_VERDICTS else checked.claim_ok[j]
+    restated = None
+    if checked.restated is not None:
+        restated = [0] * len(kept)
+        for j, i in enumerate(idx):
+            restated[i] = checked.restated[j]
+    merged = CheckOutcome(
+        kept=[c for c, ok in zip(kept, claim_ok) if ok],
+        dropped=[*outcome.dropped, *checked.dropped], ran=True, claim_ok=claim_ok,
+        sentence_ok=checked.sentence_ok, gap_ok=checked.gap_ok, restated=restated,
+        inference=checked.inference, sentence_reasons=checked.sentence_reasons,
+        opener_support=([idx[k - 1] + 1 for k in checked.opener_support]
+                        if checked.opener_support is not None else None))
+    return lifted, len(split_items(again)), merged
+
+
+def _intro_from(fixed, kept_mask, first_texts, kept, claim_ok) -> ProseSentence | None:
+    """GENTLE_FALLBACK: the opening the repair round wrote when it was asked for
+    one, as a shown sentence numbered among the survivors of `claim_ok` (the first
+    draft's check): kept by the repair's check, new (not a sentence of the first
+    draft), standing on its own, and resting only on claims the first check kept."""
+    if fixed is None:
+        return None
+    sents, keep = kept_mask(*fixed)
+    if not (sents and keep and keep[0]):
+        return None
+    s = sents[0]
+    if (getattr(s, "kind", "fact") != "fact" or s.text in first_texts
+            or write_module.leans_back(s.text)
+            or not all(1 <= k <= len(claim_ok) and claim_ok[k - 1] for k in s.claims)):
+        return None
+    survivor = {k: n for n, k in enumerate((k for k, ok in enumerate(claim_ok, start=1) if ok),
+                                           start=1)}
+    return ProseSentence(text=s.text.strip(), claims=tuple(survivor[k] for k in s.claims),
+                         passages=tuple(sorted({kept[k - 1].passage for k in s.claims})))
+
+
+def _gentler(built, prepared, keep, intro: ProseSentence | None):
+    """GENTLE_FALLBACK's second choice: the first draft as assembled (`built`, its
+    rejected sentences already out), with every orphaned sentence dropped on its
+    own and in turn (`write.drop_orphans`), and `intro` put first. (prose or None
+    when nothing stands, whether its own opening stands)."""
+    rows = [i for i, k in enumerate(keep) if k]
+    if len(rows) != len(built):
+        return None, False
+    left = write_module.drop_orphans(prepared, keep)
+    shown: list[ProseSentence] = []
+    carry = False
+    for b, i in zip(built, rows):
+        if left[i]:
+            shown.append(replace(b, new_paragraph=bool(shown) and (b.new_paragraph or carry)))
+            carry = False
+        else:  # the paragraph it opened goes on from the next sentence shown
+            carry = carry or b.new_paragraph
+    if not any(s.kind == "fact" for s in shown):
+        return None, False
+    opened = bool(left) and left[0]
+    if intro is not None:
+        shown = [intro, *write_module.drop_restated([intro], shown)]
+        opened = True
+    return tuple(shown), opened
+
+
+async def _intro_repair(subject, claims, passages, check, write, book_titles, books, length,
+                        spend_ok=None) -> tuple[ProseSentence, ...]:
+    """INTRO_REPAIR's one round: an introduction over `claims` (the claims the
+    check kept, so numbered as the shown prose numbers them), checked once, each
+    sentence against every claim and citing what the check says supports it; ()
+    when the spend check says no, the call fails, or its first sentence fails."""
+    if write is None or check is None or not claims or (spend_ok is not None and not spend_ok()):
+        return ()
+    intro = await write_module.write_intro(subject, claims, passages, write,
+                                           book_titles=book_titles, books=books, length=length)
+    if not intro:
+        return ()
+    verdicts = await check_intro(claims, passages, intro, check, book_titles=book_titles, books=books)
+    if not verdicts:
+        return ()
+    out: list[ProseSentence] = []
+    for s, (ok, support) in zip(intro, verdicts):
+        if not ok:
+            break  # a second sentence without the first is no introduction
+        numbers = sorted(set(s.claims) | set(support))
+        out.append(ProseSentence(text=s.text.strip(), claims=tuple(numbers),
+                                 passages=tuple(sorted({claims[k - 1].passage for k in numbers}))))
+    return tuple(out)
+
+
+async def _mend(question, sub_questions, kept, passages, check, write, book_titles, books, shape,
+                length, covered, sentences, written, outcome, gaps, built, build, kept_mask,
+                spend_ok=None):
+    """After a draft assembled (`built`): ORPHAN_REPAIR's round for orphans and a
+    removed opening, the fallback when it fails (GENTLE_FALLBACK), and an
+    introduction of its own when the opening is still rejected (INTRO_REPAIR).
+    Returns (built or None for the claim list, sentences, written, outcome, whether
+    the shown prose begins with an opening). `build`/`kept_mask` turn (sentences,
+    written, outcome) into the shown prose and into (sentences, kept flags)."""
+    prepared, keep = kept_mask(sentences, written, outcome)
+    opened = bool(keep) and keep[0]
+    first_texts = [s.text for s in prepared]
+    orphaned = write_module.orphans(prepared, keep)
+    intro = length in INTRO_LENGTHS and shape is None and write_module.opener_cut(keep)
+    if orphaned or intro:
+        fixed = await _orphan_repair(
+            question, sub_questions, kept, passages, check, write, book_titles,
+            books, shape, length, covered, prepared, keep, outcome, gaps, intro, spend_ok)
+        mask = kept_mask(*fixed) if fixed is not None else None
+        clean = mask is not None and not write_module.orphans(*mask)
+        better = build(*fixed) if clean else None
+        if not better and clean and write_module.gentle_fallback_on():
+            # GENTLE_FALLBACK, first choice: the repaired draft minus its rejected
+            # sentences, however many, when none of the rest is orphaned.
+            better = build(*fixed, lenient=True)
+        if better:
+            built, (sentences, written, outcome) = better, fixed
+            # its first sentence is an opening unless it is a later sentence of the first draft
+            opened = bool(mask[1]) and mask[1][0] and mask[0][0].text not in first_texts[1:]
+        elif write_module.gentle_fallback_on():
+            # Second choice: the first draft minus its rejected sentences and, one by
+            # one, its orphans, after the repair's new opening when that was supported.
+            new = (_intro_from(fixed, kept_mask, first_texts, kept, outcome.claim_ok)
+                   if intro else None)
+            built, opened = _gentler(built, prepared, keep, new)
+        elif orphaned:
+            built = None  # never shown with an orphaned opening: the claim list is
+    if built and not opened and write_module.intro_wanted(length, shape):
+        got = await _intro_repair(question, outcome.kept, passages, check, write, book_titles,
+                                  books, length, spend_ok)
+        if got:
+            built, opened = (*got, *write_module.drop_restated(got, built)), True
+    return built, sentences, written, outcome, opened
 
 
 async def synthesize(
@@ -1230,6 +2095,7 @@ async def synthesize(
     write: Generate | None = None,
     books: dict[str, BookInfo] | None = None,
     section: SectionSpec | None = None,
+    spend_ok=None,
 ) -> Answer:
     """`checklist`: the question's sub-questions; shown only when there are
     several, so a partial answer is visible as partial.
@@ -1268,7 +2134,7 @@ async def synthesize(
     kept, _cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         written_for, list(checklist) or [question], kept, evidence, check, write, book_titles,
         books=books, length=section.length if section is not None else None,
-        covered=section.covered if section is not None else ())
+        covered=section.covered if section is not None else (), spend_ok=spend_ok)
     if not kept:
         return answer(REFUSAL)
     # can_answer=false with verified claims is a partial answer, not a
@@ -1301,6 +2167,7 @@ async def synthesize_parts(
     plan: Sequence | None = None,
     retrieval: Sequence | None = None,
     viewpoint: str | None = None,
+    spend_ok=None,
 ) -> Answer:
     """One synthesis call per sub-question, over that part's share, merged.
 
@@ -1341,12 +2208,12 @@ async def synthesize_parts(
         return await synthesize_shaped(
             question, plan, retrieval, evidence, generate, mode=mode, template=template,
             note=note, book_titles=book_titles, check=check, write=write, books=books,
-            viewpoint=viewpoint)
+            viewpoint=viewpoint, spend_ok=spend_ok)
     if len(sub_questions) < 2 or len(evidence.shares) != len(sub_questions):
         return await synthesize(question, evidence, generate, mode=mode, template=template,
                                 note=note, book_titles=book_titles,
                                 checklist=sub_questions, check=check, write=write,
-                                books=books)
+                                books=books, spend_ok=spend_ok)
 
     def answer(text: str, *extra_notes: str | None,
               claims: tuple[Claim, ...] = ()) -> Answer:
@@ -1370,7 +2237,8 @@ async def synthesize_parts(
                        timeline=(evidence.timelines[index]
                                  if len(evidence.timelines) == len(sub_questions) else ()),
                        codex=(evidence.codexes[index]
-                              if len(evidence.codexes) == len(sub_questions) else ()))
+                              if len(evidence.codexes) == len(sub_questions) else ()),
+                       setups=evidence.setups)
         result = await generate(
             _build_prompt(part, own, book_titles, part_of=question, books=books), Synthesis)
         verified, _ = verify_claims(_capped(result), passages)
@@ -1382,7 +2250,7 @@ async def synthesize_parts(
     kept = _collapse(kept)
     kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         question, sub_questions, kept, evidence, check, write, book_titles,
-        part_claims=per_part, books=books)
+        part_claims=per_part, books=books, spend_ok=spend_ok)
     if STORY_ORDER_LIST and not prose:
         kept = sorted(kept, key=lambda c: c.passage)  # stable: one passage keeps its order
     missing = [part for part, claims in zip(sub_questions, per_part)
@@ -1448,7 +2316,8 @@ async def shaped_claims(question: str, plan: Sequence, retrieval: Sequence, evid
             per_part.append([])
             continue
         own = Evidence(edges=evidence.edges, passages=passages, truncated=evidence.truncated,
-                       timeline=timelines[index], codex=codexes[index])
+                       timeline=timelines[index], codex=codexes[index],
+                       setups=evidence.setups)
         served = plan[part.part]
         role = ("lens" if part.lens else "beyond" if served.kind == "beyond" else "part")
         spec = (SectionSpec(part_of=question, max_claims=max_claims, length="section")
@@ -1497,6 +2366,7 @@ async def synthesize_shaped(
     write: Generate | None = None,
     books: dict[str, BookInfo] | None = None,
     viewpoint: str | None = None,
+    spend_ok=None,
 ) -> Answer:
     """An answer with an interpretive or beyond part (interpret.py).
 
@@ -1522,7 +2392,7 @@ async def synthesize_shaped(
     shape, by_part = gathered.shape, gathered.by_part
     kept, cut, prose, skipped, prose_note, unanswered, gaps = await _finish(
         question, list(shape.parts), gathered.kept, evidence, check, write, book_titles,
-        part_claims=by_part, books=books, shape=shape)
+        part_claims=by_part, books=books, shape=shape, spend_ok=spend_ok)
     missing = [part.question for part, claims in zip(plan, by_part)
                if part.kind != "beyond" and (not claims or all(c in cut for c in claims))]
     if not kept:

@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Router from "../Router";
-import { ADMIN, AUTH, HOME, LEGAL } from "../messages";
+import { ADMIN, AUTH, HOME, LEGAL, EMAIL_SUGGEST } from "../messages";
 import { Admin } from "./Admin";
 import { SignIn } from "./SignIn";
 import { Waitlist } from "./Waitlist";
@@ -226,12 +226,14 @@ describe("Waitlist", () => {
     render(<Waitlist />);
     expect(screen.getByRole("heading", { level: 1, name: AUTH.waitlistTitle })).toBeInTheDocument();
     const submit = screen.getByRole("button", { name: AUTH.submit });
-    expect(submit).toBeDisabled(); // no consent yet
+    expect(screen.queryByRole("checkbox")).toBeNull(); // sending is the consent; the line says what it allows
+    expect(screen.getByText(AUTH.consentLine)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@example.org");
     await userEvent.type(screen.getByLabelText(AUTH.readingLabel), "Dracula");
-    await userEvent.click(screen.getByLabelText(AUTH.consentLabel));
     await userEvent.click(submit);
     expect(await screen.findByRole("status")).toHaveTextContent(AUTH.thanks);
+    // the invite may land in spam: say where it comes from and where to look
+    expect(screen.getByText(AUTH.spamHint)).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: AUTH.waitlistDone })).toHaveFocus();
     expect(calls[0]).toMatchObject({ url: "/api/waitlist", method: "POST",
       body: { email: "me@example.org", reading: "Dracula", consent: true, website: "" } });
@@ -249,7 +251,6 @@ describe("Waitlist", () => {
     serve(() => ({ status: 500, body: { detail: "boom" } }));
     render(<Waitlist />);
     await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@example.org");
-    await userEvent.click(screen.getByLabelText(AUTH.consentLabel));
     await userEvent.click(screen.getByRole("button", { name: AUTH.submit }));
     expect(await screen.findByText(AUTH.thanks)).toBeInTheDocument();
   });
@@ -373,5 +374,26 @@ describe("Router", () => {
   test("an unknown address says there is nothing there", () => {
     render(<Router pathname="/nope" multi />);
     expect(screen.getByText(AUTH.notFound)).toBeInTheDocument();
+  });
+});
+
+describe("email typo hints", () => {
+  test("the waitlist suggests @gmail.com for @gmai.com, and one click fixes it", async () => {
+    const calls = serve(() => ({ status: 202, body: { ok: true } }));
+    render(<Waitlist />);
+    await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "shadow@gmai.com");
+    expect(screen.getByText("shadow@gmail.com")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: EMAIL_SUGGEST.use }));
+    expect(screen.getByLabelText(AUTH.emailLabel)).toHaveValue("shadow@gmail.com");
+    expect(screen.queryByRole("button", { name: EMAIL_SUGGEST.use })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: AUTH.submit }));
+    expect(calls[0].body.email).toBe("shadow@gmail.com");
+  });
+
+  test("no hint for a normal or unusual-but-real domain", async () => {
+    serve(() => ({ status: 202, body: { ok: true } }));
+    render(<Waitlist />);
+    await userEvent.type(screen.getByLabelText(AUTH.emailLabel), "me@mail.jiit.ac.in");
+    expect(screen.queryByRole("button", { name: EMAIL_SUGGEST.use })).toBeNull();
   });
 });

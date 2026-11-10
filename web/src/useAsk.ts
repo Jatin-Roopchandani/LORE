@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { streamAsk } from "./api";
-import { askReducer, initialState, type AskState } from "./askReducer";
+import { cancelAsk, streamAsk } from "./api";
+import { askReducer, foldEvents, initialState, type AskState } from "./askReducer";
 import { chatsApi, failed } from "./chatsApi";
 import { addToHistory, entriesOf, importBody, importDone, itemFromChat, keepLegacy, loadHistory, loadLegacy, markImportDone,
   saveHistory, type HistoryItem, type ThreadEntry } from "./history";
@@ -9,9 +9,16 @@ import { prefersReducedMotion } from "./settings";
 import { createScheduler, type Scheduler } from "./scheduler";
 import type { AskEvent, Depth } from "./types";
 
-type Action = { kind: "reset"; question: string } | { kind: "event"; event: AskEvent };
+// `stopped`: the reader pressed Stop. Every event received so far is drawn at once (the animation may still have been
+// catching up), then the question is marked stopped.
+type Action = { kind: "reset"; question: string } | { kind: "event"; event: AskEvent }
+  | { kind: "stopped"; question: string; events: AskEvent[]; mark: boolean };
 function reducer(state: AskState, action: Action): AskState {
-  return action.kind === "reset" ? initialState(action.question) : askReducer(state, action.event);
+  if (action.kind === "reset") return initialState(action.question);
+  if (action.kind === "event") return askReducer(state, action.event);
+  const received = foldEvents(action.question, action.events);
+  // `mark` false: a replay (or an answer already in) is only drawn whole, not marked stopped.
+  return action.mark ? askReducer(received, { type: "stopped", t: received.elapsed }) : received;
 }
 // The device's setting, or the Settings popup's "Reduce motion" override.
 const reduceMotion = prefersReducedMotion;
@@ -76,7 +83,7 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   const declineImport = useCallback(() => { markImportDone(); setImportable(0); }, []);
   const abort = useRef<AbortController | null>(null);
   const scheduler = useRef<Scheduler | null>(null);
-  const last = useRef<{ question: string; depth?: Depth }>({ question: "" });
+  const last = useRef<{ question: string; depth?: Depth; spoilers?: boolean }>({ question: "" });
   // The Deep dive choice (auto, deep or focused), remembered across visits and sent with every question.
   const [depth, setDepthState] = useState<Depth>(() => loadDepth());
   const depthRef = useRef(depth);
@@ -90,14 +97,34 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   const stop = () => { abort.current?.abort(); scheduler.current?.stop(); };
   useEffect(() => stop, []);
 
+  // Stop (the ask box's Stop button, or Esc in it): the question on screen stops at once. Its stream is aborted, the
+  // server is told to cancel the run (no further model calls; the abort alone may not reach it through a proxy), and
+  // what had arrived stays on screen, marked stopped. A stopped question is not a turn of the chat: the server never
+  // saves it, the next question follows up the chat without it, and it is not moved up into the thread.
+  // Returns the stopped question, for the ask box to hold again (null when nothing was stopped).
+  const stopAnswer = useCallback((): string | null => {
+    const shown = live.current;
+    if (!shown) return null;
+    const events = shown.entry.events;
+    const over = shown.done || events.some((e) => e.type === "answer" || e.type === "error" || e.type === "stopped");
+    // A replay, or an answer already in and still being drawn: drawn whole at once, nothing to cancel (its stream is
+    // left to end, so an answer the server saved still joins the chat).
+    if (over) scheduler.current?.stop(); else stop();
+    dispatch({ kind: "stopped", question: shown.entry.question, events: [...events], mark: !over });
+    if (over) return null;
+    const request = events.find((e) => e.type === "request");
+    if (request && request.type === "request") void cancelAsk(request.request_id);
+    return shown.entry.question;
+  }, []);
+
   // Starts the next question of the open chat. The finished question on screen moves up into the thread (one still
   // streaming is dropped: it was cut off). `again` (Retry) replaces the question on screen instead.
-  const send = useCallback((question: string, depth: Depth | undefined, again: boolean) => {
+  const send = useCallback((question: string, depth: Depth | undefined, again: boolean, spoilers = false) => {
     stop();
     const shown = live.current;
     if (!again && shown?.done) setThread((t) => [...t, shown.entry]);
     const asked = worldRef.current;
-    last.current = { question, depth };
+    last.current = { question, depth, spoilers };
     const entry: ThreadEntry = { key: `q${++asks.current}`, question, standalone: null, events: [] };
     live.current = { entry, done: false };
     const following = chat.current;
@@ -113,7 +140,9 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
       const events = entry.events;
       const d = depth ?? depthRef.current;
       // The chat's id only on a follow-up: a first question is sent exactly as before chats had threads.
-      const stream = following ? streamAsk(question, controller.signal, asked, d, following) : streamAsk(question, controller.signal, asked, d);
+      // Spoilers shown for this one question only: the reading progress is skipped for it (`?spoilers=1`).
+      const stream = spoilers ? streamAsk(question, controller.signal, asked, d, following ?? undefined, true)
+        : following ? streamAsk(question, controller.signal, asked, d, following) : streamAsk(question, controller.signal, asked, d);
       for await (const event of stream) { events.push(event); sched.push(event); }
       if (controller.signal.aborted) return;
       entry.standalone = standaloneOf(events);
@@ -137,7 +166,8 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   }, []);
 
   // `depth` overrides the Deep dive choice for this one question (the graph panel's Deep dive button).
-  const ask = useCallback((question: string, depth?: Depth) => send(question, depth, false), [send]);
+  // `spoilers` answers this one question from every book, past the reading progress (the ask box's override).
+  const ask = useCallback((question: string, depth?: Depth, spoilers?: boolean) => send(question, depth, false, spoilers === true), [send]);
 
   // Draws a chat: `earlier` above, and `latest` replayed below (animated unless motion is reduced; no model call).
   const open = useCallback((id: string, itemWorld: string | undefined, earlier: ThreadEntry[], latest: ThreadEntry) => {
@@ -212,7 +242,7 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
     setCurrent(null);
   }, []);
 
-  const retry = useCallback(() => { if (last.current.question) send(last.current.question, last.current.depth, true); }, [send]);
-  return { state, thread, history, current, run, ask, replay, retry, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running",
+  const retry = useCallback(() => { if (last.current.question) send(last.current.question, last.current.depth, true, last.current.spoilers); }, [send]);
+  return { state, thread, history, current, run, ask, replay, retry, stopAnswer, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running",
     importable, importLocal, declineImport };
 }

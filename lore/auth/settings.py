@@ -17,6 +17,8 @@ ENV_INVITE_ONLY = "LORE_INVITE_ONLY"
 ENV_TRUST_PROXY = "LORE_TRUST_PROXY"
 ENV_RESEND_KEY = "LORE_RESEND_API_KEY"
 ENV_MAIL_FROM = "LORE_MAIL_FROM"
+ENV_MAIL_REPLY_TO = "LORE_MAIL_REPLY_TO"  # optional: where replies to LORE mail go
+ENV_NOTIFY_EMAIL = "LORE_NOTIFY_EMAIL"  # optional: who hears of each new invite request
 MIN_SECRET_CHARS = 32
 
 
@@ -47,6 +49,9 @@ class AuthSettings:
     github: OAuthClient | None = None
     resend_api_key: str | None = field(default=None, repr=False)
     mail_from: str = "LORE <login@lore.jrvn.site>"
+    mail_reply_to: str | None = None
+    # Mailed a short note for each new waitlist request; None: no note.
+    notify_email: str | None = None
 
     def __post_init__(self) -> None:
         for name, value in (("session", self.session_secret),
@@ -94,4 +99,6 @@ class AuthSettings:
             google=client("GOOGLE"), github=client("GITHUB"),
             resend_api_key=env.get(ENV_RESEND_KEY, "").strip() or None,
             mail_from=env.get(ENV_MAIL_FROM, "").strip() or cls.mail_from,
+            mail_reply_to=env.get(ENV_MAIL_REPLY_TO, "").strip() or None,
+            notify_email=env.get(ENV_NOTIFY_EMAIL, "").strip() or None,
         )

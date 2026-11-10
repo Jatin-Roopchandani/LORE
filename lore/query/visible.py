@@ -31,7 +31,7 @@ from typing import Iterable, Mapping, Sequence
 
 from lore.query.models import BookInfo, CodexLine, EdgeRow, Passage, SeedEntity
 from lore.query.position import _series_key, order_passages
-from lore.reading_position import ReadingPosition
+from lore.reading_position import Progress, ReadingPosition
 
 
 class VisibleBooks(frozenset):
@@ -182,18 +182,29 @@ class PositionView:
 
     `chapter` is the stored chapter_seq (the cap); `number` and `heading` are
     the story chapter it falls in, as the reader counts it (front matter is
-    not counted; lore/ingest/matter.py), when the caller knows them."""
+    not counted; lore/ingest/matter.py), when the caller knows them.
 
-    book_id: str
+    A progress list may have several books in progress (of unknown order
+    against each other): the first is this view, the rest `others`. With none
+    in progress `book_id` is None and `finished` names the books read."""
+
+    book_id: str | None
     title: str
     chapter: int
     number: int | None = None
     heading: str | None = None
+    others: tuple["PositionView", ...] = ()
+    finished: tuple[str, ...] = ()
 
-    def place(self) -> str:
+    def _one(self) -> str:
         n = self.chapter if self.number is None else self.number
         named = f" ({self.heading})" if self.heading and n else ""
         return f"up to chapter {n}{named} of {self.title}"
+
+    def place(self) -> str:
+        if self.book_id is None:
+            return _titles(self.finished) if self.finished else "no books yet"
+        return "; ".join([self._one(), *(o._one() for o in self.others)])
 
     def note(self) -> str:
         return f"Answered from what you've read: {self.place()}"
@@ -211,10 +222,132 @@ def position_note(views: Sequence[PositionView]) -> str | None:
     return f"Answered from what you've read: {parts}"
 
 
+def _titles(titles: Sequence[str]) -> str:
+    titles = list(titles)
+    if len(titles) <= 2:
+        return " and ".join(titles)
+    return ", ".join(titles[:-1]) + f" and {titles[-1]}"
+
+
+# --- the progress list: each book finished, in progress or not started ------------------
+
+FINISHED, READING, NOT_STARTED = "finished", "reading", "not_started"
+
+
+@dataclass(frozen=True)
+class BookState:
+    """A book's effective state. `chapter` is the chapter_seq reached (READING
+    only). `forced` says an earlier book of its series that is not finished
+    keeps it not started, whatever was stored for it."""
+
+    state: str
+    chapter: int = 0
+    forced: bool = False
+
+
+def book_states(world_books: Iterable[str], progress: Progress,
+                infos: Mapping[str, BookInfo]) -> dict[str, BookState]:
+    """Each of the world's books as the progress list has it, every book not
+    stored being finished, except that a book never shows past an earlier
+    book of its series (a known order, `_placeable`) that is in progress:
+    such a later book is not started (`forced`), as the older position's
+    "never a book known to come later" had it. Books of unknown order are
+    independent. This is what the list shows and exactly what is visible.
+    (Setting an earlier book to not started marks the later ones too, but in
+    the list, as a change the reader sees: lore.web and web/src/progress.ts.)"""
+    books = list(dict.fromkeys(world_books))
+    reading = progress.chapters
+    unread = set(progress.unread)
+    out = {b: (BookState(READING, reading[b]) if b in reading else
+               BookState(NOT_STARTED) if b in unread else BookState(FINISHED)) for b in books}
+    by_series: dict[str, list[tuple[float, str]]] = {}
+    for b, (key, index) in _placeable(infos, books).items():
+        by_series.setdefault(key, []).append((index, b))
+    for members in by_series.values():
+        blocked = False
+        for _index, b in sorted(members):
+            if blocked:
+                out[b] = BookState(NOT_STARTED, 0, forced=out[b].state != NOT_STARTED)
+            elif out[b].state == READING:
+                blocked = True
+    return out
+
+
+def legacy_progress(position: ReadingPosition, world_books: Iterable[str],
+                    infos: Mapping[str, BookInfo]) -> Progress:
+    """The progress list that shows exactly what a position of the older shape
+    (book, chapter, read toggles, switch) showed: off, or with no book of the
+    world, everything (every book finished); on, the book in progress at its
+    chapter, the books before it in its series finished, those after it not
+    started, and a book of unknown order finished only if it was marked read."""
+    world_books = list(world_books)
+    if not position.enabled or not position.book_id or position.book_id not in world_books:
+        return Progress()
+    relation = order_against(infos, world_books, position.book_id)
+    marked = set(position.read_books)
+    unread = [b for b, how in relation.items()
+              if how == "after" or (how == "unknown" and b not in marked)]
+    return Progress.of({position.book_id: position.chapter}, unread)
+
+
+def change_progress(world_books: Iterable[str], progress: Progress,
+                    infos: Mapping[str, BookInfo], book_id: str, state: str,
+                    chapter: int = 0) -> tuple[Progress, dict[str, str]]:
+    """The progress list after the reader sets `book_id` to `state`, with the
+    series order filled in: a book set in progress or finished makes the
+    earlier books of its series finished; a book set in progress or not
+    started makes the later ones not started. Books of unknown order are left
+    alone. Returns the new list and the other books whose state it changed
+    (id -> new state), for the note the list shows. The list is stored as it
+    is shown (`book_states`), so a book a series kept not started stays so."""
+    books = list(dict.fromkeys(world_books))
+    shown = book_states(books, progress, infos)
+    new = dict(shown)
+    new[book_id] = BookState(state, max(0, int(chapter)) if state == READING else 0)
+    placed = _placeable(infos, books)
+    if book_id in placed:
+        key, index = placed[book_id]
+        for b, (k, i) in placed.items():
+            if k != key or b == book_id:
+                continue
+            if i < index and state in (READING, FINISHED):
+                new[b] = BookState(FINISHED)
+            elif i > index and state in (READING, NOT_STARTED):
+                new[b] = BookState(NOT_STARTED)
+    after = Progress.of({b: s.chapter for b, s in new.items() if s.state == READING},
+                        [b for b, s in new.items() if s.state == NOT_STARTED])
+    final = book_states(books, after, infos)
+    filled = {b: s.state for b, s in final.items()
+              if b != book_id and s.state != shown[b].state}
+    return after, filled
+
+
+def _progress_visible(world_books: frozenset[str], progress: Progress,
+                      infos: Mapping[str, BookInfo]) -> tuple[VisibleBooks, PositionView] | None:
+    states = book_states(series_order(infos, world_books), progress, infos)
+    if all(s.state == FINISHED for s in states.values()):
+        return None
+    shown = [b for b, s in states.items() if s.state != NOT_STARTED]
+    caps = {b: max(0, s.chapter) for b, s in states.items() if s.state == READING}
+
+    def title(b: str) -> str:
+        return (infos.get(b) or BookInfo(title=b)).title
+
+    views = [PositionView(b, title(b), caps[b]) for b in states if b in caps]
+    if views:
+        view = replace(views[0], others=tuple(views[1:]))
+    else:
+        view = PositionView(None, "", 0, finished=tuple(title(b) for b in shown))
+    return VisibleBooks(shown, caps), view
+
+
 def visible_books(world_books: frozenset[str], position: ReadingPosition,
                   infos: Mapping[str, BookInfo]) -> tuple[VisibleBooks, PositionView] | None:
     """What `position` makes visible within the world's books, or None when it
-    does not apply (switched off, no book, or a book that is not in the world)."""
+    does not apply (switched off, no book, or a book that is not in the world;
+    for a progress list, every book finished)."""
+    if position.progress is not None:
+        return _progress_visible(frozenset(world_books), position.progress, infos)
     if not position.enabled or not position.book_id or position.book_id not in world_books:
         return None
     relation = order_against(infos, world_books, position.book_id)

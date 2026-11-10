@@ -113,3 +113,15 @@ test("a finished answer with a request id offers \"Report this answer\"; one wit
   render(<ChatPane ask={askWith(single as AskEvent[])} showInternals onHoverChunks={() => {}} />);
   expect(screen.queryByRole("button", { name: "Report this answer" })).toBeNull();
 });
+
+test("an empty answer the reading position held back says the reader hasn't reached it; a plain one keeps the refusal", () => {
+  const empty = (ahead: boolean) => (single as AskEvent[]).map((e) => e.type === "answer"
+    ? { ...e, result: { ...e.result, mode: "empty", claims: [], prose: [], answer_style: "claims", ahead,
+        position_note: "Answered from what you've read: up to chapter 3 of Hollow Gate" } } : e) as AskEvent[];
+  const { rerender } = render(<ChatPane ask={askWith(empty(true))} showInternals onHoverChunks={() => {}} />);
+  expect(screen.getByText(POSITION.ahead)).toBeInTheDocument();
+  expect(screen.queryByText(UI.refusal)).toBeNull();
+  rerender(<ChatPane ask={askWith(empty(false))} showInternals onHoverChunks={() => {}} />);
+  expect(screen.getByText(UI.refusal)).toBeInTheDocument();
+  expect(screen.queryByText(POSITION.ahead)).toBeNull();
+});

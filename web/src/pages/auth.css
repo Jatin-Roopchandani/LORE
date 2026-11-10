@@ -75,6 +75,9 @@
 .au .au-input[aria-invalid="true"]{border-color:var(--danger)}
 .au .au-input[aria-invalid="true"]:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 24%,transparent)}
 .au-field-error{margin:0;color:var(--danger);font-size:13.5px}
+.email-suggest{margin:0;font-size:13.5px;color:var(--muted)}
+.email-suggest b{color:var(--ink);font-weight:600}
+.email-suggest-use{background:none;border:0;padding:0;margin-left:4px;font:inherit;color:var(--accent);text-decoration:underline;cursor:pointer}
 .au .hp{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
 .au-check{display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.45;color:var(--muted);cursor:pointer}
 .au-check input{flex:none;width:18px;height:18px;margin:1px 0 0;accent-color:var(--accent);cursor:pointer}

@@ -722,8 +722,8 @@ class CodexStage:
         finally:
             try:
                 if kuzu is not None:
-                    codex_store.relink(ctx.conn, kuzu,
-                                       _DeferredLance(self._lance_factory))
+                    codex_store.relink(ctx.conn, kuzu, _DeferredLance(
+                        lambda: self._lance_factory(ctx.config)))
             finally:
                 if kuzu is not None:
                     kuzu.close()

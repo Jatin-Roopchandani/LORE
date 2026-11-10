@@ -64,8 +64,9 @@ from lore.query.scope import Scope
 from lore.query.seed import _entities, named_seeds
 from lore.query.subgraph import assemble_ranked, relevance
 from lore.query.synthesize import (
-    CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _content_words, _finish, _numbers,
-    _normalise, _overlap, _same_evidence, check_answer, shaped_claims, synthesize,
+    CHECK_SKIPPED_NOTE, PROSE_FALLBACK_NOTE, REFUSAL, _compose, _content_words, _finish, _mend,
+    _numbers, _normalise, _overlap, _same_evidence, check_answer, shaped_claims, synthesize,
+    with_opener,
 )
 from lore.query.viewpoint import load_viewpoint
 from lore.query.write import assemble, compose_sections, compose_text, split_items, verify_prose, write_answer
@@ -491,6 +492,16 @@ class Spend:
         return call
 
 
+def repair_budget(spend: Spend, spend_ok, reserve: int):
+    """The `spend_ok` a deep answer's sections ask before an ORPHAN_REPAIR round
+    (write + check): the day's reserve (`spend_ok`, None for none) and room for
+    those two requests under DEEP_MAX_REQUESTS, `reserve` more kept back."""
+    def ok() -> bool:
+        return (spend.n + 2 + reserve <= DEEP_MAX_REQUESTS
+                and (spend_ok is None or bool(spend_ok())))
+    return ok
+
+
 @dataclass
 class Registry:
     """The answer's own numbering: passages and claims from every section,
@@ -669,7 +680,8 @@ async def run_section(index: int, section: PlannedSection, vector: list[float], 
                        focus=section.focus, subject=tuple(s.name for s in subject),
                        covered=tuple(covered), skip=unseen)
     answer = await synthesize(ask, evidence, models.synthesize, mode="graph", check=models.check,
-                              write=models.write, book_titles=titles, books=dict(books), section=spec)
+                              write=models.write, book_titles=titles, books=dict(books), section=spec,
+                              spend_ok=getattr(models, "spend_ok", None))
     if not answer.claims:
         return SectionResult(None, [], [], list(evidence.edges), seeds, redundant=unseen.dropped > 0)
     # A section that also reads entities other than the subject is checked against
@@ -707,26 +719,63 @@ async def cited_prose(question: str, parts: Sequence[str], claims: Sequence[Clai
     check, or None. The sentences' claim numbers are 1-based into `claims`
     (already mapped back from the check's survivors); their passages are the
     claims' own."""
+    got, _opened = await cited_prose_opened(question, parts, claims, passages, models,
+                                            length=length, shape=shape, book_titles=book_titles,
+                                            books=books, covered=covered)
+    return got
+
+
+async def cited_prose_opened(question: str, parts: Sequence[str], claims: Sequence[Claim],
+                             passages: Sequence[Passage], models, *, length: str | None,
+                             shape: "interpret.Shape | None" = None,
+                             book_titles: dict[str, str] | None = None,
+                             books: dict[str, BookInfo] | None = None,
+                             covered: Sequence[str] = (),
+                             ) -> tuple[tuple[ProseSentence, ...] | None, bool]:
+    """`cited_prose`, and whether the prose begins with its opening (its first
+    sentence as written, or an introduction written for it): a gist without one
+    is replaced by its sections' own sentences (`short_answer`)."""
     if models.write is None or models.check is None or not claims:
-        return None
+        return None, False
     drafted = await write_answer(question, list(parts), claims, passages, models.write,
                                  book_titles=book_titles, books=books, shape=shape, length=length,
                                  covered=covered)
     if drafted is None:
-        return None
+        return None, False
     sentences = verify_prose(drafted, len(claims), [c.text for c in claims], shape)
     if not sentences:
-        return None
+        return None, False
     outcome = await check_answer(claims, passages, models.check, book_titles=book_titles,
-                                 sentences=sentences, books=books, shape=shape)
+                                 sentences=sentences, books=books, shape=shape,
+                                 opener=write_module.opener_on(length, shape))
     if not outcome.ran or outcome.sentence_ok is None:
-        return None
-    built = assemble(sentences, len(split_items(drafted)), outcome.claim_ok, outcome.sentence_ok,
-                     [c.passage for c in claims])
+        return None, False
+    sentences = with_opener(sentences, outcome)
+    passage_of = [c.passage for c in claims]
+    written = len(split_items(drafted))
+
+    def build(sents, n_written, checked, lenient=False):
+        return assemble(sents, n_written, checked.claim_ok, checked.sentence_ok, passage_of,
+                        lenient=lenient)
+
+    def kept_mask(sents, n_written, checked):
+        return sents, write_module.kept_flags(sents, checked.claim_ok, checked.sentence_ok)
+
+    built = build(sentences, written, outcome)
     if not built:
-        return None
+        return None, False
+    opened = bool(write_module.kept_flags(sentences, outcome.claim_ok, outcome.sentence_ok)[:1] == [True])
+    if write_module.orphan_repair_on():
+        # ORPHAN_REPAIR, as in synthesize._finish: one round; then GENTLE_FALLBACK and
+        # INTRO_REPAIR, else no orphan is shown.
+        built, sentences, written, outcome, opened = await _mend(
+            question, list(parts), claims, passages, models.check, models.write, book_titles,
+            books, shape, length, covered, sentences, written, outcome, (), built, build,
+            kept_mask, getattr(models, "spend_ok", None))
+        if not built:
+            return None, False
     survivors = [k for k, ok in enumerate(outcome.claim_ok, start=1) if ok]
-    return tuple(replace(s, claims=tuple(survivors[k - 1] for k in s.claims)) for s in built)
+    return tuple(replace(s, claims=tuple(survivors[k - 1] for k in s.claims)) for s in built), opened
 
 
 def _spread(sections: Sequence[AnswerSection], cap: int) -> list[tuple[int, int]]:
@@ -764,20 +813,53 @@ async def short_answer(question: str, sections: Sequence[AnswerSection], claims:
             retrieval=tuple((s.heading, 0, True) for s in sections),
             claim_parts=tuple(frozenset({i}) for i, _ in picked))
     try:
-        got = await cited_prose(question, [question], [claims[k - 1] for k in numbers], passages,
-                                models, length="short", shape=shape, book_titles=book_titles,
-                                books=books)
+        got, opened = await cited_prose_opened(
+            question, [question], [claims[k - 1] for k in numbers], passages, models,
+            length="short", shape=shape, book_titles=book_titles, books=books)
     except Exception:  # noqa: BLE001 -- the sections are written; the short answer is an extra
         log.exception("the short answer failed")
-        got = None
-    reading = next((s for s in got or () if s.kind == "reading"), None)
-    chosen = ([reading] if reading else []) + [s for s in got or () if s.kind == "fact"]
-    chosen = chosen[:SHORT_ANSWER_SENTENCES]
+        got, opened = None, False
+    got = tuple(replace(s, claims=tuple(numbers[k - 1] for k in s.claims)) for s in got or ())
+    reading = next((s for s in got if s.kind == "reading"), None)
+    facts = [s for s in got if s.kind == "fact"]
+    if write_module.intro_repair_on() and not opened:
+        # INTRO_REPAIR: a gist with no supported opening is not shown as a list of
+        # details; the sections' own opening sentences, checked already, stand in.
+        facts = section_opening(sections) or facts
+    chosen = (([reading] if reading else []) + facts)[:SHORT_ANSWER_SENTENCES]
     if not chosen:
         return (ProseSentence(text=NO_SUMMARY_LINE, claims=(), passages=(), new_paragraph=True,
                               kind="limit", short=True),)
-    return tuple(replace(s, claims=tuple(numbers[k - 1] for k in s.claims),
-                         new_paragraph=i == 0, short=True) for i, s in enumerate(chosen))
+    return tuple(replace(s, new_paragraph=i == 0, short=True, label="")
+                 for i, s in enumerate(chosen))
+
+
+# INTRO_REPAIR: how many of the sections' first sentences stand in for a gist.
+SECTION_OPENING_SENTENCES = 3
+
+
+def section_opening(sections: Sequence[AnswerSection],
+                    most: int = SECTION_OPENING_SENTENCES) -> list[ProseSentence]:
+    """The first supported sentences of the sections' prose, in order: from the
+    first section shown as prose, up to `most`, stopping at its next paragraph
+    once two are taken, and going on into the next section's opening when it has
+    fewer than two. Only fact sentences that cite claims; none that leans on a
+    sentence before it is taken first. [] when no section is prose."""
+    out: list[ProseSentence] = []
+    for section in sections:
+        if section.style != "prose" or section.kind != "section":
+            continue
+        for i, s in enumerate(section.prose):
+            if s.kind != "fact" or not s.claims:
+                break
+            if i == 0 and write_module.leans_back(s.text):
+                break
+            if len(out) >= most or (out and i > 0 and s.new_paragraph and len(out) >= 2):
+                return out
+            out.append(s)
+        if len(out) >= 2:
+            return out
+    return out
 
 
 # --- the whole answer -------------------------------------------------------------
@@ -814,6 +896,9 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
     models = replace(models, synthesize=spend.counted(models.synthesize),
                      write=spend.counted(models.write) if models.write else None,
                      check=spend.counted(models.check) if models.check else None)
+    day_ok = models.spend_ok  # starting a section asks the day's reserve alone
+    repair_ok = repair_budget(spend, day_ok, TAIL_REQUESTS)
+    models = replace(models, spend_ok=repair_ok)
     scope_books = book_ids or scope.books
     focal = None
     subject: list[SeedEntity] = []
@@ -865,7 +950,7 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
         reason = None
         if spend.n + SECTION_REQUESTS + tail > DEEP_MAX_REQUESTS:
             reason = "budget"
-        elif models.spend_ok is not None and not models.spend_ok():
+        elif day_ok is not None and not day_ok():
             reason = "reserve"
         if reason:
             skipped.append(section.heading)
@@ -917,7 +1002,10 @@ async def answer_deep(conn, kuzu, lance, question: str, models, *, scope: Scope,
     emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in passages],
          edge_keys=[edge_key(e) for e in dict.fromkeys(edges)])
     # The short answer, from the claims of all the sections.
-    short = await short_answer(question, done, claims, passages, models,
+    # Its own repair rounds (an orphan, an introduction) keep nothing back: the
+    # tail they were held for is this call.
+    short = await short_answer(question, done, claims, passages,
+                               replace(models, spend_ok=repair_budget(spend, day_ok, 0)),
                                analytical=bool(getattr(raw, "analytical", False)),
                                book_titles=titles, books=dict(books))
     emit(on_event, "short_answer", prose=list(short), text=compose_text(short),
@@ -1079,6 +1167,8 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
     models = replace(models, synthesize=generate,
                      write=spend.counted(models.write) if models.write else None,
                      check=spend.counted(models.check) if models.check else None)
+    day_ok = models.spend_ok
+    models = replace(models, spend_ok=repair_budget(spend, day_ok, 0))
     books = dict(books or {})
 
     def answer(text: str, *extra: str | None, claims=(), **more) -> Answer:
@@ -1096,7 +1186,8 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
     # The reading phase: the writer sees every claim and the check judges them all.
     kept, _cut, prose, skipped, _prose_note, _unanswered, _gaps = await _finish(
         question, list(shape.parts), gathered.kept, evidence, models.check, models.write,
-        book_titles, part_claims=None, books=books, shape=shape)
+        book_titles, part_claims=None, books=books, shape=shape,
+        spend_ok=getattr(models, "spend_ok", None))
     if not kept:
         return answer(REFUSAL)
     at = [gathered.kept.index(c) for c in kept]  # position in `gathered.kept` of each survivor
@@ -1154,7 +1245,7 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
         reason = None
         if spend.n + SECTION_REQUESTS - 1 > DEEP_MAX_REQUESTS:
             reason = "budget"
-        elif models.spend_ok is not None and not models.spend_ok():
+        elif day_ok is not None and not day_ok():
             reason = "reserve"
         if reason:
             not_written.append(heading)
@@ -1196,6 +1287,22 @@ async def answer_lenses(question: str, plan, retrieval, evidence: Evidence, mode
                                                    fresh(mine), style),
              group=group_of[ri], group_title=group_titles[ri], title=titles[ri])
         emit(on_event, "step", name="section", state="done", part=ri, detail=f"{len(owned)} claims")
+    if (short and write_module.intro_repair_on()
+            and all(getattr(x, "kind", "") == "limit" for x in short)):
+        # INTRO_REPAIR for a lens answer: no reading (or fact summary) passed, so the
+        # short answer would be only code's "not enough for a clear analysis" line
+        # while the sections below hold checked prose. Their opening sentences stand
+        # in; the UI replaces the short answer it already showed.
+        opening = section_opening(sections)
+        if opening:
+            # "No clear verdict" is an honest answer to a yes/no question: it stays,
+            # and the openings follow it. "Not enough for a clear analysis" is not
+            # true when the sections hold checked prose: the openings replace it.
+            kept = [x for x in short if x.text == interpret.NO_VERDICT_LINE]
+            short = tuple(replace(x, new_paragraph=i == 0, short=True, label="")
+                          for i, x in enumerate([*kept, *opening]))
+            emit(on_event, "short_answer", prose=list(short), text=compose_text(short),
+                 claims=[c.model_dump() for c in final], passages=[])
     if not sections and not not_written:
         if failures:
             raise failures[-1]

@@ -30,10 +30,11 @@ import { reportKeyProblem } from "./keyProblem";
 // `world`: a world id as a string, or "all" (the same value the graph calls take).
 // `depth`: auto, deep or focused; left out of the body when not given.
 // `chatId`: the chat this question follows up; the server loads that chat's earlier turns itself (never sent from here).
-export async function* streamAsk(question: string, signal: AbortSignal, world?: string, depth?: Depth, chatId?: string): AsyncGenerator<AskEvent> {
+// `spoilers`: this one question ignores the reading progress (`?spoilers=1`), as the ask box's override asks.
+export async function* streamAsk(question: string, signal: AbortSignal, world?: string, depth?: Depth, chatId?: string, spoilers?: boolean): AsyncGenerator<AskEvent> {
   let response: Response;
   try {
-    response = await fetch("/api/ask", {
+    response = await fetch(spoilers ? "/api/ask?spoilers=1" : "/api/ask", {
       method: "POST", signal,
       headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...csrfHeaders() },
       body: JSON.stringify({ question, ...(world ? { world } : {}), ...(depth ? { depth } : {}), ...(chatId ? { chat_id: chatId } : {}) }),
@@ -71,7 +72,7 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
       const parsed = parseSse(buffer + value);
       buffer = parsed.rest;
       for (const e of parsed.events) {
-        if (e.type === "answer" || e.type === "error") finished = true;
+        if (e.type === "answer" || e.type === "error" || e.type === "stopped") finished = true;
         if (e.type === "error") reportKeyProblem(e.error.code);
         yield e;
       }
@@ -80,6 +81,19 @@ export async function* streamAsk(question: string, signal: AbortSignal, world?: 
     if (signal.aborted) return;
   }
   if (!finished && !signal.aborted) yield errorEvent("interrupted", "");
+}
+
+// Stop: asks the server to cancel the question (no further model calls), as well as the page aborting its stream,
+// because a proxy (Cloudflare Tunnel) may not tell the server the stream was dropped. Best effort: a question already
+// over (or not this user's) is a 404, and nothing here waits on it.
+export async function cancelAsk(requestId: string): Promise<boolean> {
+  try {
+    const r = await fetch(`/api/ask/${encodeURIComponent(requestId)}/cancel`, {
+      method: "POST", keepalive: true, headers: { Accept: "application/json", ...csrfHeaders() } });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }
 
 // Where the browser goes when the server says the session is over (multi-user mode only). A seam for tests.

@@ -33,7 +33,8 @@ export const DEEP = {
   // The one muted line that ends an answer with sections that failed or found nothing (they are not shown).
   unwritten: (n: number) => `${n} ${n === 1 ? "section" : "sections"} couldn't be written`,
   skipped: { budget: "Not written: the request limit for one answer was reached.",
-    reserve: "Not written: the rest of today's allowance is kept for answering other questions." },
+    reserve: "Not written: the rest of today's allowance is kept for answering other questions.",
+    stopped: "Not written: you stopped the answer." },
   requests: "Requests used",
   requestCount: (n: number) => `${n} ${n === 1 ? "request" : "requests"}`,
 };
@@ -60,29 +61,51 @@ export const STEPS_DEEP = {
   partsLabel: "Parts of the question",
 };
 
-// The reading position: the header control, its badge and the note an answer carries.
+// "A, B and C".
+const listOf = (items: string[]) =>
+  items.length <= 2 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+
+// The reading progress: the header control, its list of books, the line under it and the note an answer carries.
 export const POSITION = {
-  label: "Reading position",
-  switchLabel: "Limit everything to what I have read",
-  bookLabel: "The book you are reading",
-  chapterLabel: "Last chapter you finished",
-  chapterValue: (n: number, max: number, heading?: string | null) =>
-    n === 0 ? `Not started (${max} chapters)` : `Ch. ${n} of ${max}${heading ? ` \u00b7 ${heading}` : ""}`,
-  bookOption: (title: string, index: number | null) => (index == null ? title : `${title} (book ${index})`),
-  readHeading: "Books of unknown order",
-  readHint: "LORE never guesses the order of books that are not in one series. Mark the ones you have read.",
-  readLabel: (title: string) => `I have read ${title}`,
-  badge: (title: string, chapter: number) => `Up to ${title} ch. ${chapter}`,
-  chapterShort: (n: number) => (n === 0 ? "start" : `ch. ${n}`),
+  label: "Reading progress",
+  heading: (world: string) => `Your progress \u00b7 ${world}`,
+  allWorlds: "All worlds",
+  states: { finished: "Finished", reading: "Reading", not_started: "Not started" } as Record<"finished" | "reading" | "not_started", string>,
+  // A book's place in its series, under its title (the series is not named again when the world bears its name).
+  seriesTag: (series: string, index: number, sameAsWorld: boolean) => (sameAsWorld ? `Book ${index}` : `${series} · book ${index}`),
+  chapterLabel: "Chapter",
+  chapterLabelFor: (title: string) => `Chapter you have reached in ${title}`,
+  chapterOption: (n: number, heading?: string | null) => (n === 0 ? "Before chapter 1" : heading ? `${n} \u00b7 ${heading}` : `${n}`),
+  forced: "Later in the series than the book you\u2019re reading.",
+  filled: (parts: { title: string; state: "finished" | "reading" | "not_started" }[]) => {
+    const by = (s: "finished" | "not_started") => parts.filter((p) => p.state === s).map((p) => p.title);
+    const said = [by("finished").length ? `${listOf(by("finished"))} as finished` : "",
+      by("not_started").length ? `${listOf(by("not_started"))} as not started` : ""].filter(Boolean);
+    return `Following the series order, also marked ${said.join("; ")}.`;
+  },
+  // The line under the list: what LORE uses.
+  lead: "LORE only uses what you\u2019ve read.",
+  stopAt: (places: { chapter: number; title: string }[]) =>
+    `Answers, graph and profiles stop at ${listOf(places.map((p) => (p.chapter === 0 ? `the start of ${p.title}` : `chapter ${p.chapter} of ${p.title}`)))}.`,
+  leaveOut: (titles: string[]) => `Answers, graph and profiles leave out ${listOf(titles)}.`,
+  usesAll: "LORE uses all of these books.",
+  usesNone: "Nothing is used until you start a book.",
+  // The top-bar control.
+  chapterBadge: (n: number, title: string) => (n === 0 ? `Start \u00b7 ${title}` : `Ch. ${n} \u00b7 ${title}`),
+  more: (k: number) => `+${k}`,
+  allRead: "All read",
+  someRead: (finished: number, total: number) => `${finished} of ${total} read`,
+  buttonLabel: (summary: string) => `Reading progress: ${summary}`,
+  // The ask box: one question with everything.
+  spoilerToggle: "Show spoilers for this question",
+  // An empty answer the reading position held back: the books further on answer it.
+  ahead: "You haven\u2019t reached the part of the book that answers this yet. Tick \u201cShow spoilers for this question\u201d to see it anyway.",
+  spoilerOn: "This question uses every book, past your progress. It goes back to your progress after.",
   noteLabel: "Reading position note",
   summaryHidden: "The summary covers the whole story, so it is hidden while a reading position is on. These are the statements from what you have read.",
-  badgeLabel: (title: string, chapter: number, heading?: string | null) =>
-    `Reading position on: up to ${title}, chapter ${chapter}${heading ? ` (${heading})` : ""}`,
-  chooseWorld: "Choose a world to set a reading position. Positions already set still apply.",
-  off: "Everything is shown, spoilers included.",
-  on: "The graph, entity panels and answers stay within what you have read.",
   loading: "Loading\u2026",
-  failed: "The reading position could not be saved.",
+  failed: "Your progress could not be saved.",
+  loadFailed: "Your progress could not be loaded.",
   noBooks: "This world has no books yet.",
 };
 
@@ -175,6 +198,12 @@ export const EDGE_LABEL = {
 
 export const UI = {
   askPlaceholder: "Ask about your books…",
+  ask: "Ask",
+  // While an answer streams the Ask button is Stop (Esc in the ask box does the same).
+  stop: "Stop",
+  stopHint: "Stop this answer (Esc)",
+  stopped: "Stopped",
+  stoppedNote: "You stopped this answer. Ask again to continue.",
   noBooks: "Pick at least one book to see its part of the graph.",
   refusal: "The books don't contain enough to answer that. The graph shows where LORE looked.",
   evidence: (n: number) => `Evidence (${n} ${n === 1 ? "claim" : "claims"})`,
@@ -343,6 +372,18 @@ export const EXPLORE = {
   resetFilters: "Show everything",
   kindLabel: { Character: "Character", Place: "Place", Faction: "Group", Object: "Object", Concept: "Concept", Event: "Event" } as Record<string, string>,
   filteredOut: (nodes: number) => `${nth(nodes, "entity", "entities")} hidden by filters`,
+  // The "uncategorized" relationships (the extractor's catch-all), hidden unless this chip is pressed.
+  linksLabel: "Show links", uncategorized: "Uncategorized",
+  uncategorizedHint: (n: number) => `${nth(n, "relationship", "relationships")} the extractor could not name`,
+  // A big answer's graph: focused on what the answer cites, or everything its search found.
+  focusLabel: "Graph detail",
+  focused: "Focused",
+  showAll: (total: number) => `Show all ${total}`,
+  focusAgain: (shown: number) => `Focus (${shown})`,
+  focusedHint: (shown: number, total: number) => `Showing the ${shown} entities the answer rests on, of ${total}`,
+  fullHint: "Showing everything the search found",
+  // A section picked in the answer's contents (or scrolled to): its part of the graph stands out.
+  sectionShown: (heading: string) => `Section: ${heading}`,
 };
 
 // The history sidebar: earlier questions, grouped by when they were asked.
@@ -445,6 +486,12 @@ export const THEME = {
 };
 
 // Sign-in, the waitlist and the public pages (multi-user mode).
+// "Did you mean …?" under email fields (emailSuggest.ts).
+export const EMAIL_SUGGEST = {
+  didYouMean: "Did you mean",
+  use: "Use it",
+};
+
 export const AUTH = {
   brand: "LORE",
   brandTag: "Reader",
@@ -499,10 +546,12 @@ export const AUTH = {
   haveAccount: "Already invited?",
   waitlistUnknown: "We don't have an account for that sign-in yet. LORE is invite-only while it's in beta, so request an invite below.",
   readingLabel: "What are you reading? (optional)",
-  consentLabel: "I agree that LORE may email me about my invite request.",
+  // Pressing the button is the consent: the line says plainly what it allows.
+  consentLine: "We’ll email you once, when your invite is ready. Nothing else.",
   submit: "Request an invite",
   submitting: "Sending…",
   thanks: "Thanks. We'll email you when there's a place for you.",
+  spamHint: "Your invite will come from login@jrvn.site. LORE is new, so it may land in your spam folder: if it isn't in your inbox, look there and mark it \"Not spam\".",
   signOut: "Sign out",
   account: "Account",
   admin: "Admin",
@@ -642,7 +691,7 @@ export const ADMIN = {
   status: { pending: "Pending", invited: "Invited", declined: "Declined" } as Record<string, string>,
   approve: "Approve",
   decline: "Decline",
-  approved: (email: string) => `Invitation sent to ${email}.`,
+  approved: (email: string) => `Invitation sent to ${email}. Mail from a new domain often lands in spam, so you may want to tell them to check there.`,
   declined: (email: string) => `Declined ${email}.`,
   actionFailed: "That didn't work. Nothing was changed.",
   invites: "Invites",
@@ -802,10 +851,9 @@ export const SETTINGS = {
   world: "World to open in",
   worldHint: "The same choice as the World menu in the top bar.",
   allWorlds: "All worlds",
-  position: "Reading position",
-  positionHint: "Hide what comes after the chapter you've reached. It's set per world, from the bookmark button in the top bar.",
-  positionOpen: "Set reading position",
-  positionNeedsWorld: "Choose one world first: a reading position belongs to a world.",
+  position: "Reading progress",
+  positionHint: "Mark each book finished, reading (with the chapter you've reached) or not started. LORE only uses what you've read; every book counts as finished until you say otherwise.",
+  positionOpen: "Open your progress",
   steps: "Show how this was found",
   stepsHint: "Open the steps panel under each answer by default.",
   depth: "Default answer depth",
@@ -1001,7 +1049,7 @@ export const HOME = {
     { num: "03", title: "Explore the graph", body: "Characters, places and groups, and how they connect. Click any link to read the passage behind it.",
       eg: ["Watson —", { i: "meets again" }, "→ Stamford —", { i: "introduces" }, "→ Holmes"] as Seg[] },
     { num: "04", title: "Spoiler-safe", body: "Tell LORE which chapter you’re on. Answers, the graph and every character profile stop there, so nothing ahead leaks out.",
-      eg: ["Reading position: ", { b: "ch. 2" }, " · nothing past it"] as Seg[] },
+      eg: ["Your progress: ", { b: "Ch. 2" }, " · nothing past it"] as Seg[] },
     { num: "05", title: "Your private library", body: "Your books stay in your own library, read with your own key. Nothing is shared between readers.",
       eg: ["EPUB or PDF · books you own"] as Seg[] },
   ] as { num: string; title: string; body: string; eg: Seg[]; egNote?: string }[],
@@ -1019,13 +1067,13 @@ export const HOME = {
   readingLabel: "What are you reading?",
   optional: "(optional)",
   readingPlaceholder: "The Wheel of Time, book 4",
-  consent: "Email me when my invite is ready. Nothing else.",
+  consentLine: "We’ll email you once, when your invite is ready. Nothing else.",
   submit: "Request an invite",
   sending: "Sending…",
   done: "You’re on the list ✓",
+  doneNote: "We’ll email your invite from login@jrvn.site. LORE is new, so check your spam folder if it isn’t in your inbox.",
   // The form's own messages (the mockup's form only said thanks).
   invalidEmail: "That doesn't look like an email address. Check it and try again.",
-  needConsent: "Tick the box so we can email you when your invite is ready.",
   rateLimited: "Too many requests from here just now. Please try again in a little while.",
   offline: "We couldn't reach LORE. Check your connection and try again.",
   failed: "Something went wrong sending that. Please try again.",

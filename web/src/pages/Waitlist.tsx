@@ -3,12 +3,12 @@ import { authApi } from "../api";
 import { AUTH } from "../messages";
 import { AgreeLine, AuthShell, PrimaryButton } from "./AuthShell";
 import { CheckIcon } from "./authIcons";
+import { EmailSuggestion } from "../components/EmailSuggestion";
 
 // Also where a sign-in with no account and no invite lands, so it explains itself.
 export function Waitlist() {
   const [email, setEmail] = useState("");
   const [reading, setReading] = useState("");
-  const [consent, setConsent] = useState(false);
   const [honeypot, setHoneypot] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const doneHeading = useRef<HTMLHeadingElement>(null);
@@ -16,7 +16,7 @@ export function Waitlist() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setState("sending");
-    await authApi.joinWaitlist(email.trim(), reading.trim(), consent, honeypot);
+    await authApi.joinWaitlist(email.trim(), reading.trim(), true, honeypot);
     setState("done"); // the server answers 202 whatever happened, and so does this page
   };
   if (state === "done") {
@@ -26,6 +26,7 @@ export function Waitlist() {
         <div className="au-head">
           <h1 ref={doneHeading} tabIndex={-1}>{AUTH.waitlistDone}</h1>
           <p className="au-sub" role="status">{AUTH.thanks}</p>
+          <p className="au-fine">{AUTH.spamHint}</p>
         </div>
         <p className="au-switch">{AUTH.haveAccount} <a href="/signin">{AUTH.signIn}</a></p>
       </AuthShell>
@@ -42,6 +43,7 @@ export function Waitlist() {
           <label htmlFor="waitlist-email">{AUTH.emailLabel}</label>
           <input id="waitlist-email" className="au-input" type="email" name="email" autoComplete="email" required
             placeholder={AUTH.emailPlaceholder} value={email} onChange={(e) => setEmail(e.target.value)} />
+          <EmailSuggestion email={email} onUse={setEmail} />
         </div>
         <div className="au-field">
           <label htmlFor="waitlist-reading">{AUTH.readingLabel}</label>
@@ -52,11 +54,8 @@ export function Waitlist() {
         <div className="hp" aria-hidden="true">
           <input type="text" name="website" tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
         </div>
-        <label className="au-check">
-          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} required />
-          <span>{AUTH.consentLabel}</span>
-        </label>
-        <PrimaryButton busy={state === "sending"} busyLabel={AUTH.submitting} disabled={!consent}>{AUTH.submit}</PrimaryButton>
+        <PrimaryButton busy={state === "sending"} busyLabel={AUTH.submitting}>{AUTH.submit}</PrimaryButton>
+        <p className="au-fine">{AUTH.consentLine}</p>
       </form>
       <AgreeLine />
       <p className="au-switch">{AUTH.haveAccount} <a href="/signin">{AUTH.signIn}</a></p>

@@ -73,6 +73,58 @@ ARM_SETTINGS = {
     # inference_in_fact and its repair (write.FACT_FIDELITY).
     "fact_fidelity": ("lore.query.write", "FACT_FIDELITY",
                       lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A kept sentence that leans on one the check removed ("He ran ..."), or a
+    # removed opening: one repair round, else the claim list (write.ORPHAN_REPAIR).
+    "orphan_repair": ("lore.query.write", "ORPHAN_REPAIR",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # The writer writes for a reader: connected paragraphs, fuller sentences,
+    # depth, no "The facts show", sentences that stand if the one before is cut,
+    # and a section opening that names its subject (write.READER_PROSE).
+    "reader_prose": ("lore.query.write", "READER_PROSE",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # The check judges an introduction or summary sentence against the union of
+    # the claims it cites (synthesize.SUMMARY_CHECK).
+    "summary_check": ("lore.query.synthesize", "SUMMARY_CHECK",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # An opening cites every claim it sums up: the writer is told so, and the check
+    # judges the opening against all the unit's claims and names those supporting
+    # it, which become its citations (write.OPENER_CITES).
+    "opener_cites": ("lore.query.write", "OPENER_CITES",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # An opening still rejected gets one focused introduction call, checked once;
+    # a gist with no opening takes its sections' first sentences (write.INTRO_REPAIR).
+    "intro_repair": ("lore.query.write", "INTRO_REPAIR",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A failed orphan repair keeps the prose: the repaired draft minus its rejects,
+    # else the first draft minus rejects and orphans, the claim list last
+    # (write.GENTLE_FALLBACK).
+    "gentle_fallback": ("lore.query.write", "GENTLE_FALLBACK",
+                        lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Events in story order in narrative prose: the writer rule, then code moves a
+    # sentence told after a later event back, else one repair round
+    # (write.STORY_ORDER_PROSE).
+    "story_order_prose": ("lore.query.write", "STORY_ORDER_PROSE",
+                          lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # For an event question, the passage just before a cited passage that opens
+    # mid-scene joins the evidence as its setup (scene.SCENE_SETUP).
+    "scene_setup": ("lore.query.scene", "SCENE_SETUP",
+                    lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A written sentence keeps who did what to whom, and how often: the writer rule
+    # and the sentence check (synthesize.ATTRIBUTION_FIDELITY).
+    "attribution_fidelity": ("lore.query.synthesize", "ATTRIBUTION_FIDELITY",
+                             lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # No shown sentence restates an earlier one; COVERAGE cites a claim a shown
+    # sentence already says instead of placing it (synthesize.DEDUP_SENTENCES).
+    "dedup_sentences": ("lore.query.synthesize", "DEDUP_SENTENCES",
+                        lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # The check gives its reason before its verdict, in the schema and the prompt
+    # (synthesize.REASON_FIRST).
+    "reason_first": ("lore.query.synthesize", "REASON_FIRST",
+                     lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # A rejection whose own reason affirms the claim is asked again, once
+    # (synthesize.VERDICT_GUARD).
+    "verdict_guard": ("lore.query.synthesize", "VERDICT_GUARD",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     # Story order, own words and gaps in the writer and the check.
     "story_order": ("lore.query.write", "STORY_ORDER",
                     lambda v: v.lower() in ("1", "true", "yes", "on")),
@@ -121,6 +173,12 @@ ARM_SETTINGS = {
                          lambda v: v.lower() in ("1", "true", "yes", "on")),
     "story_order_list": ("lore.query.synthesize", "STORY_ORDER_LIST",
                          lambda v: v.lower() in ("1", "true", "yes", "on")),
+    # Later check rounds keep the first round's claim verdicts; the claim check
+    # treats a quote as a pointer into its passage.
+    "carry_verdicts": ("lore.query.synthesize", "CARRY_VERDICTS",
+                       lambda v: v.lower() in ("1", "true", "yes", "on")),
+    "quote_pointer": ("lore.query.synthesize", "QUOTE_POINTER",
+                      lambda v: v.lower() in ("1", "true", "yes", "on")),
     "identity_search": ("lore.query.hubselect", "SEARCH_IDENTITY_LINKS",
                         lambda v: v.lower() in ("1", "true", "yes", "on")),
     "identity_links": ("lore.query.seed", "FOLLOW_IDENTITY_LINKS",

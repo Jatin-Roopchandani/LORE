@@ -19,6 +19,7 @@ from lore.inference.ollama import OllamaProvider
 from lore.ingest.registry import book_rows, list_books
 from lore.query import deep as deep_module
 from lore.query import recap as recap_module
+from lore.query import scene as scene_module
 from lore.query import visible as visible_module
 from lore.query import interpret as interpret_module
 from lore.query import judge as judge_module
@@ -405,6 +406,8 @@ async def _synthesize(question, evidence, models: QueryModels, *,
         asked = True
         return await models.synthesize(prompt, schema)
 
+    # ORPHAN_REPAIR asks the day's reserve before its one extra round.
+    kwargs.setdefault("spend_ok", getattr(models, "spend_ok", None))
     if sub_questions is None:
         answer = await synthesize(question, evidence, generate, check=models.check,
                                   write=models.write, **kwargs)
@@ -728,7 +731,36 @@ async def answer_question(
     if rewrites:
         answer = replace(answer, standalone=rewrites[-1])
     note = visible_module.position_note([s.position for s in scopes if s.position])
-    return replace(answer, position_note=note) if note else answer
+    if not note:
+        return answer
+    answer = replace(answer, position_note=note)
+    if (AHEAD_CHECK and answer.mode == "empty" and not answer.claims
+            and await _ahead(lance, answer.standalone or question, models,
+                             scopes, resolve_scopes(conn, world, spoilers=True))):
+        answer = replace(answer, text=AHEAD, ahead=True)
+    return answer
+
+
+# An empty answer under a reading position says whether the books further on
+# would answer it ("you haven't reached that part yet") rather than that the
+# books do not contain it. One extra vector search; no model call.
+AHEAD_CHECK = True
+AHEAD = ("You haven't reached the part of the book that answers this yet. "
+         "Tick \"Show spoilers for this question\" to see it anyway.")
+
+
+async def _ahead(lance, question: str, models: QueryModels,
+                 limited: list[Scope], unlimited: list[Scope]) -> bool:
+    """Whether nothing within the reading position is near `question` but
+    something past it is, by the relevance floor the answer path starts from."""
+    vector = await embed_question(question, models.embed)
+
+    def best(scopes: list[Scope]) -> float:
+        return max((_cosine(row) for scope in scopes
+                    for row in search_chunks(lance, vector, CANDIDATE_K, book_ids=scope.books)),
+                   default=float("-inf"))
+
+    return best(limited) < RELEVANCE_FLOOR <= best(unlimited)
 
 
 async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: QueryModels, *,
@@ -1044,6 +1076,10 @@ async def _answer(conn: sqlite3.Connection, kuzu, lance, question: str, models: 
                                max_chars=models.evidence_chars,
                                score_lists=score_lists,
                                book_fair=book_fair, part_books=named_books, visible=seen,
+                               # SCENE_SETUP: an event question reads a cited scene's setup.
+                               **({"scene_setup": True} if scene_module.SCENE_SETUP
+                                  and not shaped_plan and scene_module.event_question(question)
+                                  else {}),
                                **timelines)
     emit(on_event, "evidence", chunk_ids=[p.chunk_id for p in evidence.passages],
          edge_keys=[edge_key(e) for e in evidence.edges])

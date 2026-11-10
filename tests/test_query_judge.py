@@ -20,6 +20,7 @@ from lore.query.synthesize import Faithfulness, _build_prompt, faithfulness_prom
 from lore.query.models import Evidence
 from lore.query.write import Sentence, writer_prompt
 from tests.test_query_story import BOOKS, CS, PS, TITLES
+from tests.precision_pins import before_prose_precision
 
 GOLDEN = json.loads((Path(__file__).parent / "golden" / "judgements_off.json").read_text())
 Q = "Who is the most compelling figure in the Second Volume, except Rin?"
@@ -301,8 +302,15 @@ def test_without_beats_the_given_order_stands(tmp_path):
 # ---- what the removed switch used to change is what it was before ----------------
 
 def test_the_prompts_and_schemas_are_the_pre_judgement_ones(monkeypatch):
+    before_prose_precision(monkeypatch)  # pinned before prose-precision
     monkeypatch.setattr(w, "COVERAGE", False)  # pinned before coverage and fact fidelity
     monkeypatch.setattr(w, "FACT_FIDELITY", False)
+    monkeypatch.setattr(w, "READER_PROSE", False)  # pinned before orphan-repair
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "SUMMARY_CHECK", False)
+    monkeypatch.setattr(__import__("lore.query.synthesize", fromlist=["x"]), "QUOTE_POINTER", False)
+    monkeypatch.setattr(w, "OPENER_CITES", False)  # pinned before intro-reliability
+    monkeypatch.setattr(w, "STORY_ORDER_PROSE", False)  # pinned before order-and-setup
+    monkeypatch.setattr("lore.query.synthesize.ATTRIBUTION_FIDELITY", False)
     sents = [Sentence(text="Rin met a teacher.", claims=[1, 2]),
              Sentence(text="This suggests commitment.", claims=[2, 3], kind="reading")]
     assert _build_prompt(Q, EV, TITLES, books=BOOKS) == GOLDEN["claims_whole"]
