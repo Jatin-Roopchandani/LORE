@@ -15,7 +15,7 @@ import logging
 from datetime import timedelta
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -82,8 +82,19 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
 
     # --- the public waitlist -------------------------------------------
 
+    def notify(email: str, reading: str | None) -> None:
+        """The owner's note of a new request; best effort, after the answer is sent."""
+        text = (f"{email} asked for an invite to LORE.\n\n"
+                f"Reading: {reading or '(not given)'}\n\n"
+                f"Approve or decline: {settings.origin}/admin\n")
+        try:
+            ctx.mailer.send(to=settings.notify_email,
+                            subject=f"LORE invite request: {email}", text=text)
+        except MailError as exc:
+            log.warning("waitlist notification not sent: %s", exc)
+
     @router.post("/api/waitlist", status_code=202)
-    def join_waitlist(body: WaitlistBody, request: Request):
+    def join_waitlist(body: WaitlistBody, request: Request, background: BackgroundTasks):
         """Ask for an invite. Always 202, whatever happened (stored, a
         duplicate, a honeypot, no consent, a bad address, rate limited), so a
         bot learns nothing from the answer."""
@@ -105,6 +116,9 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
                 db.add(Waitlist(email=email, reading=reading, created_at=now,
                                 status=PENDING))
             db.commit()
+        if not known and settings.notify_email:
+            # Sent after the response, so a new request answers as fast as a duplicate.
+            background.add_task(notify, email, reading)
         return accepted
 
     # --- admin ---------------------------------------------------------
