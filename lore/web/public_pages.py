@@ -25,7 +25,9 @@ PAGES: dict[str, tuple[str, str]] = {
                "The few rules of LORE's private beta: in plain English."),
 }
 SIGNED_IN = '<meta name="lore-signed-in" content="1">'
-OG_IMAGE = "/og.png"  # web/public/og.png, 1200 x 630, drawn from the hero
+# web/public/og.png, 1200 x 630, photographed from the hero (web/scripts/og-image.mjs). Bump the
+# version whenever the image changes: link previews (LinkedIn, X, Slack) cache it by its address.
+OG_IMAGE = "/og.png?v=2"
 _TITLE = re.compile(r"<title>.*?</title>", re.S)
 
 

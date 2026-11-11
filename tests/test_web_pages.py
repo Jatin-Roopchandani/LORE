@@ -117,7 +117,7 @@ def test_the_public_pages_carry_their_title_description_and_open_graph_tags(env,
     assert '<meta property="og:description" content="' in html
     assert '<meta property="og:type" content="website">' in html
     assert f'<meta property="og:url" content="{BASE_URL}{path}">' in html
-    assert f'<meta property="og:image" content="{BASE_URL}/og.png">' in html
+    assert f'<meta property="og:image" content="{BASE_URL}/og.png?v=2">' in html
     assert '<meta name="twitter:card" content="summary_large_image">' in html
     assert MARK in html and "<div id=root>" in html
     # Nothing a strict CSP (no inline scripts) would refuse: the homepage's one script
