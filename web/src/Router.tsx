@@ -13,6 +13,8 @@ const App = lazy(() => import("./App"));
 // The homepage, privacy and terms share a chunk of their own, with their CSS and the two extra font weights.
 const Home = lazy(() => import("./pages/home/Home"));
 const Legal = lazy(() => import("./pages/home/Legal"));
+// The blog, its posts and the FAQ: their own chunk, with the Markdown they render.
+const Blog = lazy(() => import("./pages/blog/Blog"));
 
 export default function Router({ pathname = window.location.pathname, multi = isMulti() }: { pathname?: string; multi?: boolean }) {
   switch (pageFor(pathname, multi)) {
@@ -25,6 +27,9 @@ export default function Router({ pathname = window.location.pathname, multi = is
     case "admin": return <Admin />;
     case "privacy": return <Suspense fallback={null}><Legal kind="privacy" /></Suspense>;
     case "terms": return <Suspense fallback={null}><Legal kind="terms" /></Suspense>;
+    case "blog": return <Suspense fallback={null}><Blog page={{ kind: "index" }} /></Suspense>;
+    case "faq": return <Suspense fallback={null}><Blog page={{ kind: "faq" }} /></Suspense>;
+    case "post": return <Suspense fallback={null}><Blog page={{ kind: "post", slug: pathname.replace(/\/+$/, "").slice("/blog/".length) }} /></Suspense>;
     default: return <PageShell><p>{AUTH.notFound}</p><a href="/">{AUTH.back}</a></PageShell>;
   }
 }
