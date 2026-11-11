@@ -8,11 +8,30 @@ import { Writable } from "node:stream";
 import { StrictMode } from "react";
 import { renderToPipeableStream } from "react-dom/server";
 import Router from "../src/Router";
+import { FAQ, POSTS } from "../src/pages/blog/content";
 
-export const PAGES: Record<string, string> = { "/": "home", "/privacy": "privacy", "/terms": "terms" };
-// Each page's lazy chunk (Router.tsx), whose CSS must be in the head so the pre-rendered HTML is styled at first paint.
-const CHUNKS: Record<string, string> = { home: "src/pages/home/Home.tsx", privacy: "src/pages/home/Legal.tsx",
-  terms: "src/pages/home/Legal.tsx" };
+const BLOG_CHUNK = "src/pages/blog/Blog.tsx";
+// path -> file name under prerender/, and each page's lazy chunk (Router.tsx), whose CSS must be in the head so the
+// pre-rendered HTML is styled at first paint.
+export const PAGES: Record<string, { name: string; chunk: string }> = {
+  "/": { name: "home", chunk: "src/pages/home/Home.tsx" },
+  "/privacy": { name: "privacy", chunk: "src/pages/home/Legal.tsx" },
+  "/terms": { name: "terms", chunk: "src/pages/home/Legal.tsx" },
+  "/blog": { name: "blog", chunk: BLOG_CHUNK },
+  "/faq": { name: "faq", chunk: BLOG_CHUNK },
+  ...Object.fromEntries(POSTS.map((p) => [`/blog/${p.slug}`, { name: `blog/${p.slug}`, chunk: BLOG_CHUNK }])),
+};
+
+// What the server needs to know of the written pages (lore/web/public_pages.py): titles and descriptions for the
+// head, dates for the sitemap, and the FAQ's questions and plain answers for its FAQPage JSON-LD.
+// Block ends become spaces; inline tags (links, emphasis) just go, so no space lands before punctuation.
+const plain = (html: string) => html.replace(/<\/(p|li|h\d|blockquote|pre)>/g, " ").replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+export const blogIndex = () => ({
+  posts: POSTS.map(({ slug, title, description, date }) => ({ slug, title, description, date })),
+  faq: { title: FAQ.title, description: FAQ.description, date: FAQ.date,
+    items: FAQ.items.map((i) => ({ q: i.q, a: plain(i.html) })) },
+});
 
 type Manifest = Record<string, { file: string; css?: string[]; imports?: string[] }>;
 
@@ -48,10 +67,12 @@ const out = resolve(dirname(fileURLToPath(import.meta.url)), "../../lore/web/sta
 if (process.argv.includes("--write")) {
   mkdirSync(out, { recursive: true });
   const manifest = JSON.parse(readFileSync(resolve(out, "../.vite/manifest.json"), "utf-8")) as Manifest;
-  for (const [path, name] of Object.entries(PAGES)) {
+  mkdirSync(resolve(out, "blog"), { recursive: true });
+  writeFileSync(resolve(out, "blog.json"), JSON.stringify(blogIndex(), null, 1));
+  for (const [path, { name, chunk }] of Object.entries(PAGES)) {
     const html = await render(path);
     writeFileSync(resolve(out, `${name}.html`), html);
-    writeFileSync(resolve(out, `${name}.head.html`), headFor(manifest, CHUNKS[name]));
+    writeFileSync(resolve(out, `${name}.head.html`), headFor(manifest, chunk));
     console.log(`prerendered ${path} -> prerender/${name}.html (${html.length} bytes)`);
   }
 }

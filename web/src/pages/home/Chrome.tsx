@@ -1,5 +1,5 @@
 import type { MouseEvent } from "react";
-import { HOME } from "../../messages";
+import { BLOG, HOME } from "../../messages";
 import { useReducedMotion, useScrolled } from "./scroll";
 import { goToForm } from "./session";
 import { Logo } from "../Logo";
@@ -52,6 +52,7 @@ export function Footer({ signedIn }: { signedIn: boolean }) {
   return (
     <footer className="h-band">
       <span>{HOME.copyright}</span><span className="h-sp" />
+      <a href="/blog">{BLOG.footerBlog}</a><a href="/faq">{BLOG.footerFaq}</a>
       <a href="/privacy">{HOME.privacy}</a><a href="/terms">{HOME.terms}</a><GithubLink />
       {signedIn ? <a href="/app">{HOME.openLore}</a> : <a href="/signin">{HOME.signIn}</a>}
     </footer>

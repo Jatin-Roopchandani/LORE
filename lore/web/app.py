@@ -1335,10 +1335,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             from lore.auth.current import session_user
             path = public.url.path.rstrip("/") or "/"
             signed_in = session_user(public) is not None
+            blog = public_pages.blog_index(STATIC)
             html = public_pages.with_head(html, path, auth_ctx.settings.origin,
-                                          signed_in=signed_in)
+                                          signed_in=signed_in, blog=blog)
             if not signed_in:  # pre-rendered signed out; a signed-in page draws itself
-                html = public_pages.with_prerender(html, path, STATIC)
+                html = public_pages.with_prerender(html, path, STATIC, blog)
         # The security headers (CSP and the rest) are added to every
         # response by lore.web.headers.SecurityHeaders.
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
@@ -1358,13 +1359,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
         @api.get("/sitemap.xml", include_in_schema=False)
         def sitemap():
-            return Response(public_pages.sitemap_xml(auth_ctx.settings.origin),
+            return Response(public_pages.sitemap_xml(auth_ctx.settings.origin,
+                                                     public_pages.blog_index(STATIC)),
                             media_type="application/xml",
                             headers={"Cache-Control": "public, max-age=3600"})
 
         @api.get("/llms.txt", include_in_schema=False)
         def llms():
-            return PlainTextResponse(public_pages.llms_txt(auth_ctx.settings.origin),
+            return PlainTextResponse(public_pages.llms_txt(auth_ctx.settings.origin,
+                                                           public_pages.blog_index(STATIC)),
                                      headers={"Cache-Control": "public, max-age=3600"})
 
         # Public pages: anyone. The page draws itself from the address.
@@ -1375,6 +1378,19 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         @api.get("/privacy", include_in_schema=False)
         @api.get("/terms", include_in_schema=False)
         def legal_page(request: Request):
+            return _spa_page(public=request)
+
+        # The blog and the FAQ: the pages the web build wrote (web/content); any
+        # other address under /blog is a 404, so search engines index only real posts.
+        @api.get("/blog", include_in_schema=False)
+        @api.get("/faq", include_in_schema=False)
+        @api.get("/blog/{slug}", include_in_schema=False)
+        def written_page(request: Request):
+            path = request.url.path.rstrip("/") or "/"
+            if public_pages.page_for(path, public_pages.blog_index(STATIC)) is None:
+                page = _spa_page()
+                page.status_code = 404
+                return page
             return _spa_page(public=request)
 
         # The mailed sign-in link: a page with a "Continue signing in" button

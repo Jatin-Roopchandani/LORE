@@ -288,3 +288,97 @@ def test_signed_out_requests_make_no_directory(env):
     for path in ("/api/books", "/api/library", "/api/overview"):
         assert anon.get(path).status_code == 401
     assert not (root.data_dir / "users").exists()
+
+
+# --- the blog and FAQ (web/content, pre-rendered by the web build) ---
+
+BLOG = {
+    "posts": [{"slug": "no-spoilers", "title": "Ask without spoilers", "description": "How to ask safely.",
+               "date": "2026-11-11"}],
+    "faq": {"title": "LORE FAQ", "description": "Common questions.", "date": "2026-11-11",
+            "items": [{"q": "What is LORE?", "a": "An AI reader for your ebooks."}]},
+}
+
+
+def built_blog(static):
+    import json as _json
+    (static / "prerender" / "blog").mkdir(parents=True, exist_ok=True)
+    (static / "prerender" / "blog.json").write_text(_json.dumps(BLOG))
+    prerender(static, "blog", body="<main><h1>Blog</h1></main>")
+    prerender(static, "faq", body="<main><h1>LORE FAQ</h1></main>")
+    prerender(static, "blog/no-spoilers", body="<main><h1>Ask without spoilers</h1></main>")
+
+
+def json_ld(html):
+    import json as _json
+    import re
+    return _json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html).group(1))
+
+
+def test_a_post_is_served_pre_rendered_with_its_title_canonical_and_blogposting(env, static):
+    _, _, anon, *_ = env
+    built_blog(static)
+    r = anon.get("/blog/no-spoilers")
+    assert r.status_code == 200
+    html = r.text
+    assert "<title>Ask without spoilers · LORE</title>" in html
+    assert '<meta name="description" content="How to ask safely.">' in html
+    assert '<meta property="og:type" content="article">' in html
+    assert f'<link rel="canonical" href="{BASE_URL}/blog/no-spoilers">' in html
+    assert '<div id="root"><main><h1>Ask without spoilers</h1></main></div>' in html
+    data = json_ld(html)
+    assert data["@type"] == "BlogPosting" and data["headline"] == "Ask without spoilers"
+    assert data["datePublished"] == "2026-11-11" and data["url"] == f"{BASE_URL}/blog/no-spoilers"
+
+
+def test_the_faq_carries_faqpage_structured_data(env, static):
+    _, _, anon, *_ = env
+    built_blog(static)
+    html = anon.get("/faq").text
+    assert "<title>LORE FAQ</title>" in html and "<h1>LORE FAQ</h1>" in html
+    data = json_ld(html)
+    assert data["@type"] == "FAQPage"
+    assert data["mainEntity"] == [{"@type": "Question", "name": "What is LORE?",
+                                   "acceptedAnswer": {"@type": "Answer",
+                                                      "text": "An AI reader for your ebooks."}}]
+
+
+def test_the_blog_index_is_served(env, static):
+    _, _, anon, *_ = env
+    built_blog(static)
+    r = anon.get("/blog")
+    assert r.status_code == 200 and "<title>Blog · LORE</title>" in r.text and "<h1>Blog</h1>" in r.text
+
+
+@pytest.mark.parametrize("path", ["/blog/not-a-post", "/blog/NO-SPOILERS", "/blog/a.b"])
+def test_an_unknown_post_is_a_404(env, static, path):
+    _, _, anon, *_ = env
+    built_blog(static)
+    r = anon.get(path)
+    assert r.status_code == 404 and "og:title" not in r.text and "<h1>" not in r.text
+
+
+def test_without_a_built_blog_the_blog_and_faq_are_404s(env):
+    _, _, anon, *_ = env
+    assert anon.get("/blog").status_code == 404 and anon.get("/faq").status_code == 404
+
+
+def test_the_sitemap_and_llms_txt_list_the_blog_and_faq(env, static):
+    _, _, anon, *_ = env
+    built_blog(static)
+    sitemap = anon.get("/sitemap.xml").text
+    for path in ("/blog", "/faq", "/blog/no-spoilers"):
+        assert f"<loc>{BASE_URL}{path}</loc>" in sitemap
+    assert f"<loc>{BASE_URL}/blog/no-spoilers</loc><lastmod>2026-11-11</lastmod>" in sitemap
+    llms = anon.get("/llms.txt").text
+    assert f"[Ask without spoilers]({BASE_URL}/blog/no-spoilers): How to ask safely." in llms
+    assert f"[FAQ]({BASE_URL}/faq)" in llms
+
+
+def test_a_signed_in_reader_gets_the_post_drawn_by_the_app(env, static):
+    app, sessions, *_ = env
+    built_blog(static)
+    signed = sign_in(app, sessions, "alice")
+    signed.follow_redirects = False
+    html = signed.get("/blog/no-spoilers").text
+    assert "<title>Ask without spoilers · LORE</title>" in html and "<h1>Ask without spoilers</h1>" not in html
