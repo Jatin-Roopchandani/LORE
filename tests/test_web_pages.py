@@ -120,7 +120,11 @@ def test_the_public_pages_carry_their_title_description_and_open_graph_tags(env,
     assert f'<meta property="og:image" content="{BASE_URL}/og.png">' in html
     assert '<meta name="twitter:card" content="summary_large_image">' in html
     assert MARK in html and "<div id=root>" in html
-    assert "<script" not in html  # nothing a strict CSP (no inline scripts) would refuse
+    # Nothing a strict CSP (no inline scripts) would refuse: the homepage's one script
+    # element is JSON-LD, a data block that never runs.
+    assert html.count("<script") == (1 if path == "/" else 0)
+    assert html.count('<script type="application/ld+json">') == (1 if path == "/" else 0)
+    assert f'<link rel="canonical" href="{BASE_URL}{path}">' in html
 
 
 def test_the_homepage_description_is_the_pitch(env):
@@ -145,6 +149,91 @@ def test_the_other_public_pages_keep_the_shell_title(env, path):
     _, _, anon, *_ = env
     html = anon.get(path).text
     assert "<title>LORE</title>" in html and "og:title" not in html and SIGNED_IN not in html
+
+
+def test_the_homepage_describes_lore_as_structured_data(env):
+    import json
+    import re
+    _, _, anon, *_ = env
+    html = anon.get("/").text
+    data = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html).group(1))
+    assert data["@type"] == "SoftwareApplication" and data["name"] == "LORE"
+    assert data["url"] == f"{BASE_URL}/" and "github.com/Jatin-Roopchandani/LORE" in data["sameAs"][0]
+
+
+# --- for search engines and AI crawlers ---
+
+def test_robots_txt_welcomes_every_crawler_and_points_at_the_sitemap(env):
+    _, _, anon, *_ = env
+    r = anon.get("/robots.txt")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/plain")
+    lines = r.text.splitlines()
+    assert "User-agent: *" in lines and "Allow: /" in lines
+    assert "Disallow: /api/" in lines and f"Sitemap: {BASE_URL}/sitemap.xml" in lines
+    # a prefix rule: never one that would also hide /apple-touch-icon.png or the public pages
+    assert not any(line.startswith("Disallow: /app") or line == "Disallow: /" for line in lines)
+
+
+def test_the_sitemap_lists_the_public_pages(env):
+    _, _, anon, *_ = env
+    r = anon.get("/sitemap.xml")
+    assert r.status_code == 200 and "xml" in r.headers["content-type"]
+    for path in ("/", "/privacy", "/terms"):
+        assert f"<loc>{BASE_URL}{path}</loc>" in r.text
+    assert "/app" not in r.text and "/signin" not in r.text
+
+
+def test_llms_txt_says_what_lore_is_with_its_links(env):
+    _, _, anon, *_ = env
+    r = anon.get("/llms.txt")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/plain")
+    assert r.text.startswith("# LORE\n") and "Spoiler-safe" in r.text
+    assert f"{BASE_URL}/privacy" in r.text and "github.com/Jatin-Roopchandani/LORE" in r.text
+
+
+def prerender(static, name="home", body="<main><h1>Every story is a web.</h1></main>",
+              head='<link rel="stylesheet" href="/assets/Chrome-x.css">'):
+    (static / "prerender").mkdir(exist_ok=True)
+    (static / "prerender" / f"{name}.html").write_text(body)
+    (static / "prerender" / f"{name}.head.html").write_text(head)
+
+
+@pytest.mark.parametrize("path,name", [("/", "home"), ("/privacy", "privacy"), ("/terms", "terms")])
+def test_a_signed_out_visitor_gets_the_pre_rendered_page_and_its_stylesheet(env, static, path, name):
+    _, _, anon, *_ = env
+    prerender(static, name)
+    html = anon.get(path).text
+    assert '<div id="root"><main><h1>Every story is a web.</h1></main></div>' in html
+    head = html.split("</head>")[0]
+    assert '<link rel="stylesheet" href="/assets/Chrome-x.css">' in head
+
+
+def test_a_signed_in_visitor_gets_the_empty_root_the_app_draws_itself(env, static):
+    app, sessions, *_ = env
+    prerender(static)
+    signed = sign_in(app, sessions, "alice")
+    signed.follow_redirects = False
+    html = signed.get("/").text
+    assert "Every story is a web." not in html and "<div id=root></div>" in html
+    assert "Chrome-x.css" not in html
+
+
+def test_without_a_pre_render_the_page_is_the_shell_as_before(env):
+    _, _, anon, *_ = env
+    assert "<div id=root></div>" in anon.get("/").text
+
+
+def test_only_the_public_pages_are_pre_rendered(env, static):
+    _, _, anon, *_ = env
+    for name in ("home", "privacy", "terms"):
+        prerender(static, name)
+    for path in ("/waitlist", "/signin"):
+        assert "Every story is a web." not in anon.get(path).text
+
+
+def test_local_mode_serves_no_robots_or_sitemap_routes(tmp_path, static):
+    client = TestClient(web_app.create_app(LoreConfig(data_dir=tmp_path / "local")))
+    assert "Sitemap:" not in client.get("/robots.txt").text
 
 
 def test_the_og_image_ships_with_the_web_app():

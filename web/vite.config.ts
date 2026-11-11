@@ -32,7 +32,8 @@ const themes: Plugin = {
 export default defineConfig({
   plugins: [react(), themes],
   // Fonts are never inlined as data: URIs (Vite inlines files under 4 KB), so a CSP of font-src 'self' loads them all.
-  build: { outDir: "../lore/web/static", emptyOutDir: true,
+  // The manifest names each page chunk's CSS, which the pre-rendered public pages link in their head (scripts/prerender.tsx).
+  build: { outDir: "../lore/web/static", emptyOutDir: true, manifest: true,
     assetsInlineLimit: (file: string) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined) },
   server: { port: 5173, proxy: { "/api": { target: "http://127.0.0.1:8766", changeOrigin: true } } },
   test: { environment: "jsdom", globals: true, setupFiles: ["src/setupTests.ts"], exclude: ["e2e/**", "node_modules/**"] },

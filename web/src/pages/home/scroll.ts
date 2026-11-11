@@ -56,7 +56,7 @@ export function usePinProgress(ref: RefObject<HTMLElement>): number {
 
 // True once the page has left the very top (the nav turns solid).
 export function useScrolled(past = 8): boolean {
-  const [scrolled, setScrolled] = useState(() => window.scrollY > past);
+  const [scrolled, setScrolled] = useState(() => typeof window !== "undefined" && window.scrollY > past);
   useEffect(() => {
     const check = () => setScrolled(window.scrollY > past);
     check();
@@ -67,7 +67,8 @@ export function useScrolled(past = 8): boolean {
 
 // A media query's current answer, kept up to date (false where matchMedia doesn't exist).
 export function useMedia(query: string): boolean {
-  const read = () => (typeof window.matchMedia === "function" ? window.matchMedia(query).matches : false);
+  const read = () => (typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia(query).matches : false);
   const [matches, setMatches] = useState(read);
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;

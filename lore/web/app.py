@@ -26,7 +26,8 @@ from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import (
-    FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse,
+    FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response,
+    StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -1332,9 +1333,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             "</head>", '<meta name="lore-multi" content="1"></head>', 1)
         if public is not None and auth_ctx is not None:
             from lore.auth.current import session_user
-            html = public_pages.with_head(
-                html, public.url.path.rstrip("/") or "/", auth_ctx.settings.origin,
-                signed_in=session_user(public) is not None)
+            path = public.url.path.rstrip("/") or "/"
+            signed_in = session_user(public) is not None
+            html = public_pages.with_head(html, path, auth_ctx.settings.origin,
+                                          signed_in=signed_in)
+            if not signed_in:  # pre-rendered signed out; a signed-in page draws itself
+                html = public_pages.with_prerender(html, path, STATIC)
         # The security headers (CSP and the rest) are added to every
         # response by lore.web.headers.SecurityHeaders.
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
@@ -1345,6 +1349,23 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         def _redirect(path: str) -> RedirectResponse:
             return RedirectResponse(path, status_code=303,
                                     headers={"Cache-Control": "no-store"})
+
+        # For search engines and AI crawlers (lore.web.public_pages).
+        @api.get("/robots.txt", include_in_schema=False)
+        def robots():
+            return PlainTextResponse(public_pages.robots_txt(auth_ctx.settings.origin),
+                                     headers={"Cache-Control": "public, max-age=3600"})
+
+        @api.get("/sitemap.xml", include_in_schema=False)
+        def sitemap():
+            return Response(public_pages.sitemap_xml(auth_ctx.settings.origin),
+                            media_type="application/xml",
+                            headers={"Cache-Control": "public, max-age=3600"})
+
+        @api.get("/llms.txt", include_in_schema=False)
+        def llms():
+            return PlainTextResponse(public_pages.llms_txt(auth_ctx.settings.origin),
+                                     headers={"Cache-Control": "public, max-age=3600"})
 
         # Public pages: anyone. The page draws itself from the address.
         @api.get("/waitlist", include_in_schema=False)
