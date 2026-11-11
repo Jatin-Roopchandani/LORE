@@ -26,7 +26,8 @@ from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import (
-    FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse,
+    FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response,
+    StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -1332,9 +1333,13 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             "</head>", '<meta name="lore-multi" content="1"></head>', 1)
         if public is not None and auth_ctx is not None:
             from lore.auth.current import session_user
-            html = public_pages.with_head(
-                html, public.url.path.rstrip("/") or "/", auth_ctx.settings.origin,
-                signed_in=session_user(public) is not None)
+            path = public.url.path.rstrip("/") or "/"
+            signed_in = session_user(public) is not None
+            blog = public_pages.blog_index(STATIC)
+            html = public_pages.with_head(html, path, auth_ctx.settings.origin,
+                                          signed_in=signed_in, blog=blog)
+            if not signed_in:  # pre-rendered signed out; a signed-in page draws itself
+                html = public_pages.with_prerender(html, path, STATIC, blog)
         # The security headers (CSP and the rest) are added to every
         # response by lore.web.headers.SecurityHeaders.
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
@@ -1346,6 +1351,25 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             return RedirectResponse(path, status_code=303,
                                     headers={"Cache-Control": "no-store"})
 
+        # For search engines and AI crawlers (lore.web.public_pages).
+        @api.get("/robots.txt", include_in_schema=False)
+        def robots():
+            return PlainTextResponse(public_pages.robots_txt(auth_ctx.settings.origin),
+                                     headers={"Cache-Control": "public, max-age=3600"})
+
+        @api.get("/sitemap.xml", include_in_schema=False)
+        def sitemap():
+            return Response(public_pages.sitemap_xml(auth_ctx.settings.origin,
+                                                     public_pages.blog_index(STATIC)),
+                            media_type="application/xml",
+                            headers={"Cache-Control": "public, max-age=3600"})
+
+        @api.get("/llms.txt", include_in_schema=False)
+        def llms():
+            return PlainTextResponse(public_pages.llms_txt(auth_ctx.settings.origin,
+                                                           public_pages.blog_index(STATIC)),
+                                     headers={"Cache-Control": "public, max-age=3600"})
+
         # Public pages: anyone. The page draws itself from the address.
         @api.get("/waitlist", include_in_schema=False)
         def waitlist_page():
@@ -1354,6 +1378,19 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         @api.get("/privacy", include_in_schema=False)
         @api.get("/terms", include_in_schema=False)
         def legal_page(request: Request):
+            return _spa_page(public=request)
+
+        # The blog and the FAQ: the pages the web build wrote (web/content); any
+        # other address under /blog is a 404, so search engines index only real posts.
+        @api.get("/blog", include_in_schema=False)
+        @api.get("/faq", include_in_schema=False)
+        @api.get("/blog/{slug}", include_in_schema=False)
+        def written_page(request: Request):
+            path = request.url.path.rstrip("/") or "/"
+            if public_pages.page_for(path, public_pages.blog_index(STATIC)) is None:
+                page = _spa_page()
+                page.status_code = 404
+                return page
             return _spa_page(public=request)
 
         # The mailed sign-in link: a page with a "Continue signing in" button

@@ -1083,6 +1083,19 @@ export const HOME = {
   terms: "Terms",
 };
 
+// The blog and FAQ (web/content): pre-rendered written pages in the homepage's style.
+export const BLOG = {
+  title: "Blog",
+  docTitle: "Blog · LORE",
+  lede: "Notes on reading with LORE: asking about books without spoilers, using your library from Claude, and how it works.",
+  byline: "By Jatin Roopchandani",
+  back: "← All posts",
+  faqLink: "Questions about LORE? Read the FAQ",
+  notFound: "Post not found",
+  footerBlog: "Blog",
+  footerFaq: "FAQ",
+};
+
 // Privacy and terms (release step 7): short, plain and accurate to how LORE works. A section is a heading and its
 // paragraphs; a paragraph given as a list of strings is a bulleted list.
 export interface LegalSection { h: string; body: (string | string[])[] }

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && vite-node scripts/prerender.tsx -- --write",
     "postbuild": "node -e \"require('fs').writeFileSync('../lore/web/static/.gitkeep','')\"",
     "test": "vitest run",
     "e2e": "playwright test"
@@ -15,6 +15,7 @@
     "@fontsource/public-sans": "^5.1.0",
     "@sigma/node-border": "^3.0.0",
     "graphology": "^0.25.4",
+    "marked": "^14.1.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sigma": "^3.0.0"

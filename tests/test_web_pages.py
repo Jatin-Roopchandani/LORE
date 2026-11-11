@@ -117,10 +117,14 @@ def test_the_public_pages_carry_their_title_description_and_open_graph_tags(env,
     assert '<meta property="og:description" content="' in html
     assert '<meta property="og:type" content="website">' in html
     assert f'<meta property="og:url" content="{BASE_URL}{path}">' in html
-    assert f'<meta property="og:image" content="{BASE_URL}/og.png">' in html
+    assert f'<meta property="og:image" content="{BASE_URL}/og.png?v=2">' in html
     assert '<meta name="twitter:card" content="summary_large_image">' in html
     assert MARK in html and "<div id=root>" in html
-    assert "<script" not in html  # nothing a strict CSP (no inline scripts) would refuse
+    # Nothing a strict CSP (no inline scripts) would refuse: the homepage's one script
+    # element is JSON-LD, a data block that never runs.
+    assert html.count("<script") == (1 if path == "/" else 0)
+    assert html.count('<script type="application/ld+json">') == (1 if path == "/" else 0)
+    assert f'<link rel="canonical" href="{BASE_URL}{path}">' in html
 
 
 def test_the_homepage_description_is_the_pitch(env):
@@ -145,6 +149,91 @@ def test_the_other_public_pages_keep_the_shell_title(env, path):
     _, _, anon, *_ = env
     html = anon.get(path).text
     assert "<title>LORE</title>" in html and "og:title" not in html and SIGNED_IN not in html
+
+
+def test_the_homepage_describes_lore_as_structured_data(env):
+    import json
+    import re
+    _, _, anon, *_ = env
+    html = anon.get("/").text
+    data = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html).group(1))
+    assert data["@type"] == "SoftwareApplication" and data["name"] == "LORE"
+    assert data["url"] == f"{BASE_URL}/" and "github.com/Jatin-Roopchandani/LORE" in data["sameAs"][0]
+
+
+# --- for search engines and AI crawlers ---
+
+def test_robots_txt_welcomes_every_crawler_and_points_at_the_sitemap(env):
+    _, _, anon, *_ = env
+    r = anon.get("/robots.txt")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/plain")
+    lines = r.text.splitlines()
+    assert "User-agent: *" in lines and "Allow: /" in lines
+    assert "Disallow: /api/" in lines and f"Sitemap: {BASE_URL}/sitemap.xml" in lines
+    # a prefix rule: never one that would also hide /apple-touch-icon.png or the public pages
+    assert not any(line.startswith("Disallow: /app") or line == "Disallow: /" for line in lines)
+
+
+def test_the_sitemap_lists_the_public_pages(env):
+    _, _, anon, *_ = env
+    r = anon.get("/sitemap.xml")
+    assert r.status_code == 200 and "xml" in r.headers["content-type"]
+    for path in ("/", "/privacy", "/terms"):
+        assert f"<loc>{BASE_URL}{path}</loc>" in r.text
+    assert "/app" not in r.text and "/signin" not in r.text
+
+
+def test_llms_txt_says_what_lore_is_with_its_links(env):
+    _, _, anon, *_ = env
+    r = anon.get("/llms.txt")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/plain")
+    assert r.text.startswith("# LORE\n") and "Spoiler-safe" in r.text
+    assert f"{BASE_URL}/privacy" in r.text and "github.com/Jatin-Roopchandani/LORE" in r.text
+
+
+def prerender(static, name="home", body="<main><h1>Every story is a web.</h1></main>",
+              head='<link rel="stylesheet" href="/assets/Chrome-x.css">'):
+    (static / "prerender").mkdir(exist_ok=True)
+    (static / "prerender" / f"{name}.html").write_text(body)
+    (static / "prerender" / f"{name}.head.html").write_text(head)
+
+
+@pytest.mark.parametrize("path,name", [("/", "home"), ("/privacy", "privacy"), ("/terms", "terms")])
+def test_a_signed_out_visitor_gets_the_pre_rendered_page_and_its_stylesheet(env, static, path, name):
+    _, _, anon, *_ = env
+    prerender(static, name)
+    html = anon.get(path).text
+    assert '<div id="root"><main><h1>Every story is a web.</h1></main></div>' in html
+    head = html.split("</head>")[0]
+    assert '<link rel="stylesheet" href="/assets/Chrome-x.css">' in head
+
+
+def test_a_signed_in_visitor_gets_the_empty_root_the_app_draws_itself(env, static):
+    app, sessions, *_ = env
+    prerender(static)
+    signed = sign_in(app, sessions, "alice")
+    signed.follow_redirects = False
+    html = signed.get("/").text
+    assert "Every story is a web." not in html and "<div id=root></div>" in html
+    assert "Chrome-x.css" not in html
+
+
+def test_without_a_pre_render_the_page_is_the_shell_as_before(env):
+    _, _, anon, *_ = env
+    assert "<div id=root></div>" in anon.get("/").text
+
+
+def test_only_the_public_pages_are_pre_rendered(env, static):
+    _, _, anon, *_ = env
+    for name in ("home", "privacy", "terms"):
+        prerender(static, name)
+    for path in ("/waitlist", "/signin"):
+        assert "Every story is a web." not in anon.get(path).text
+
+
+def test_local_mode_serves_no_robots_or_sitemap_routes(tmp_path, static):
+    client = TestClient(web_app.create_app(LoreConfig(data_dir=tmp_path / "local")))
+    assert "Sitemap:" not in client.get("/robots.txt").text
 
 
 def test_the_og_image_ships_with_the_web_app():
@@ -199,3 +288,97 @@ def test_signed_out_requests_make_no_directory(env):
     for path in ("/api/books", "/api/library", "/api/overview"):
         assert anon.get(path).status_code == 401
     assert not (root.data_dir / "users").exists()
+
+
+# --- the blog and FAQ (web/content, pre-rendered by the web build) ---
+
+BLOG = {
+    "posts": [{"slug": "no-spoilers", "title": "Ask without spoilers", "description": "How to ask safely.",
+               "date": "2026-11-11"}],
+    "faq": {"title": "LORE FAQ", "description": "Common questions.", "date": "2026-11-11",
+            "items": [{"q": "What is LORE?", "a": "An AI reader for your ebooks."}]},
+}
+
+
+def built_blog(static):
+    import json as _json
+    (static / "prerender" / "blog").mkdir(parents=True, exist_ok=True)
+    (static / "prerender" / "blog.json").write_text(_json.dumps(BLOG))
+    prerender(static, "blog", body="<main><h1>Blog</h1></main>")
+    prerender(static, "faq", body="<main><h1>LORE FAQ</h1></main>")
+    prerender(static, "blog/no-spoilers", body="<main><h1>Ask without spoilers</h1></main>")
+
+
+def json_ld(html):
+    import json as _json
+    import re
+    return _json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html).group(1))
+
+
+def test_a_post_is_served_pre_rendered_with_its_title_canonical_and_blogposting(env, static):
+    _, _, anon, *_ = env
+    built_blog(static)
+    r = anon.get("/blog/no-spoilers")
+    assert r.status_code == 200
+    html = r.text
+    assert "<title>Ask without spoilers · LORE</title>" in html
+    assert '<meta name="description" content="How to ask safely.">' in html
+    assert '<meta property="og:type" content="article">' in html
+    assert f'<link rel="canonical" href="{BASE_URL}/blog/no-spoilers">' in html
+    assert '<div id="root"><main><h1>Ask without spoilers</h1></main></div>' in html
+    data = json_ld(html)
+    assert data["@type"] == "BlogPosting" and data["headline"] == "Ask without spoilers"
+    assert data["datePublished"] == "2026-11-11" and data["url"] == f"{BASE_URL}/blog/no-spoilers"
+
+
+def test_the_faq_carries_faqpage_structured_data(env, static):
+    _, _, anon, *_ = env
+    built_blog(static)
+    html = anon.get("/faq").text
+    assert "<title>LORE FAQ</title>" in html and "<h1>LORE FAQ</h1>" in html
+    data = json_ld(html)
+    assert data["@type"] == "FAQPage"
+    assert data["mainEntity"] == [{"@type": "Question", "name": "What is LORE?",
+                                   "acceptedAnswer": {"@type": "Answer",
+                                                      "text": "An AI reader for your ebooks."}}]
+
+
+def test_the_blog_index_is_served(env, static):
+    _, _, anon, *_ = env
+    built_blog(static)
+    r = anon.get("/blog")
+    assert r.status_code == 200 and "<title>Blog · LORE</title>" in r.text and "<h1>Blog</h1>" in r.text
+
+
+@pytest.mark.parametrize("path", ["/blog/not-a-post", "/blog/NO-SPOILERS", "/blog/a.b"])
+def test_an_unknown_post_is_a_404(env, static, path):
+    _, _, anon, *_ = env
+    built_blog(static)
+    r = anon.get(path)
+    assert r.status_code == 404 and "og:title" not in r.text and "<h1>" not in r.text
+
+
+def test_without_a_built_blog_the_blog_and_faq_are_404s(env):
+    _, _, anon, *_ = env
+    assert anon.get("/blog").status_code == 404 and anon.get("/faq").status_code == 404
+
+
+def test_the_sitemap_and_llms_txt_list_the_blog_and_faq(env, static):
+    _, _, anon, *_ = env
+    built_blog(static)
+    sitemap = anon.get("/sitemap.xml").text
+    for path in ("/blog", "/faq", "/blog/no-spoilers"):
+        assert f"<loc>{BASE_URL}{path}</loc>" in sitemap
+    assert f"<loc>{BASE_URL}/blog/no-spoilers</loc><lastmod>2026-11-11</lastmod>" in sitemap
+    llms = anon.get("/llms.txt").text
+    assert f"[Ask without spoilers]({BASE_URL}/blog/no-spoilers): How to ask safely." in llms
+    assert f"[FAQ]({BASE_URL}/faq)" in llms
+
+
+def test_a_signed_in_reader_gets_the_post_drawn_by_the_app(env, static):
+    app, sessions, *_ = env
+    built_blog(static)
+    signed = sign_in(app, sessions, "alice")
+    signed.follow_redirects = False
+    html = signed.get("/blog/no-spoilers").text
+    assert "<title>Ask without spoilers · LORE</title>" in html and "<h1>Ask without spoilers</h1>" not in html

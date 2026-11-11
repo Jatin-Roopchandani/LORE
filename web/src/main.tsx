@@ -7,7 +7,11 @@ import "@fontsource/public-sans/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "./theme.css";
 import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 import Router from "./Router";
 
-createRoot(document.getElementById("root")!).render(<StrictMode><Router /></StrictMode>);
+// The public pages arrive pre-rendered (scripts/prerender.tsx): take over that HTML rather than redraw it.
+const root = document.getElementById("root")!;
+const app = <StrictMode><Router /></StrictMode>;
+if (root.hasChildNodes()) hydrateRoot(root, app);
+else createRoot(root).render(app);
