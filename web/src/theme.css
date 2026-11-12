@@ -157,6 +157,8 @@ form.ask button{border:0;background:var(--accent);color:var(--panel);border-radi
 form.ask button.stop{display:inline-flex;align-items:center;gap:8px;background:var(--panel);color:var(--danger);border:1px solid var(--danger)}
 form.ask button.stop:hover{background:var(--danger);color:var(--panel)}
 .stop-icon{width:9px;height:9px;border-radius:2px;background:currentColor}
+form.ask button.stop.finishing{color:var(--accent);border-color:var(--accent)}
+form.ask button.stop.finishing:hover{background:var(--accent);color:var(--panel)}
 .stopped-note{color:var(--muted)} .stopped-label{color:var(--ink);font-weight:600}
 .ask-opts{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12px;color:var(--muted)}
 fieldset.depth{display:inline-flex;align-items:center;gap:2px;margin:0;padding:0;border:0;min-width:0}

@@ -206,6 +206,9 @@ export const UI = {
   // While an answer streams the Ask button is Stop (Esc in the ask box does the same).
   stop: "Stop",
   stopHint: "Stop this answer (Esc)",
+  // The answer has all arrived but is still being drawn: nothing left to stop, so the button shows it whole.
+  showAnswer: "Show answer",
+  showAnswerHint: "The answer is ready: show it all now (Esc)",
   stopped: "Stopped",
   stoppedNote: "You stopped this answer. Ask again to continue.",
   noBooks: "Pick at least one book to see its part of the graph.",

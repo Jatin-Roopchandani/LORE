@@ -8,9 +8,12 @@ import type { Depth } from "../types";
 // next question alone is answered from every book (`onAsk(q, true)`), and the toggle is off again once it is sent.
 // `onStop`: while an answer streams (`busy`) the Ask button is Stop, and Esc in the box does the same. It returns the
 // stopped question, which the box holds again (unless something new has been typed) so it can be asked again.
-export function AskBox({ onAsk, busy, depth = "auto", onDepth, placeholder = UI.askPlaceholder, spoilerGuard = false, onStop }:
+// `finishing`: the answer has all arrived and is only still being drawn, so there is nothing to stop: the button is
+// "Show answer" instead, and it (or Esc) draws the answer whole at once.
+export function AskBox({ onAsk, busy, depth = "auto", onDepth, placeholder = UI.askPlaceholder, spoilerGuard = false, onStop,
+  finishing = false }:
   { onAsk: (q: string, spoilers?: boolean) => void; busy: boolean; depth?: Depth; onDepth?: (d: Depth) => void; placeholder?: string;
-    spoilerGuard?: boolean; onStop?: () => string | null }) {
+    spoilerGuard?: boolean; onStop?: () => string | null; finishing?: boolean }) {
   const [q, setQ] = useState("");
   const [spoilers, setSpoilers] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -34,9 +37,12 @@ export function AskBox({ onAsk, busy, depth = "auto", onDepth, placeholder = UI.
       {stoppable
         // Two elements, not one whose type changes: a Stop click that turns the button into Ask (type submit) before the
         // browser finishes the click would submit the form and ask the stopped question again.
-        ? <button key="stop" type="button" className="stop" onClick={stop} title={UI.stopHint} aria-label={UI.stopHint} aria-keyshortcuts="Escape">
-            <span className="stop-icon" aria-hidden="true" />{UI.stop}
-          </button>
+        ? (finishing
+          ? <button key="show" type="button" className="stop finishing" onClick={stop} title={UI.showAnswerHint}
+              aria-label={UI.showAnswerHint} aria-keyshortcuts="Escape">{UI.showAnswer}</button>
+          : <button key="stop" type="button" className="stop" onClick={stop} title={UI.stopHint} aria-label={UI.stopHint} aria-keyshortcuts="Escape">
+              <span className="stop-icon" aria-hidden="true" />{UI.stop}
+            </button>)
         : <button key="ask" type="submit" disabled={busy || !q.trim()}>{busy ? "Answering…" : UI.ask}</button>}
       {(onDepth || spoilerGuard) && (
         <div className="ask-opts">

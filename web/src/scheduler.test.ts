@@ -85,3 +85,28 @@ test("a replayed deep answer brings its sections in one after another, in their 
   expect(state.sections.map((x) => x.state)).toEqual(["done", "writing"]);
   vi.useRealTimers();
 });
+
+test("a live answer that falls behind catches up: events then come whole, without the stagger", async () => {
+  vi.useFakeTimers();
+  const out: string[] = [];
+  const s = createScheduler((e) => out.push(e.type === "seeds" ? `seed${e.entities.map((x) => x.id).join("")}` : e.type),
+    { reduceMotion: false });
+  // Six seed events arrive at once: while three or more wait behind the one being drawn, it is drawn whole.
+  for (let i = 0; i < 6; i++) s.push(seeds);
+  await vi.runAllTimersAsync();
+  expect(out.slice(0, 3)).toEqual(["seed123", "seed123", "seed123"]);
+  // Close again: staggered as usual, one entity per piece.
+  expect(out.slice(3)).toEqual(["seed1", "seed2", "seed3", "seed1", "seed2", "seed3", "seed1", "seed2", "seed3"]);
+  vi.useRealTimers();
+});
+
+test("a replay keeps its pace however far behind it is", async () => {
+  vi.useFakeTimers();
+  const out: string[] = [];
+  const s = createScheduler((e) => out.push(e.type === "seeds" ? `seed${e.entities.map((x) => x.id).join("")}` : e.type),
+    { reduceMotion: false, replay: true });
+  for (let i = 0; i < 4; i++) s.push(seeds);
+  await vi.runAllTimersAsync();
+  expect(out.every((x) => x.length === 5)).toBe(true); // one entity per piece throughout
+  vi.useRealTimers();
+});
