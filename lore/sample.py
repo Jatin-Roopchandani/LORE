@@ -596,6 +596,26 @@ def _prune_caches(config: LoreConfig, conn: sqlite3.Connection, keep: str) -> No
             path.unlink()
 
 
+# Kuzu (0.11) deadlocks in IMPORT DATABASE when its pool has a single thread: its
+# parallel COPY waits on a worker that never runs. A one-CPU container (the
+# server's worker) gives exactly that by default, so the import always gets at
+# least this many threads; on one CPU they simply take turns.
+IMPORT_MIN_THREADS = 2
+
+
+def import_graph(export: Path, target: Path) -> None:
+    """A new Kuzu database at `target` from an EXPORT DATABASE folder."""
+    import kuzu as _kuzu
+    threads = max(IMPORT_MIN_THREADS, os.cpu_count() or 1)
+    db = _kuzu.Database(str(target), max_num_threads=threads)
+    try:
+        c = _kuzu.Connection(db)
+        c.execute(f"IMPORT DATABASE '{export}'")
+        c.close()
+    finally:
+        db.close()
+
+
 def _compact(config: LoreConfig, conn: sqlite3.Connection) -> None:
     """Rewrite each store so the removed books' bytes are gone from its files,
     not merely unreachable: Kuzu keeps deleted strings in its pages, LanceDB
@@ -613,14 +633,7 @@ def _compact(config: LoreConfig, conn: sqlite3.Connection) -> None:
                 store.execute(f"EXPORT DATABASE '{export}' (format='parquet')")
             finally:
                 store.close()
-            import kuzu as _kuzu
-            db = _kuzu.Database(str(rebuilt))
-            try:
-                c = _kuzu.Connection(db)
-                c.execute(f"IMPORT DATABASE '{export}'")
-                c.close()
-            finally:
-                db.close()
+            import_graph(export, rebuilt)
             if _graph_counts(rebuilt) != counts:
                 raise SampleError("the rebuilt graph does not match the original")
             for p in config.kuzu_dir.glob("graph*"):

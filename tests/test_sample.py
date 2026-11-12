@@ -388,3 +388,37 @@ def test_cli_sample_make(source: Path, tmp_path: Path, monkeypatch) -> None:
     again = CliRunner().invoke(app, ["sample", "make", "--from", str(source),
                                      "--keep", ONE, "--out", str(out)])
     assert again.exit_code == 1 and "already exists" in again.output
+
+
+def test_the_graph_import_never_runs_on_a_single_thread(tmp_path, monkeypatch):
+    # Kuzu's IMPORT DATABASE deadlocks with one thread, which is what a
+    # one-CPU container gives by default (the server's worker hung here).
+    import threading
+
+    import kuzu
+
+    from lore import sample
+
+    src = kuzu.Database(str(tmp_path / "src"))
+    c = kuzu.Connection(src)
+    c.execute("CREATE NODE TABLE E(id STRING, PRIMARY KEY(id))")
+    c.execute("CREATE REL TABLE R(FROM E TO E)")
+    c.execute("CREATE (:E {id:'a'})-[:R]->(:E {id:'b'})")
+    c.execute(f"EXPORT DATABASE '{tmp_path / 'exp'}' (format='parquet')")
+    c.close()
+    src.close()
+
+    monkeypatch.setattr(sample.os, "cpu_count", lambda: 1)
+    done = threading.Event()
+    worker = threading.Thread(
+        target=lambda: (sample.import_graph(tmp_path / "exp", tmp_path / "out"), done.set()),
+        daemon=True)
+    worker.start()
+    worker.join(timeout=30)
+    assert done.is_set(), "the import hung"
+    db = kuzu.Database(str(tmp_path / "out"), read_only=True)
+    try:
+        rows = kuzu.Connection(db).execute("MATCH (:E)-[:R]->(b:E) RETURN b.id").get_all()
+    finally:
+        db.close()
+    assert rows == [["b"]]
