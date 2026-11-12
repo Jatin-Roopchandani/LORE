@@ -9,7 +9,7 @@ const job = (o: object) => ({ stage: "extract", state: "running", done: 3, total
 const book = (id: string, j: object | null, status = "graphed", world: string | null = "Alpha Saga", series: string | null = null, series_index: number | null = null) =>
   ({ id, title: `Book ${id}`, author: null, status, world, series, series_index, job: j });
 const worldRow = (id: number, name: string, books: object[] = []) => ({ id, name, books });
-let status: { books: object[]; gemini: object; usage?: object };
+let status: { books: object[]; gemini: object; usage?: object; sample?: boolean };
 let worlds: object[];
 let posts: string[];
 let sent: { url: string; method: string; body: unknown }[];
@@ -415,4 +415,40 @@ test("opened at a book just uploaded: that row is marked and the panel keeps pol
   expect(gets()).toBeGreaterThan(before);
   expect(screen.getByText("Splitting into passages")).toBeInTheDocument();
   vi.clearAllTimers();
+});
+
+test("an empty library on a server with the sample offers it; one click adds it and tells the page", async () => {
+  status = { gemini, books: [], sample: true };
+  worlds = [];
+  const changed = vi.fn();
+  postReply = (url) => {
+    if (url === "/api/library/sample") status = { gemini, books: [book("s", null, "graphed", "Sherlock Holmes")], sample: false };
+    return { status: 201, body: { added: true, book: { id: "s", title: "Book s", world: "Sherlock Holmes" } } };
+  };
+  render(<LibraryPanel open onClose={() => {}} showInternals={false} onChange={changed} />);
+  await act(async () => {});
+  expect(screen.getByText(LIBRARY.sampleLead)).toBeInTheDocument();
+  await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByRole("button", { name: LIBRARY.addSample }));
+  await act(async () => {});
+  expect(posts).toContain("/api/library/sample");
+  expect(screen.getByText("Book s")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: LIBRARY.addSample })).toBeNull();
+  expect(changed).toHaveBeenCalled();
+});
+
+test("the sample is not offered when the server has none, or once the library has a book", async () => {
+  status = { gemini, books: [], sample: false };
+  worlds = [];
+  await open();
+  expect(screen.queryByRole("button", { name: LIBRARY.addSample })).toBeNull();
+});
+
+test("a refused sample shows why and keeps the library as it was", async () => {
+  status = { gemini, books: [], sample: true };
+  worlds = [];
+  postReply = () => ({ status: 409, body: { error: { code: "busy", message: "a book is being added or processed" } } });
+  await open();
+  await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByRole("button", { name: LIBRARY.addSample }));
+  await act(async () => {});
+  expect(screen.getByRole("alert")).toHaveTextContent("a book is being added or processed");
 });

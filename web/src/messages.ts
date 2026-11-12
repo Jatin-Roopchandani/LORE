@@ -172,6 +172,10 @@ export const LIBRARY = {
   progressLabel: (stage: string) => `${STAGE_LABEL[stage] ?? stage} progress`,
   continuesAfter: (time: string, left: string) => `Continues after ${time} (your time) \u2014 in ${left}`,
   inHM: (mins: number) => `${Math.floor(mins / 60)}h ${mins % 60}m`,
+  // An empty library on a server that has the sample book: one click adds it, already processed.
+  sampleLead: "Not sure where to start? Add a sample book, ready to explore and ask about.",
+  addSample: "Add the sample book", addingSample: "Adding\u2026",
+  sampleFailed: "Couldn't add the sample book.",
   continue: "Continue", retry: "Retry", process: "Process",
   action: (verb: string, title: string) => `${verb} ${title}`,
   pausedDefault: "Paused until the daily allowance resets.",
