@@ -460,6 +460,7 @@ test("the sample book carries a Sample tag; other books don't", async () => {
   expect(tags).toHaveLength(1);
   expect(tags[0].closest("li, .lib-row, div")?.textContent).toContain("Book s");
   expect(tags[0]).toHaveAttribute("title", LIBRARY.sampleTagHint);
+});
 
 test("a book is deleted only after a confirmation that names it and says it can't be undone", async () => {
   status = { gemini, books: [book("a", job({ state: "done" })), book("b", null)] };
