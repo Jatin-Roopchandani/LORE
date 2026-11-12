@@ -126,7 +126,9 @@ export interface GeminiUse { used_today: number; limit: number; answer_reserve: 
 // paid Gemini plan, with today's tokens, an estimated cost (where a price is known) and the cap (multi mode only).
 export type LibraryUsage = { mode: "free"; provider: "gemini" }
   | { mode: "metered"; provider: ProviderId; tokens_today: number | null; cost_usd: number | null; daily_token_cap: number | null };
-export interface LibraryStatus { books: LibraryBook[]; gemini: GeminiUse; usage?: LibraryUsage }
+// `sample`: the library is empty and the server has the sample book to offer (POST /api/library/sample).
+export interface LibraryStatus { books: LibraryBook[]; gemini: GeminiUse; usage?: LibraryUsage; sample?: boolean }
+export interface SampleAdded { added: true; book: { id: string; title: string; world: string | null } }
 
 // The graph explorer's reads (profile, timeline, relations, edge, search, path, passage).
 export interface EntityRef { id: string; name: string; kind: string }

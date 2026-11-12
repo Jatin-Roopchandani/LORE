@@ -1,4 +1,4 @@
-import type { AdminEvent, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
+import type { AdminEvent, SampleAdded, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
   EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, McpCheck, McpConnection, McpHosted, McpToken, McpTokenMade, ConsentInfo, DeviceSession, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
   SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
@@ -185,6 +185,8 @@ export const api = {
   // A world given by name with `create` is made first; 202 starts the move job, 200 {started:false} means already there.
   moveBook: (id: string, world: string | number, create = false) =>
     sendJson<MoveResult>("POST", `/api/books/${encodeURIComponent(id)}/move`, { world, create }),
+  // An empty library only: copies the server's ready-made sample book in (201), or 409 once it has a book.
+  addSample: () => sendJson<SampleAdded>("POST", "/api/library/sample"),
   createWorld: (name: string) => sendJson<WorldRef>("POST", "/api/worlds", { name }),
   renameWorld: (id: number, name: string) => sendJson<WorldRef>("PATCH", `/api/worlds/${id}`, { name }),
   deleteWorld: (id: number) => sendJson<{ deleted: true }>("DELETE", `/api/worlds/${id}`),

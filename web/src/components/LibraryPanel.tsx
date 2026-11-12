@@ -203,6 +203,8 @@ export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [addingSample, setAddingSample] = useState(false);
+  const [sampleError, setSampleError] = useState<string | null>(null);
   // Books just started: poll until we see them run and then stop, or give up.
   const [started, setStarted] = useState<Record<string, { left: number; seen: boolean }>>({});
   const opener = useRef<HTMLElement | null>(null);
@@ -290,6 +292,17 @@ export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook
     setBusy((b) => { const n = new Set(b); n.delete(book.id); return n; });
     await load();
   };
+  // The sample book: copied in whole on the server (already processed), so the page refetches at once.
+  const addSample = async () => {
+    setAddingSample(true);
+    setSampleError(null);
+    const r = await api.addSample();
+    if (!alive.current) return;
+    setAddingSample(false);
+    if (isError(r)) setSampleError(r.error.message || LIBRARY.sampleFailed);
+    await load();
+    if (!isError(r)) onChange?.();
+  };
   // A world change that went through: refetch here and tell the page. Resolves false when refused (reason shown).
   const changeWorld = async (key: string, call: () => Promise<unknown>): Promise<boolean> => {
     setWorldErrors((e) => { const { [key]: _drop, ...rest } = e; return rest; });
@@ -323,6 +336,14 @@ export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook
             ) : <p className="hint">{WORLDS.noBooksInWorld}</p>}
           </div>
         )) : <p className="hint">{LIBRARY.empty}</p>)}
+        {data && data.sample && !data.books.length && (
+          <div className="lib-sample">
+            <p className="hint">{LIBRARY.sampleLead}</p>
+            <button className="tbtn" type="button" disabled={addingSample} onClick={addSample}>
+              {addingSample ? LIBRARY.addingSample : LIBRARY.addSample}</button>
+            {sampleError && <p className="hint" role="alert">{sampleError}</p>}
+          </div>
+        )}
         {data && <p className="hint lib-foot">{footer(data, showInternals)}</p>}
         <div className="row-end"><button className="tbtn" type="button" onClick={onClose}>{LIBRARY.close}</button></div>
       </div>
