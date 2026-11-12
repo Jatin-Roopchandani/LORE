@@ -1,5 +1,5 @@
 import type { AdminEvent, SampleAdded, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
-  EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, McpCheck, McpConnection, McpHosted, McpToken, McpTokenMade, ConsentInfo, DeviceSession, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
+  BookDeleted, EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, McpCheck, McpConnection, McpHosted, McpToken, McpTokenMade, ConsentInfo, DeviceSession, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
   SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
 export function parseSse(buffer: string): { events: AskEvent[]; rest: string } {
@@ -190,6 +190,8 @@ export const api = {
   createWorld: (name: string) => sendJson<WorldRef>("POST", "/api/worlds", { name }),
   renameWorld: (id: number, name: string) => sendJson<WorldRef>("PATCH", `/api/worlds/${id}`, { name }),
   deleteWorld: (id: number) => sendJson<{ deleted: true }>("DELETE", `/api/worlds/${id}`),
+  // The book and everything built from it; 409 while it is processed (or another book is being processed or added).
+  deleteBook: (id: string) => sendJson<BookDeleted>("DELETE", `/api/books/${encodeURIComponent(id)}`),
   // The world's reading position (stored on the server); every read above and every question applies it by default.
   readingPosition: (world: string) => getJson<ReadingPositionData>(withWorld("/api/reading-position", world)),
   setReadingPosition: (world: string, body: ReadingPositionBody) =>

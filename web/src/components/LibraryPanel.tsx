@@ -9,8 +9,10 @@ const START_CYCLES = 10; // polls forced after Continue, in case the first GET p
 
 const clock = (d: Date) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
-function Row({ book, now, busy, error, focus = false, onGo, onMove, children }: { book: LibraryBook; now: number; busy: boolean; error?: string; focus?: boolean; onGo: () => void; onMove: () => void; children?: React.ReactNode }) {
+function Row({ book, now, busy, processing = false, error, focus = false, onGo, onMove, onDelete, children }: { book: LibraryBook; now: number; busy: boolean; processing?: boolean; error?: string; focus?: boolean; onGo: () => void; onMove: () => void; onDelete: () => Promise<boolean>; children?: React.ReactNode }) {
   const ref = useRef<HTMLLIElement>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   useEffect(() => { if (focus) ref.current?.scrollIntoView?.({ block: "nearest" }); }, [focus]);
   const job = book.job;
   const meta = [book.author, book.series && (book.series_index != null ? `${book.series} #${book.series_index}` : book.series)].filter(Boolean).join(" · ");
@@ -66,7 +68,24 @@ function Row({ book, now, busy, error, focus = false, onGo, onMove, children }: 
       <div className="lib-body">
         {body}
         <button className="tbtn" type="button" disabled={busy || job?.state === "running"} aria-label={WORLDS.moveOpenLabel(book.title)} onClick={onMove}>{WORLDS.moveOpen}</button>
+        {!confirming && (
+          <button className="tbtn" type="button" disabled={busy || processing} aria-label={LIBRARY.deleteBookLabel(book.title)}
+            onClick={() => setConfirming(true)}>{LIBRARY.deleteBook}</button>
+        )}
+        {processing && !confirming && <span className="hint">{LIBRARY.deleteBookBusy}</span>}
       </div>
+      {confirming && (
+        <div className="lib-wform" role="group" aria-label={LIBRARY.deleteBookLabel(book.title)}>
+          <span className="hint">{LIBRARY.deleteBookConfirm(book.title)}</span>
+          <button className="tbtn primary" type="button" disabled={deleting || processing} onClick={async () => {
+            setDeleting(true);
+            const ok = await onDelete();
+            setDeleting(false);
+            if (!ok) setConfirming(false);
+          }}>{deleting ? LIBRARY.deletingBook : LIBRARY.deleteBookConfirmButton}</button>
+          <button className="tbtn" type="button" disabled={deleting} onClick={() => setConfirming(false)}>{LIBRARY.deleteBookCancel}</button>
+        </div>
+      )}
       {job?.state === "running" && job.plan && <Steps plan={job.plan} />}
       {children}
       {error && <p className="hint" role="alert">{error}</p>}
@@ -292,6 +311,24 @@ export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook
     setBusy((b) => { const n = new Set(b); n.delete(book.id); return n; });
     await load();
   };
+  // Deleting a book: the list, the worlds, the graph and the reading progress refetch (onChange tells the page).
+  // Resolves false when refused (the reason stays on the row).
+  const remove = async (book: LibraryBook): Promise<boolean> => {
+    setBusy((b) => new Set(b).add(book.id));
+    setErrors((e) => { const { [book.id]: _drop, ...rest } = e; return rest; });
+    const r = await api.deleteBook(book.id);
+    if (!alive.current) return false;
+    setBusy((b) => { const n = new Set(b); n.delete(book.id); return n; });
+    if (isError(r)) {
+      setErrors((e) => ({ ...e, [book.id]: r.error.message || LIBRARY.deleteBookFailed }));
+      await load();
+      return false;
+    }
+    if (moving === book.id) setMoving(null);
+    await load();
+    onChange?.();
+    return true;
+  };
   // The sample book: copied in whole on the server (already processed), so the page refetches at once.
   const addSample = async () => {
     setAddingSample(true);
@@ -328,7 +365,8 @@ export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook
               <ul className="lib-list">
                 {g.books.map((b) => (
                   <Row key={b.id} book={b} now={now} busy={busy.has(b.id)} error={errors[b.id]} focus={b.id === focusBook} onGo={() => go(b.id)}
-                    onMove={() => setMoving(moving === b.id ? null : b.id)}>
+                    processing={!!b.processing || b.job?.state === "running" || b.id in started}
+                    onMove={() => setMoving(moving === b.id ? null : b.id)} onDelete={() => remove(b)}>
                     {moving === b.id && <MovePicker book={b} worlds={worlds} onCancel={() => setMoving(null)} onConfirm={(w, create) => move(b, w, create)} />}
                   </Row>
                 ))}

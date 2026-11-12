@@ -182,6 +182,14 @@ export const LIBRARY = {
   pausedKey: "Paused: your AI provider's key needs attention.",
   failedDefault: "Processing failed.",
   startFailed: "Couldn't start processing.",
+  // Deleting a book: confirmed first, refused while it is processed.
+  deleteBook: "Delete book",
+  deleteBookLabel: (title: string) => `Delete ${title}`,
+  deleteBookConfirm: (title: string) =>
+    `Delete \u201c${title}\u201d? This can't be undone. To have it back, you'd upload it and process it again.`,
+  deleteBookConfirmButton: "Delete book", deleteBookCancel: "Cancel", deletingBook: "Deleting\u2026",
+  deleteBookBusy: "Can't delete it while it's being processed.",
+  deleteBookFailed: "Couldn't delete the book.",
   gemini: (used: number, limit: number, reserve: number, internals: boolean) =>
     `${internals ? "Gemini requests" : "Question allowance"} today: ${used} of ${limit} used \u00b7 ${reserve} kept for answering questions`,
   // Claude, OpenAI or a paid Gemini plan: tokens instead of the free tier's requests. `tokens` null: not counted (local).
