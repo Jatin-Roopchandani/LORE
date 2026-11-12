@@ -43,7 +43,7 @@ from lore.central import history as history_store
 from lore.central import traces as trace_store
 from lore.central.history import ensure_user
 from lore.central.models import KIND_MOVE, KIND_PROCESS
-from lore import tracing
+from lore import sample, tracing
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.registry import book_rows, list_books, story_chapters
@@ -428,7 +428,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 raise HTTPException(401, "invalid user")
             return base
         try:
-            return config_for(base, validate_user_id(user.id))
+            # A new account's first request seeds its library with the sample.
+            return config_for(base, validate_user_id(user.id), seed=True)
         except InvalidUserId:
             raise HTTPException(401, "invalid user") from None
 
@@ -653,7 +654,38 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
              "series_index": b["series_index"],
              "job": _job_out(by_book.get(b["id"]), now, used.get(b["id"]),
                              steps.get(b["id"]))}
-            for b in rows], "gemini": gemini}
+            for b in rows], "gemini": gemini,
+            # The empty Library offers the sample book (POST /api/library/sample).
+            "sample": not rows and sample_offered(user)}
+
+    def sample_offered(user: CurrentUser) -> bool:
+        """Accounts of a multi-user server only: a local library is the data
+        root itself, so it has no template beside it."""
+        return not user.is_local and sample.available(base.data_dir)
+
+    @api.post("/api/library/sample", status_code=201)
+    def add_sample(config: LoreConfig = Depends(user_config),
+                   user: CurrentUser = Depends(current_user)):
+        """Put the sample book in a library that has none (refused once it has
+        a book: the sample is never merged into a library in use)."""
+        if not sample_offered(user):
+            return _api_error(404, "not_found", "there is no sample book on this server")
+        try:
+            book_id = sample.add_to_empty_library(base.data_dir, config.data_dir)
+        except sample.LibraryNotEmpty as exc:
+            if str(exc) == "busy":
+                return _api_error(409, "busy", "a book is being added or processed")
+            return _api_error(409, "not_empty",
+                              "the sample can only be added to an empty library")
+        except sample.SampleError:
+            return _api_error(404, "not_found", "there is no sample book on this server")
+        conn = open_db(config.sqlite_path)
+        try:
+            row = next(b for b in list_books(conn) if b["id"] == book_id)
+        finally:
+            conn.close()
+        return {"added": True, "book": {"id": row["id"], "title": row["title"],
+                                        "world": row["world"]}}
 
     def _process(config: LoreConfig, book_id: str,
                  move_world: int | None = None) -> None:
