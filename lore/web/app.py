@@ -648,10 +648,12 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             steps = step_lists(user, config, conn, by_book, used, now)
         finally:
             conn.close()
+        # The sample book a new account starts with, marked so the app can say so.
+        sample_ids = frozenset() if user.is_local else sample.book_ids(base.data_dir)
         return {"usage": usage_line(user, config), "books": [
             {"id": b["id"], "title": b["title"], "author": b["author"],
              "status": b["status"], "world": b["world"], "series": b["series"],
-             "series_index": b["series_index"],
+             "series_index": b["series_index"], "is_sample": b["id"] in sample_ids,
              "job": _job_out(by_book.get(b["id"]), now, used.get(b["id"]),
                              steps.get(b["id"]))}
             for b in rows], "gemini": gemini,

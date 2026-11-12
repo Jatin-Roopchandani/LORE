@@ -68,6 +68,32 @@ def available(root: Path) -> bool:
     return enabled() and (template_dir(root) / "lore.db").is_file()
 
 
+_IDS: dict[Path, tuple[float, frozenset[str]]] = {}
+
+
+def book_ids(root: Path) -> frozenset[str]:
+    """The template's book ids (a book's id is its content's hash, so a reader's
+    copy of the sample has the same one); empty with no template. Read once per
+    version of the template's database."""
+    db = template_dir(root) / "lore.db"
+    try:
+        mtime = db.stat().st_mtime
+    except OSError:
+        return frozenset()
+    cached = _IDS.get(db)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        ids = frozenset(r[0] for r in conn.execute("SELECT id FROM books"))
+    except sqlite3.Error:
+        ids = frozenset()
+    finally:
+        conn.close()
+    _IDS[db] = (mtime, ids)
+    return ids
+
+
 # --------------------------------------------------------------------------
 # Copying a template into a library
 

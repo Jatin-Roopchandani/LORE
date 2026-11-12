@@ -119,7 +119,9 @@ export interface PlanStep { stage: string; state: "done" | "current" | "upcoming
   seconds_left: number | null }
 export interface StepPlan { steps: PlanStep[]; step: number; of: number; seconds_left: number | null; unknown_left: boolean }
 export interface LibraryBook { id: string; title: string; author: string | null; status: string;
-  world: string | null; series: string | null; series_index: number | null; job: BookJob | null }
+  world: string | null; series: string | null; series_index: number | null; job: BookJob | null;
+  // The sample book LORE gave a new account (multi mode); tagged in the Library.
+  is_sample?: boolean }
 export type MoveResult = { started: true; world: WorldRef } | { started: false };
 export interface GeminiUse { used_today: number; limit: number; answer_reserve: number }
 // `usage`: what the footer shows. `free`: Gemini's free tier (the `gemini` numbers). `metered`: Claude, OpenAI or a

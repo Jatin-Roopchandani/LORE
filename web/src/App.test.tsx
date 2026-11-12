@@ -40,6 +40,7 @@ vi.mock("./api", () => ({
     mcp: () => Promise.resolve({ error: { code: "x", message: "x" } }),
     entities: () => Promise.resolve({ entities: [] }),
     overview: (w?: string) => overview(w),
+    books: () => Promise.resolve({ books: [], gemini: { used_today: 0, limit: 1, answer_reserve: 0 } }),
   },
   isError: (x: unknown) => typeof x === "object" && x !== null && "error" in x,
   // The stream drops before any answer (or fails with `askError`, reporting a key problem as the real client does).

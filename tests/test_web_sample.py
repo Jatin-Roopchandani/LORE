@@ -134,3 +134,25 @@ def test_local_mode_is_never_seeded_and_offers_nothing(root, tmp_path) -> None:
     assert r.json()["books"] == [] and r.json()["sample"] is False
     assert client.post("/api/library/sample").status_code == 404
     assert not (root.data_dir / "users").exists()
+
+
+def test_the_sample_book_is_marked_as_the_sample(client, root) -> None:
+    out = books(client, "carol")
+    assert [(b["id"], b["is_sample"]) for b in out["books"]] == [(ONE, True)]
+
+
+def test_without_a_template_no_book_is_marked_sample(client, root) -> None:
+    books(client, "carol")  # seeded while the template exists
+    shutil.rmtree(root.data_dir / "sample")
+    assert [b["is_sample"] for b in books(client, "carol")["books"]] == [False]
+
+
+def test_the_template_ids_are_read_once_per_version(root, monkeypatch) -> None:
+    calls = []
+    real = sample.sqlite3.connect
+    monkeypatch.setattr(sample.sqlite3, "connect", lambda *a, **k: calls.append(a) or real(*a, **k))
+    sample._IDS.clear()
+    assert sample.book_ids(root.data_dir) == frozenset({ONE})
+    assert sample.book_ids(root.data_dir) == frozenset({ONE})
+    assert len(calls) == 1
+    assert sample.book_ids(root.data_dir / "nowhere") == frozenset()

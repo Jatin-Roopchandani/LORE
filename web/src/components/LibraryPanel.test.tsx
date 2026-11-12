@@ -452,3 +452,12 @@ test("a refused sample shows why and keeps the library as it was", async () => {
   await act(async () => {});
   expect(screen.getByRole("alert")).toHaveTextContent("a book is being added or processed");
 });
+
+test("the sample book carries a Sample tag; other books don't", async () => {
+  status = { gemini, books: [{ ...book("s", null), is_sample: true }, book("a", null)] };
+  await open();
+  const tags = screen.getAllByText(LIBRARY.sampleTag);
+  expect(tags).toHaveLength(1);
+  expect(tags[0].closest("li, .lib-row, div")?.textContent).toContain("Book s");
+  expect(tags[0]).toHaveAttribute("title", LIBRARY.sampleTagHint);
+});

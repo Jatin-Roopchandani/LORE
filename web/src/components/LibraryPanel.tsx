@@ -62,7 +62,9 @@ function Row({ book, now, busy, error, focus = false, onGo, onMove, children }: 
   }
   return (
     <li ref={ref} className={`lib-row${focus ? " focus" : ""}`} aria-current={focus ? "true" : undefined}>
-      <div className="lib-title"><strong>{book.title}</strong>{meta && <span className="meta">{meta}</span>}</div>
+      <div className="lib-title"><strong>{book.title}</strong>
+        {book.is_sample && <span className="tag sample-tag" title={LIBRARY.sampleTagHint}>{LIBRARY.sampleTag}</span>}
+        {meta && <span className="meta">{meta}</span>}</div>
       <div className="lib-body">
         {body}
         <button className="tbtn" type="button" disabled={busy || job?.state === "running"} aria-label={WORLDS.moveOpenLabel(book.title)} onClick={onMove}>{WORLDS.moveOpen}</button>

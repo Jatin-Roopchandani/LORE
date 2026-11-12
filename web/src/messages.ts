@@ -176,6 +176,15 @@ export const LIBRARY = {
   sampleLead: "Not sure where to start? Add a sample book, ready to explore and ask about.",
   addSample: "Add the sample book", addingSample: "Adding\u2026",
   sampleFailed: "Couldn't add the sample book.",
+  // The book a new account starts with, tagged in the Library so it is clear LORE put it there.
+  sampleTag: "Sample",
+  sampleTagHint: "A sample book LORE added for you to explore. Your own books sit alongside it.",
+  // Shown on arrival while the library holds the sample book, until dismissed.
+  sampleNotice: (title: string) => `We've added ${title} to your library so you can explore LORE right away: ask it a question or click around the graph.`,
+  sampleNoticeAdd: "Add your own books any time with + Add book.",
+  sampleNoticeLabel: "The sample book",
+  sampleNoticeAddButton: "Add a book",
+  sampleNoticeDismiss: "Got it",
   continue: "Continue", retry: "Retry", process: "Process",
   action: (verb: string, title: string) => `${verb} ${title}`,
   pausedDefault: "Paused until the daily allowance resets.",
