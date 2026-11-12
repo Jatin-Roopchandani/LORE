@@ -80,7 +80,7 @@ def test_get_books_shape_for_an_unprocessed_book(config):
     assert first == {"id": "b1", "title": "A Study in Scarlet", "author": None,
                      "status": "registered", "world": None, "series": None,
                      "series_index": None, "is_sample": False,  # local mode: never the sample
-                     "job": None}
+                     "job": None, "processing": False}
     g = body["gemini"]
     assert set(g) == {"used_today", "limit", "answer_reserve"}
     assert g["used_today"] == 0 and g["limit"] > 0 and g["answer_reserve"] == 60

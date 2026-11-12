@@ -460,4 +460,51 @@ test("the sample book carries a Sample tag; other books don't", async () => {
   expect(tags).toHaveLength(1);
   expect(tags[0].closest("li, .lib-row, div")?.textContent).toContain("Book s");
   expect(tags[0]).toHaveAttribute("title", LIBRARY.sampleTagHint);
+
+test("a book is deleted only after a confirmation that names it and says it can't be undone", async () => {
+  status = { gemini, books: [book("a", job({ state: "done" })), book("b", null)] };
+  const changed = vi.fn();
+  render(<LibraryPanel open onClose={() => {}} showInternals={false} onChange={changed} />);
+  await act(async () => {});
+  await click(screen.getByRole("button", { name: LIBRARY.deleteBookLabel("Book a") }));
+  expect(screen.getByText(LIBRARY.deleteBookConfirm("Book a"))).toBeInTheDocument();
+  expect(LIBRARY.deleteBookConfirm("Book a")).toMatch(/can't be undone.*upload it and process it again/);
+  expect(sent).toEqual([]);
+  // Cancel sends nothing.
+  await click(screen.getByRole("button", { name: LIBRARY.deleteBookCancel }));
+  expect(sent).toEqual([]);
+  await click(screen.getByRole("button", { name: LIBRARY.deleteBookLabel("Book a") }));
+  postReply = () => ({ status: 200, body: { deleted: true, book: { id: "a", title: "Book a" }, world: "Alpha Saga", world_removed: false } });
+  status = { gemini, books: [book("b", null)] };
+  await click(screen.getByRole("button", { name: LIBRARY.deleteBookConfirmButton }));
+  expect(sent.at(-1)).toEqual({ url: "/api/books/a", method: "DELETE", body: undefined });
+  // The list refetched without it, and the page was told (worlds, graph and reading progress refetch).
+  expect(screen.queryByText("Book a")).toBeNull();
+  expect(screen.getByText("Book b")).toBeInTheDocument();
+  expect(changed).toHaveBeenCalledTimes(1);
+});
+
+test("a processing book can't be deleted, and says why", async () => {
+  status = { gemini, books: [book("a", job({})), book("q", null, "ingested", "Alpha Saga"), book("r", job({ state: "done" }))] };
+  (status.books[1] as { processing?: boolean }).processing = true; // queued for the worker
+  await open();
+  expect(screen.getByRole("button", { name: LIBRARY.deleteBookLabel("Book a") })).toBeDisabled();
+  expect(screen.getByRole("button", { name: LIBRARY.deleteBookLabel("Book q") })).toBeDisabled();
+  expect(screen.getByRole("button", { name: LIBRARY.deleteBookLabel("Book r") })).toBeEnabled();
+  expect(screen.getAllByText(LIBRARY.deleteBookBusy)).toHaveLength(2);
+  vi.clearAllTimers();
+});
+
+test("a refused delete shows the reason on the row and keeps the book", async () => {
+  status = { gemini, books: [book("a", job({ state: "done" }))] };
+  const changed = vi.fn();
+  render(<LibraryPanel open onClose={() => {}} showInternals={false} onChange={changed} />);
+  await act(async () => {});
+  postReply = () => ({ status: 409, body: { error: { code: "busy", message: "a book is being added or processed in your library; try again when it is done" } } });
+  await click(screen.getByRole("button", { name: LIBRARY.deleteBookLabel("Book a") }));
+  await click(screen.getByRole("button", { name: LIBRARY.deleteBookConfirmButton }));
+  expect(screen.getByRole("alert")).toHaveTextContent("a book is being added or processed");
+  expect(screen.getByText("Book a")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: LIBRARY.deleteBookLabel("Book a") })).toBeEnabled();
+  expect(changed).not.toHaveBeenCalled();
 });
