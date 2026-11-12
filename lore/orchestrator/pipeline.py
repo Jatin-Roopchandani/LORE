@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
 
+from lore import library_lock
 from lore.config import LoreConfig
 from lore.graph.artifacts import DamagedUnitsError
 from lore.inference import key_scope
@@ -217,7 +218,8 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
     Returns the final job row (done, waiting_quota or failed). Raises
     JobRefused, leaving the row untouched, when a fresh `running` row exists
     (never overridden, even by `force`) or when the allowance has not reset
-    yet (`force` overrides that one).
+    yet (`force` overrides that one), and while a book of the library is
+    being deleted (lore.library_lock).
     """
     if clock is None:
         clock = (lambda: now) if now is not None else wall_clock
@@ -230,6 +232,25 @@ def run_book(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
             if not ok:
                 raise JobRefused(why)
 
+    # Held for the whole run: a book's delete (lore.book_delete) never
+    # overlaps a run that writes the same stores, and no run starts while
+    # one is under way. The claimed row is left as it was (see above).
+    try:
+        held = library_lock.hold(config.data_dir, exclusive=False)
+        held.__enter__()
+    except library_lock.LibraryBusy:
+        raise JobRefused("a book of this library is being deleted;"
+                         " try again in a moment") from None
+    try:
+        return _run_stages(conn, config, book_id, stages, clock, job, claimed,
+                           keepalive_interval)
+    finally:
+        held.__exit__(None, None, None)
+
+
+def _run_stages(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
+                stages: list[Stage], clock: Clock, job: jobs.BookJob | None,
+                claimed: bool, keepalive_interval: float) -> jobs.BookJob:
     # Resume at the saved stage; a finished or absent job starts over, which
     # is safe because every stage skips what it has already done.
     resume_at = 0

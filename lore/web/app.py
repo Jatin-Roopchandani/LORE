@@ -36,6 +36,7 @@ from sqlalchemy.orm import sessionmaker
 from lore.auth.csrf import csrf_guard
 from lore.auth.current import SessionRefresh
 from lore.auth.routes import build_router as build_auth_router
+from lore import book_delete
 from lore.central import queue
 from lore.central.db import database_url, make_engine, make_session_factory
 from lore.central.db import upgrade as upgrade_central
@@ -345,9 +346,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                key_checker: "KeyChecker | None" = None,
                upload_settings: "UploadSettings | None" = None,
                rate_settings: "RateSettings | None" = None,
-               oauth_clock: Callable[[], datetime] | None = None):
+               oauth_clock: Callable[[], datetime] | None = None,
+               codex_refresh_factory: Callable[[], Callable] | None = None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
-    book processing.
+    book processing; `codex_refresh_factory` for deleting a book (the cached
+    codex rebuild, lore.book_delete).
 
     `config` is the BASE config: its `data_dir` is the data root. Every route
     resolves the request's user and works on `config_for(config, user)`, the
@@ -648,15 +651,67 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             steps = step_lists(user, config, conn, by_book, used, now)
         finally:
             conn.close()
+        queued = queued_books(user)
         return {"usage": usage_line(user, config), "books": [
             {"id": b["id"], "title": b["title"], "author": b["author"],
              "status": b["status"], "world": b["world"], "series": b["series"],
              "series_index": b["series_index"],
              "job": _job_out(by_book.get(b["id"]), now, used.get(b["id"]),
-                             steps.get(b["id"]))}
+                             steps.get(b["id"])),
+             # Running, or queued for the worker: no delete until it is over.
+             "processing": b["id"] in queued or (
+                 b["id"] in by_book and jobs.is_fresh(by_book[b["id"]], now))}
             for b in rows], "gemini": gemini,
             # The empty Library offers the sample book (POST /api/library/sample).
             "sample": not rows and sample_offered(user)}
+
+    def queued_books(user: CurrentUser) -> set[str]:
+        """Multi mode: the user's books with a queued or claimed central job."""
+        if not multi:
+            return set()
+        with sessions[0]() as session:
+            return queue.running_books(session, user.id)
+
+    @api.delete("/api/books/{book_id}")
+    def delete_a_book(book_id: str, config: LoreConfig = Depends(user_config),
+                      user: CurrentUser = Depends(current_user)):
+        """Delete a book from the reader's own library, with everything built
+        from it (lore.book_delete). 404 for an unknown book; 409 `processing`
+        while it runs or is queued, 409 `busy` while another book is being
+        processed or added (the delete would write the same stores)."""
+        if not multi and not runner_slot.acquire(blocking=False):
+            # The one in-process runner is busy; its book may be this one.
+            conn = open_db(config.sqlite_path)
+            try:
+                known = book_id in {b["id"] for b in list_books(conn)}
+                job = jobs.get_job(conn, book_id)
+            finally:
+                conn.close()
+            if not known:
+                return _api_error(404, "not_found", f"no book with id {book_id!r}")
+            if job is not None and jobs.is_fresh(job, now_utc()):
+                return _api_error(409, "processing", book_delete.PROCESSING)
+            return _api_error(409, "busy", book_delete.BUSY)
+
+        def check(target: str):
+            if multi and target in queued_books(user):
+                return book_delete.DeleteRefused("processing", book_delete.PROCESSING)
+            return None
+
+        try:
+            report = book_delete.delete_book(
+                config, book_id, now=now_utc(), check=check,
+                codex_refresh=codex_refresh_factory() if codex_refresh_factory else None)
+        except book_delete.DeleteRefused as exc:
+            return _api_error(404 if exc.code == "not_found" else 409, exc.code, exc.message)
+        finally:
+            if not multi:
+                runner_slot.release()
+        if multi:  # nothing left to wake for a book that is gone
+            with sessions[0]() as session:
+                queue.close_for_deleted_book(session, user.id, book_id)
+        return {"deleted": True, "book": {"id": report.book_id, "title": report.title},
+                "world": report.world, "world_removed": report.world_removed}
 
     def sample_offered(user: CurrentUser) -> bool:
         """Accounts of a multi-user server only: a local library is the data

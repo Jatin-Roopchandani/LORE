@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Callable
 
 from lore.config import LoreConfig
+from lore.library_lock import LOCK_NAME
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ DEFAULT_WORLD = "Sherlock Holmes"
 
 # sqlite's own files: never copied byte for byte from a library in use.
 _DB_FILES = ("lore.db", "lore.db-wal", "lore.db-shm", "lore.db-journal")
+# Never copied either: the library's lock file (lore.library_lock).
+_SKIPPED = (*_DB_FILES, LOCK_NAME)
 # What a library directory holds (LoreConfig's paths). Anything else found in
 # a source library is reported, not copied blindly into every new account.
 _KNOWN = {"lore.db", "kuzu", "lancedb", "inbox", "extractions", "disambiguation",
@@ -96,7 +99,7 @@ def _copy_db(src: Path, dest: Path) -> None:
 def _copy_library(src: Path, dest: Path) -> None:
     """`src` copied to `dest` (which must not exist); sqlite by backup."""
     shutil.copytree(src, dest, symlinks=True,
-                    ignore=lambda d, names: [n for n in names if n in _DB_FILES]
+                    ignore=lambda d, names: [n for n in names if n in _SKIPPED]
                     if Path(d) == src else [])
     if (src / "lore.db").is_file():
         _copy_db(src / "lore.db", dest / "lore.db")
@@ -451,8 +454,8 @@ def delete_book(config: LoreConfig, conn: sqlite3.Connection, kuzu, lance,
     vector indexes (`remove_book_from_graph`, the move's own removal), its
     processing state, its SQLite rows (`forget_book`) and its files.
 
-    The app itself has no "delete a book" yet; this is that path, built from
-    the pieces it does have."""
+    The app's own delete (lore.book_delete, DELETE /api/books/{id}) runs this
+    too, with what a library in use needs around it."""
     from lore.graph.remove import remove_book_from_graph
     from lore.ingest.registry import forget_book
 

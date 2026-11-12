@@ -4,7 +4,8 @@ The body is untrusted, so the order matters:
 
 1. Who is asking (401 signed out; CSRF is the app-wide guard), and in multi
    mode: a Gemini key (409 key_required), one upload at a time per user
-   (409 busy), at most `per_hour` attempts (429 rate_limited), `per_day`
+   (409 busy; also while one of the library's books is being deleted,
+   lore.library_lock), at most `per_hour` attempts (429 rate_limited), `per_day`
    successful uploads in 24 hours (429 daily_limit) and `max_books` books in
    the library (409 too_many_books). All of this before a byte is read.
 2. The multipart body is parsed AS IT STREAMS (python-multipart, no spooling
@@ -48,7 +49,7 @@ from fastapi.responses import JSONResponse
 from python_multipart.multipart import MultipartParser, parse_options_header
 from starlette.requests import ClientDisconnect
 
-from lore import fs
+from lore import fs, library_lock
 from lore.config import LoreConfig
 from lore.db.sqlite import open_db
 from lore.ingest.sandbox import SandboxLimits
@@ -426,11 +427,16 @@ def build_upload_router(deps: UploadDeps) -> APIRouter:
         if not lock.acquire(blocking=False):
             return _error(409, "busy", "another upload is still in progress")
         try:
-            if deps.multi:
-                refused = await asyncio.to_thread(_quota_refusal, deps, user, cfg)
-                if refused is not None:
-                    return refused
-            return await _receive(request, user, cfg, boundary)
+            # Shared for the whole upload, across processes: a book's delete
+            # (lore.book_delete) never runs while a book is being added.
+            with library_lock.hold(cfg.data_dir, exclusive=False):
+                if deps.multi:
+                    refused = await asyncio.to_thread(_quota_refusal, deps, user, cfg)
+                    if refused is not None:
+                        return refused
+                return await _receive(request, user, cfg, boundary)
+        except library_lock.LibraryBusy:
+            return _error(409, "busy", "a book is being deleted; try again in a moment")
         finally:
             lock.release()
 
