@@ -172,12 +172,33 @@ export const LIBRARY = {
   progressLabel: (stage: string) => `${STAGE_LABEL[stage] ?? stage} progress`,
   continuesAfter: (time: string, left: string) => `Continues after ${time} (your time) \u2014 in ${left}`,
   inHM: (mins: number) => `${Math.floor(mins / 60)}h ${mins % 60}m`,
+  // An empty library on a server that has the sample book: one click adds it, already processed.
+  sampleLead: "Not sure where to start? Add a sample book, ready to explore and ask about.",
+  addSample: "Add the sample book", addingSample: "Adding\u2026",
+  sampleFailed: "Couldn't add the sample book.",
+  // The book a new account starts with, tagged in the Library so it is clear LORE put it there.
+  sampleTag: "Sample",
+  sampleTagHint: "A sample book LORE added for you to explore. Your own books sit alongside it.",
+  // Shown on arrival while the library holds the sample book, until dismissed.
+  sampleNotice: (title: string) => `We've added ${title} to your library so you can explore LORE right away: ask it a question or click around the graph.`,
+  sampleNoticeAdd: "Add your own books any time with + Add book.",
+  sampleNoticeLabel: "The sample book",
+  sampleNoticeAddButton: "Add a book",
+  sampleNoticeDismiss: "Got it",
   continue: "Continue", retry: "Retry", process: "Process",
   action: (verb: string, title: string) => `${verb} ${title}`,
   pausedDefault: "Paused until the daily allowance resets.",
   pausedKey: "Paused: your AI provider's key needs attention.",
   failedDefault: "Processing failed.",
   startFailed: "Couldn't start processing.",
+  // Deleting a book: confirmed first, refused while it is processed.
+  deleteBook: "Delete book",
+  deleteBookLabel: (title: string) => `Delete ${title}`,
+  deleteBookConfirm: (title: string) =>
+    `Delete \u201c${title}\u201d? This can't be undone. To have it back, you'd upload it and process it again.`,
+  deleteBookConfirmButton: "Delete book", deleteBookCancel: "Cancel", deletingBook: "Deleting\u2026",
+  deleteBookBusy: "Can't delete it while it's being processed.",
+  deleteBookFailed: "Couldn't delete the book.",
   gemini: (used: number, limit: number, reserve: number, internals: boolean) =>
     `${internals ? "Gemini requests" : "Question allowance"} today: ${used} of ${limit} used \u00b7 ${reserve} kept for answering questions`,
   // Claude, OpenAI or a paid Gemini plan: tokens instead of the free tier's requests. `tokens` null: not counted (local).
@@ -202,6 +223,9 @@ export const UI = {
   // While an answer streams the Ask button is Stop (Esc in the ask box does the same).
   stop: "Stop",
   stopHint: "Stop this answer (Esc)",
+  // The answer has all arrived but is still being drawn: nothing left to stop, so the button shows it whole.
+  showAnswer: "Show answer",
+  showAnswerHint: "The answer is ready: show it all now (Esc)",
   stopped: "Stopped",
   stoppedNote: "You stopped this answer. Ask again to continue.",
   noBooks: "Pick at least one book to see its part of the graph.",

@@ -82,6 +82,9 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
   }, [refresh]);
   const declineImport = useCallback(() => { markImportDone(); setImportable(0); }, []);
   const abort = useRef<AbortController | null>(null);
+  // The question on screen has all arrived (its answer or error is in, or it is a replay) while it may still be
+  // drawing: Stop has nothing left to stop then, so the button offers to show it whole instead.
+  const [received, setReceived] = useState(false);
   const scheduler = useRef<Scheduler | null>(null);
   const last = useRef<{ question: string; depth?: Depth; spoilers?: boolean }>({ question: "" });
   // The Deep dive choice (auto, deep or focused), remembered across visits and sent with every question.
@@ -127,6 +130,7 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
     last.current = { question, depth, spoilers };
     const entry: ThreadEntry = { key: `q${++asks.current}`, question, standalone: null, events: [] };
     live.current = { entry, done: false };
+    setReceived(false);
     const following = chat.current;
     dispatch({ kind: "reset", question });
     const controller = new AbortController();
@@ -143,7 +147,11 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
       // Spoilers shown for this one question only: the reading progress is skipped for it (`?spoilers=1`).
       const stream = spoilers ? streamAsk(question, controller.signal, asked, d, following ?? undefined, true)
         : following ? streamAsk(question, controller.signal, asked, d, following) : streamAsk(question, controller.signal, asked, d);
-      for await (const event of stream) { events.push(event); sched.push(event); }
+      for await (const event of stream) {
+        events.push(event);
+        if (event.type === "answer" || event.type === "error") setReceived(true);
+        sched.push(event);
+      }
       if (controller.signal.aborted) return;
       entry.standalone = standaloneOf(events);
       if (live.current?.entry === entry) live.current = { entry, done: true };
@@ -177,6 +185,7 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
     setRun((n) => n + 1);
     setThread(earlier);
     live.current = { entry: latest, done: true };
+    setReceived(true);
     dispatch({ kind: "reset", question: latest.question });
     const sched = createScheduler((event) => dispatch({ kind: "event", event }), { reduceMotion: reduceMotion(), replay: !reduceMotion() });
     scheduler.current = sched;
@@ -244,5 +253,6 @@ export function useAsk(world: string = "all", onReplayWorld?: (world: string) =>
 
   const retry = useCallback(() => { if (last.current.question) send(last.current.question, last.current.depth, true, last.current.spoilers); }, [send]);
   return { state, thread, history, current, run, ask, replay, retry, stopAnswer, clear, remove, clearHistory, depth, setDepth, busy: state.status === "running",
+    finishing: state.status === "running" && received,
     importable, importLocal, declineImport };
 }

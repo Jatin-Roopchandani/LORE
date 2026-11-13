@@ -68,8 +68,14 @@ def validate_user_id(user_id: object) -> str:
     return user_id
 
 
-def user_data_dir(root: Path, user_id: str) -> Path:
-    """`<root>/users/<user_id>`, created on first use."""
+def user_data_dir(root: Path, user_id: str, *, seed: bool = False) -> Path:
+    """`<root>/users/<user_id>`, created on first use.
+
+    `seed`: when the directory does not exist yet, it starts as a copy of the
+    sample library (`<root>/sample`, lore.sample) if there is one. Only the
+    web app's requests ask for it (a new account's first request); the
+    worker and the hosted MCP never do. A directory that exists, empty or
+    not, is never seeded, and the copy is renamed into place whole."""
     validate_user_id(user_id)
     users = Path(root) / "users"
     path = users / user_id
@@ -77,20 +83,24 @@ def user_data_dir(root: Path, user_id: str) -> Path:
     # resolved path anyway, so a symlinked entry cannot either.
     if path.resolve().parent != users.resolve():
         raise InvalidUserId(f"user directory escapes the users root: {user_id!r}")
+    if seed and not path.exists():
+        from lore import sample
+        sample.seed_new_library(Path(root), path)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def config_for(base: LoreConfig, user_id: str) -> LoreConfig:
+def config_for(base: LoreConfig, user_id: str, *, seed: bool = False) -> LoreConfig:
     """A copy of `base` whose library is `user_id`'s; everything else inherited.
 
     `base.data_dir` is the data root. The local user's library IS that root
-    (single-user setups keep working unchanged); anyone else's is
-    `<root>/users/<id>`.
+    (single-user setups keep working unchanged, and are never seeded);
+    anyone else's is `<root>/users/<id>`.
     """
     if user_id == LOCAL_USER_ID:
         return base
-    return base.model_copy(update={"data_dir": user_data_dir(base.data_dir, user_id)})
+    return base.model_copy(update={
+        "data_dir": user_data_dir(base.data_dir, user_id, seed=seed)})
 
 
 def multi_user_enabled() -> bool:

@@ -30,7 +30,7 @@ type Hover = (chunks: string[]) => void;
 // `onSection`: the latest answer's section being read (a deep answer), for the graph. `limited`: the reading progress
 // holds something back, so the ask box offers "Show spoilers for this question".
 export function ChatPane({ ask, limited = false, showInternals, resetsAt, onHoverChunks, overview, onSection }:
-  { ask: Pick<AskApi, "state" | "run" | "ask" | "retry" | "busy" | "depth" | "setDepth"> & Partial<Pick<AskApi, "thread" | "clear" | "stopAnswer">>;
+  { ask: Pick<AskApi, "state" | "run" | "ask" | "retry" | "busy" | "depth" | "setDepth"> & Partial<Pick<AskApi, "thread" | "clear" | "stopAnswer" | "finishing">>;
     limited?: boolean;
     showInternals: boolean; resetsAt?: string; onHoverChunks: Hover; overview?: SubgraphData | null; onSection?: (index: number | null) => void }) {
   const { state } = ask;
@@ -72,7 +72,7 @@ export function ChatPane({ ask, limited = false, showInternals, resetsAt, onHove
         )}
       </div>
       <AskBox onAsk={(q, spoilers) => (spoilers ? ask.ask(q, undefined, true) : ask.ask(q))} busy={ask.busy} depth={ask.depth} onDepth={ask.setDepth}
-        spoilerGuard={limited} onStop={ask.stopAnswer}
+        spoilerGuard={limited} onStop={ask.stopAnswer} finishing={ask.finishing}
         placeholder={inChat ? CHAT.followupPlaceholder : UI.askPlaceholder} />
     </section>
   );

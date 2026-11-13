@@ -1,0 +1,20 @@
+name: Feature request
+description: An idea to make LORE better
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The problem or the reading situation, before any solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How might LORE help?
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Books, series or examples that show the need.

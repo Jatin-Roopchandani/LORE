@@ -64,6 +64,7 @@ PASS = {
     "rate_limited": "Too many requests. Please wait a moment and try again.",
     "daily_limit": "You've reached today's limit. Try again tomorrow.",
     "not_resumable": "That book can't be continued right now.",
+    "processing": "This book is still being processed.",
     "unknown_world": "There is no such world.",
     "invalid_world": "That world name can't be used.",
     "world_required": "Choose a world first.",

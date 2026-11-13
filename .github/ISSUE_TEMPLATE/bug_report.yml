@@ -1,0 +1,41 @@
+name: Bug report
+description: Something isn't working as it should
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add the book ...
+        2. Ask "..."
+        3. ...
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where?
+      options:
+        - Hosted beta (lore.jrvn.site)
+        - Self-hosted web app (lore ui)
+        - Command line (lore ...)
+        - MCP client (Claude, Cursor, ...)
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: AI provider
+      placeholder: Gemini (free tier), Claude, OpenAI ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: For a self-hosted install, the output of `uv run lore doctor` helps. Remove any keys first.
+      render: text

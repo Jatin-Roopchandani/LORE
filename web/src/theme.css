@@ -157,6 +157,8 @@ form.ask button{border:0;background:var(--accent);color:var(--panel);border-radi
 form.ask button.stop{display:inline-flex;align-items:center;gap:8px;background:var(--panel);color:var(--danger);border:1px solid var(--danger)}
 form.ask button.stop:hover{background:var(--danger);color:var(--panel)}
 .stop-icon{width:9px;height:9px;border-radius:2px;background:currentColor}
+form.ask button.stop.finishing{color:var(--accent);border-color:var(--accent)}
+form.ask button.stop.finishing:hover{background:var(--accent);color:var(--panel)}
 .stopped-note{color:var(--muted)} .stopped-label{color:var(--ink);font-weight:600}
 .ask-opts{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:12px;color:var(--muted)}
 fieldset.depth{display:inline-flex;align-items:center;gap:2px;margin:0;padding:0;border:0;min-width:0}
@@ -329,6 +331,7 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .lib-steps .step.current{font-weight:600;color:var(--ink)}
 .lib-steps .step.upcoming{color:var(--muted);opacity:.7}
 .lib-foot{border-top:1px solid var(--line);padding-top:8px}
+.lib-sample{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
 
 .lib-world{display:flex;flex-direction:column;gap:8px}
 .lib-whead{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:4px}
@@ -466,6 +469,11 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 /* The one-time offer to import the chats saved in this browser (release step 4). */
 /* A floating notice: it must take no row of the .app grid (top bar, panes), or the panes collapse. */
 .import-offer{position:fixed;right:24px;bottom:24px;z-index:35;max-width:min(460px,calc(100vw - 32px));display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:0 10px 30px rgb(0 0 0 / .18);font-size:13px}
+/* The sample book: a notice on arrival (floating, so it takes no row of the .app grid) and a tag in the Library. */
+.sample-notice{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:35;width:min(560px,calc(100vw - 32px));display:flex;flex-direction:column;gap:10px;padding:12px 16px;border:1px solid var(--accent);border-radius:10px;background:var(--panel);box-shadow:0 10px 30px rgb(0 0 0 / .18);font-size:13px}
+.sample-notice p{margin:0;line-height:1.5}
+.sample-notice-actions{display:flex;gap:8px;justify-content:flex-end}
+.sample-tag{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:600;vertical-align:middle}
 /* "Report this answer" (release step 4) and the admin's trace view. */
 .report{margin-top:6px}
 .report-link{background:none;border:0;padding:0;color:var(--muted);font-size:12px;text-decoration:underline;cursor:pointer}

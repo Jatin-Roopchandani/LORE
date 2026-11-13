@@ -558,6 +558,40 @@ def book_remove_from_graph(
         f" ({report.entities_released} shared entities kept), {report.beats} beats")
 
 
+sample_app = typer.Typer(help="The sample library new accounts start with.",
+                         no_args_is_help=True)
+app.add_typer(sample_app, name="sample")
+
+
+@sample_app.command("make")
+def sample_make(
+    source: Path = typer.Option(..., "--from", help="the library to copy (only read)"),
+    keep: str = typer.Option(..., "--keep", help="the id of the one book to keep"),
+    out: Path = typer.Option(..., "--out", help="where the template goes; must not exist"
+                             " (the server's is <data root>/sample)"),
+    world: str = typer.Option("Sherlock Holmes", "--world",
+                              help="the name of the kept book's world in the template"),
+) -> None:
+    """Make the sample library: a copy of a library holding one book.
+
+    Every other book is removed from the copy (graph, vectors, rows and
+    files), the reader's own state is cleared, the codex entries the removal
+    dropped are rebuilt from saved answers, and the stores are rewritten so
+    nothing of the removed books stays in their files. The source is never
+    changed. Asks no model; the codex rebuild embeds locally (Ollama).
+    """
+    from lore import sample
+
+    try:
+        summary = sample.make_template(source, out, keep, world_name=world)
+    except sample.SampleError as exc:
+        typer.echo(f"sample not made: {exc}")
+        raise typer.Exit(1)
+    typer.echo(f"sample library made at {out}")
+    for line in summary.lines():
+        typer.echo(f"  {line}")
+
+
 repair_app = typer.Typer(help="Repairs to an existing library that ask no model.",
                          no_args_is_help=True)
 app.add_typer(repair_app, name="repair")

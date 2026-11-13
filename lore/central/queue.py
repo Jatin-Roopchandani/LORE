@@ -241,3 +241,29 @@ def resume_user(session: Session, user_id: str) -> list[int]:
     session.commit()
     session.expire_all()
     return ids
+
+
+def running_books(session: Session, user_id: str) -> set[str]:
+    """The user's books with a queued or claimed job: about to run, or
+    running. (A paused job waits on the user, not on a worker.)"""
+    return set(session.scalars(sa.select(Job.book_id).where(
+        Job.user_id == user_id, Job.state.in_((QUEUED, CLAIMED)))))
+
+
+def close_for_deleted_book(session: Session, user_id: str, book_id: str, *,
+                           now: datetime | None = None) -> list[int]:
+    """The book was deleted: its waiting (queued or paused) jobs are closed
+    as failed, so nothing wakes one for a book that is gone. A claimed job
+    is left to its worker (it finds no book). Commits; returns the ids."""
+    ids = list(session.scalars(sa.select(Job.id).where(
+        Job.user_id == user_id, Job.book_id == book_id,
+        Job.state.in_((QUEUED, PAUSED)))))
+    if ids:
+        session.execute(
+            sa.update(Job).where(Job.id.in_(ids), Job.state.in_((QUEUED, PAUSED)))
+            .values(state=FAILED, outcome="book_deleted", error="the book was deleted",
+                    finished_at=now or utcnow())
+            .execution_options(synchronize_session=False))
+    session.commit()
+    session.expire_all()
+    return ids

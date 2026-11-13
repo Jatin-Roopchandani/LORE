@@ -73,13 +73,14 @@ def _park(config, book, resumable_at):
 
 def test_get_books_shape_for_an_unprocessed_book(config):
     body = _client(config, []).get("/api/books").json()
-    assert set(body) == {"books", "gemini", "usage"}
+    assert set(body) == {"books", "gemini", "usage", "sample"}
+    assert body["sample"] is False  # local mode: never offered
     assert body["usage"] == {"mode": "free", "provider": "gemini"}
     first = body["books"][0]
     assert first == {"id": "b1", "title": "A Study in Scarlet", "author": None,
                      "status": "registered", "world": None, "series": None,
-                     "series_index": None,
-                     "job": None}
+                     "series_index": None, "is_sample": False,  # local mode: never the sample
+                     "job": None, "processing": False}
     g = body["gemini"]
     assert set(g) == {"used_today", "limit", "answer_reserve"}
     assert g["used_today"] == 0 and g["limit"] > 0 and g["answer_reserve"] == 60

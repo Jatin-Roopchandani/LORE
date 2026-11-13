@@ -118,15 +118,21 @@ export interface BookJob { stage: string; state: "running" | "waiting_quota" | "
 export interface PlanStep { stage: string; state: "done" | "current" | "upcoming"; done?: number; total?: number;
   seconds_left: number | null }
 export interface StepPlan { steps: PlanStep[]; step: number; of: number; seconds_left: number | null; unknown_left: boolean }
+// `processing`: running, or queued for the worker; the book can't be deleted until it is over.
 export interface LibraryBook { id: string; title: string; author: string | null; status: string;
-  world: string | null; series: string | null; series_index: number | null; job: BookJob | null }
+  world: string | null; series: string | null; series_index: number | null; job: BookJob | null; processing?: boolean;
+  // The sample book LORE gave a new account (multi mode); tagged in the Library.
+  is_sample?: boolean }
+export interface BookDeleted { deleted: true; book: { id: string; title: string }; world: string | null; world_removed: boolean }
 export type MoveResult = { started: true; world: WorldRef } | { started: false };
 export interface GeminiUse { used_today: number; limit: number; answer_reserve: number }
 // `usage`: what the footer shows. `free`: Gemini's free tier (the `gemini` numbers). `metered`: Claude, OpenAI or a
 // paid Gemini plan, with today's tokens, an estimated cost (where a price is known) and the cap (multi mode only).
 export type LibraryUsage = { mode: "free"; provider: "gemini" }
   | { mode: "metered"; provider: ProviderId; tokens_today: number | null; cost_usd: number | null; daily_token_cap: number | null };
-export interface LibraryStatus { books: LibraryBook[]; gemini: GeminiUse; usage?: LibraryUsage }
+// `sample`: the library is empty and the server has the sample book to offer (POST /api/library/sample).
+export interface LibraryStatus { books: LibraryBook[]; gemini: GeminiUse; usage?: LibraryUsage; sample?: boolean }
+export interface SampleAdded { added: true; book: { id: string; title: string; world: string | null } }
 
 // The graph explorer's reads (profile, timeline, relations, edge, search, path, passage).
 export interface EntityRef { id: string; name: string; kind: string }

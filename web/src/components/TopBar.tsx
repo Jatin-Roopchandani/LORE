@@ -6,6 +6,7 @@ import { AddBookDialog } from "./AddBookDialog";
 import { LibraryPanel } from "./LibraryPanel";
 import { BooksDropdown } from "./BooksDropdown";
 import { QuotaChip } from "./QuotaChip";
+import { SampleNotice } from "./SampleNotice";
 import { ReadingProgress } from "./ReadingProgress";
 import { WorldSelector } from "./WorldSelector";
 import { AccountMenu } from "./AccountMenu";
@@ -49,6 +50,7 @@ export function TopBar({ books, hiddenBooks, onBooksChange, showInternals, refre
       <SettingsDialog worlds={worlds} world={world} onWorldChange={onWorldChange} depth={depth} onDepth={onDepth}
         showInternals={showInternals} onShowInternals={onShowInternals} />
       <LibraryPanel open={library} onClose={() => { setLibrary(false); setFocusBook(null); }} showInternals={showInternals} onChange={onLibraryChange} focusBook={focusBook} />
+      {multi && <SampleNotice refreshKey={libraryKey} onAdd={() => setAdding(true)} />}
       <AddBookDialog open={adding} onClose={() => setAdding(false)} worlds={worlds} multi={multi}
         onUploaded={() => onLibraryChange?.()}
         onOpenBook={(id) => { setAdding(false); setFocusBook(id); setLibrary(true); }} />
