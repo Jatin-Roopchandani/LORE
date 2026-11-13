@@ -1077,6 +1077,10 @@ def process(
         f"({report.alias_links} aliases merged), "
         f"{report.rel_edges} relationships, {report.chunks} chunks indexed"
     )
+    for name in ("disambiguate", "beats", "codex"):
+        note = getattr(by_name.get(name), "note", None)
+        if note:  # no model configured for it: the book is processed without it
+            typer.echo(f"{name}: {note}")
     if report.dropped_edges:
         typer.echo(
             f"{report.dropped_edges} edge(s) dropped — an endpoint was named"

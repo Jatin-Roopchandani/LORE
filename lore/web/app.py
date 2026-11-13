@@ -890,22 +890,25 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             return {}
         choice, chosen_model = processing_choice(user, cfg)
         process_names: list[str] | None = None
+        process_notes: dict[str, str] = {}
         out = {}
         for book_id, job in pending.items():
             target = jobs.move_target(conn, book_id)
             if target is not None:
                 names = plan.names_for(lambda: make_move_stages(cfg, target), cfg)
+                notes = plan.notes_for(lambda: make_move_stages(cfg, target), cfg)
             else:
                 if process_names is None:
                     process_names = plan.names_for(lambda: make_stages(cfg), cfg)
-                names = process_names
+                    process_notes = plan.notes_for(lambda: make_stages(cfg), cfg)
+                names, notes = process_names, process_notes
             provider = used.get(book_id) or choice
             if provider == "gemini":
                 model = (cfg.extraction.gemini_models or [None])[0]
             else:
                 model = chosen_model if provider == choice else None
             out[book_id] = plan.steps(conn, book_id, job, names, now,
-                                      provider=provider, model=model)
+                                      provider=provider, model=model, notes=notes)
         return out
 
     def usage_line(user: CurrentUser, cfg: LoreConfig) -> dict:

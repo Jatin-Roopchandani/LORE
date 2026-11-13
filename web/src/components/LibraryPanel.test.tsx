@@ -130,6 +130,24 @@ test("a running book shows where it is in the whole pipeline, collapsed, with ti
   vi.clearAllTimers();
 });
 
+test("a step with no model configured shows as skipped, with its note", async () => {
+  const note = "skipped: no model configured for story beats";
+  const skipping = { ...plan, step: 2, of: 4, steps: [
+    { stage: "extract", state: "done", seconds_left: 0 },
+    { stage: "load", state: "current", done: 1, total: 4, seconds_left: 60 },
+    { stage: "beats", state: "skipped", note, seconds_left: 0 },
+    { stage: "codex", state: "skipped", seconds_left: 0 },
+  ] };
+  status = { gemini, books: [book("a", job({ stage: "load", done: 1, total: 4, plan: skipping }), "ingested")] };
+  await open();
+  await userEvent.click(screen.getByText(/^Step 2 of 4/));
+  const items = within(screen.getByRole("list", { name: LIBRARY.stepsLabel })).getAllByRole("listitem");
+  expect(items.map((li) => li.className)).toEqual(["step done", "step current", "step skipped", "step skipped"]);
+  expect(within(items[2]).getByText(note)).toBeInTheDocument();
+  expect(within(items[3]).getByText(LIBRARY.stepSkipped)).toBeInTheDocument();
+  vi.clearAllTimers();
+});
+
 test("the total says when some step has no estimate, and no list without a plan", async () => {
   status = { gemini, books: [
     book("a", job({ plan: { ...plan, seconds_left: 5400, unknown_left: true } }), "ingested"),

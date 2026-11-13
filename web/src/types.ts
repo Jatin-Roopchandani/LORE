@@ -115,8 +115,9 @@ export interface BookJob { stage: string; state: "running" | "waiting_quota" | "
   // The whole pipeline as the server will run it for this book (lore/orchestrator/plan.py), with seconds left per step
   // (null: unknown) and in all (`seconds_left`: the known part; `unknown_left`: some step has no estimate).
   plan?: StepPlan | null }
-export interface PlanStep { stage: string; state: "done" | "current" | "upcoming"; done?: number; total?: number;
-  seconds_left: number | null }
+// `skipped`: the step will ask nothing, and `note` says why (e.g. "skipped: no model configured for story beats").
+export interface PlanStep { stage: string; state: "done" | "current" | "upcoming" | "skipped"; done?: number; total?: number;
+  seconds_left: number | null; note?: string }
 export interface StepPlan { steps: PlanStep[]; step: number; of: number; seconds_left: number | null; unknown_left: boolean }
 // `processing`: running, or queued for the worker; the book can't be deleted until it is over.
 export interface LibraryBook { id: string; title: string; author: string | null; status: string;

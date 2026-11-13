@@ -164,6 +164,7 @@ export const LIBRARY = {
     `Step ${step} of ${of} \u00b7 ${label}${left ? ` \u00b7 ${left}` : ""}`,
   stepsLabel: "All steps",
   stepDone: "done",
+  stepSkipped: "skipped",
   stepCount: (done: number, total: number) => `${done.toLocaleString("en")} / ${total.toLocaleString("en")}`,
   duration,
   // The whole: the known part, and "plus a few minutes" when some step has no estimate. null: nothing known.
