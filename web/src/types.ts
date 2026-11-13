@@ -170,15 +170,15 @@ export interface PathResult { nodes: EntityRef[]; hops: PathHop[]; found: boolea
 export interface PassageText { chunk_id: string; book_id: string; book_title: string | null; chapter: number; text: string; position_label: string }
 
 // Sign-in and accounts (multi-user mode).
-export interface AuthProviders { providers: string[]; email: boolean; invite_only: boolean }
+export interface AuthProviders { providers: string[]; email: boolean; invite_only: boolean; password?: boolean; selfhost?: boolean }
 export interface Me { user: { id: string; email: string; name: string | null; role: "user" | "admin" };
   identities?: { provider: string; created_at: string }[] }
 export interface WaitlistEntry { id: number; email: string; reading: string | null; status: "pending" | "invited" | "declined";
   created_at: string; invited_at: string | null }
 export interface AdminUser { id: string; email: string; name: string | null; role: string; status: string; created_at: string;
-  has_key?: boolean; requests_today?: number }
+  has_key?: boolean; requests_today?: number; has_password?: boolean }
 // The signed-in user's Gemini key (multi-user mode): never the key itself, only its last four characters.
-export interface KeyStatus { provider?: ProviderId; present: boolean; last4: string | null; added_at: string | null; last_ok_at: string | null;
+export interface KeyStatus { provider?: ProviderId | "openai_compatible"; present: boolean; server?: boolean; last4: string | null; added_at: string | null; last_ok_at: string | null;
   last_error: "rejected" | "unchecked" | null }
 export interface KeySaved extends KeyStatus { check: "ok" | "unavailable"; warning?: string; models?: string[]; active?: ProviderId }
 // The model providers a user can connect (GET /api/me/providers). Keys are never sent back, only their last four.
@@ -189,6 +189,8 @@ export interface ProviderInfo { provider: ProviderId; connected: boolean; active
 // gemini_paid: the user's "I'm on a paid Gemini plan"; gemini_paid_hint: their free-setting key went past the free-tier
 // daily count today with no 429 from Google (a hint only: LORE never switches it on).
 export interface ProvidersState { active: ProviderId; providers: ProviderInfo[]; daily_token_cap: number | null;
+  // Self-host: the admin's provider for everyone, used by anyone without a key of their own.
+  server?: { provider: ServerProviderId; model: string | null } | null;
   gemini_paid?: boolean; gemini_paid_hint?: boolean }
 export interface TokenTotals { requests: number; input_tokens: number; output_tokens: number;
   estimated_cost_usd: number | null; models: Record<string, { provider: ProviderId; requests: number;
@@ -253,3 +255,11 @@ export interface UploadError { error: ApiError; book_id?: string }
 
 // One admin action (release step 6): who did what to whom.
 export interface AdminEvent { id: number; at: string; admin_id: string | null; admin: string | null; action: string; target_user_id: string | null; detail: Record<string, unknown> | null }
+
+// Self-host mode: the admin's AI provider for everyone (GET/PUT /api/admin/provider). Never the key itself.
+export type ServerProviderId = ProviderId | "openai_compatible";
+export interface ServerProvider { provider: ServerProviderId; label?: string; model: string | null; fast_model: string | null;
+  base_url: string | null; has_key: boolean; last4: string | null; models?: string[]; updated_at: string | null }
+export interface PasswordLink { code: string; link: string; expires_at: string }
+export interface SignedIn { ok: true; redirect: string }
+export interface NewPerson { user: AdminUser; link?: PasswordLink }

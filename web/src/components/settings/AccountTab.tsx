@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { authApi, isError, nav } from "../../api";
-import { AUTH, SETTINGS } from "../../messages";
+import { FormEvent, useEffect, useState } from "react";
+import { authApi, isError, nav, selfhostApi } from "../../api";
+import { AUTH, SELFHOST, SETTINGS } from "../../messages";
+import { isSelfhost } from "../../routing";
 import { ago } from "../../settings";
 import type { DeviceSession, Me } from "../../types";
 
@@ -13,7 +14,7 @@ export async function signOut() {
 
 // Account (multi-user mode): name and email, the linked sign-in methods with "Connect" for the others, the signed-in
 // devices (sign one out, or all the others), and Sign out of this one.
-export function AccountTab({ me }: { me: Me }) {
+export function AccountTab({ me, selfhost = isSelfhost() }: { me: Me; selfhost?: boolean }) {
   const [oauth, setOauth] = useState<string[]>([]);
   useEffect(() => { authApi.providers().then((p) => { if (!isError(p) && Array.isArray(p.providers)) setOauth(p.providers); }); }, []);
   const linked = me.identities ?? [];
@@ -26,7 +27,8 @@ export function AccountTab({ me }: { me: Me }) {
           <div><dt>{SETTINGS.email}</dt><dd>{me.user.email}</dd></div>
         </dl>
       </section>
-      <section className="set-section" aria-labelledby="set-methods">
+      {selfhost && <ChangePassword />}
+      {!selfhost && <section className="set-section" aria-labelledby="set-methods">
         <h4 id="set-methods">{SETTINGS.methods}</h4>
         <ul className="set-list">
           {linked.map((i) => (
@@ -43,12 +45,59 @@ export function AccountTab({ me }: { me: Me }) {
           </div>
           <p className="hint">{SETTINGS.connectHint(me.user.email)}</p>
         </>)}
-      </section>
+      </section>}
       <Devices />
       <section className="set-section">
         <div className="key-actions"><button className="tbtn" type="button" onClick={signOut}>{AUTH.signOut}</button></div>
       </section>
     </>
+  );
+}
+
+// Self-host mode: change my password (the current one first). The server signs my other devices out.
+export function ChangePassword() {
+  const [current, setCurrent] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const [note, setNote] = useState("");
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setProblem(""); setNote("");
+    if (password.length < 8) { setProblem(SELFHOST.tooShort); return; }
+    if (password !== confirm) { setProblem(SELFHOST.mismatch); return; }
+    setBusy(true);
+    const r = await selfhostApi.changePassword(current, password);
+    setBusy(false);
+    if (isError(r)) {
+      setProblem(r.error.code === "wrong_password" ? SELFHOST.wrongCurrent
+        : r.error.code === "rate_limited" ? SELFHOST.rateLimited : r.error.message || SELFHOST.failed);
+      return;
+    }
+    setCurrent(""); setPassword(""); setConfirm("");
+    setNote(SELFHOST.changed);
+  };
+  return (
+    <section className="set-section" aria-labelledby="set-password">
+      <h4 id="set-password">{SELFHOST.passwordSection}</h4>
+      <form className="key-form" onSubmit={submit}>
+        <label>{SELFHOST.currentPasswordLabel}
+          <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        </label>
+        <label>{SELFHOST.newPasswordLabel}
+          <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        <label>{SELFHOST.confirmLabel}
+          <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </label>
+        {problem && <div className="notice error" role="alert">{problem}</div>}
+        {note && <p className="hint" role="status">{note}</p>}
+        <div className="key-actions">
+          <button className="tbtn" type="submit" disabled={busy || !current || !password}>{SELFHOST.changePassword}</button>
+        </div>
+      </form>
+    </section>
   );
 }
 

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { isError, keyApi, reportKeyProblem } from "../api";
-import { PROVIDERS } from "../messages";
+import { PROVIDERS, SELFHOST } from "../messages";
 import type { KeySaved, ProviderId, ProviderInfo, ProvidersState } from "../types";
 
 // Self-contained provider pieces (multi-user mode): no page or route of their own, so they render inside any container
@@ -234,6 +234,9 @@ export function ProviderSettings({ heading = true }: { heading?: boolean } = {})
   return (
     <div className="provider-settings">
       {heading && <h4>{PROVIDERS.section}</h4>}
+      {state.server && !connected.some((p) => p.active) && (
+        <p className="hint" data-testid="server-provider">{SELFHOST.usingServer(SELFHOST.choices[state.server.provider] ?? state.server.provider)}</p>
+      )}
       {connected.map((info) => <ConnectedProvider key={info.provider} info={info} state={state} onChange={changed} />)}
       {others.length > 0 && (<>
         <h5>{PROVIDERS.addAnother}</h5>

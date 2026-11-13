@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
-import { adminApi, isError } from "../api";
-import { ADMIN, ADMIN_USERS } from "../messages";
-import type { AdminEvent, AdminReport, AdminUser, NewInvite, TraceRecord, WaitlistEntry } from "../types";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { adminApi, isError, selfhostApi } from "../api";
+import { ServerProviderSettings } from "../components/ServerProviderSettings";
+import { ADMIN, ADMIN_USERS, SELFHOST } from "../messages";
+import { isSelfhost } from "../routing";
+import type { AdminEvent, AdminReport, AdminUser, NewInvite, PasswordLink, TraceRecord, WaitlistEntry } from "../types";
 import { PageShell } from "./PageShell";
 
 const day = (iso: string) => iso.slice(0, 10);
@@ -13,6 +15,75 @@ function CopyLine({ label, value }: { label: string; value: string }) {
     <div className="row"><strong>{label}</strong><code style={{ wordBreak: "break-all" }}>{value}</code>
       <button className="tbtn" type="button" onClick={copy}>{copied ? ADMIN.copied : ADMIN.copy}</button></div>
   );
+}
+
+// The set-password link as this browser reaches the server (the server's own LORE_BASE_URL may say localhost).
+const linkHere = (link: PasswordLink) => `${window.location.origin}/set-password?code=${encodeURIComponent(link.code)}`;
+
+// Self-host mode: add a person, with a password or a set-password link to send them by hand (there is no mail).
+export function AddPerson({ onAdded }: { onAdded: () => void }) {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const [done, setDone] = useState<{ email: string; link?: PasswordLink } | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setProblem(""); setDone(null);
+    if (password && password.length < 8) { setProblem(SELFHOST.tooShort); return; }
+    setBusy(true);
+    const r = await selfhostApi.addPerson({ email: email.trim(), ...(name.trim() ? { name: name.trim() } : {}),
+      ...(password ? { password } : {}) });
+    setBusy(false);
+    if (isError(r)) { setProblem(r.error.code === "exists" ? SELFHOST.exists : r.error.message || ADMIN.actionFailed); return; }
+    setDone({ email: r.user.email, link: r.link });
+    setEmail(""); setName(""); setPassword("");
+    onAdded();
+  };
+  return (
+    <section aria-labelledby="add-person-title">
+      <h3 id="add-person-title">{SELFHOST.addPerson}</h3>
+      <form className="key-form add-person" onSubmit={submit}>
+        <label>{SELFHOST.personEmail}
+          <input type="email" name="person-email" autoComplete="off" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <label>{SELFHOST.personName}
+          <input type="text" name="person-name" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label>{SELFHOST.personPassword}
+          <input type="password" name="person-password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        <p className="hint">{SELFHOST.personPasswordHint}</p>
+        {problem && <div className="notice error" role="alert">{problem}</div>}
+        <div className="key-actions"><button className="tbtn primary" type="submit" disabled={busy || !email.trim()}>{SELFHOST.add}</button></div>
+      </form>
+      {done && (done.link
+        ? <div className="notice" role="status"><p>{SELFHOST.addedWithLink(done.email)}</p><CopyLine label={ADMIN.inviteLink} value={linkHere(done.link)} /></div>
+        : <div className="notice" role="status">{SELFHOST.added(done.email)}</div>)}
+    </section>
+  );
+}
+
+// Self-host mode: a person's password, reset by the admin (a new one typed here, or a link to send them).
+function ResetPassword({ user, onDone }: { user: AdminUser; onDone: (note: string, link?: PasswordLink) => void }) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const run = async (withPassword: boolean) => {
+    if (withPassword && password.length < 8) { onDone(SELFHOST.tooShort); return; }
+    const r = await selfhostApi.resetPassword(user.id, withPassword ? password : undefined);
+    setOpen(false); setPassword("");
+    if (isError(r)) { onDone(ADMIN.actionFailed); return; }
+    onDone(r.link ? SELFHOST.resetLinkFor(user.email) : SELFHOST.resetDone(user.email), r.link);
+  };
+  if (!open) return <button className="tbtn" type="button" onClick={() => setOpen(true)}>{SELFHOST.resetPassword}</button>;
+  return (<>
+    <input type="password" aria-label={SELFHOST.newPasswordFor(user.email)} autoComplete="new-password" value={password}
+      onChange={(e) => setPassword(e.target.value)} style={{ width: 160 }} />
+    <button className="tbtn primary" type="button" disabled={!password} onClick={() => void run(true)}>{SELFHOST.set}</button>
+    <button className="tbtn" type="button" onClick={() => void run(false)}>{SELFHOST.resetLink}</button>
+    <button className="tbtn" type="button" onClick={() => { setOpen(false); setPassword(""); }}>{SELFHOST.cancel}</button>
+  </>);
 }
 
 // A trace rendered readably: the question, the decomposition, each model call collapsible, then the answer.
@@ -40,7 +111,8 @@ export function TraceView({ trace, onClose }: { trace: TraceRecord; onClose: () 
   );
 }
 
-export function Admin() {
+export function Admin({ selfhost = isSelfhost() }: { selfhost?: boolean } = {}) {
+  const [resetLink, setResetLink] = useState<PasswordLink | null>(null);
   const [entries, setEntries] = useState<WaitlistEntry[] | null>(null);
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "forbidden" | "failed">("loading");
@@ -114,6 +186,10 @@ export function Admin() {
     <PageShell wide>
       <h1>{ADMIN.title}</h1>
       {notice && <div className="notice" role="status">{notice}</div>}
+      {selfhost && resetLink && <div className="notice"><CopyLine label={ADMIN.inviteLink} value={linkHere(resetLink)} /></div>}
+      {selfhost && <ServerProviderSettings />}
+      {selfhost && (<><h2>{SELFHOST.people}</h2><p>{SELFHOST.peopleLead}</p><AddPerson onAdded={() => { void load(); void loadEvents(); }} /></>)}
+      {!selfhost && (<>
       <h2>{ADMIN.waitlist}</h2>
       {entries && entries.length === 0 ? <p>{ADMIN.noRequests}</p> : (
         <div className="admin-scroll"><table className="admin-table" aria-label={ADMIN.waitlist}>
@@ -137,6 +213,7 @@ export function Admin() {
         <button className="tbtn primary" type="button" onClick={create}>{ADMIN.createInvite}</button>
       </div>
       {invite && <div className="notice"><CopyLine label={ADMIN.inviteCode} value={invite.code} /><CopyLine label={ADMIN.inviteLink} value={invite.link} /></div>}
+      </>)}
       <h2>{ADMIN.reports}</h2>
       {reports.length === 0 ? <p>{ADMIN.noReports}</p> : (
         <div className="admin-scroll"><table className="admin-table" aria-label={ADMIN.reports}>
@@ -156,7 +233,8 @@ export function Admin() {
       <div className="admin-scroll"><table className="admin-table" aria-label={ADMIN.users}>
         <thead><tr>{Object.values(ADMIN.userColumns).map((c) => <th key={c}>{c}</th>)}</tr></thead>
         <tbody>{(users ?? []).map((u) => (
-          <tr key={u.id}><td>{u.email}</td><td>{u.name}</td><td>{u.role}</td><td>{u.status}</td><td>{day(u.created_at)}</td>
+          <tr key={u.id}><td>{u.email}{selfhost && u.has_password === false && <span className="hint"> ({SELFHOST.noPassword})</span>}</td>
+            <td>{u.name}</td><td>{u.role}</td><td>{u.status}</td><td>{day(u.created_at)}</td>
             <td>{u.has_key ? ADMIN.hasKey : ADMIN.noKey}</td><td>{u.requests_today ?? 0}</td>
             <td className="actions">
               {removing === u.id ? (<>
@@ -167,6 +245,7 @@ export function Admin() {
                 {u.status === "active" && <button className="tbtn" type="button" onClick={() => void control(u, "disable")}>{ADMIN_USERS.disable}</button>}
                 {u.status === "disabled" && <button className="tbtn" type="button" onClick={() => void control(u, "enable")}>{ADMIN_USERS.enable}</button>}
                 <button className="tbtn" type="button" onClick={() => void control(u, "revoke")}>{ADMIN_USERS.revoke}</button>
+                {selfhost && <ResetPassword user={u} onDone={(note, link) => { setNotice(note); setResetLink(link ?? null); void load(); void loadEvents(); }} />}
                 <button className="tbtn" type="button" onClick={() => setRemoving(u.id)}>{ADMIN_USERS.remove}</button>
               </>)}
             </td></tr>))}</tbody>
