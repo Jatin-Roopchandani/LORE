@@ -60,6 +60,24 @@ Gemini API key (or a Claude or OpenAI key); the app walks you through it.
 
 ## Run it yourself
 
+With Docker, for you and the people you add:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Jatin-Roopchandani/LORE/main/docker-compose.yml
+docker compose up -d
+# then open http://localhost:8080 and create the admin account
+```
+
+Choose the AI model on the admin page: Gemini, Claude or OpenAI with your key,
+or a model you run yourself (llama.cpp's llama-server, vLLM, LM Studio,
+Ollama). Each person you add gets their own private library. The
+[self-hosting guide](docs/self-hosting.md) covers requirements, a local model
+step by step, adding people, upgrades, backups, HTTPS and troubleshooting.
+
+### From source
+
+For development, or a single-user install with no Docker.
+
 **Prerequisites:** [Python 3.12+](https://www.python.org/downloads/),
 [uv](https://docs.astral.sh/uv/getting-started/installation/),
 [Node.js 18+](https://nodejs.org/) and [Ollama](https://ollama.com/download).
