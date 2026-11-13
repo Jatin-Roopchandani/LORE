@@ -45,7 +45,7 @@ from lore.central import traces as trace_store
 from lore.central.history import ensure_user
 from lore.central.models import KIND_MOVE, KIND_PROCESS
 from lore import sample, tracing
-from lore.config import LoreConfig
+from lore.config import LoreConfig, with_saved_llm
 from lore.db.sqlite import open_db
 from lore.ingest.registry import book_rows, list_books, story_chapters
 from lore.mcp import tools
@@ -350,7 +350,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                upload_settings: "UploadSettings | None" = None,
                rate_settings: "RateSettings | None" = None,
                oauth_clock: Callable[[], datetime] | None = None,
-               codex_refresh_factory: Callable[[], Callable] | None = None):
+               codex_refresh_factory: Callable[[], Callable] | None = None,
+               local_model_transport=None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing; `codex_refresh_factory` for deleting a book (the cached
     codex rebuild, lore.book_delete).
@@ -436,7 +437,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         if user.is_local:
             if multi:  # nobody may claim the single-user library in multi mode
                 raise HTTPException(401, "invalid user")
-            return base
+            # A local model saved in Settings overrides lore.toml (lore.config).
+            return with_saved_llm(base)
         try:
             # A new account's first request seeds its library with the sample.
             return config_for(base, validate_user_id(user.id), seed=True)
@@ -502,6 +504,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         report_limit=throttle.report if throttle is not None else None))
     from lore.web.export import build_export_router
     api.include_router(build_export_router(central, central_user, user_config))
+
+    if not multi:  # a local model chosen in Settings: never offered in multi mode
+        from lore.web.local_model import build_local_model_router
+        api.include_router(build_local_model_router(user_config,
+                                                    transport=local_model_transport))
 
     if auth_ctx is not None:
         api.state.auth = auth_ctx

@@ -592,7 +592,7 @@ export const PROVIDERS = {
   connectTitle: "Connect your AI provider",
   replaceTitle: "Your AI provider needs a new key",
   rejected: "Your provider refused your saved key. It may have been deleted or expired. Paste a new one to carry on; your paused books continue once it works.",
-  names: { gemini: "Gemini", anthropic: "Claude", openai: "OpenAI" } as Record<string, string>,
+  names: { gemini: "Gemini", anthropic: "Claude", openai: "OpenAI", openai_compatible: "Local model" } as Record<string, string>,
   makers: { gemini: "Google", anthropic: "Anthropic", openai: "OpenAI" } as Record<string, string>,
   getKey: { gemini: "Get a free key from Google AI Studio", anthropic: "Get a key: console.anthropic.com → API Keys",
     openai: "Get a key: platform.openai.com → API keys" } as Record<string, string>,
@@ -824,6 +824,7 @@ export const SETTINGS = {
   leads: {
     account: "Who you are, how you sign in, and where you're signed in.",
     providers: "The AI provider LORE uses for your books and questions, under your own key.",
+    providersLocal: "The model LORE uses for your books and questions: one running on your own computer, or a cloud provider set in lore.toml.",
     usage: "What you've used today and this month.",
     appearance: "How LORE looks on this device.",
     reading: "How LORE opens and answers, on this device.",
@@ -1193,4 +1194,39 @@ export const LEGAL = {
       ] },
     ] as LegalSection[],
   },
+};
+
+// Settings → AI providers in local mode: a self-hosted model on an OpenAI-compatible server (lore/web/local_model.py).
+export const LOCAL_MODEL = {
+  nowUsing: "Now using",
+  source: { saved: "chosen here", "lore.toml": "from lore.toml" } as Record<string, string>,
+  activeLine: (name: string, model: string | null, where: string | null) =>
+    [name, model, where ? `at ${where}` : null].filter(Boolean).join(" · "),
+  cloudTitle: "Gemini, Claude or OpenAI",
+  cloudHint: "Cloud providers are set in lore.toml ([lore.llm] provider), with the key in an environment variable or ~/.config/lore. See docs/guide.md.",
+  title: "Local model",
+  lead: "A model on your own computer or network, served by llama-server, vLLM, LM Studio or Ollama (its /v1 address). Nothing leaves your machine.",
+  addressLabel: "Server address",
+  modelLabel: "Model name",
+  modelHint: "As the server knows it, e.g. qwen2.5:3b-instruct-q4_K_M on Ollama.",
+  keyLabel: "API key (optional)",
+  keyKept: "A key is saved. Leave this empty to keep it.",
+  keyPlaceholder: "Only if your server asks for one",
+  clearKey: "Forget the saved key",
+  test: "Test connection",
+  testing: "Testing… (a first request may load the model)",
+  testOk: (model: string, seconds: number) => `Connected: ${model} answered in ${seconds.toLocaleString("en")} s.`,
+  testFailed: "Couldn't connect.",
+  save: "Use this model",
+  saving: "Saving…",
+  saved: "Saved. Book processing and questions now use this model.",
+  overrides: "A model chosen here overrides [lore.llm] in lore.toml and runs every step: reading books, building the graph, and answering.",
+  remove: "Stop using it (back to lore.toml)",
+  removed: "Back to lore.toml.",
+  sizeNote: "Small models (under ~14B) make noticeably weaker graphs and answers; bigger is better.",
+  errors: {
+    bad_request: "Check the address (it starts with http:// or https://) and the model name.",
+    unreachable: "LORE isn't reachable right now. Try again.",
+  } as Record<string, string>,
+  saveFailed: "That couldn't be saved. Please try again.",
 };

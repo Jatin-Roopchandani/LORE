@@ -126,6 +126,23 @@ def _retry_after(response: httpx.Response) -> float | None:
         return None
 
 
+def _server_says(response: httpx.Response) -> str:
+    """The server's own error message (OpenAI's `{"error": {"message"}}`
+    shape, or a bare string), else the start of its body."""
+    try:
+        body = response.json()
+    except ValueError:
+        return response.text[:300].strip() or "the request was refused"
+    error = body.get("error") if isinstance(body, dict) else None
+    if isinstance(error, dict) and isinstance(error.get("message"), str):
+        return error["message"][:300]
+    if isinstance(error, str):
+        return error[:300]
+    if isinstance(body, dict) and isinstance(body.get("message"), str):
+        return body["message"][:300]
+    return response.text[:300].strip() or "the request was refused"
+
+
 def _refuses_json_schema(response: httpx.Response) -> bool:
     if response.status_code not in (400, 422, 501):
         return False
@@ -181,8 +198,8 @@ class OpenAICompatibleTextModel:
             return ProviderUnavailableError(
                 f"HTTP {status} from {where}: the server is overloaded or failing.",
                 provider=OPENAI_COMPATIBLE)
-        return ProviderError(f"HTTP {status} from {where}: the request was refused"
-                             f" ({response.text[:200]!r}).", provider=OPENAI_COMPATIBLE)
+        return ProviderError(f"HTTP {status} from {where}: {_server_says(response)}",
+                             provider=OPENAI_COMPATIBLE)
 
     async def _post(self, messages: list[dict], response_format: dict | None) -> httpx.Response:
         body: dict[str, Any] = {"model": self.model, "messages": messages,

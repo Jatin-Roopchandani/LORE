@@ -1,4 +1,4 @@
-import type { AdminEvent, SampleAdded, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
+import type { AdminEvent, LocalModelState, LocalModelTest, SampleAdded, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
   BookDeleted, EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, McpCheck, McpConnection, McpHosted, McpToken, McpTokenMade, ConsentInfo, DeviceSession, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
   SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
@@ -268,6 +268,16 @@ export const keyApi = {
   setGeminiPaid: (paid: boolean) => sendJson<ProvidersState>("PUT", "/api/me/provider", { gemini_paid: paid }, true),
   setTokenCap: (cap: number | null) => sendJson<UsageSummary>("PUT", "/api/me/token-cap", { cap }, true),
   estimate: (bookId: string) => getJson<ProcessEstimate>(`/api/books/${encodeURIComponent(bookId)}/estimate`, true),
+};
+
+// Local mode only: a self-hosted model chosen in Settings (lore/web/local_model.py).
+export const localModelApi = {
+  get: () => getJson<LocalModelState>("/api/local-model", true),
+  test: (body: { base_url: string; model: string; key?: string }) =>
+    sendJson<LocalModelTest>("POST", "/api/local-model/test", body, true),
+  save: (body: { base_url: string; model: string; key?: string; clear_key?: boolean }) =>
+    sendJson<LocalModelState>("PUT", "/api/local-model", body, true),
+  remove: () => sendJson<LocalModelState>("DELETE", "/api/local-model", undefined, true),
 };
 
 export const adminApi = {

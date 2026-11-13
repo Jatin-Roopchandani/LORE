@@ -1,12 +1,14 @@
 """Configuration: lore.toml + LORE_* env overrides, defaults from SPEC.md."""
 from __future__ import annotations
 
+import json
+import logging
 import os
 import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 from lore.inference.gemini import DEFAULT_MODELS, LITE_MODELS
 
@@ -270,6 +272,14 @@ class LoreConfig(BaseModel):
     answers: AnswersConfig = Field(default_factory=AnswersConfig)
     codex: CodexConfig = Field(default_factory=CodexConfig)
     llm: LlmConfig = Field(default_factory=LlmConfig)
+    # The configuration as lore.toml gave it, when a local model saved in the
+    # web app overrides it (see `with_saved_llm`); None otherwise.
+    _unsaved: "LoreConfig | None" = PrivateAttr(default=None)
+
+    @property
+    def file_config(self) -> "LoreConfig":
+        """This configuration without the web app's saved local model."""
+        return self._unsaved or self
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LoreConfig":
@@ -288,7 +298,7 @@ class LoreConfig(BaseModel):
         if ollama_host := os.environ.get("LORE_OLLAMA_HOST"):
             cfg = cfg.model_copy(update={
                 "ollama": cfg.ollama.model_copy(update={"host": ollama_host})})
-        return cfg
+        return with_saved_llm(cfg)
 
     @property
     def kuzu_dir(self) -> Path:
@@ -354,3 +364,82 @@ class LoreConfig(BaseModel):
             self.extractions_dir,
         ):
             d.mkdir(parents=True, exist_ok=True)
+
+
+# --- a local model saved in the web app (local mode only) -------------------------
+
+SAVED_LLM_FILE = "llm.json"
+
+
+def saved_llm_path(data_dir: Path) -> Path:
+    """`<data dir>/llm.json`: the local model chosen in Settings (no key in it;
+    the key goes to ~/.config/lore/llm.env, as for lore.toml)."""
+    return Path(data_dir) / SAVED_LLM_FILE
+
+
+def read_saved_llm(data_dir: Path) -> LlmConfig | None:
+    """The saved local model, or None (none saved, or an unreadable file)."""
+    path = saved_llm_path(data_dir)
+    try:
+        raw = json.loads(path.read_text())
+        return LlmConfig.model_validate({**raw, "provider": "openai_compatible"})
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        logging.getLogger(__name__).warning("ignoring %s: %s", path, exc)
+        return None
+
+
+def write_saved_llm(data_dir: Path, base_url: str, model: str,
+                    fast_model: str = "") -> LlmConfig:
+    """Validate and save the local model (mode 600); returns it."""
+    llm = LlmConfig(provider="openai_compatible", base_url=base_url, model=model,
+                    fast_model=fast_model)
+    path = saved_llm_path(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps({"base_url": llm.base_url, "model": llm.model,
+                       "fast_model": llm.fast_model}, indent=2) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+    os.chmod(path, 0o600)
+    return llm
+
+
+def remove_saved_llm(data_dir: Path) -> bool:
+    try:
+        saved_llm_path(data_dir).unlink()
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def with_saved_llm(cfg: LoreConfig) -> LoreConfig:
+    """`cfg` with the web app's saved local model applied (local mode only).
+
+    THE RULE: a local model saved in Settings overrides lore.toml's
+    `[lore.llm]` and puts every model step on it (extraction_provider and
+    `[lore.selection|synthesis|adjudication] provider` become "gemini", which
+    in lore.toml means "the [lore.llm] model"), like the lore.toml example in
+    docs/guide.md. Removing it in Settings returns to lore.toml as written.
+    Multi mode ignores the file: the provider is refused there."""
+    base = cfg.file_config
+    if base.data_dir != cfg.data_dir:  # a copy for another library: start from it
+        base = cfg
+    if os.environ.get("LORE_MULTI_USER", "").strip().lower() in ("1", "true", "yes", "on"):
+        return base
+    saved = read_saved_llm(base.data_dir)
+    if saved is None:
+        return base
+    remote = {"provider": "gemini"}
+    out = base.model_copy(update={
+        "llm": base.llm.model_copy(update={
+            "provider": "openai_compatible", "base_url": saved.base_url,
+            "model": saved.model, "fast_model": saved.fast_model}),
+        "extraction_provider": "gemini",
+        "selection": base.selection.model_copy(update=remote),
+        "synthesis": base.synthesis.model_copy(update=remote),
+        "adjudication": base.adjudication.model_copy(update=remote),
+    })
+    out._unsaved = base
+    return out

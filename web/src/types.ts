@@ -116,6 +116,11 @@ export interface BookJob { stage: string; state: "running" | "waiting_quota" | "
   // (null: unknown) and in all (`seconds_left`: the known part; `unknown_left`: some step has no estimate).
   plan?: StepPlan | null }
 // `skipped`: the step will ask nothing, and `note` says why (e.g. "skipped: no model configured for story beats").
+// GET /api/local-model (local mode): what runs the model steps, and the local model saved in Settings.
+export interface LocalModelInfo { provider: string; model: string | null; fast_model: string | null; base_url: string | null }
+export interface LocalModelState { active: LocalModelInfo & { source: "saved" | "lore.toml" };
+  saved: (LocalModelInfo & { has_key: boolean }) | null; file: LocalModelInfo; default_base_url: string }
+export type LocalModelTest = { ok: true; model: string; seconds: number } | { ok: false; message: string };
 export interface PlanStep { stage: string; state: "done" | "current" | "upcoming" | "skipped"; done?: number; total?: number;
   seconds_left: number | null; note?: string }
 export interface StepPlan { steps: PlanStep[]; step: number; of: number; seconds_left: number | null; unknown_left: boolean }
