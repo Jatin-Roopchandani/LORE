@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Jatin-Roopchandani/LORE/security/advisories/new
+    about: Please report security problems privately, not as a public issue.
+  - name: Try the hosted beta
+    url: https://lore.jrvn.site
+    about: Request an invite to the hosted version.
