@@ -219,6 +219,9 @@ def _quota(config: LoreConfig, multi: bool = False) -> dict:
                                                   microsecond=0)
     if config.synthesis.provider != "gemini":
         return {"provider": "local", "models": [], "resets_at": midnight.isoformat()}
+    if not multi and config.llm.provider == "openai_compatible":
+        # A self-hosted server: nothing billed, no ledger.
+        return {"provider": "local", "models": [], "resets_at": midnight.isoformat()}
     if not multi and (
             config.llm.provider != "gemini" or config.llm.gemini_paid):
         # Local mode on Claude, OpenAI or a paid Gemini plan: billed, no ledger.
@@ -392,6 +395,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     """
     multi = multi_user_enabled() if multi_user is None else multi_user
     auth_ctx = None
+    if multi and config.llm.provider == "openai_compatible":
+        # Local mode only: a server-side base URL steered by users is SSRF.
+        from lore.inference.providers.openai_compatible import MultiUserRefused
+        raise MultiUserRefused()
     if multi:  # no configured model name reaches a user (lore.web.friendly)
         friendly.known_models(friendly.config_models(config))
         from lore.auth.setup import build_context

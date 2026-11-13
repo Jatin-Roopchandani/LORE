@@ -6,7 +6,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from lore.inference.gemini import DEFAULT_MODELS, LITE_MODELS
 
@@ -163,17 +163,39 @@ class LlmConfig(BaseModel):
     free-tier daily request cap and the answer reserve then do not apply
     (Google bills the usage). Off by default.
 
+    "openai_compatible" (local mode only, for self-hosting): any server that
+    speaks OpenAI's chat completions at `base_url` (llama.cpp's llama-server,
+    vLLM, LM Studio, Ollama's /v1). `model` is required and runs every step
+    unless `fast_model` is set. Its key is optional: LORE_LLM_API_KEY or
+    ~/.config/lore/llm.env, never lore.toml. `concurrency` is how many
+    requests go to it at once (default 1: one local GPU). Refused in multi
+    mode: a server-side URL chosen by users would reach the server's network.
+
     In multi mode each user's own choice (Account settings) applies instead.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    provider: Literal["gemini", "anthropic", "openai"] = "gemini"
+    provider: Literal["gemini", "anthropic", "openai", "openai_compatible"] = "gemini"
     model: str = ""
     fast_model: str = ""
     gemini_paid: bool = False
     effort: dict[str, Literal["low", "medium", "high", "xhigh", "max"]] = Field(
         default_factory=dict)
+    base_url: str = ""
+    concurrency: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def _openai_compatible_needs_a_server(self) -> "LlmConfig":
+        if self.provider != "openai_compatible":
+            return self
+        if not self.base_url.startswith(("http://", "https://")):
+            raise ValueError('[lore.llm] provider = "openai_compatible" needs base_url,'
+                             ' e.g. "http://localhost:8080/v1"')
+        if not self.model:
+            raise ValueError('[lore.llm] provider = "openai_compatible" needs model'
+                             " (the name the server knows it by)")
+        return self
 
 
 class WebConfig(BaseModel):

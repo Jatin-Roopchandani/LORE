@@ -1593,6 +1593,9 @@ def ui_command(
     except AuthConfigError as exc:  # LORE_MULTI_USER=1 without its secrets
         typer.echo(f"lore ui: {exc}", err=True)
         raise typer.Exit(2)
+    except ValueError as exc:  # openai_compatible in multi mode (MultiUserRefused)
+        typer.echo(f"lore ui: {exc}", err=True)
+        raise typer.Exit(2)
     uvicorn.run(web, host=host, port=port, log_level="warning")
 
 
@@ -1716,6 +1719,10 @@ def worker_command(
     from lore.worker import Worker
 
     config = LoreConfig.load()
+    if config.llm.provider == "openai_compatible":
+        from lore.inference.providers.openai_compatible import MULTI_USER_MESSAGE
+        typer.echo(f"lore worker: {MULTI_USER_MESSAGE}", err=True)
+        raise typer.Exit(2)
     try:  # each job runs with its user's own Gemini key, decrypted with this
         master = MasterKeys.from_env()
     except KeyConfigError as exc:
