@@ -27,7 +27,8 @@ the OpenAI provider uses, so this is plain HTTP (httpx), not the SDK.
   loop, shared by every model built for that server (default 1: one GPU).
 - The key is optional and only ever sent as a bearer header.
 - Refused in multi mode: a server-side URL that users could steer would let
-  them reach the server's own network.
+  them reach the server's own network. Self-host mode is the exception: there
+  only the server's admin, who owns its network, can set the address.
 """
 from __future__ import annotations
 
@@ -94,8 +95,12 @@ class MultiUserRefused(ValueError):
 
 
 def refuse_in_multi_mode() -> None:
+    """The hosted multi-user server never builds this provider. Self-host
+    mode (LORE_SELFHOST) may: there the only address it is ever given is the
+    one the server's admin saved (lore.central.keys; factory.credentials)."""
     from lore.inference import key_scope
-    if key_scope.multi_user_enabled():
+    from lore.selfhost import selfhost_enabled
+    if key_scope.multi_user_enabled() and not selfhost_enabled():
         raise MultiUserRefused()
 
 

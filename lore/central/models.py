@@ -85,10 +85,16 @@ class User(Base):
     active_provider: Mapped[str] = mapped_column(sa.String(16), nullable=False,
                                                  default="gemini", server_default="gemini")
     daily_token_cap: Mapped[int | None] = mapped_column(sa.Integer)
+    # Self-host mode only (migration 0016): an argon2id hash
+    # (lore.auth.passwords); NULL for an account that signs in another way.
+    password_hash: Mapped[str | None] = mapped_column(sa.String(255))
 
     __table_args__ = (
         sa.CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
     )
+
+    def __repr__(self) -> str:  # never the password hash
+        return f"User(id={self.id!r}, role={self.role!r}, status={self.status!r})"
 
 
 class Job(Base):
@@ -471,6 +477,24 @@ class AdminEvent(Base):
     detail: Mapped[dict | None] = mapped_column(sa.JSON)
 
     __table_args__ = (sa.Index("ix_admin_events_at", "at"),)
+
+
+class ServerSetting(Base):
+    """One server-wide setting (migration 0016): `setup` (the first-run admin
+    was created; the primary key makes that happen once) and `provider` (the
+    self-host admin's AI provider for everyone, its key sealed)."""
+
+    __tablename__ = "server_settings"
+
+    key: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(sa.JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False,
+                                                 default=utcnow)
+    updated_by: Mapped[str | None] = mapped_column(
+        sa.String(64), sa.ForeignKey("users.id", ondelete="SET NULL"))
+
+    def __repr__(self) -> str:  # a value can hold a sealed key
+        return f"ServerSetting(key={self.key!r})"
 
 
 class McpToken(Base):

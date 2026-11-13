@@ -65,12 +65,11 @@ def _entry(row: Waitlist) -> dict:
             "invited_at": row.invited_at.isoformat() if row.invited_at else None}
 
 
-def build_admin_router(ctx: AuthContext) -> APIRouter:
-    router = APIRouter()
-    settings = ctx.settings
+def make_require_admin(ctx: AuthContext):
+    """The dependency every admin route uses: the admin's user id; 401 if
+    signed out, 403 for anyone else."""
 
     def require_admin(request: Request) -> str:
-        """The admin's user id; 401 if signed out, 403 for anyone else."""
         user = session_user(request)
         if user is None:
             raise HTTPException(401, "sign in required")
@@ -79,6 +78,14 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
         if row is None or row.role != "admin" or row.status != "active":
             raise HTTPException(403, "admins only")
         return row.id
+
+    return require_admin
+
+
+def build_admin_router(ctx: AuthContext) -> APIRouter:
+    router = APIRouter()
+    settings = ctx.settings
+    require_admin = make_require_admin(ctx)
 
     # --- the public waitlist -------------------------------------------
 
@@ -98,6 +105,8 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
         """Ask for an invite. Always 202, whatever happened (stored, a
         duplicate, a honeypot, no consent, a bad address, rate limited), so a
         bot learns nothing from the answer."""
+        if settings.selfhost:  # a self-hosted server has no waitlist
+            return _error(404, "not_found", "there is no waitlist here")
         accepted = {"ok": True}
         email = accounts.normalize_email(body.email)
         if body.website or not body.consent or email is None:
@@ -203,7 +212,9 @@ def build_admin_router(ctx: AuthContext) -> APIRouter:
             {"id": u.id, "email": u.email, "name": u.name, "role": u.role,
              "status": u.status, "created_at": u.created_at.isoformat(),
              # Whether they have saved a Gemini key, and today's requests.
-             "has_key": u.id in with_key, "requests_today": int(used.get(u.id) or 0)}
+             "has_key": u.id in with_key, "requests_today": int(used.get(u.id) or 0),
+             # Self-host: whether they can sign in with a password yet.
+             **({"has_password": u.password_hash is not None} if settings.selfhost else {})}
             for u in rows]}
 
     # --- reported answers and their traces (release step 4) ------------

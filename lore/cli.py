@@ -1727,6 +1727,8 @@ def worker_command(
         from lore.inference.providers.openai_compatible import MULTI_USER_MESSAGE
         typer.echo(f"lore worker: {MULTI_USER_MESSAGE}", err=True)
         raise typer.Exit(2)
+    from lore.selfhost import apply_secrets, selfhost_enabled
+    apply_secrets(config.data_dir)  # self-host: the secrets the web app made too
     try:  # each job runs with its user's own Gemini key, decrypted with this
         master = MasterKeys.from_env()
     except KeyConfigError as exc:
@@ -1735,7 +1737,9 @@ def worker_command(
     from lore.auth.redact import install_key_redaction
     install_key_redaction()  # no API key in any log line, as in the web app
     sessions = make_session_factory(make_engine(database_url(config)))
-    worker = Worker(config, sessions, keys=KeyService(sessions, master))
+    # Self-host: a user with no key of their own runs on the admin's provider.
+    worker = Worker(config, sessions, keys=KeyService(sessions, master,
+                                                      server_default=selfhost_enabled()))
     typer.echo(f"lore worker {worker.worker_id}: waiting for jobs", err=True)
     if once:
         worker.run_once()

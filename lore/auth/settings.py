@@ -52,6 +52,9 @@ class AuthSettings:
     mail_reply_to: str | None = None
     # Mailed a short note for each new waitlist request; None: no note.
     notify_email: str | None = None
+    # Self-host mode (LORE_SELFHOST, lore.selfhost): password sign-in, the
+    # first-run admin, the admin's provider for everyone, no public pages.
+    selfhost: bool = False
 
     def __post_init__(self) -> None:
         for name, value in (("session", self.session_secret),
@@ -85,15 +88,24 @@ class AuthSettings:
             secret = env.get(f"LORE_{prefix}_CLIENT_SECRET", "").strip()
             return OAuthClient(cid, secret) if cid and secret else None
 
-        missing = [n for n in (ENV_SESSION_SECRET, ENV_CSRF_SECRET, ENV_BASE_URL)
-                   if not env.get(n, "").strip()]
+        from lore.selfhost import DEFAULT_BASE_URL, selfhost_enabled
+        selfhost = selfhost_enabled(env)
+        # Self-host: the address has a default (docker-compose.yml's port),
+        # and cookies are Secure exactly when that address is https, so a
+        # server on http://localhost or a LAN address can sign anyone in.
+        # LORE_COOKIE_SECURE still overrides. The hosted site: both required.
+        required = (ENV_SESSION_SECRET, ENV_CSRF_SECRET) + (() if selfhost else (ENV_BASE_URL,))
+        missing = [n for n in required if not env.get(n, "").strip()]
         if missing:
             raise AuthConfigError("multi-user mode needs " + ", ".join(missing))
+        base_url = env.get(ENV_BASE_URL, "").strip() or DEFAULT_BASE_URL
         return cls(
             session_secret=env[ENV_SESSION_SECRET].strip(),
             csrf_secret=env[ENV_CSRF_SECRET].strip(),
-            base_url=env[ENV_BASE_URL].strip(),
-            cookie_secure=flag(ENV_COOKIE_SECURE, True),
+            base_url=base_url,
+            cookie_secure=flag(ENV_COOKIE_SECURE,
+                               base_url.startswith("https://") if selfhost else True),
+            selfhost=selfhost,
             invite_only=flag(ENV_INVITE_ONLY, True),
             trust_proxy=flag(ENV_TRUST_PROXY, False),
             google=client("GOOGLE"), github=client("GITHUB"),

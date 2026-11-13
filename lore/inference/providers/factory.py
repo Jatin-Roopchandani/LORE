@@ -16,7 +16,9 @@
   `[lore.llm] base_url`. Its key is optional (LORE_LLM_API_KEY or
   ~/.config/lore/llm.env); with none, `key` is NO_KEY, so every "is there a
   key?" check a call site makes passes, and the model sends no header.
-  Refused in multi mode, bound user or not (MultiUserRefused).
+  Refused in multi mode, bound user or not (MultiUserRefused), except in
+  self-host mode for the server's own provider: the admin's saved address,
+  carried on the bound scope (lore.central.keys).
 
 `build(creds, config, site, gemini_models=...)` turns them into a TextModel.
 Gemini is the very same `GeminiClient(key, models=..., recorder=...)` each
@@ -145,13 +147,21 @@ def credentials(config, explicit: str | None = None, *,
                 local: Callable[[], str | None] | None = None) -> Credentials:
     """Whose key and which provider. See the module docstring."""
     scope = key_scope.current()
-    if OPENAI_COMPATIBLE in (config.llm.provider, getattr(scope, "provider", None)):
-        from lore.inference.providers.openai_compatible import refuse_in_multi_mode
-        refuse_in_multi_mode()
-        if scope is not None and scope.provider == OPENAI_COMPATIBLE:
-            # Never a user's choice (base.PROVIDERS); never from a bound user.
-            from lore.inference.providers.openai_compatible import MultiUserRefused
-            raise MultiUserRefused()
+    if scope is not None and scope.provider == OPENAI_COMPATIBLE:
+        # Never a user's choice (base.PROVIDERS). Only in self-host mode, and
+        # only with the address the server's admin saved (KeyService puts it
+        # on the scope; nothing a user sends reaches it).
+        from lore.selfhost import selfhost_enabled
+        if selfhost_enabled() and scope.base_url:
+            return Credentials(OPENAI_COMPATIBLE, scope.key or NO_KEY, scope.model,
+                               scope.fast_model, base_url=scope.base_url)
+        from lore.inference.providers.openai_compatible import MultiUserRefused
+        raise MultiUserRefused()
+    if config.llm.provider == OPENAI_COMPATIBLE and key_scope.multi_user_enabled():
+        # lore.toml's local model is for a local install only, self-host
+        # mode included: there the admin sets it in the web app.
+        from lore.inference.providers.openai_compatible import MultiUserRefused
+        raise MultiUserRefused()
     if scope is not None and scope.provider != GEMINI:
         if not scope.key:
             raise KeyRequired()

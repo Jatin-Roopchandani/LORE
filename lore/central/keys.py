@@ -42,10 +42,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from lore.auth.settings import AuthConfigError
 from lore.central import queue
-from lore.central.models import ApiKey, Usage, User
+from lore.central.models import PAUSED, ApiKey, Job, ServerSetting, Usage, User
 from lore.inference.key_scope import KeyRequired
 from lore.inference.providers import roles
-from lore.inference.providers.base import ANTHROPIC, GEMINI, OPENAI, PROVIDERS
+from lore.inference.providers.base import (
+    ANTHROPIC, GEMINI, LABELS, OPENAI, OPENAI_COMPATIBLE, PROVIDERS,
+)
 
 log = logging.getLogger("lore.keys")
 
@@ -97,6 +99,19 @@ class KeyFormatError(ValueError):
 
 class ProviderChoiceError(ValueError):
     """A provider or model the user may not switch to (not connected, unknown)."""
+
+
+class ServerProviderError(ValueError):
+    """The admin's provider for everyone could not be saved; the message is
+    for the admin, in plain words, and never carries the key."""
+
+
+# Self-host mode: the server's own provider for everyone (the admin's choice).
+# Its key is sealed like a user's, for this owner id, which can never be a
+# user's (lore.tenancy refuses an id that starts with '_').
+SERVER_ID = "_server"
+SERVER_SETTING = "provider"
+SERVER_PROVIDERS = (*PROVIDERS, OPENAI_COMPATIBLE)
 
 
 def _fingerprint(key: bytes) -> str:
@@ -329,6 +344,10 @@ class Credentials:
     model: str | None = None
     fast_model: str | None = None
     paid_tier: bool = False  # Gemini: the user's "I'm on a paid Gemini plan"
+    # Self-host mode: "server" when the admin's provider for everyone is used
+    # (the user has no key of their own), with a local model's address.
+    source: str = "user"
+    base_url: str | None = None
 
 
 def _iso(moment: datetime | None) -> str | None:
@@ -369,9 +388,13 @@ class KeyService:
     def __init__(self, sessions: sessionmaker[Session], master: MasterKeys,
                  checker: KeyChecker | None = None,
                  clock: Callable[[], datetime] | None = None,
-                 checkers: Mapping[str, object] | None = None) -> None:
+                 checkers: Mapping[str, object] | None = None,
+                 server_default: bool = False) -> None:
         self.sessions = sessions
         self._master = master
+        # Self-host mode: a user with no key of their own uses the admin's
+        # provider for everyone (`set_server_provider`). Off on the hosted site.
+        self._server_default = server_default
         self._checkers: dict[str, object] = {
             GEMINI: checker or GeminiKeyChecker(),
             ANTHROPIC: AnthropicKeyChecker(),
@@ -403,6 +426,11 @@ class KeyService:
             row = self._row(db, user_id, provider or active)
         which = provider or active
         if row is None:
+            server = self.server_provider() if provider is None else None
+            if server is not None:  # the admin's provider for everyone covers them
+                return {"provider": server["provider"], "present": True, "server": True,
+                        "last4": None, "added_at": None, "last_ok_at": None,
+                        "last_error": None}
             return {"provider": which, "present": False, "last4": None, "added_at": None,
                     "last_ok_at": None, "last_error": None}
         return {"provider": which, "present": True, "last4": row.last4,
@@ -438,16 +466,23 @@ class KeyService:
             })
         gemini = rows.get(GEMINI)
         paid = bool(gemini is not None and gemini.paid_tier)
+        server = self.server_provider()
         return {"active": active, "providers": out,
+                # Self-host: what the admin set for everyone (no address, no key).
+                "server": None if server is None else {
+                    "provider": server["provider"], "model": server["model"]},
                 "daily_token_cap": user.daily_token_cap if user is not None else None,
                 "gemini_paid": paid,
                 "gemini_paid_hint": (gemini is not None and not paid
                                      and self.paid_hint(user_id))}
 
     def has_key(self, user_id: str) -> bool:
-        """True when the ACTIVE provider has a key."""
+        """True when the ACTIVE provider has a key, or (self-host) the admin
+        set a provider for everyone."""
         with self.sessions() as db:
-            return self._row(db, user_id) is not None
+            if self._row(db, user_id) is not None:
+                return True
+            return self._server_row(db) is not None
 
     def _check(self, provider: str, key: str) -> CheckResult:
         checker = self._checkers[provider]
@@ -598,7 +633,10 @@ class KeyService:
         with self.sessions() as db:
             row = self._row(db, user_id)
             if row is None:
-                raise KeyRequired()
+                server = self._server_credentials(db)
+                if server is None:
+                    raise KeyRequired()
+                return server
             provider, model, fast = row.provider, row.model, row.fast_model
             paid = provider == GEMINI and bool(row.paid_tier)
             sealed = Sealed(row.ciphertext, row.nonce, row.key_version)
@@ -813,6 +851,14 @@ class KeyService:
             self.record_credit_refusal(user_id, model)
 
         def changed() -> bool:
+            if creds.source == "server":
+                # They added a key of their own, or the admin changed the provider.
+                with self.sessions() as db:
+                    if self._row(db, user_id) is not None:
+                        return True
+                    now = self._server_credentials(db)
+                return now is None or (now.provider, now.model, now.base_url) != (
+                    creds.provider, creds.model, creds.base_url)
             return self.switched_from(user_id, creds.provider)
 
         gemini = creds.provider == GEMINI
@@ -824,4 +870,142 @@ class KeyService:
                         on_usage=usage if (paid or not gemini) else None,
                         over_cap=lambda: self.over_cap(user_id),
                         paid_tier=paid, on_refusal=refusal if gemini else None,
-                        on_credit=credit if gemini else None, changed=changed)
+                        on_credit=credit if gemini else None, changed=changed,
+                        base_url=creds.base_url)
+
+    # --- the server's provider for everyone (self-host mode) ----------------
+
+    def _server_row(self, db: Session) -> ServerSetting | None:
+        if not self._server_default:
+            return None
+        return db.get(ServerSetting, SERVER_SETTING)
+
+    def _server_credentials(self, db: Session) -> Credentials | None:
+        row = self._server_row(db)
+        if row is None:
+            return None
+        value = row.value
+        provider = value["provider"]
+        sealed = value.get("sealed")
+        key = None
+        if sealed:
+            key = unseal(self._master, SERVER_ID, Sealed(
+                base64.b64decode(sealed["c"]), base64.b64decode(sealed["n"]), sealed["v"]),
+                provider)
+        if provider == OPENAI_COMPATIBLE:
+            from lore.inference.providers.factory import NO_KEY
+            key = key or NO_KEY  # a local server may need none
+        elif provider == ANTHROPIC and value.get("model") not in roles.ANTHROPIC_MODELS:
+            value = {**value, "model": roles.ANTHROPIC_DEFAULT}
+        return Credentials(provider, key or "", value.get("model"), value.get("fast_model"),
+                           source="server", base_url=value.get("base_url"))
+
+    def server_provider(self) -> dict | None:
+        """The admin's provider for everyone, as the admin page shows it
+        (never the key: only whether there is one, and its last four)."""
+        with self.sessions() as db:
+            row = self._server_row(db)
+            if row is None:
+                return None
+            value, updated = dict(row.value), row.updated_at
+        return {"provider": value["provider"], "label": LABELS.get(value["provider"]),
+                "model": value.get("model"), "fast_model": value.get("fast_model"),
+                "base_url": value.get("base_url"), "has_key": bool(value.get("sealed")),
+                "last4": value.get("last4"), "models": list(value.get("models") or []),
+                "updated_at": _iso(updated)}
+
+    def set_server_provider(self, admin_id: str | None, provider: str, *,
+                            key: str | None = None, model: str | None = None,
+                            fast_model: str | None = None, base_url: str | None = None,
+                            clear_key: bool = False) -> dict:
+        """Save the provider for everyone (self-host mode; the caller has
+        checked the admin). A cloud provider needs a key (kept from before
+        when it is the same provider and none is given), checked once like a
+        user's. A local model needs its address and model name; its key is
+        optional. ServerProviderError (KeyFormatError for a malformed key)
+        when it cannot be saved."""
+        if not self._server_default:
+            raise ServerProviderError("The provider for everyone is a self-host setting.")
+        if provider not in SERVER_PROVIDERS:
+            raise ServerProviderError("Choose Gemini, Claude, OpenAI or a local model.")
+        name = LABELS[provider]
+        key = key.strip() if isinstance(key, str) and key.strip() else None
+        model = model.strip() if isinstance(model, str) and model.strip() else None
+        fast_model = (fast_model.strip() if isinstance(fast_model, str)
+                      and fast_model.strip() else None)
+        with self.sessions() as db:
+            row = db.get(ServerSetting, SERVER_SETTING)
+            current = dict(row.value) if row is not None else {}
+        same = current.get("provider") == provider
+        sealed = current.get("sealed") if same and not clear_key else None
+        last4 = current.get("last4") if sealed else None
+        models = list(current.get("models") or []) if same else []
+        if provider == OPENAI_COMPATIBLE:
+            url = (base_url or "").strip()
+            if not url.startswith(("http://", "https://")) or len(url) > 500:
+                raise ServerProviderError("The server address starts with http:// or"
+                                          " https://, for example"
+                                          " http://host.docker.internal:8080/v1.")
+            if not model:
+                raise ServerProviderError("Name the model, as the server knows it.")
+            base_url = url
+        else:
+            base_url = None
+            if key is not None:
+                key = normalize_key(key, provider)  # KeyFormatError: never echoed
+                result = self._check(provider, key)
+                if result.status == CHECK_INVALID:
+                    raise ServerProviderError(f"{name} didn't accept that key.")
+                models = list(result.models) or models
+            elif sealed is None:
+                raise ServerProviderError(f"Paste a {name} API key.")
+            if provider == ANTHROPIC:
+                model = model or roles.ANTHROPIC_DEFAULT
+                if model not in roles.ANTHROPIC_MODELS or (
+                        fast_model and fast_model not in roles.ANTHROPIC_MODELS):
+                    raise ServerProviderError("That model isn't one LORE offers for Claude.")
+            elif provider == OPENAI:
+                model = model or default_model(OPENAI, models)
+                if not model:
+                    raise ServerProviderError("Name the OpenAI model to use.")
+            else:
+                model = fast_model = None
+        if key is not None:
+            fresh = seal(self._master, SERVER_ID, key, provider)
+            sealed = {"c": base64.b64encode(fresh.ciphertext).decode(),
+                      "n": base64.b64encode(fresh.nonce).decode(), "v": fresh.key_version}
+            last4 = key[-4:]
+        value = {"provider": provider, "model": model, "fast_model": fast_model,
+                 "base_url": base_url, "sealed": sealed, "last4": last4, "models": models}
+        now = self._now()
+        with self.sessions() as db:
+            row = db.get(ServerSetting, SERVER_SETTING)
+            if row is None:
+                db.add(ServerSetting(key=SERVER_SETTING, value=value, updated_at=now,
+                                     updated_by=admin_id))
+            else:
+                row.value, row.updated_at, row.updated_by = value, now, admin_id
+            db.commit()
+        self._resume_waiting()
+        return self.server_provider()
+
+    def clear_server_provider(self) -> bool:
+        with self.sessions() as db:
+            row = db.get(ServerSetting, SERVER_SETTING)
+            if row is None:
+                return False
+            db.delete(row)
+            db.commit()
+        return True
+
+    def _resume_waiting(self) -> None:
+        """Jobs paused for want of a working key go on, for every active user
+        (not those of a disabled account)."""
+        with self.sessions() as db:
+            users = list(db.scalars(
+                sa.select(Job.user_id).join(User, User.id == Job.user_id)
+                .where(Job.state == PAUSED, User.status == "active",
+                       sa.or_(Job.outcome.is_(None), Job.outcome != "user_disabled"))
+                .distinct()))
+            for user_id in users:
+                queue.resume_user(db, user_id)
