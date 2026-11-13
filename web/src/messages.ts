@@ -1299,7 +1299,7 @@ export const SELFHOST = {
   modelLabel: "Model",
   modelHintCloud: "Optional for Gemini; for Claude or OpenAI, the model id (leave empty for LORE's suggestion).",
   addressLabel: "Server address",
-  addressHint: "An OpenAI-compatible server, for example llama.cpp's llama-server. From inside Docker, a server on this computer is http://host.docker.internal:8080/v1.",
+  addressHint: "An OpenAI-compatible server, for example llama.cpp's llama-server. From inside Docker, a server on this computer is http://host.docker.internal:<its port>/v1 (llama-server must listen on 0.0.0.0).",
   localModelHint: "The model name as the server knows it (llama-server: any name works).",
   localKeyLabel: "API key (optional)",
   test: "Test connection",

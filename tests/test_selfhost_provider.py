@@ -21,7 +21,7 @@ from tests.auth_fixtures import (
 )
 from tests.central_fixtures import central_sessions
 
-LOCAL = {"provider": "openai_compatible", "base_url": "http://host.docker.internal:8080/v1",
+LOCAL = {"provider": "openai_compatible", "base_url": "http://host.docker.internal:8081/v1",
          "model": "qwen3-30b"}
 
 

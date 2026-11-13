@@ -945,7 +945,7 @@ class KeyService:
             if not url.startswith(("http://", "https://")) or len(url) > 500:
                 raise ServerProviderError("The server address starts with http:// or"
                                           " https://, for example"
-                                          " http://host.docker.internal:8080/v1.")
+                                          " http://host.docker.internal:8081/v1.")
             if not model:
                 raise ServerProviderError("Name the model, as the server knows it.")
             base_url = url

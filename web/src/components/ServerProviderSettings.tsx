@@ -4,7 +4,7 @@ import { SELFHOST } from "../messages";
 import type { LocalModelTest, ServerProvider, ServerProviderId } from "../types";
 
 const CHOICES: ServerProviderId[] = ["openai_compatible", "gemini", "anthropic", "openai"];
-export const DOCKER_HOST_URL = "http://host.docker.internal:8080/v1";
+export const DOCKER_HOST_URL = "http://host.docker.internal:8081/v1";
 
 // The admin page in self-host mode: the AI provider for everyone who has no key of their own. A cloud provider
 // with its key (never shown back), or a local model on an OpenAI-compatible server (address, model, optional key,

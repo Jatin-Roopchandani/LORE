@@ -1670,6 +1670,42 @@ def admin_grant(email: str = typer.Argument(help="the person's email address")) 
     typer.echo(f"{user.email} is now an admin" + (" (account created)" if created else ""))
 
 
+@admin_app.command(name="set-password")
+def admin_set_password(
+    email: str = typer.Argument(help="the person's email address"),
+) -> None:
+    """Set someone's password from the server's shell (self-host mode), for
+    example an admin locked out of their own account. Asks for it twice;
+    signs them out everywhere."""
+    import sqlalchemy as sa
+
+    from lore.auth.accounts import normalize_email, user_by_email
+    from lore.auth.passwords import PasswordPolicyError, hash_password
+    from lore.central.db import database_url, make_engine, make_session_factory
+    from lore.central.models import AuthSession
+
+    address = normalize_email(email)
+    if address is None:
+        typer.echo(f"lore admin: {email!r} is not an email address", err=True)
+        raise typer.Exit(2)
+    password = typer.prompt("New password", hide_input=True, confirmation_prompt=True)
+    try:
+        hashed = hash_password(password)
+    except PasswordPolicyError as exc:
+        typer.echo(f"lore admin: {exc}", err=True)
+        raise typer.Exit(2)
+    sessions = make_session_factory(make_engine(database_url(LoreConfig.load())))
+    with sessions() as db:
+        user = user_by_email(db, address)
+        if user is None:
+            typer.echo(f"lore admin: no account for {address}", err=True)
+            raise typer.Exit(1)
+        user.password_hash = hashed
+        db.execute(sa.delete(AuthSession).where(AuthSession.user_id == user.id))
+        db.commit()
+    typer.echo(f"the password for {address} was set; they were signed out everywhere")
+
+
 @admin_app.command(name="rotate-keys")
 def admin_rotate_keys() -> None:
     """Re-encrypt every stored Gemini key under the current master key.

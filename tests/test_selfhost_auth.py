@@ -267,3 +267,31 @@ def test_a_self_hosted_server_has_no_waitlist(env):
     app, *_ = env
     r = anon(app).post("/api/waitlist", json={"email": "x@example.org", "consent": True})
     assert r.status_code == 404
+
+
+# --- lore admin set-password (a locked-out admin, from the server's shell) ---
+
+def test_lore_admin_set_password(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from lore.cli import app as cli
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv("LORE_DATABASE_URL", raising=False)
+    (tmp_path / "data").mkdir()
+    runner = CliRunner()
+    assert runner.invoke(cli, ["migrate"]).exit_code == 0
+    assert runner.invoke(cli, ["admin", "grant", "boss@example.org"]).exit_code == 0
+    r = runner.invoke(cli, ["admin", "set-password", "Boss@example.org"],
+                      input="a new long one\na new long one\n")
+    assert r.exit_code == 0, r.output
+    assert "a new long one" not in r.output
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'data' / 'central.db'}")
+    with engine.connect() as conn:
+        (stored,) = conn.execute(sa.text("select password_hash from users")).one()
+    assert verify_password(stored, "a new long one")
+    short = runner.invoke(cli, ["admin", "set-password", "boss@example.org"], input="short\nshort\n")
+    assert short.exit_code == 2
+    nobody = runner.invoke(cli, ["admin", "set-password", "who@example.org"],
+                           input="a new long one\na new long one\n")
+    assert nobody.exit_code == 1

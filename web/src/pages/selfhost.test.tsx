@@ -197,7 +197,7 @@ describe("the AI provider for everyone", () => {
     });
     render(<ServerProviderSettings />);
     expect(await screen.findByTestId("server-provider-now")).toHaveTextContent(SELFHOST.providerNone);
-    expect(screen.getByLabelText(SELFHOST.addressLabel)).toHaveValue("http://host.docker.internal:8080/v1");
+    expect(screen.getByLabelText(SELFHOST.addressLabel)).toHaveValue("http://host.docker.internal:8081/v1");
     await userEvent.type(screen.getByLabelText(SELFHOST.modelLabel), "qwen3-30b");
     await userEvent.click(screen.getByRole("button", { name: SELFHOST.test }));
     expect(await screen.findByText(SELFHOST.testOk("qwen3-30b", 4.2))).toBeInTheDocument();
@@ -205,7 +205,7 @@ describe("the AI provider for everyone", () => {
     expect(await screen.findByText(SELFHOST.saved)).toBeInTheDocument();
     expect(screen.getByTestId("server-provider-now")).toHaveTextContent("Local model (qwen3-30b)");
     const put = calls.find((c) => c.method === "PUT")!;
-    expect(put.body).toEqual({ provider: "openai_compatible", model: "qwen3-30b", base_url: "http://host.docker.internal:8080/v1" });
+    expect(put.body).toEqual({ provider: "openai_compatible", model: "qwen3-30b", base_url: "http://host.docker.internal:8081/v1" });
   });
 
   test("a failed test says why", async () => {
