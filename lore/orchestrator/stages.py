@@ -41,6 +41,7 @@ from lore.inference.gemini import (
     default_key_file,
     resolve_api_key,
 )
+from lore.inference import key_scope
 from lore.inference.key_scope import gemini_api_key
 from lore.inference.providers import factory as providers
 from lore.orchestrator import jobs
@@ -211,9 +212,14 @@ class DisambiguateStage:
 
     name = "disambiguate"
 
+    topic = "name disambiguation"
+
     def __init__(self, client_factory: Callable | None = None,
                  reload: Callable[[StageContext], None] | None = None,
-                 synonym_client_factory: Callable | None = None) -> None:
+                 synonym_client_factory: Callable | None = None,
+                 model_note: Callable | None = None) -> None:
+        self._model_note = _note_for(self.topic, client_factory, model_note)
+        self.note: str | None = None
         self._client_factory = client_factory or _gemini_client
         # Synonym questions go to the "synonyms" site (the writer model); a
         # test that passes one client_factory gets it for both kinds.
@@ -228,6 +234,10 @@ class DisambiguateStage:
     @staticmethod
     def shown(config) -> bool:
         return bool(config.disambiguation.enabled)
+
+    def skip_note(self, config) -> str | None:
+        """Why the step will ask nothing (no model), for the step list."""
+        return self._model_note(config) if config.disambiguation.enabled else None
 
     def _counts(self, ctx: StageContext):
         """(unanswered batches, total batches, batches already answered).
@@ -252,8 +262,14 @@ class DisambiguateStage:
         return self._counts(ctx)[1]
 
     def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
+        self.note = None
         todo, _total, already = self._counts(ctx)
         job_ctl.advance(already)
+        if todo and (note := self._model_note(ctx.config)):
+            # No model to ask: the questions stay pending for a later run.
+            self.note = note
+            log.info("disambiguate: %s", note)
+            todo = []
         if not todo:
             # Answers saved by an earlier run may never have been applied.
             self._apply(ctx)
@@ -360,6 +376,38 @@ def _gemini_client(config) -> GeminiClient:
                         " ~/.config/lore/gemini.env)")
 
 
+def no_model_note(config, topic: str) -> str | None:
+    """The step's note when no model is configured to answer `topic`'s
+    requests (local mode: no Gemini key, no Claude or OpenAI key, and no
+    self-hosted server), else None. The stage then skips those requests and
+    the book still finishes. Multi mode never skips: a user without a key
+    waits for one (KeyStop), as ever. A key file LORE refuses to read (its
+    mode) is not "no model": the stage runs and reports that error."""
+    if key_scope.current() is not None or key_scope.multi_user_enabled():
+        return None
+    if config.llm.provider == providers.OPENAI_COMPATIBLE:
+        return None
+    note = f"skipped: no model configured for {topic}"
+    try:
+        creds = providers.credentials(
+            config, local=lambda: resolve_api_key(key_file=default_key_file()))
+    except ValueError:  # Claude or OpenAI chosen, with no key
+        return note
+    except Exception:  # noqa: BLE001 - the stage itself reports it
+        return None
+    return None if creds.key else note
+
+
+def _note_for(topic: str, client_factory, model_note):
+    """The stage's no-model check: the real one with the real client, none
+    when a test hands in its own client factory (unless it passes one)."""
+    if model_note is not None:
+        return model_note
+    if client_factory is not None:
+        return lambda config: None
+    return lambda config: no_model_note(config, topic)
+
+
 @dataclass(frozen=True)
 class _BeatPart:
     chapter: int
@@ -428,11 +476,15 @@ class BeatsStage:
     """
 
     name = "beats"
+    topic = "story beats"
 
     def __init__(self, client_factory: Callable | None = None,
                  embed_factory: Callable | None = None,
                  kuzu_factory: Callable | None = None,
-                 lance_factory: Callable | None = None) -> None:
+                 lance_factory: Callable | None = None,
+                 model_note: Callable | None = None) -> None:
+        self._model_note = _note_for(self.topic, client_factory, model_note)
+        self.note: str | None = None
         self._client_factory = client_factory or _beats_client
         self._embed_factory = embed_factory or _local_embedder
         self._kuzu_factory = kuzu_factory or _open_graph
@@ -477,8 +529,13 @@ class BeatsStage:
     def shown(config) -> bool:
         return bool(config.beats.enabled)
 
+    def skip_note(self, config) -> str | None:
+        """Why the step will ask nothing (no model), for the step list."""
+        return self._model_note(config) if config.beats.enabled else None
+
     def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
         self.skipped = []
+        self.note = None
         if not ctx.config.beats.enabled:
             job_ctl.advance(0)
             return
@@ -491,6 +548,9 @@ class BeatsStage:
             job_ctl.advance(done)
             if not plan:
                 return
+            if done < len(plan):
+                # No model: the parts already answered are still stored.
+                self.note = self._model_note(ctx.config)
             try:
                 asyncio.run(self._run(ctx, job_ctl, plan, cached, done))
             except GeminiQuotaError as exc:
@@ -529,7 +589,8 @@ class BeatsStage:
             beats_build.write_cached(self._cache(ctx, part), part.chunks, answer)
             return answer
 
-        to_ask = [i for i, part in enumerate(plan) if cached[part.label] is None]
+        to_ask = [] if self.note else [
+            i for i, part in enumerate(plan) if cached[part.label] is None]
         try:
             # One loop for the requests, the embeds and the closes: httpx
             # binds its sockets to the loop that opened them.
@@ -538,6 +599,10 @@ class BeatsStage:
                 for index, part in enumerate(plan):
                     answer = cached[part.label]
                     fresh = answer is None
+                    if fresh and self.note:
+                        done += 1  # no model to ask: a later run asks it
+                        job_ctl.advance(done)
+                        continue
                     if fresh:
                         answer = await asked.take(index)
                         if isinstance(answer, GeminiOutputError):
@@ -624,12 +689,16 @@ class CodexStage:
     """
 
     name = "codex"
+    topic = "entity profiles"
 
     def __init__(self, client_factory: Callable | None = None,
                  embed_factory: Callable | None = None,
                  kuzu_factory: Callable | None = None,
                  lance_factory: Callable | None = None,
-                 all_worlds: bool = False) -> None:
+                 all_worlds: bool = False,
+                 model_note: Callable | None = None) -> None:
+        self._model_note = _note_for(self.topic, client_factory, model_note)
+        self.note: str | None = None
         self._client_factory = client_factory or _codex_client
         self._embed_factory = embed_factory or _local_embedder
         self._kuzu_factory = kuzu_factory or _open_graph
@@ -699,8 +768,13 @@ class CodexStage:
     def shown(config) -> bool:
         return bool(config.codex.enabled)
 
+    def skip_note(self, config) -> str | None:
+        """Why the step will ask nothing (no model), for the step list."""
+        return self._model_note(config) if config.codex.enabled else None
+
     def run(self, ctx: StageContext, job_ctl: JobCtl) -> None:
         self.skipped = []
+        self.note = None
         if not ctx.config.codex.enabled:
             job_ctl.advance(0)
             return
@@ -715,6 +789,9 @@ class CodexStage:
             job_ctl.advance(done)
             if not plan:
                 return
+            if done < len(plan):
+                # No model: the entries already answered are still stored.
+                self.note = self._model_note(ctx.config)
             try:
                 asyncio.run(self._run(ctx, job_ctl, plan, cached, current, done))
             except GeminiQuotaError as exc:
@@ -750,8 +827,9 @@ class CodexStage:
             codex_build.write_cached(self._cache(ctx, item), item.evidence_hash, answer)
             return answer
 
-        to_ask = [i for i, item in enumerate(plan)
-                  if item.entity.id not in current and cached[item.entity.id] is None]
+        to_ask = [] if self.note else [
+            i for i, item in enumerate(plan)
+            if item.entity.id not in current and cached[item.entity.id] is None]
         try:
             # One loop for the requests, the embeds and the closes: httpx
             # binds its sockets to the loop that opened them.
@@ -763,6 +841,10 @@ class CodexStage:
                         continue
                     answer = cached[entity.id]
                     fresh = answer is None
+                    if fresh and self.note:
+                        done += 1  # no model to ask: a later run asks it
+                        job_ctl.advance(done)
+                        continue
                     if fresh:
                         answer = await asked.take(index)
                         if isinstance(answer, GeminiOutputError):

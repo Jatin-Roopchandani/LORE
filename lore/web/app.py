@@ -45,7 +45,7 @@ from lore.central import traces as trace_store
 from lore.central.history import ensure_user
 from lore.central.models import KIND_MOVE, KIND_PROCESS
 from lore import sample, tracing
-from lore.config import LoreConfig
+from lore.config import LoreConfig, with_saved_llm
 from lore.db.sqlite import open_db
 from lore.ingest.registry import book_rows, list_books, story_chapters
 from lore.mcp import tools
@@ -219,6 +219,9 @@ def _quota(config: LoreConfig, multi: bool = False) -> dict:
                                                   microsecond=0)
     if config.synthesis.provider != "gemini":
         return {"provider": "local", "models": [], "resets_at": midnight.isoformat()}
+    if not multi and config.llm.provider == "openai_compatible":
+        # A self-hosted server: nothing billed, no ledger.
+        return {"provider": "local", "models": [], "resets_at": midnight.isoformat()}
     if not multi and (
             config.llm.provider != "gemini" or config.llm.gemini_paid):
         # Local mode on Claude, OpenAI or a paid Gemini plan: billed, no ledger.
@@ -347,7 +350,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                upload_settings: "UploadSettings | None" = None,
                rate_settings: "RateSettings | None" = None,
                oauth_clock: Callable[[], datetime] | None = None,
-               codex_refresh_factory: Callable[[], Callable] | None = None):
+               codex_refresh_factory: Callable[[], Callable] | None = None,
+               local_model_transport=None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing; `codex_refresh_factory` for deleting a book (the cached
     codex rebuild, lore.book_delete).
@@ -392,6 +396,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     """
     multi = multi_user_enabled() if multi_user is None else multi_user
     auth_ctx = None
+    if multi and config.llm.provider == "openai_compatible":
+        # Local mode only: a server-side base URL steered by users is SSRF.
+        from lore.inference.providers.openai_compatible import MultiUserRefused
+        raise MultiUserRefused()
     if multi:  # no configured model name reaches a user (lore.web.friendly)
         friendly.known_models(friendly.config_models(config))
         from lore.auth.setup import build_context
@@ -429,7 +437,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         if user.is_local:
             if multi:  # nobody may claim the single-user library in multi mode
                 raise HTTPException(401, "invalid user")
-            return base
+            # A local model saved in Settings overrides lore.toml (lore.config).
+            return with_saved_llm(base)
         try:
             # A new account's first request seeds its library with the sample.
             return config_for(base, validate_user_id(user.id), seed=True)
@@ -495,6 +504,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         report_limit=throttle.report if throttle is not None else None))
     from lore.web.export import build_export_router
     api.include_router(build_export_router(central, central_user, user_config))
+
+    if not multi:  # a local model chosen in Settings: never offered in multi mode
+        from lore.web.local_model import build_local_model_router
+        api.include_router(build_local_model_router(user_config,
+                                                    transport=local_model_transport))
 
     if auth_ctx is not None:
         api.state.auth = auth_ctx
@@ -883,22 +897,25 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             return {}
         choice, chosen_model = processing_choice(user, cfg)
         process_names: list[str] | None = None
+        process_notes: dict[str, str] = {}
         out = {}
         for book_id, job in pending.items():
             target = jobs.move_target(conn, book_id)
             if target is not None:
                 names = plan.names_for(lambda: make_move_stages(cfg, target), cfg)
+                notes = plan.notes_for(lambda: make_move_stages(cfg, target), cfg)
             else:
                 if process_names is None:
                     process_names = plan.names_for(lambda: make_stages(cfg), cfg)
-                names = process_names
+                    process_notes = plan.notes_for(lambda: make_stages(cfg), cfg)
+                names, notes = process_names, process_notes
             provider = used.get(book_id) or choice
             if provider == "gemini":
                 model = (cfg.extraction.gemini_models or [None])[0]
             else:
                 model = chosen_model if provider == choice else None
             out[book_id] = plan.steps(conn, book_id, job, names, now,
-                                      provider=provider, model=model)
+                                      provider=provider, model=model, notes=notes)
         return out
 
     def usage_line(user: CurrentUser, cfg: LoreConfig) -> dict:

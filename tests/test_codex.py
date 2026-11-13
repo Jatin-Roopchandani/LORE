@@ -927,3 +927,20 @@ def test_relink_deleting_stale_profiles_opens_the_vector_store_with_the_config(e
                        lance_factory=factory)
     assert run_book(conn, config, BOOK, [stage]).state == jobs.DONE
     assert opened and all(cfg is config for cfg in opened)
+
+
+NO_MODEL = "skipped: no model configured for entity profiles"
+
+
+def test_with_no_model_the_stage_skips_its_requests_and_finishes(env) -> None:
+    config, conn, tmp_path, _w = env
+
+    def boom(cfg):
+        raise AssertionError("no client may be built without a model")
+
+    stage, lance = _stage(env, None, model_note=lambda cfg: NO_MODEL)
+    stage._client_factory = boom
+    job = run_book(conn, config, BOOK, [stage])
+    assert job.state == jobs.DONE, job.stopped_reason
+    assert stage.note == NO_MODEL
+    assert store.with_entries(conn, ["e1", "e3", "e4"]) == []

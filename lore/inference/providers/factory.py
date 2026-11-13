@@ -12,6 +12,11 @@
   lookup); Claude reads ANTHROPIC_API_KEY or ~/.config/lore/anthropic.env,
   OpenAI reads OPENAI_API_KEY or ~/.config/lore/openai.env (mode 600, one
   line `NAME=...`, like gemini.env).
+- local mode, `provider = "openai_compatible"`: a self-hosted server at
+  `[lore.llm] base_url`. Its key is optional (LORE_LLM_API_KEY or
+  ~/.config/lore/llm.env); with none, `key` is NO_KEY, so every "is there a
+  key?" check a call site makes passes, and the model sends no header.
+  Refused in multi mode, bound user or not (MultiUserRefused).
 
 `build(creds, config, site, gemini_models=...)` turns them into a TextModel.
 Gemini is the very same `GeminiClient(key, models=..., recorder=...)` each
@@ -31,9 +36,22 @@ from lore.inference import key_scope
 from lore.inference.gemini import GeminiClient, GeminiKeyFileError
 from lore.inference.key_scope import KeyRequired
 from lore.inference.providers import roles
-from lore.inference.providers.base import ANTHROPIC, GEMINI, LABELS, OPENAI, TextModel
+from lore.inference.providers.base import (
+    ANTHROPIC,
+    GEMINI,
+    LABELS,
+    OPENAI,
+    OPENAI_COMPATIBLE,
+    TextModel,
+)
 
-KEY_VARIABLES = {ANTHROPIC: "ANTHROPIC_API_KEY", OPENAI: "OPENAI_API_KEY"}
+KEY_VARIABLES = {ANTHROPIC: "ANTHROPIC_API_KEY", OPENAI: "OPENAI_API_KEY",
+                 OPENAI_COMPATIBLE: "LORE_LLM_API_KEY"}
+# The key file's name, when it is not the provider's: ~/.config/lore/llm.env.
+_KEY_FILE_NAMES = {OPENAI_COMPATIBLE: "llm"}
+# The key of an OpenAI-compatible server that needs none: truthy, so the call
+# sites' key checks pass; the model never sends it (`build`).
+NO_KEY = "no-key"
 
 
 @dataclass(frozen=True)
@@ -42,11 +60,14 @@ class Credentials:
     key: str | None = field(repr=False)
     model: str | None = None
     fast_model: str | None = None
+    base_url: str | None = None
 
 
 def key_file(provider: str) -> Path:
-    """`~/.config/lore/<provider>.env`, next to gemini.env."""
-    return Path.home() / ".config" / "lore" / f"{provider}.env"
+    """`~/.config/lore/<provider>.env` (llm.env for openai_compatible), next to
+    gemini.env."""
+    name = _KEY_FILE_NAMES.get(provider, provider)
+    return Path.home() / ".config" / "lore" / f"{name}.env"
 
 
 def _key_from_file(path: Path, variable: str) -> str | None:
@@ -71,7 +92,8 @@ def _key_from_file(path: Path, variable: str) -> str | None:
 
 
 def local_key(provider: str, env: Mapping[str, str] | None = None) -> str | None:
-    """A Claude or OpenAI key from the environment, then its key file (local mode)."""
+    """A Claude, OpenAI or local-server key from the environment, then its key
+    file (local mode)."""
     if key_scope.server_key_forbidden():
         raise KeyRequired()
     variable = KEY_VARIABLES[provider]
@@ -123,6 +145,13 @@ def credentials(config, explicit: str | None = None, *,
                 local: Callable[[], str | None] | None = None) -> Credentials:
     """Whose key and which provider. See the module docstring."""
     scope = key_scope.current()
+    if OPENAI_COMPATIBLE in (config.llm.provider, getattr(scope, "provider", None)):
+        from lore.inference.providers.openai_compatible import refuse_in_multi_mode
+        refuse_in_multi_mode()
+        if scope is not None and scope.provider == OPENAI_COMPATIBLE:
+            # Never a user's choice (base.PROVIDERS); never from a bound user.
+            from lore.inference.providers.openai_compatible import MultiUserRefused
+            raise MultiUserRefused()
     if scope is not None and scope.provider != GEMINI:
         if not scope.key:
             raise KeyRequired()
@@ -131,6 +160,10 @@ def credentials(config, explicit: str | None = None, *,
             and config.llm.provider != GEMINI:
         provider = config.llm.provider
         key = local_key(provider)
+        if provider == OPENAI_COMPATIBLE:
+            return Credentials(provider, key or NO_KEY, config.llm.model or None,
+                               config.llm.fast_model or None,
+                               base_url=config.llm.base_url)
         if not key:
             raise ValueError(
                 f'[lore.llm] provider = "{provider}" but no API key: set'
@@ -153,6 +186,8 @@ def model_for(creds: Credentials, site: str) -> str:
             raise ValueError(f"{chosen!r} is not one of the Claude models LORE offers"
                              f" ({', '.join(roles.ANTHROPIC_MODELS)})")
         return chosen
+    if not chosen and creds.provider == OPENAI_COMPATIBLE:
+        raise ValueError('[lore.llm] provider = "openai_compatible" needs model')
     if not chosen:
         raise ValueError("choose an OpenAI model first (LORE never assumes one)")
     return chosen
@@ -177,6 +212,17 @@ def build(creds: Credentials, config, site: str, *,
     if creds.provider == OPENAI:
         from lore.inference.providers.openai_model import OpenAITextModel
         return OpenAITextModel(creds.key, model=model_for(creds, site))
+    if creds.provider == OPENAI_COMPATIBLE:
+        from lore.inference.providers.openai_compatible import (
+            OpenAICompatibleTextModel,
+            refuse_in_multi_mode,
+        )
+        refuse_in_multi_mode()
+        return OpenAICompatibleTextModel(
+            None if creds.key == NO_KEY else creds.key,
+            base_url=creds.base_url or config.llm.base_url,
+            model=model_for(creds, site), concurrency=config.llm.concurrency,
+            max_tokens=config.llm.max_output_tokens)
     raise ValueError(f"unknown provider {creds.provider!r}")
 
 

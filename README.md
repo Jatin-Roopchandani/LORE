@@ -92,6 +92,9 @@ Prefer the command line? `lore ingest`, `lore process` and `lore ask` do the
 same; see the [user guide](docs/guide.md). Instead of the environment variable,
 the key can also live in `~/.config/lore/gemini.env` (mode 600).
 
+No cloud key? Run every step on your own model (llama-server, vLLM, LM Studio or
+Ollama): see [Running fully local](docs/guide.md#running-fully-local).
+
 ## Use it from Claude
 
 LORE runs an MCP server, so Claude can search your library and ask LORE

@@ -43,6 +43,8 @@ def llm_concurrency(config) -> int:
     """How many processing requests may be in flight at once for the provider
     the current unit of work runs on (the bound user's, or `[lore.llm]`)."""
     processing = config.processing
+    if providers.active_provider(config) == providers.OPENAI_COMPATIBLE:
+        return max(1, config.llm.concurrency)  # a self-hosted server: its own setting
     if providers.on_gemini(config):
         return max(1, processing.gemini_free_concurrency)
     return max(1, processing.llm_concurrency)

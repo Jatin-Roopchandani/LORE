@@ -51,6 +51,18 @@ def stage_names(stages: Iterable, config) -> list[str]:
     return names
 
 
+def stage_notes(stages: Iterable, config) -> dict[str, str]:
+    """Each shown stage's note, when it says it will do no work for a reason
+    the reader should know (`skip_note(config)`: no model configured)."""
+    notes = {}
+    for stage in stages:
+        skip_note = getattr(stage, "skip_note", None)
+        note = skip_note(config) if skip_note is not None else None
+        if note:
+            notes[stage.name] = note
+    return notes
+
+
 def _chunks(conn: sqlite3.Connection, book_id: str) -> int:
     row = conn.execute("SELECT COUNT(*) FROM chunks WHERE book_id = ?",
                        (book_id,)).fetchone()
@@ -118,11 +130,14 @@ def _current_left(conn, book_id: str, job: jobs.BookJob, now: datetime) -> float
 
 def steps(conn: sqlite3.Connection, book_id: str, job: jobs.BookJob | None,
           names: list[str], now: datetime, *, provider: str | None = None,
-          model: str | None = None) -> dict | None:
+          model: str | None = None, notes: dict[str, str] | None = None) -> dict | None:
     """The step list for a book's job: each step's state (done, current,
-    upcoming), the current one's counts, seconds left per step (None:
-    unknown) and in all (`seconds_left`: the known part; `unknown_left`:
-    some step has no estimate)."""
+    upcoming, or skipped: an upcoming step with a note from `notes`, e.g.
+    "skipped: no model configured for story beats"), the current one's
+    counts, seconds left per step (None: unknown) and in all
+    (`seconds_left`: the known part; `unknown_left`: some step has no
+    estimate)."""
+    notes = notes or {}
     if job is None or job.state == jobs.DONE or not names:
         return None
     current = job.stage if job.stage in names else None
@@ -147,6 +162,10 @@ def steps(conn: sqlite3.Connection, book_id: str, job: jobs.BookJob | None,
                         "seconds_left": left})
         elif not seen_current:
             out.append({"stage": name, "state": "done", "seconds_left": 0})
+            continue
+        elif name in notes:
+            out.append({"stage": name, "state": "skipped", "note": notes[name],
+                        "seconds_left": 0})
             continue
         else:
             rate = seconds_per_chunk(conn, name, provider, model)
@@ -180,3 +199,11 @@ def names_for(make: Callable[[], list], config) -> list[str]:
         return stage_names(make(), config)
     except Exception:  # noqa: BLE001 - no step list rather than no Library
         return []
+
+
+def notes_for(make: Callable[[], list], config) -> dict[str, str]:
+    """Stage notes from a stage factory; {} when it cannot be built."""
+    try:
+        return stage_notes(make(), config)
+    except Exception:  # noqa: BLE001 - no notes rather than no Library
+        return {}

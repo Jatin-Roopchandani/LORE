@@ -6,6 +6,7 @@ import {
   closeSettings, lastTab, openSettings, parseHash, rememberTab, SETTINGS_EVENT, type SettingsTab,
 } from "../settings";
 import type { Depth, McpInfo, Me, World } from "../types";
+import { LocalModelSettings } from "./LocalModelSettings";
 import { ProviderSettings } from "./ProviderSettings";
 import { AccountTab } from "./settings/AccountTab";
 import { DataTab } from "./settings/DataTab";
@@ -15,9 +16,10 @@ import { AppearanceTab, ReadingTab, UsageTab } from "./settings/PrefsTabs";
 export const SETTINGS_BUTTON_ID = "settings-button";
 const POSITION_BUTTON = "header .pos-btn";
 
-/** The tabs that apply: the account, provider and admin tabs are multi-user only (admin for admins). */
+/** The tabs that apply: account and admin are multi-user only (admin for admins). In local mode the providers tab
+ * offers a local model (LocalModelSettings) instead of the user's own keys. */
 export function tabsFor(multi: boolean, role?: string): SettingsTab[] {
-  if (!multi) return ["usage", "appearance", "reading", "mcp", "data"];
+  if (!multi) return ["usage", "providers", "appearance", "reading", "mcp", "data"];
   return ["account", "providers", "usage", "appearance", "reading", "mcp", "data", ...(role === "admin" ? ["admin" as const] : [])];
 }
 
@@ -136,9 +138,9 @@ export function SettingsDialog({ worlds = [], world = "all", onWorldChange = () 
           </div>
           <div className="settings-panel" id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${tab}`} tabIndex={-1}>
             <h3>{SETTINGS.tabs[tab]}</h3>
-            <p className="set-lead">{SETTINGS.leads[tab === "data" && !multi ? "dataLocal" : tab]}</p>
+            <p className="set-lead">{SETTINGS.leads[!multi && (tab === "data" || tab === "providers") ? `${tab}Local` : tab]}</p>
             {tab === "account" && (me ? <AccountTab me={me} /> : null)}
-            {tab === "providers" && <ProviderSettings heading={false} />}
+            {tab === "providers" && (multi ? <ProviderSettings heading={false} /> : <LocalModelSettings />)}
             {tab === "usage" && <UsageTab multi={multi} showInternals={showInternals} />}
             {tab === "appearance" && <AppearanceTab />}
             {tab === "reading" && (

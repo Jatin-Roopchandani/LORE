@@ -539,3 +539,35 @@ def test_free_tier_beats_ask_one_part_at_a_time(env) -> None:
     stage, _ = _stage(env, Counting(ANSWERS))
     assert run_book(conn, config, BOOK, [stage]).state == jobs.DONE
     assert seen["peak"] == 1
+
+
+NO_MODEL = "skipped: no model configured for story beats"
+
+
+def _boom(cfg):
+    raise AssertionError("no client may be built without a model")
+
+
+def test_with_no_model_the_stage_skips_its_requests_and_finishes(env) -> None:
+    config, conn, _ = env
+    stage, lance = _stage(env, None, model_note=lambda cfg: NO_MODEL)
+    stage._client_factory = _boom
+    job = run_book(conn, config, BOOK, [stage])
+    assert job.state == jobs.DONE, job.stopped_reason
+    assert stage.note == NO_MODEL
+    assert count(conn, BOOK) == 0
+    assert not (config.data_dir / "beats" / BOOK).exists()
+
+
+def test_with_no_model_answers_already_cached_are_still_stored(env) -> None:
+    config, conn, _ = env
+    stage, lance = _stage(env, _Client(ANSWERS))
+    run_book(conn, config, BOOK, [stage])
+    with conn:
+        conn.execute("DELETE FROM beats")
+    (config.data_dir / "beats" / BOOK / "2-0.json").unlink()  # one part unanswered
+    again, _ = _stage(env, None, lance=lance, model_note=lambda cfg: NO_MODEL)
+    again._client_factory = _boom
+    assert run_book(conn, config, BOOK, [again]).state == jobs.DONE
+    assert again.note == NO_MODEL
+    assert count(conn, BOOK) == 2  # chapter 1, from its cache; chapter 2 skipped
