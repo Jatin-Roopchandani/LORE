@@ -127,6 +127,7 @@ base_url = "http://localhost:8080/v1"
 model = "qwen-28b"          # the name the server knows it by
 # fast_model = "qwen-7b"    # optional: a smaller model for the short steps
 concurrency = 1             # requests in flight at once; 1 for one GPU
+# max_output_tokens = 8192  # each reply's cap (0: none; vLLM needs it to fit the context)
 
 [lore.selection]
 provider = "gemini"

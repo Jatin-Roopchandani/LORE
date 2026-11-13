@@ -18,8 +18,9 @@ the OpenAI provider uses, so this is plain HTTP (httpx), not the SDK.
   (Gemini's JSON_INSTRUCTION), and remembered for the rest of the process.
 - A `<think>...</think>` preamble (reasoning models whose server does not
   split it off) and a code fence around the JSON are removed.
-- Temperature 0 (merge decisions must not be samples). No max_tokens: the
-  server's own context decides, and vLLM refuses a cap that overflows it.
+- Temperature 0 (merge decisions must not be samples). `max_tokens` from
+  `[lore.llm] max_output_tokens` (default 8192; 0 sends none): measured on a
+  local 3B, a structured reply can repeat itself until the context is full.
 - Usage: the reply's `usage` tokens when the server returns them, reported
   like Claude's and OpenAI's; never a price.
 - Concurrency: at most `concurrency` requests in flight per server and event
@@ -157,7 +158,8 @@ class OpenAICompatibleTextModel:
     provider = OPENAI_COMPATIBLE
 
     def __init__(self, api_key: str | None, *, base_url: str, model: str,
-                 concurrency: int = 1, transport: httpx.AsyncBaseTransport | None = None,
+                 concurrency: int = 1, max_tokens: int = 8192,
+                 transport: httpx.AsyncBaseTransport | None = None,
                  timeout: float = TIMEOUT_S, on_usage: Usage | None = None) -> None:
         refuse_in_multi_mode()
         if not model:
@@ -165,6 +167,7 @@ class OpenAICompatibleTextModel:
         self._key = api_key or None
         self._base_url = base_url.rstrip("/")
         self._concurrency = concurrency
+        self._max_tokens = max_tokens
         headers = {"Authorization": f"Bearer {self._key}"} if self._key else {}
         self._client = httpx.AsyncClient(base_url=self._base_url, headers=headers,
                                          timeout=timeout, transport=transport)
@@ -204,6 +207,8 @@ class OpenAICompatibleTextModel:
     async def _post(self, messages: list[dict], response_format: dict | None) -> httpx.Response:
         body: dict[str, Any] = {"model": self.model, "messages": messages,
                                 "temperature": 0, "stream": False}
+        if self._max_tokens:
+            body["max_tokens"] = self._max_tokens
         if response_format is not None:
             body["response_format"] = response_format
         self.requests_made += 1

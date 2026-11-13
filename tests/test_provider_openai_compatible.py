@@ -91,6 +91,7 @@ def test_json_goes_to_chat_completions_with_a_json_schema():
     assert body["messages"] == [{"role": "user", "content": "Is it?"}]
     assert body["temperature"] == 0
     assert body["stream"] is False
+    assert body["max_tokens"] == 8192  # a cap, so a small model's runaway repetition ends
     fmt = body["response_format"]
     assert fmt["type"] == "json_schema"
     assert fmt["json_schema"]["name"] == "Reply"
@@ -106,6 +107,15 @@ def test_a_key_is_sent_as_a_bearer_token_and_never_shown():
     assert server.requests[0].headers["authorization"] == f"Bearer {KEY}"
     assert "response_format" not in server.body()
     assert KEY not in repr(m)
+
+
+def test_max_tokens_follows_the_setting_and_zero_sends_none(tmp_path, monkeypatch):
+    server = Server(completion("ok"), completion("ok"))
+    run(model(server, max_tokens=1000).generate("x"))
+    run(model(server, max_tokens=0).generate("x"))
+    assert server.body(0)["max_tokens"] == 1000
+    assert "max_tokens" not in server.body(1)
+    assert LlmConfig().max_output_tokens == 8192
 
 
 def test_a_trailing_slash_in_base_url_is_harmless():
@@ -303,6 +313,7 @@ def test_every_remote_site_runs_on_it_with_model_or_fast_model(clean_env, monkey
 
     def spy(self, api_key, **kw):
         built.append((kw["model"], kw["base_url"], kw.get("concurrency")))
+        assert kw["max_tokens"] == 8192
         real(self, api_key, **kw)
     monkeypatch.setattr(OpenAICompatibleTextModel, "__init__", spy)
 

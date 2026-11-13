@@ -221,7 +221,8 @@ def build(creds: Credentials, config, site: str, *,
         return OpenAICompatibleTextModel(
             None if creds.key == NO_KEY else creds.key,
             base_url=creds.base_url or config.llm.base_url,
-            model=model_for(creds, site), concurrency=config.llm.concurrency)
+            model=model_for(creds, site), concurrency=config.llm.concurrency,
+            max_tokens=config.llm.max_output_tokens)
     raise ValueError(f"unknown provider {creds.provider!r}")
 
 

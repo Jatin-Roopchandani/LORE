@@ -172,6 +172,7 @@ class LlmConfig(BaseModel):
     ~/.config/lore/llm.env, never lore.toml. `concurrency` is how many
     requests go to it at once (default 1: one local GPU). Refused in multi
     mode: a server-side URL chosen by users would reach the server's network.
+    `max_output_tokens` (default 8192, 0 for none) caps each reply.
 
     In multi mode each user's own choice (Account settings) applies instead.
     """
@@ -186,6 +187,10 @@ class LlmConfig(BaseModel):
         default_factory=dict)
     base_url: str = ""
     concurrency: int = Field(default=1, ge=1)
+    # openai_compatible: the reply cap sent as max_tokens (0: none sent, the
+    # server decides). A cap matters: a small model can repeat itself until
+    # its context is full. vLLM refuses a cap that overflows the context.
+    max_output_tokens: int = Field(default=8192, ge=0)
 
     @model_validator(mode="after")
     def _openai_compatible_needs_a_server(self) -> "LlmConfig":
