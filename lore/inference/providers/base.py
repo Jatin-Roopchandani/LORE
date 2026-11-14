@@ -29,8 +29,13 @@ from lore.inference.gemini import (
 GEMINI = "gemini"
 ANTHROPIC = "anthropic"
 OPENAI = "openai"
+# What a user may choose (multi mode's Account settings, the central keys).
 PROVIDERS = (GEMINI, ANTHROPIC, OPENAI)
-LABELS = {GEMINI: "Gemini", ANTHROPIC: "Claude", OPENAI: "OpenAI"}
+# Local mode only, never in PROVIDERS: a self-hosted server that speaks
+# OpenAI's chat completions (providers/openai_compatible.py).
+OPENAI_COMPATIBLE = "openai_compatible"
+LABELS = {GEMINI: "Gemini", ANTHROPIC: "Claude", OPENAI: "OpenAI",
+          OPENAI_COMPATIBLE: "Local model"}
 
 Model = TypeVar("Model", bound=BaseModel)
 

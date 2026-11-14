@@ -107,11 +107,12 @@ function Steps({ plan }: { plan: StepPlan }) {
       <ol aria-label={LIBRARY.stepsLabel}>
         {plan.steps.map((s) => (
           <li key={s.stage} className={`step ${s.state}`} aria-current={s.state === "current" ? "step" : undefined}>
-            <span className="tick" aria-hidden="true">{s.state === "done" ? "\u2713" : s.state === "current" ? "\u25B8" : "\u00B7"}</span>
+            <span className="tick" aria-hidden="true">{s.state === "done" ? "\u2713" : s.state === "current" ? "\u25B8" : s.state === "skipped" ? "\u2013" : "\u00B7"}</span>
             <span>{LIBRARY.stage(s.stage)}</span>
             {s.state === "done" && <span className="hint">{LIBRARY.stepDone}</span>}
             {s.state === "current" && (s.total ?? 0) > 1 && <span className="hint">{LIBRARY.stepCount(s.done ?? 0, s.total ?? 0)}</span>}
-            {s.state !== "done" && <span className="hint">{LIBRARY.duration(s.seconds_left)}</span>}
+            {s.state === "skipped" && <span className="hint">{s.note ?? LIBRARY.stepSkipped}</span>}
+            {s.state !== "done" && s.state !== "skipped" && <span className="hint">{LIBRARY.duration(s.seconds_left)}</span>}
           </li>
         ))}
       </ol>

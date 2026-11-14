@@ -191,6 +191,16 @@ test("local mode never asks about a key", async () => {
   expect(keyStatus).not.toHaveBeenCalled();
 });
 
+test.each(["key_required", "key_invalid"])("local mode: an ask answered %s never opens a key screen", async (code) => {
+  askError = code;
+  render(<App />);
+  await userEvent.type(await screen.findByPlaceholderText("Ask about your books…"), "who?{Enter}");
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.queryByRole("heading", { name: PROVIDERS.connectTitle })).toBeNull();
+  expect(screen.queryByRole("heading", { name: PROVIDERS.replaceTitle })).toBeNull();
+  expect(screen.getByTitle("Show history")).toBeInTheDocument();  // still the reading app
+});
+
 test("changing the reading progress refetches the book list and the graph for that world, once", async () => {
   const book = { id: "b1", title: "Hollow Gate", series: null, series_index: null, chapters: 9, order: "current" };
   position = { enabled: true, book_id: "b1", chapter: 2, read_books: [], books: [{ ...book, state: "reading", progress_chapter: 2 }] };

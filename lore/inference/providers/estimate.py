@@ -19,7 +19,7 @@ import os
 import sqlite3
 
 from lore.inference.providers import roles
-from lore.inference.providers.base import ANTHROPIC, GEMINI
+from lore.inference.providers.base import ANTHROPIC, GEMINI, OPENAI_COMPATIBLE
 
 INPUT_PER_CHUNK = 1200
 OUTPUT_PER_CHUNK = 500
@@ -48,8 +48,10 @@ def estimate(chunks: int, provider: str, model: str | None,
             if provider == ANTHROPIC and model else None)
     if provider == GEMINI and gemini_paid and model:
         cost = roles.gemini_cost(model, tokens_in, tokens_out)
-    if provider == GEMINI and not gemini_paid:
-        needs_confirm = False  # free tier: the ledger and the reserve apply instead
+    if (provider == GEMINI and not gemini_paid) or provider == OPENAI_COMPATIBLE:
+        # Free tier: the ledger and the reserve apply instead. A self-hosted
+        # server: tokens are counted, but nothing is billed.
+        needs_confirm = False
     elif cost is not None:
         needs_confirm = cost > CONFIRM_ABOVE_USD
     else:
@@ -82,7 +84,7 @@ def remaining(chunks: int, stage: str, done: int, total: int, provider: str,
         cost = roles.gemini_cost(model, tokens_in, tokens_out)
     else:
         cost = None
-    if provider == GEMINI and not gemini_paid:
+    if (provider == GEMINI and not gemini_paid) or provider == OPENAI_COMPATIBLE:
         needs_confirm = False
     elif cost is not None:
         needs_confirm = cost > CONFIRM_ABOVE_USD

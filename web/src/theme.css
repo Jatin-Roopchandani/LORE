@@ -330,6 +330,7 @@ details.evidence{margin-top:8px;border-top:1px solid var(--line);padding-top:6px
 .lib-steps .step.done{color:var(--muted)}
 .lib-steps .step.current{font-weight:600;color:var(--ink)}
 .lib-steps .step.upcoming{color:var(--muted);opacity:.7}
+.lib-steps .step.skipped{color:var(--muted);opacity:.7}
 .lib-foot{border-top:1px solid var(--line);padding-top:8px}
 .lib-sample{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
 

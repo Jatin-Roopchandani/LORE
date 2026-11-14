@@ -21,7 +21,12 @@ SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # (rate limit, honeypot) and the Origin check in front of it.
 # POST /auth/email/verify: the magic-link token in the body is itself the
 # proof, and a cross-site form is refused by the Origin guard (login CSRF).
-EXEMPT_PATHS = frozenset({"/api/waitlist", "/auth/email", "/auth/email/verify"})
+# Self-host mode adds three of the same kind (lore.auth.selfhost): the
+# first-run setup (open only while there is no admin at all), password
+# sign-in and the set-password link (the password, or the link's code, is
+# the proof).
+EXEMPT_PATHS = frozenset({"/api/waitlist", "/auth/email", "/auth/email/verify",
+                          "/api/setup", "/auth/password", "/auth/password/link"})
 HEADER = "x-csrf-token"
 
 

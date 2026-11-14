@@ -45,7 +45,7 @@ from lore.central import traces as trace_store
 from lore.central.history import ensure_user
 from lore.central.models import KIND_MOVE, KIND_PROCESS
 from lore import sample, tracing
-from lore.config import LoreConfig
+from lore.config import LoreConfig, with_saved_llm
 from lore.db.sqlite import open_db
 from lore.ingest.registry import book_rows, list_books, story_chapters
 from lore.mcp import tools
@@ -219,6 +219,9 @@ def _quota(config: LoreConfig, multi: bool = False) -> dict:
                                                   microsecond=0)
     if config.synthesis.provider != "gemini":
         return {"provider": "local", "models": [], "resets_at": midnight.isoformat()}
+    if not multi and config.llm.provider == "openai_compatible":
+        # A self-hosted server: nothing billed, no ledger.
+        return {"provider": "local", "models": [], "resets_at": midnight.isoformat()}
     if not multi and (
             config.llm.provider != "gemini" or config.llm.gemini_paid):
         # Local mode on Claude, OpenAI or a paid Gemini plan: billed, no ledger.
@@ -347,7 +350,9 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                upload_settings: "UploadSettings | None" = None,
                rate_settings: "RateSettings | None" = None,
                oauth_clock: Callable[[], datetime] | None = None,
-               codex_refresh_factory: Callable[[], Callable] | None = None):
+               codex_refresh_factory: Callable[[], Callable] | None = None,
+               local_model_transport=None,
+               selfhost: bool | None = None):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing; `codex_refresh_factory` for deleting a book (the cached
     codex rebuild, lore.book_delete).
@@ -389,9 +394,22 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     personal access tokens, and OAuth for MCP clients (lore.mcp.oauth) when
     the public address is https (or loopback, for development).
     `oauth_clock` is a test seam: the OAuth server's wall clock.
+
+    Self-host mode (`selfhost`, default LORE_SELFHOST; lore.selfhost) is multi
+    mode run by the server's owner: password sign-in, a first-run admin
+    (every route waits for it: lore.auth.firstrun), the admin's AI provider
+    for everyone, no public pages, and a Host check that accepts the
+    addresses a home server is opened at (web.security.SelfHostGuard).
     """
+    from lore.selfhost import allowed_hosts_from_env, selfhost_enabled
+    selfhost = selfhost_enabled() if selfhost is None else selfhost
     multi = multi_user_enabled() if multi_user is None else multi_user
+    multi = multi or selfhost
     auth_ctx = None
+    if multi and config.llm.provider == "openai_compatible":
+        # Local mode only: a server-side base URL steered by users is SSRF.
+        from lore.inference.providers.openai_compatible import MultiUserRefused
+        raise MultiUserRefused()
     if multi:  # no configured model name reaches a user (lore.web.friendly)
         friendly.known_models(friendly.config_models(config))
         from lore.auth.setup import build_context
@@ -401,7 +419,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         central_sessions = auth_ctx.sessions
         from lore.central.keys import KeyService, MasterKeys
         master = master_keys or MasterKeys.from_env()  # or no start
-        key_service = KeyService(central_sessions, master, key_checker, clock=auth_ctx.now)
+        key_service = KeyService(central_sessions, master, key_checker, clock=auth_ctx.now,
+                                 server_default=selfhost)
     # Multi mode serves the hosted MCP endpoint (/mcp, lore.mcp.hosted) beside
     # the API; its SDK session manager lives for the app's lifetime.
     hosted_mcp: list = [None]
@@ -429,7 +448,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         if user.is_local:
             if multi:  # nobody may claim the single-user library in multi mode
                 raise HTTPException(401, "invalid user")
-            return base
+            # A local model saved in Settings overrides lore.toml (lore.config).
+            return with_saved_llm(base)
         try:
             # A new account's first request seeds its library with the sample.
             return config_for(base, validate_user_id(user.id), seed=True)
@@ -496,9 +516,20 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     from lore.web.export import build_export_router
     api.include_router(build_export_router(central, central_user, user_config))
 
+    if not multi:  # a local model chosen in Settings: never offered in multi mode
+        from lore.web.local_model import build_local_model_router
+        api.include_router(build_local_model_router(user_config,
+                                                    transport=local_model_transport))
+
     if auth_ctx is not None:
         api.state.auth = auth_ctx
         api.include_router(build_auth_router(auth_ctx))
+        if selfhost:  # setup, passwords, people, the provider for everyone
+            from lore.auth.firstrun import prepare_setup
+            prepare_setup(auth_ctx.sessions, base.data_dir, auth_ctx.settings.origin)
+            from lore.auth.selfhost import build_selfhost_router
+            api.include_router(build_selfhost_router(auth_ctx, key_service,
+                                                     transport=local_model_transport))
         from lore.web.keys import build_key_router
         api.include_router(build_key_router(auth_ctx, key_service))
         from lore.web.mcp_tokens import build_mcp_token_router
@@ -883,22 +914,25 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             return {}
         choice, chosen_model = processing_choice(user, cfg)
         process_names: list[str] | None = None
+        process_notes: dict[str, str] = {}
         out = {}
         for book_id, job in pending.items():
             target = jobs.move_target(conn, book_id)
             if target is not None:
                 names = plan.names_for(lambda: make_move_stages(cfg, target), cfg)
+                notes = plan.notes_for(lambda: make_move_stages(cfg, target), cfg)
             else:
                 if process_names is None:
                     process_names = plan.names_for(lambda: make_stages(cfg), cfg)
-                names = process_names
+                    process_notes = plan.notes_for(lambda: make_stages(cfg), cfg)
+                names, notes = process_names, process_notes
             provider = used.get(book_id) or choice
             if provider == "gemini":
                 model = (cfg.extraction.gemini_models or [None])[0]
             else:
                 model = chosen_model if provider == choice else None
             out[book_id] = plan.steps(conn, book_id, job, names, now,
-                                      provider=provider, model=model)
+                                      provider=provider, model=model, notes=notes)
         return out
 
     def usage_line(user: CurrentUser, cfg: LoreConfig) -> dict:
@@ -1404,6 +1438,10 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
     @api.get("/", include_in_schema=False)
     def root(request: Request):
         index = STATIC / "index.html"
+        if selfhost:  # no homepage: the app, or sign in first
+            from lore.auth.current import session_user
+            return RedirectResponse("/app" if session_user(request) else "/signin",
+                                    status_code=303, headers={"Cache-Control": "no-store"})
         if multi:  # the public homepage
             return _spa_page(public=request)
         if index.exists():
@@ -1418,9 +1456,11 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         index = STATIC / "index.html"
         if not index.exists():
             return HTMLResponse(_NOT_BUILT)
-        html = index.read_text(encoding="utf-8").replace(
-            "</head>", '<meta name="lore-multi" content="1"></head>', 1)
-        if public is not None and auth_ctx is not None:
+        marks = '<meta name="lore-multi" content="1">'
+        if selfhost:  # password sign-in, setup, the admin's provider (web/src/routing.ts)
+            marks += '<meta name="lore-selfhost" content="1">'
+        html = index.read_text(encoding="utf-8").replace("</head>", marks + "</head>", 1)
+        if public is not None and auth_ctx is not None and not selfhost:
             from lore.auth.current import session_user
             path = public.url.path.rstrip("/") or "/"
             signed_in = session_user(public) is not None
@@ -1433,6 +1473,46 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         # response by lore.web.headers.SecurityHeaders.
         return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
+    if selfhost:
+        from lore.auth.current import session_user as _session_user
+
+        def _go(path: str) -> RedirectResponse:
+            return RedirectResponse(path, status_code=303,
+                                    headers={"Cache-Control": "no-store"})
+
+        # The first-run screen (lore.auth.firstrun's gate sends everyone here
+        # until the admin exists) and the set-password page an admin's link
+        # opens. No public homepage, blog or waitlist on a self-hosted server.
+        @api.get("/setup", include_in_schema=False)
+        def setup_page(request: Request):
+            from lore.auth.firstrun import setup_needed
+            with sessions[0]() as db:
+                needed = setup_needed(db)
+            if needed:
+                return _spa_page()
+            return _go("/app" if _session_user(request) else "/signin")
+
+        @api.get("/set-password", include_in_schema=False)
+        def set_password_page():
+            page = _spa_page()
+            page.headers["Referrer-Policy"] = "no-referrer"  # the URL holds the code
+            return page
+
+        @api.get("/robots.txt", include_in_schema=False)
+        def private_robots():
+            return PlainTextResponse("User-agent: *\nDisallow: /\n")
+
+        @api.get("/waitlist", include_in_schema=False)
+        @api.get("/privacy", include_in_schema=False)
+        @api.get("/terms", include_in_schema=False)
+        @api.get("/blog", include_in_schema=False)
+        @api.get("/faq", include_in_schema=False)
+        @api.get("/blog/{slug}", include_in_schema=False)
+        @api.get("/sitemap.xml", include_in_schema=False)
+        @api.get("/llms.txt", include_in_schema=False)
+        def no_public_pages():
+            return _go("/")
+
     if multi:
         from lore.auth.current import session_user
 
@@ -1440,47 +1520,48 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             return RedirectResponse(path, status_code=303,
                                     headers={"Cache-Control": "no-store"})
 
-        # For search engines and AI crawlers (lore.web.public_pages).
-        @api.get("/robots.txt", include_in_schema=False)
-        def robots():
-            return PlainTextResponse(public_pages.robots_txt(auth_ctx.settings.origin),
-                                     headers={"Cache-Control": "public, max-age=3600"})
+        if not selfhost:  # the hosted site's public pages (self-host: none)
+            # For search engines and AI crawlers (lore.web.public_pages).
+            @api.get("/robots.txt", include_in_schema=False)
+            def robots():
+                return PlainTextResponse(public_pages.robots_txt(auth_ctx.settings.origin),
+                                         headers={"Cache-Control": "public, max-age=3600"})
 
-        @api.get("/sitemap.xml", include_in_schema=False)
-        def sitemap():
-            return Response(public_pages.sitemap_xml(auth_ctx.settings.origin,
-                                                     public_pages.blog_index(STATIC)),
-                            media_type="application/xml",
-                            headers={"Cache-Control": "public, max-age=3600"})
+            @api.get("/sitemap.xml", include_in_schema=False)
+            def sitemap():
+                return Response(public_pages.sitemap_xml(auth_ctx.settings.origin,
+                                                         public_pages.blog_index(STATIC)),
+                                media_type="application/xml",
+                                headers={"Cache-Control": "public, max-age=3600"})
 
-        @api.get("/llms.txt", include_in_schema=False)
-        def llms():
-            return PlainTextResponse(public_pages.llms_txt(auth_ctx.settings.origin,
-                                                           public_pages.blog_index(STATIC)),
-                                     headers={"Cache-Control": "public, max-age=3600"})
+            @api.get("/llms.txt", include_in_schema=False)
+            def llms():
+                return PlainTextResponse(public_pages.llms_txt(auth_ctx.settings.origin,
+                                                               public_pages.blog_index(STATIC)),
+                                         headers={"Cache-Control": "public, max-age=3600"})
 
-        # Public pages: anyone. The page draws itself from the address.
-        @api.get("/waitlist", include_in_schema=False)
-        def waitlist_page():
-            return _spa_page()
+            # Public pages: anyone. The page draws itself from the address.
+            @api.get("/waitlist", include_in_schema=False)
+            def waitlist_page():
+                return _spa_page()
 
-        @api.get("/privacy", include_in_schema=False)
-        @api.get("/terms", include_in_schema=False)
-        def legal_page(request: Request):
-            return _spa_page(public=request)
+            @api.get("/privacy", include_in_schema=False)
+            @api.get("/terms", include_in_schema=False)
+            def legal_page(request: Request):
+                return _spa_page(public=request)
 
-        # The blog and the FAQ: the pages the web build wrote (web/content); any
-        # other address under /blog is a 404, so search engines index only real posts.
-        @api.get("/blog", include_in_schema=False)
-        @api.get("/faq", include_in_schema=False)
-        @api.get("/blog/{slug}", include_in_schema=False)
-        def written_page(request: Request):
-            path = request.url.path.rstrip("/") or "/"
-            if public_pages.page_for(path, public_pages.blog_index(STATIC)) is None:
-                page = _spa_page()
-                page.status_code = 404
-                return page
-            return _spa_page(public=request)
+            # The blog and the FAQ: the pages the web build wrote (web/content); any
+            # other address under /blog is a 404, so search engines index only real posts.
+            @api.get("/blog", include_in_schema=False)
+            @api.get("/faq", include_in_schema=False)
+            @api.get("/blog/{slug}", include_in_schema=False)
+            def written_page(request: Request):
+                path = request.url.path.rstrip("/") or "/"
+                if public_pages.page_for(path, public_pages.blog_index(STATIC)) is None:
+                    page = _spa_page()
+                    page.status_code = 404
+                    return page
+                return _spa_page(public=request)
 
         # The mailed sign-in link: a page with a "Continue signing in" button
         # that POSTs the token (lore.auth.signin). Opening the link spends
@@ -1569,8 +1650,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             origins=origins, now=auth_ctx.now, provider=oauth_provider,
             trust_proxy=auth_ctx.settings.trust_proxy)
         inner = McpMount(hosted_mcp[0], inner)
+        if selfhost:
+            from lore.auth.firstrun import SetupGate
+            from lore.web.security import SelfHostGuard
+            inner = SetupGate(inner, lambda: sessions[0])
+            names = allowed_hosts_from_env() | {public.netloc.lower(), public.hostname or ""}
+            guard = SelfHostGuard(inner, {n for n in names if n}, {auth_ctx.settings.origin})
+        else:
+            guard = OriginGuard(inner, hosts, origins)
         # CSP, Referrer-Policy, nosniff, Permissions-Policy, frame refusal
         # and HSTS behind https, on every response (lore.web.headers).
-        return SecurityHeaders(OriginGuard(inner, hosts, origins),
-                               hsts=auth_ctx.settings.origin.startswith("https://"))
+        return SecurityHeaders(guard, hsts=auth_ctx.settings.origin.startswith("https://"))
     return OriginGuard(inner, hosts, origins)

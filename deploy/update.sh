@@ -185,6 +185,12 @@ log "migrations: database now at ${after:-none}"
 # --- 5. restart, 6. health --------------------------------------------------------
 log "restarting worker and web on lore:$tag"
 LORE_IMAGE_TAG="$tag" dc up -d --no-deps worker web
+# The one-shot migrate container a previous deploy left behind still has that
+# deploy's image; `up --no-recreate` below would start it as it is, and an older
+# image does not know a newer migration (2026-11-14: "Can't locate revision
+# 0016"). Remove it, so any migrate started here is made fresh on lore:$tag
+# (where it is a no-op: step 4 already migrated).
+LORE_IMAGE_TAG="$tag" dc rm -f -s migrate >/dev/null 2>&1 || true
 # cloudflared (profile `tunnel`) and anything else not running yet.
 LORE_IMAGE_TAG="$tag" dc up -d --no-recreate
 

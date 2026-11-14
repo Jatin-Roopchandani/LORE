@@ -140,9 +140,44 @@ def doctor() -> None:
         ok &= _report("ollama", healthy,
                       config.ollama.model if healthy else f"no server at {config.ollama.host}")
     except Exception as exc:
+        healthy = False
         ok &= _report("ollama", False, str(exc))
 
+    if healthy:
+        ok &= _report(*_embedding_check(config))
+    ok &= _report(*_model_check(config))
+
     raise typer.Exit(0 if ok else 1)
+
+
+def _embedding_check(config) -> tuple[str, bool, str]:
+    """Whether Ollama has the embedding model every book and question needs."""
+    import httpx
+    name = config.extraction.embed_model_ollama
+    try:
+        tags = httpx.get(f"{config.ollama.host.rstrip('/')}/api/tags", timeout=10).json()
+        pulled = {m.get("name", "") for m in tags.get("models", [])}
+    except Exception as exc:  # noqa: BLE001 - reported, not raised
+        return "embeddings", False, f"could not list Ollama's models: {exc}"
+    if name in pulled or f"{name}:latest" in pulled:
+        return "embeddings", True, name
+    return "embeddings", False, f"{name} is not pulled: run `ollama pull {name}`"
+
+
+def _model_check(config) -> tuple[str, bool, str]:
+    """Which AI model processing and answers run on, or what to set up."""
+    from lore.inference.providers import factory as providers
+    from lore.orchestrator.stages import no_model_note
+    if config.llm.provider == providers.OPENAI_COMPATIBLE:
+        return "model", True, f"local model {config.llm.model or '?'} at {config.llm.base_url}"
+    if no_model_note(config, "doctor") is None:
+        return "model", True, config.llm.provider
+    if config.extraction_provider == "ollama":
+        return ("model", True, f"Ollama only ({config.ollama.model}); character profiles,"
+                " timelines and name merging are skipped without a remote or local model")
+    return ("model", False, "no AI model configured: set GEMINI_API_KEY (a free key:"
+            " https://aistudio.google.com/apikey), or connect a local model in"
+            " `lore ui` (Settings, AI providers) or under [lore.llm] in lore.toml")
 
 
 @app.command()
@@ -1077,6 +1112,10 @@ def process(
         f"({report.alias_links} aliases merged), "
         f"{report.rel_edges} relationships, {report.chunks} chunks indexed"
     )
+    for name in ("disambiguate", "beats", "codex"):
+        note = getattr(by_name.get(name), "note", None)
+        if note:  # no model configured for it: the book is processed without it
+            typer.echo(f"{name}: {note}")
     if report.dropped_edges:
         typer.echo(
             f"{report.dropped_edges} edge(s) dropped — an endpoint was named"
@@ -1593,6 +1632,9 @@ def ui_command(
     except AuthConfigError as exc:  # LORE_MULTI_USER=1 without its secrets
         typer.echo(f"lore ui: {exc}", err=True)
         raise typer.Exit(2)
+    except ValueError as exc:  # openai_compatible in multi mode (MultiUserRefused)
+        typer.echo(f"lore ui: {exc}", err=True)
+        raise typer.Exit(2)
     uvicorn.run(web, host=host, port=port, log_level="warning")
 
 
@@ -1663,6 +1705,42 @@ def admin_grant(email: str = typer.Argument(help="the person's email address")) 
     typer.echo(f"{user.email} is now an admin" + (" (account created)" if created else ""))
 
 
+@admin_app.command(name="set-password")
+def admin_set_password(
+    email: str = typer.Argument(help="the person's email address"),
+) -> None:
+    """Set someone's password from the server's shell (self-host mode), for
+    example an admin locked out of their own account. Asks for it twice;
+    signs them out everywhere."""
+    import sqlalchemy as sa
+
+    from lore.auth.accounts import normalize_email, user_by_email
+    from lore.auth.passwords import PasswordPolicyError, hash_password
+    from lore.central.db import database_url, make_engine, make_session_factory
+    from lore.central.models import AuthSession
+
+    address = normalize_email(email)
+    if address is None:
+        typer.echo(f"lore admin: {email!r} is not an email address", err=True)
+        raise typer.Exit(2)
+    password = typer.prompt("New password", hide_input=True, confirmation_prompt=True)
+    try:
+        hashed = hash_password(password)
+    except PasswordPolicyError as exc:
+        typer.echo(f"lore admin: {exc}", err=True)
+        raise typer.Exit(2)
+    sessions = make_session_factory(make_engine(database_url(LoreConfig.load())))
+    with sessions() as db:
+        user = user_by_email(db, address)
+        if user is None:
+            typer.echo(f"lore admin: no account for {address}", err=True)
+            raise typer.Exit(1)
+        user.password_hash = hashed
+        db.execute(sa.delete(AuthSession).where(AuthSession.user_id == user.id))
+        db.commit()
+    typer.echo(f"the password for {address} was set; they were signed out everywhere")
+
+
 @admin_app.command(name="rotate-keys")
 def admin_rotate_keys() -> None:
     """Re-encrypt every stored Gemini key under the current master key.
@@ -1716,6 +1794,12 @@ def worker_command(
     from lore.worker import Worker
 
     config = LoreConfig.load()
+    if config.llm.provider == "openai_compatible":
+        from lore.inference.providers.openai_compatible import MULTI_USER_MESSAGE
+        typer.echo(f"lore worker: {MULTI_USER_MESSAGE}", err=True)
+        raise typer.Exit(2)
+    from lore.selfhost import apply_secrets, selfhost_enabled
+    apply_secrets(config.data_dir)  # self-host: the secrets the web app made too
     try:  # each job runs with its user's own Gemini key, decrypted with this
         master = MasterKeys.from_env()
     except KeyConfigError as exc:
@@ -1724,7 +1808,9 @@ def worker_command(
     from lore.auth.redact import install_key_redaction
     install_key_redaction()  # no API key in any log line, as in the web app
     sessions = make_session_factory(make_engine(database_url(config)))
-    worker = Worker(config, sessions, keys=KeyService(sessions, master))
+    # Self-host: a user with no key of their own runs on the admin's provider.
+    worker = Worker(config, sessions, keys=KeyService(sessions, master,
+                                                      server_default=selfhost_enabled()))
     typer.echo(f"lore worker {worker.worker_id}: waiting for jobs", err=True)
     if once:
         worker.run_once()

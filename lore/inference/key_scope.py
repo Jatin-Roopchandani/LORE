@@ -72,7 +72,7 @@ class KeyScope:
 
     __slots__ = ("user_id", "_key", "_on_request", "rejected", "provider",
                  "model", "fast_model", "_on_usage", "_over_cap", "paid_tier",
-                 "_on_refusal", "_on_credit", "_changed")
+                 "_on_refusal", "_on_credit", "_changed", "base_url")
 
     def __init__(self, user_id: str, key: str | None,
                  on_request: Callable[[str], None] | None = None, *,
@@ -83,8 +83,13 @@ class KeyScope:
                  paid_tier: bool = False,
                  on_refusal: Callable[[str], None] | None = None,
                  on_credit: Callable[[str], None] | None = None,
-                 changed: Callable[[], bool] | None = None) -> None:
+                 changed: Callable[[], bool] | None = None,
+                 base_url: str | None = None) -> None:
         self.user_id = user_id
+        # Self-host mode only: the admin's local model's address (the
+        # server's AI provider for everyone; lore.central.keys). Never set
+        # from anything a user sends.
+        self.base_url = base_url
         self._key = key
         self._on_request = on_request
         self.rejected = False
@@ -130,7 +135,9 @@ def current() -> KeyScope | None:
 
 
 def multi_user_enabled() -> bool:
-    return os.environ.get(ENV_MULTI_USER, "").strip().lower() in ("1", "true", "yes", "on")
+    """LORE_MULTI_USER, or self-host mode (LORE_SELFHOST), which is built on it."""
+    return any(os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+               for name in (ENV_MULTI_USER, "LORE_SELFHOST"))
 
 
 def server_key_forbidden() -> bool:

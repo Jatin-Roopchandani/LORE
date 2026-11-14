@@ -1,4 +1,4 @@
-import type { AdminEvent, SampleAdded, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
+import type { NewPerson, PasswordLink, ServerProvider, ServerProviderId, SignedIn, AdminEvent, LocalModelState, LocalModelTest, SampleAdded, AdminReport, AdminUser, ApiError, TraceRecord, AskEvent, AuthProviders, KeySaved, KeyStatus, Me, ProcessEstimate, ProviderId, ProvidersState, UsageSummary, NewInvite, UsageToday, WaitlistEntry, Depth, Book, EdgeDetail, EntityCardData,
   BookDeleted, EntityIntro, EntityKind, EntityProfile, LibraryStatus, McpInfo, McpCheck, McpConnection, McpHosted, McpToken, McpTokenMade, ConsentInfo, DeviceSession, MoveResult, PassageText, PathResult, Quota, ReadingPositionBody, ReadingPositionData, Relations,
   SearchHit, SubgraphData, Timeline, World, WorldRef } from "./types";
 
@@ -270,6 +270,16 @@ export const keyApi = {
   estimate: (bookId: string) => getJson<ProcessEstimate>(`/api/books/${encodeURIComponent(bookId)}/estimate`, true),
 };
 
+// Local mode only: a self-hosted model chosen in Settings (lore/web/local_model.py).
+export const localModelApi = {
+  get: () => getJson<LocalModelState>("/api/local-model", true),
+  test: (body: { base_url: string; model: string; key?: string }) =>
+    sendJson<LocalModelTest>("POST", "/api/local-model/test", body, true),
+  save: (body: { base_url: string; model: string; key?: string; clear_key?: boolean }) =>
+    sendJson<LocalModelState>("PUT", "/api/local-model", body, true),
+  remove: () => sendJson<LocalModelState>("DELETE", "/api/local-model", undefined, true),
+};
+
 export const adminApi = {
   waitlist: () => getJson<{ entries: WaitlistEntry[] }>("/api/admin/waitlist", true),
   approve: (id: number) => sendJson<{ invited: true; entry: WaitlistEntry }>("POST", `/api/admin/waitlist/${id}/approve`, {}, true),
@@ -284,4 +294,28 @@ export const adminApi = {
   revokeSessions: (id: string) => sendJson<{ revoked: number }>("POST", `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`, {}, true),
   deleteUser: (id: string) => sendJson<{ deleted: true }>("DELETE", `/api/admin/users/${encodeURIComponent(id)}`, undefined, true),
   events: () => getJson<{ events: AdminEvent[] }>("/api/admin/events", true),
+};
+
+// Self-host mode (lore/auth/selfhost.py): first-run setup, password sign-in, set-password links, my password, and
+// the admin's people and provider for everyone.
+export const selfhostApi = {
+  setupNeeded: () => getJson<{ needed: boolean }>("/api/setup", true),
+  setup: (body: { code: string; email: string; password: string; confirm: string; name?: string }) =>
+    sendJson<SignedIn>("POST", "/api/setup", body, true),
+  signIn: (email: string, password: string) => sendJson<SignedIn>("POST", "/auth/password", { email, password }, true),
+  linkEmail: (code: string) => getJson<{ email: string }>(`/auth/password/link?code=${encodeURIComponent(code)}`, true),
+  useLink: (code: string, password: string) => sendJson<SignedIn>("POST", "/auth/password/link", { code, password }, true),
+  changePassword: (current: string, password: string) =>
+    sendJson<{ ok: true }>("POST", "/api/me/password", { current, password }, true),
+  addPerson: (body: { email: string; name?: string; password?: string }) =>
+    sendJson<NewPerson>("POST", "/api/admin/users", body, true),
+  resetPassword: (id: string, password?: string) =>
+    sendJson<{ user: AdminUser; link?: PasswordLink }>("POST", `/api/admin/users/${encodeURIComponent(id)}/password`,
+      password ? { password } : {}, true),
+  provider: () => getJson<{ provider: ServerProvider | null }>("/api/admin/provider", true),
+  saveProvider: (body: { provider: ServerProviderId; key?: string; model?: string; fast_model?: string; base_url?: string }) =>
+    sendJson<{ provider: ServerProvider }>("PUT", "/api/admin/provider", body, true),
+  removeProvider: () => sendJson<{ provider: null; removed: boolean }>("DELETE", "/api/admin/provider", undefined, true),
+  testProvider: (body: { base_url: string; model: string; key?: string }) =>
+    sendJson<LocalModelTest>("POST", "/api/admin/provider/test", body, true),
 };

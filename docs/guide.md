@@ -105,6 +105,80 @@ it only while developing.
 Packaging a wheel needs `cd web && npm run build` first: the built app in
 `lore/web/static` is what ships.
 
+## Running fully local
+
+LORE can run with no cloud key at all: every model step on a model you serve
+yourself, from any server that speaks OpenAI's chat completions API —
+llama.cpp's `llama-server`, vLLM, LM Studio, or Ollama's `/v1` endpoint.
+Embeddings stay on Ollama as always (`ollama pull nomic-embed-text`), so keep
+Ollama running too.
+
+With `llama-server` (e.g. `llama-server -m qwen-28b-q4_k_m.gguf --port 8080
+--jinja -c 32768`), put this in `lore.toml`:
+
+```toml
+[lore]
+# "gemini" in these settings means "the [lore.llm] model", whichever it is.
+extraction_provider = "gemini"
+
+[lore.llm]
+provider = "openai_compatible"
+base_url = "http://localhost:8080/v1"
+model = "qwen-28b"          # the name the server knows it by
+# fast_model = "qwen-7b"    # optional: a smaller model for the short steps
+concurrency = 1             # requests in flight at once; 1 for one GPU
+# max_output_tokens = 8192  # each reply's cap (0: none; vLLM needs it to fit the context);
+#                           # 4096 suits small models, which sometimes repeat themselves to the cap
+
+[lore.selection]
+provider = "gemini"
+
+[lore.synthesis]
+provider = "gemini"
+
+[lore.adjudication]
+provider = "gemini"
+```
+
+Then extraction, entity disambiguation and synonyms, story beats, the codex,
+and every answer step (decompose, select, synthesize, check, write) run on
+that model. Other servers differ only in the address: vLLM
+`http://localhost:8000/v1`, LM Studio `http://localhost:1234/v1`, Ollama
+`http://localhost:11434/v1` (Ollama's `/v1` uses a 4,096-token context unless
+the server is started with `OLLAMA_CONTEXT_LENGTH=16384` or more; LORE's
+prompts need it).
+
+- **Key:** optional. If your server wants one, set `LORE_LLM_API_KEY`, or put
+  one line `LORE_LLM_API_KEY=...` in `~/.config/lore/llm.env` (mode 600). Never
+  in `lore.toml`.
+- **Concurrency:** `[lore.llm] concurrency` (default 1) caps the requests LORE
+  sends at once, for processing and questions alike. Raise it only if your
+  server runs several slots (`llama-server -np 4`).
+- **Structured output:** LORE asks for JSON through `response_format`
+  (`json_schema`), validates every reply, and asks once more with the error if
+  a reply doesn't fit. A server that refuses `json_schema` gets `json_object`
+  with the schema in the prompt instead.
+- **Usage:** tokens are counted when the server reports them; no price is
+  ever shown.
+- **From the web app:** in local mode, **Settings → AI providers → Local
+  model** takes the server address, the model name and an optional key, with
+  **Test connection**. A model chosen there overrides `[lore.llm]` in
+  `lore.toml` and runs every step, exactly like the example above (it is
+  saved in `<data dir>/llm.json`, the key in `~/.config/lore/llm.env`);
+  **Stop using it** goes back to `lore.toml` as written. The hosted
+  multi-user server never offers this.
+- **Quality:** extraction quality depends heavily on model size. Measured on
+  22 chunks, a local 7B's relationships were 61% supported by the text against
+  81% for Gemini 3.1 Flash Lite, with 56 wrong entity kinds against 1; a 3B is
+  weaker still. Use the largest model your hardware serves at a bearable speed,
+  and expect answers to follow the graph's quality. Larger local models have
+  not been measured yet.
+
+With no model configured at all (no key, no local server), books still
+process: the story beats, codex and disambiguation steps are skipped with a
+note ("skipped: no model configured for story beats") and the rest of the
+graph is built.
+
 ## Worlds
 
 Every book belongs to a **world**, chosen when it is added (`lore ingest --world`,

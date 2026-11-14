@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { nav } from "../api";
-import { ACCOUNT_DELETE, AUTH, PROVIDERS, SETTINGS, UI, USAGE } from "../messages";
+import { ACCOUNT_DELETE, AUTH, LOCAL_MODEL, PROVIDERS, SETTINGS, UI, USAGE } from "../messages";
 import { openSettings, TAB_KEY } from "../settings";
 import { applyTheme } from "../theme";
 import { THEMES } from "../themes";
@@ -46,6 +46,8 @@ const checkBody = { ok: true, lore_found: true, problem: null, library_found: tr
 const quotaBody = { provider: "gemini", resets_at: "2026-11-08T08:00:00Z",
   models: [{ model: "gemini-flash", count: 40, limit: 500, remaining: 460 }, { model: "gemini-lite", count: 0, limit: 500, remaining: 500 }] };
 
+const localModelBody = { active: { provider: "gemini", model: null, fast_model: null, base_url: null, source: "lore.toml" },
+  saved: null, file: { provider: "gemini", model: null, fast_model: null, base_url: null }, default_base_url: "http://localhost:8080/v1" };
 type Call = { url: string; method: string; body?: string };
 function serve({ role = "user", providers = [gemini, claude, row("openai")] as Info[], name = "Ada" as string | null,
   usage = usageBody as Record<string, unknown>, hint = false, quota = quotaBody as Record<string, unknown> } = {}) {
@@ -99,6 +101,7 @@ function serve({ role = "user", providers = [gemini, claude, row("openai")] as I
     }
     if (url === "/api/mcp/check") return json(checkBody);
     if (url === "/api/quota") return json(quota);
+    if (url === "/api/local-model") return json(localModelBody);
     return json({ ok: true });
   }));
   return calls;
@@ -172,11 +175,28 @@ test("Tab stays inside the dialog: past the last control to the first, and back"
 
 // ---- tabs per mode ------------------------------------------------------------------------------------------------
 
-test("local mode: Usage, Appearance, Reading, MCP connector and Your data; no account tabs", async () => {
+test("local mode: Usage, AI providers (a local model), Appearance, Reading, MCP connector and Your data; no account tabs", async () => {
   const calls = serve();
   await openAt();
-  expect(tabNames()).toEqual(["Usage", "Appearance", "Reading", "MCP connector", "Your data"]);
+  expect(tabNames()).toEqual(["Usage", "AI providers", "Appearance", "Reading", "MCP connector", "Your data"]);
   expect(calls.some((c) => c.url === "/api/me")).toBe(false);
+});
+
+test("local mode: AI providers offers the Local model, never the key cards; multi mode never asks for it", async () => {
+  const calls = serve();
+  await openAt("providers");
+  expect(await within(panel()).findByRole("heading", { name: LOCAL_MODEL.title })).toBeInTheDocument();
+  expect(within(panel()).getByLabelText(LOCAL_MODEL.addressLabel)).toHaveValue("http://localhost:8080/v1");
+  expect(calls.some((c) => c.url.startsWith("/api/me/"))).toBe(false);
+});
+
+test("multi-user mode: the AI providers tab has no Local model", async () => {
+  markMulti();
+  const calls = serve();
+  await openAt("providers");
+  await waitFor(() => expect(calls.some((c) => c.url === "/api/me/providers")).toBe(true));
+  expect(within(panel()).queryByRole("heading", { name: LOCAL_MODEL.title })).toBeNull();
+  expect(calls.some((c) => c.url === "/api/local-model")).toBe(false);
 });
 
 test("multi-user mode: Account and AI providers first; Admin only for admins", async () => {
@@ -232,8 +252,8 @@ test("arrow keys move between tabs", async () => {
   serve();
   await openAt("usage");
   await userEvent.keyboard("{ArrowDown}");
-  expect(screen.getByRole("tab", { name: "Appearance" })).toHaveAttribute("aria-selected", "true");
-  await waitFor(() => expect(screen.getByRole("tab", { name: "Appearance" })).toHaveFocus());
+  expect(screen.getByRole("tab", { name: "AI providers" })).toHaveAttribute("aria-selected", "true");
+  await waitFor(() => expect(screen.getByRole("tab", { name: "AI providers" })).toHaveFocus());
   await userEvent.keyboard("{End}");
   expect(screen.getByRole("tab", { name: "Your data" })).toHaveAttribute("aria-selected", "true");
   await waitFor(() => expect(screen.getByRole("tab", { name: "Your data" })).toHaveFocus());

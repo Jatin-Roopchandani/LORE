@@ -32,7 +32,8 @@ export default function App() {
     });
   }, []);
   // An ask, a Continue or a move answered key_required or key_invalid: back to the key screen.
-  useEffect(() => onKeyProblem((p) => setKeyState(p === "key_invalid" ? "invalid" : "missing")), []);
+  // Local mode never shows the key screen: there are no keys to save there (a model is chosen in Settings).
+  useEffect(() => (isMulti() ? onKeyProblem((p) => setKeyState(p === "key_invalid" ? "invalid" : "missing")) : undefined), []);
   if (keyState === "checking") return <div className="app" aria-busy="true" />;
   if (keyState === "missing" || keyState === "invalid")
     return <KeyOnboarding reason={keyState} onDone={() => setKeyState("ok")} />;
