@@ -140,9 +140,44 @@ def doctor() -> None:
         ok &= _report("ollama", healthy,
                       config.ollama.model if healthy else f"no server at {config.ollama.host}")
     except Exception as exc:
+        healthy = False
         ok &= _report("ollama", False, str(exc))
 
+    if healthy:
+        ok &= _report(*_embedding_check(config))
+    ok &= _report(*_model_check(config))
+
     raise typer.Exit(0 if ok else 1)
+
+
+def _embedding_check(config) -> tuple[str, bool, str]:
+    """Whether Ollama has the embedding model every book and question needs."""
+    import httpx
+    name = config.extraction.embed_model_ollama
+    try:
+        tags = httpx.get(f"{config.ollama.host.rstrip('/')}/api/tags", timeout=10).json()
+        pulled = {m.get("name", "") for m in tags.get("models", [])}
+    except Exception as exc:  # noqa: BLE001 - reported, not raised
+        return "embeddings", False, f"could not list Ollama's models: {exc}"
+    if name in pulled or f"{name}:latest" in pulled:
+        return "embeddings", True, name
+    return "embeddings", False, f"{name} is not pulled: run `ollama pull {name}`"
+
+
+def _model_check(config) -> tuple[str, bool, str]:
+    """Which AI model processing and answers run on, or what to set up."""
+    from lore.inference.providers import factory as providers
+    from lore.orchestrator.stages import no_model_note
+    if config.llm.provider == providers.OPENAI_COMPATIBLE:
+        return "model", True, f"local model {config.llm.model or '?'} at {config.llm.base_url}"
+    if no_model_note(config, "doctor") is None:
+        return "model", True, config.llm.provider
+    if config.extraction_provider == "ollama":
+        return ("model", True, f"Ollama only ({config.ollama.model}); character profiles,"
+                " timelines and name merging are skipped without a remote or local model")
+    return ("model", False, "no AI model configured: set GEMINI_API_KEY (a free key:"
+            " https://aistudio.google.com/apikey), or connect a local model in"
+            " `lore ui` (Settings, AI providers) or under [lore.llm] in lore.toml")
 
 
 @app.command()

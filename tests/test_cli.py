@@ -19,15 +19,30 @@ def _config_in(tmp_path: Path, monkeypatch) -> LoreConfig:
     return config
 
 
+class _Tags:
+    """Ollama's /api/tags reply, listing `names`."""
+
+    def __init__(self, *names: str) -> None:
+        self._names = names
+
+    def json(self) -> dict:
+        return {"models": [{"name": n} for n in self._names]}
+
+
+def _doctor(*pulled: str):
+    with patch("lore.cli.OllamaProvider") as ollama_cls, \
+            patch("httpx.get", return_value=_Tags(*pulled)):
+        ollama_cls.return_value.healthy = AsyncMock(return_value=True)
+        ollama_cls.return_value.aclose = AsyncMock()
+        return runner.invoke(app, ["doctor"])
+
+
 def test_doctor_all_healthy(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.chdir(tmp_path)  # defaults; no lore.toml
-    with patch("lore.cli.OllamaProvider") as ollama_cls:
-        ollama_cls.return_value.healthy = AsyncMock(return_value=True)
-        ollama_cls.return_value.aclose = AsyncMock()
-        result = runner.invoke(app, ["doctor"])
+    result = _doctor("nomic-embed-text:latest", "qwen2.5:3b-instruct-q4_K_M")
     assert result.exit_code == 0, result.output
-    for check in ("config", "sqlite", "kuzu", "lancedb", "ollama"):
+    for check in ("config", "sqlite", "kuzu", "lancedb", "ollama", "embeddings", "model"):
         assert f"[ ok ] {check}" in result.output
     assert "kaggle" not in result.output.lower()
 
@@ -41,6 +56,54 @@ def test_doctor_fails_when_ollama_down(tmp_path: Path, monkeypatch) -> None:
         result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1
     assert "[fail] ollama" in result.output
+
+
+def test_doctor_says_how_to_pull_a_missing_embedding_model(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    result = _doctor("qwen2.5:3b-instruct-q4_K_M")
+    assert result.exit_code == 1
+    assert "[fail] embeddings" in result.output and "ollama pull nomic-embed-text" in result.output
+
+
+def _remote_toml(tmp_path: Path, llm: str = "") -> None:
+    (tmp_path / "lore.toml").write_text(f'[lore]\nextraction_provider = "gemini"\n{llm}')
+
+
+def test_doctor_fails_with_no_ai_model_and_says_what_to_set(tmp_path: Path, monkeypatch) -> None:
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))  # no key files
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _remote_toml(tmp_path)
+    result = _doctor("nomic-embed-text:latest")
+    assert result.exit_code == 1
+    assert "[fail] model" in result.output
+    assert "GEMINI_API_KEY" in result.output and "local model" in result.output
+
+
+def test_doctor_names_the_model_with_a_key(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "x" * 39)
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _remote_toml(tmp_path)
+    result = _doctor("nomic-embed-text:latest")
+    assert result.exit_code == 0, result.output
+    assert "[ ok ] model — gemini" in result.output
+
+
+def test_doctor_names_a_local_model_without_any_key(tmp_path: Path, monkeypatch) -> None:
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    _remote_toml(tmp_path, '[lore.llm]\nprovider = "openai_compatible"\n'
+                 'base_url = "http://localhost:8080/v1"\nmodel = "qwen-28b"\n')
+    result = _doctor("nomic-embed-text:latest")
+    assert result.exit_code == 0, result.output
+    assert "[ ok ] model — local model qwen-28b at http://localhost:8080/v1" in result.output
 
 
 def test_quota_shows_the_gemini_section(tmp_path: Path, monkeypatch) -> None:
