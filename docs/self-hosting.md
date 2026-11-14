@@ -49,8 +49,9 @@ email and a password). That's all the setup there is: every page waits for
 the admin, and only someone who can read the server's log can create it.
 The code works once and is never printed again after that.
 
-The first start downloads the images and the embedding model
-(`nomic-embed-text`, about 300 MB), so give it a few minutes. `docker compose
+The first start downloads the images (about 10 GB, most of it the Ollama
+image) and the embedding model (`nomic-embed-text`, about 300 MB), and `up
+-d` waits for that model before it returns, so give it a few minutes. `docker compose
 ps` shows each service; `lore` turns healthy when it is ready.
 
 **From a clone instead** (to build the image yourself, or change the code):
@@ -204,7 +205,9 @@ docker compose start lore worker
 ```
 
 (`lore_lore-data` is the volume's full name: the project name `lore`, then
-the volume. `docker volume ls` lists it.)
+the volume. `docker volume ls` lists it. The archive is written by root
+inside the container, so it belongs to root; `sudo chown $USER` it if you
+want to move it around.)
 
 To restore onto a fresh install:
 
@@ -335,6 +338,11 @@ docker compose run --rm ollama-pull
 problem means the AI provider refused the key or there is none: set the
 provider for everyone again (Admin), or add a key in Settings; paused books
 continue by themselves once a working key is saved.
+
+**"port is already allocated" or "address already in use" on start.**
+Something else uses port 8080 (llama-server's default, for one). Set
+`LORE_PORT=8081` (or any free port) in `.env` and run `docker compose up -d`
+again; LORE_BASE_URL follows it.
 
 **"this server does not answer to that address".** You opened LORE by a host
 name it doesn't know. Add it to `LORE_ALLOWED_HOSTS` (or `LORE_BASE_URL`).
