@@ -9,12 +9,24 @@ calls `create_first_admin`, which succeeds once:
   the admin, and its primary key lets only one transaction ever commit it,
   on SQLite and on Postgres alike;
 - a server that already has an admin (`lore admin grant`) never offers setup.
+
+The setup code (like Grafana's and Jupyter's): while no admin exists, a
+random one-time code is kept in `<data root>/setup-code` (mode 600) and
+printed in a box on every start, so only someone who can read the server's
+log (`docker compose logs lore`) can create the admin, not whoever reaches
+the port first. LORE_SETUP_CODE sets it instead, for unattended installs.
+The file goes once the admin exists, and the code is never printed again.
 """
 from __future__ import annotations
 
+import hmac
 import json
+import os
+import secrets
+import sys
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
@@ -23,6 +35,78 @@ from sqlalchemy.orm import Session, sessionmaker
 from lore.central.models import ServerSetting, User
 
 SETUP_KEY = "setup"
+SETUP_CODE_FILE = "setup-code"
+ENV_SETUP_CODE = "LORE_SETUP_CODE"
+# No 0/O, 1/I/L: read off a log and typed. 31 symbols, 12 of them: ~59 bits.
+_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _normal(code: object) -> str:
+    """Upper case, without spaces and dashes: how a code is compared."""
+    if not isinstance(code, str):
+        return ""
+    return "".join(c for c in code.upper() if c not in " -\t")[:200]
+
+
+def _new_code() -> str:
+    raw = "".join(secrets.choice(_ALPHABET) for _ in range(12))
+    return f"{raw[:4]}-{raw[4:8]}-{raw[8:]}"
+
+
+def current_setup_code(data_root: Path, environ=None) -> str:
+    """The setup code: LORE_SETUP_CODE, else the one in the data root, made
+    on first use (atomically: two processes starting together agree)."""
+    env = os.environ if environ is None else environ
+    given = (env.get(ENV_SETUP_CODE) or "").strip()
+    if given:
+        return given
+    path = Path(data_root) / SETUP_CODE_FILE
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(_new_code() + "\n")
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                pass  # another process made it first: use theirs
+        finally:
+            tmp.unlink(missing_ok=True)
+    return path.read_text().strip()
+
+
+def setup_code_matches(data_root: Path, given: object) -> bool:
+    """Constant-time comparison, forgiving case, spaces and dashes."""
+    expected = _normal(current_setup_code(data_root))
+    return bool(expected) and hmac.compare_digest(expected.encode(), _normal(given).encode())
+
+
+def forget_setup_code(data_root: Path) -> None:
+    (Path(data_root) / SETUP_CODE_FILE).unlink(missing_ok=True)
+
+
+def announce_setup_code(data_root: Path, origin: str, out=None) -> None:
+    """The boxed log lines a new server prints on every start until setup."""
+    code = current_setup_code(data_root)
+    lines = [f"LORE setup code: {code}",
+             f"Enter it at {origin.rstrip('/')}/setup to create the admin account."]
+    width = max(len(line) for line in lines)
+    box = ["+" + "-" * (width + 2) + "+", *(f"| {line.ljust(width)} |" for line in lines),
+           "+" + "-" * (width + 2) + "+"]
+    print("\n".join(box), file=out or sys.stderr, flush=True)
+
+
+def prepare_setup(sessions: sessionmaker, data_root: Path, origin: str) -> None:
+    """On start: print the code while setup is open; else make sure no code
+    file is left behind."""
+    with sessions() as db:
+        needed = setup_needed(db)
+    if needed:
+        announce_setup_code(data_root, origin)
+    else:
+        forget_setup_code(data_root)
 
 
 class SetupDone(Exception):

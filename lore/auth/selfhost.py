@@ -6,8 +6,9 @@ before there is a session (setup, sign-in, the set-password link): those have
 no ambient authority to borrow, and the Origin guard refuses a cross-site form.
 
 - GET  /api/setup                 {needed}
-- POST /api/setup                 {email, password, confirm, name?}: the
-                                  first admin, once (lore.auth.firstrun)
+- POST /api/setup                 {code, email, password, confirm, name?}: the
+                                  first admin, once, with the setup code from
+                                  the server's log (lore.auth.firstrun)
 - POST /auth/password             {email, password}: sign in
 - GET  /auth/password/link?code=  the address a set-password link is for
 - POST /auth/password/link        {code, password}: set it, and sign in
@@ -36,7 +37,9 @@ from lore.auth import next as next_page
 from lore.auth.admin import log_event, make_require_admin
 from lore.auth.cookies import SESSION_COOKIE, session_headers
 from lore.auth.current import AuthContext, session_user
-from lore.auth.firstrun import SetupDone, create_first_admin, setup_needed
+from lore.auth.firstrun import (
+    SetupDone, create_first_admin, forget_setup_code, setup_code_matches, setup_needed,
+)
 from lore.auth.passwords import PasswordPolicyError, check_policy, hash_password, verify_password
 from lore.auth.sessions import LIFETIME, create_session, delete_session, delete_user_sessions
 from lore.auth.signin import client_ip
@@ -49,7 +52,10 @@ log = logging.getLogger("lore.auth")
 EMAIL_ATTEMPTS = 10
 EMAIL_WINDOW = timedelta(minutes=15)
 IP_ATTEMPTS = 60
-SETUP_ATTEMPTS = 20          # per client an hour, while setup is open
+SETUP_ATTEMPTS = 10          # per client a quarter hour, while setup is open
+SETUP_WINDOW = timedelta(minutes=15)
+SETUP_CODE_HELP = ("Enter the setup code from the server's log. With Docker:"
+                   ' docker compose logs lore | grep "setup code"')
 LINK_LIFETIME = timedelta(days=7)
 PROVIDER_TESTS_PER_HOUR = 30
 
@@ -123,11 +129,13 @@ def build_selfhost_router(ctx: AuthContext, key_service, *, transport=None) -> A
             if not setup_needed(db):
                 return _error(409, "setup_done", "The admin account already exists. Sign in.")
             allowed = ratelimit.allow(db, "setup", client_ip(request, settings.trust_proxy),
-                                      SETUP_ATTEMPTS, now)
+                                      SETUP_ATTEMPTS, now, window=SETUP_WINDOW)
             db.commit()
         if not allowed:
             return _error(429, "rate_limited", "Too many tries. Wait a while and try again.",
-                          **{"Retry-After": "3600"})
+                          **{"Retry-After": "900"})
+        if not setup_code_matches(ctx.data_root, body.get("code")):
+            return _error(403, "setup_code", SETUP_CODE_HELP)
         email = accounts.normalize_email(body.get("email"))
         if email is None:
             return _error(400, "invalid_email", "That doesn't look like an email address.")
@@ -142,6 +150,7 @@ def build_selfhost_router(ctx: AuthContext, key_service, *, transport=None) -> A
                                        name=_text(body.get("name"), 200))
         except SetupDone:
             return _error(409, "setup_done", "The admin account already exists. Sign in.")
+        forget_setup_code(ctx.data_root)  # never valid, or printed, again
         log.info("first-run setup: the admin account was created")
         with ctx.sessions() as db:
             log_event(db, admin, "setup", admin, now=now)

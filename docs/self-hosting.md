@@ -28,8 +28,11 @@ you choose: no sign-up, no mail service, no outside login.
   the embedding model), 8 GB to be comfortable. A local language model needs
   its own memory on top: a 28-30B model at 4-bit is about 17-20 GB of GPU or
   system memory.
-- **Disk:** about 6 GB for the images and the embedding model, plus roughly
-  50-200 MB per processed book.
+- **Disk:** about 10 GB for the images (LORE's is about 1.2 GB; the
+  `ollama/ollama` image is about 8.5 GB, most of it GPU libraries) and the
+  embedding model, plus roughly 50-200 MB per processed book. With your own
+  Ollama for embeddings (`LORE_OLLAMA_HOST`), the bundled image is still
+  pulled for the one-shot model download.
 
 ## Quick start
 
@@ -37,11 +40,14 @@ you choose: no sign-up, no mail service, no outside login.
 mkdir lore && cd lore
 curl -fsSLO https://raw.githubusercontent.com/Jatin-Roopchandani/LORE/main/docker-compose.yml
 docker compose up -d
+docker compose logs lore | grep "setup code"
 ```
 
-Open **http://localhost:8080** and create the admin account (your email and a
-password). That's all the setup there is: the first visitor to a new server
-creates the admin, and every page waits for that.
+Open **http://localhost:8080**, enter the setup code from the log (three
+groups of four, like `K7QM-3XRT-9WHP`) and create the admin account (your
+email and a password). That's all the setup there is: every page waits for
+the admin, and only someone who can read the server's log can create it.
+The code works once and is never printed again after that.
 
 The first start downloads the images and the embedding model
 (`nomic-embed-text`, about 300 MB), so give it a few minutes. `docker compose
@@ -244,8 +250,8 @@ nginx works too; pass the original host on (`proxy_set_header Host $host;`)
 and `X-Forwarded-For`, and turn off buffering for `/api/ask` (answers stream:
 `proxy_buffering off;`).
 
-Before you expose it, create the admin account: until then, anyone who
-reaches the server could.
+Create the admin account before you expose it anyway: until then the setup
+page is open to anyone who has the setup code from the log.
 
 ### Cookies and HTTPS
 
@@ -272,6 +278,7 @@ All optional; see [`.env.example`](../.env.example) for the full list.
 | `LORE_OLLAMA_HOST` | `http://ollama:11434` | Your own Ollama instead of the bundled one. |
 | `LORE_DATABASE_URL` | SQLite in the volume | `postgresql+psycopg://user:pass@host:5432/lore` for Postgres. |
 | `LORE_VERSION` | `latest` | The image tag: a version, `latest` or `edge`. |
+| `LORE_SETUP_CODE` | a random code, in the log | Your own setup code, for an unattended install. |
 | `LORE_SESSION_SECRET`, `LORE_CSRF_SECRET`, `LORE_KEY_ENCRYPTION_KEY` | made on first start | Kept in `/data/secrets.env`; set them only to manage them yourself. |
 
 **Your own Ollama for embeddings.** Set `LORE_OLLAMA_HOST`, for an Ollama on
@@ -341,6 +348,11 @@ admin page. Or set it from the server's shell (it asks for the new one twice):
 ```bash
 docker compose exec lore lore admin set-password you@example.com
 ```
+
+**Where is the setup code?** `docker compose logs lore | grep -A1 "setup code"`.
+It is printed on every start until the admin exists, and kept in the volume
+(`/data/setup-code`) so a restart keeps the same one. Wrong codes are limited
+to 10 tries per 15 minutes from one address.
 
 **Start over completely.** This deletes every library and account:
 

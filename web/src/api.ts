@@ -300,7 +300,7 @@ export const adminApi = {
 // the admin's people and provider for everyone.
 export const selfhostApi = {
   setupNeeded: () => getJson<{ needed: boolean }>("/api/setup", true),
-  setup: (body: { email: string; password: string; confirm: string; name?: string }) =>
+  setup: (body: { code: string; email: string; password: string; confirm: string; name?: string }) =>
     sendJson<SignedIn>("POST", "/api/setup", body, true),
   signIn: (email: string, password: string) => sendJson<SignedIn>("POST", "/auth/password", { email, password }, true),
   linkEmail: (code: string) => getJson<{ email: string }>(`/auth/password/link?code=${encodeURIComponent(code)}`, true),

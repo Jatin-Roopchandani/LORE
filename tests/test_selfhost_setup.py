@@ -17,12 +17,18 @@ from tests.central_fixtures import central_sessions
 PASSWORD = "correct horse battery"
 
 
+def started(root: LoreConfig, sessions):
+    """A self-hosted app (a start of the server), knowing its data root."""
+    app = make_app(root, sessions, selfhost=True, auth=make_settings(selfhost=True),
+                   providers={})
+    app.lore_root = root.data_dir
+    return app
+
+
 def selfhost_app(tmp_path, users=()):
     root = LoreConfig(data_dir=tmp_path / "root")
     sessions, _url = central_sessions(tmp_path, users=users)
-    app = make_app(root, sessions, selfhost=True, auth=make_settings(selfhost=True),
-                   providers={})
-    return app, sessions
+    return started(root, sessions), sessions
 
 
 def anon(app):
@@ -34,9 +40,18 @@ def admins(sessions):
         return db.scalars(sa.select(User).where(User.role == "admin")).all()
 
 
-def setup(client, email="owner@example.org", password=PASSWORD, confirm=None):
-    return client.post("/api/setup", json={"email": email, "password": password,
-                                           "confirm": password if confirm is None else confirm})
+def code_of(app) -> str:
+    """The setup code the app printed (and keeps in the data root)."""
+    from lore.auth.firstrun import current_setup_code
+    return current_setup_code(app.lore_root)
+
+
+def setup(client, email="owner@example.org", password=PASSWORD, confirm=None, code=None):
+    app = client.app
+    return client.post("/api/setup", json={
+        "email": email, "password": password,
+        "confirm": password if confirm is None else confirm,
+        "code": code_of(app) if code is None else code})
 
 
 # --- the gate --------------------------------------------------------------
@@ -112,7 +127,7 @@ def test_after_setup_the_gate_opens_and_setup_is_closed(tmp_path):
 ])
 def test_setup_refuses_a_bad_form_and_stays_open(tmp_path, body, code):
     app, sessions = selfhost_app(tmp_path)
-    r = anon(app).post("/api/setup", json=body)
+    r = anon(app).post("/api/setup", json={**body, "code": code_of(app)})
     assert r.status_code == 400 and r.json()["error"]["code"] == code
     assert admins(sessions) == []
     assert anon(app).get("/api/setup").json() == {"needed": True}
@@ -185,3 +200,72 @@ def test_the_setup_marker_is_what_makes_it_once(tmp_path, monkeypatch):
     with pytest.raises(SetupDone):
         create_first_admin(sessions, "late@example.org", hash_password(PASSWORD), NOW)
     assert admins(sessions) == []
+
+
+# --- the one-time setup code -------------------------------------------------
+
+def test_setup_without_the_code_is_refused(tmp_path):
+    app, sessions = selfhost_app(tmp_path)
+    r = anon(app).post("/api/setup", json={"email": "owner@example.org", "password": PASSWORD,
+                                           "confirm": PASSWORD})
+    assert r.status_code == 403 and r.json()["error"]["code"] == "setup_code"
+    assert "docker compose logs lore" in r.json()["error"]["message"]
+    assert admins(sessions) == []
+
+
+def test_setup_with_a_wrong_code_is_refused(tmp_path):
+    app, sessions = selfhost_app(tmp_path)
+    r = setup(anon(app), code="AAAA-BBBB-CCCC")
+    assert r.status_code == 403 and r.json()["error"]["code"] == "setup_code"
+    assert admins(sessions) == []
+
+
+def test_the_code_is_forgiving_about_case_spaces_and_dashes(tmp_path):
+    app, _ = selfhost_app(tmp_path)
+    loose = " " + code_of(app).lower().replace("-", " ") + " "
+    assert setup(anon(app), code=loose).status_code == 201
+
+
+def test_code_attempts_are_rate_limited(tmp_path):
+    app, sessions = selfhost_app(tmp_path)
+    client = anon(app)
+    for _ in range(10):
+        assert setup(client, code="WRNG-WRNG-WRNG").status_code == 403
+    r = setup(client)  # even the right code, once over the limit
+    assert r.status_code == 429
+    assert admins(sessions) == []
+
+
+def test_the_code_is_kept_in_the_data_root_and_survives_a_restart(tmp_path):
+    from lore.auth.firstrun import SETUP_CODE_FILE
+    import stat
+    app, sessions = selfhost_app(tmp_path)
+    path = tmp_path / "root" / SETUP_CODE_FILE
+    code = code_of(app)
+    assert path.read_text().strip() == code
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    import re
+    assert re.fullmatch(r"[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}", code)
+    again = started(LoreConfig(data_dir=tmp_path / "root"), sessions)
+    assert code_of(again) == code
+
+
+def test_the_code_is_printed_on_start_until_setup_and_then_gone(tmp_path, capsys):
+    from lore.auth.firstrun import SETUP_CODE_FILE
+    app, sessions = selfhost_app(tmp_path)
+    code = code_of(app)
+    out = capsys.readouterr().err
+    assert f"LORE setup code: {code}" in out and "/setup" in out
+    assert setup(anon(app)).status_code == 201
+    assert not (tmp_path / "root" / SETUP_CODE_FILE).exists()
+    started(LoreConfig(data_dir=tmp_path / "root"), sessions)
+    assert "setup code" not in capsys.readouterr().err
+
+
+def test_the_environment_can_set_the_code(tmp_path, monkeypatch):
+    from lore.auth.firstrun import SETUP_CODE_FILE
+    monkeypatch.setenv("LORE_SETUP_CODE", "my-unattended-code-1")
+    app, sessions = selfhost_app(tmp_path)
+    assert not (tmp_path / "root" / SETUP_CODE_FILE).exists()
+    assert setup(anon(app), code="AAAA-BBBB-CCCC").status_code == 403
+    assert setup(anon(app), code="my-unattended-code-1").status_code == 201

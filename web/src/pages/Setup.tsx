@@ -1,4 +1,4 @@
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useState } from "react";
 import { isError, nav, selfhostApi } from "../api";
 import { SELFHOST } from "../messages";
 import { Alert, AuthShell, PrimaryButton } from "./AuthShell";
@@ -16,6 +16,7 @@ export function passwordProblem(password: string, confirm: string): string {
 // Self-host mode's first run (lore/auth/firstrun.py): until the admin exists, every address comes here. Creating it
 // signs the admin in and opens the app; a second attempt (another browser got there first) says so.
 export function Setup() {
+  const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,20 +24,21 @@ export function Setup() {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const [done, setDone] = useState(false);
-  const first = useRef<HTMLInputElement>(null);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setProblem("");
     const address = email.trim();
+    if (!code.trim()) { setProblem(SELFHOST.codeMissing); return; }
     if (!LOOKS_LIKE_EMAIL.test(address)) { setProblem(SELFHOST.emailMissing); return; }
     const bad = passwordProblem(password, confirm);
     if (bad) { setProblem(bad); return; }
     setBusy(true);
-    const r = await selfhostApi.setup({ email: address, password, confirm, ...(name.trim() ? { name: name.trim() } : {}) });
+    const r = await selfhostApi.setup({ code: code.trim(), email: address, password, confirm, ...(name.trim() ? { name: name.trim() } : {}) });
     setBusy(false);
     if (!isError(r)) { nav.to(r.redirect || "/app"); return; }
     if (r.error.code === "setup_done") { setDone(true); return; }
+    if (r.error.code === "setup_code") { setProblem(SELFHOST.wrongCode); return; }
     setProblem(r.error.message || SELFHOST.failed);
   };
 
@@ -56,8 +58,14 @@ export function Setup() {
       </div>
       <form className="au-form" onSubmit={submit} noValidate>
         <div className="au-field">
+          <label htmlFor="setup-code">{SELFHOST.codeLabel}</label>
+          <input id="setup-code" className="au-input" type="text" autoComplete="off" spellCheck={false} required
+            value={code} aria-describedby="setup-code-hint" onChange={(e) => setCode(e.target.value)} />
+          <p id="setup-code-hint" className="au-fine">{SELFHOST.codeHint}</p>
+        </div>
+        <div className="au-field">
           <label htmlFor="setup-name">{SELFHOST.nameLabel}</label>
-          <input id="setup-name" ref={first} className="au-input" type="text" autoComplete="name" value={name}
+          <input id="setup-name" className="au-input" type="text" autoComplete="name" value={name}
             onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="au-field">

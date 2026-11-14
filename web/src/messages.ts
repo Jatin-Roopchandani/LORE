@@ -1235,6 +1235,10 @@ export const LOCAL_MODEL = {
 export const SELFHOST = {
   setupTitle: "Create your admin account",
   setupLead: "This is a new LORE server. The account you create now runs it: you can add people and choose the AI model everyone uses.",
+  codeLabel: "Setup code",
+  codeHint: "LORE printed a one-time code in the server's log when it started. With Docker: docker compose logs lore | grep \"setup code\"",
+  codeMissing: "Enter the setup code from the server's log.",
+  wrongCode: "That setup code isn't right. Copy it from the server's log: docker compose logs lore | grep \"setup code\"",
   nameLabel: "Your name (optional)",
   emailLabel: "Email address",
   passwordLabel: "Password",

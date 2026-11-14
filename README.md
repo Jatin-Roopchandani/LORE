@@ -65,7 +65,8 @@ With Docker, for you and the people you add:
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/Jatin-Roopchandani/LORE/main/docker-compose.yml
 docker compose up -d
-# then open http://localhost:8080 and create the admin account
+docker compose logs lore | grep "setup code"   # a one-time code
+# open http://localhost:8080, enter the code and create the admin account
 ```
 
 Choose the AI model on the admin page: Gemini, Claude or OpenAI with your key,

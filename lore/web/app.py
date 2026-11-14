@@ -525,6 +525,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         api.state.auth = auth_ctx
         api.include_router(build_auth_router(auth_ctx))
         if selfhost:  # setup, passwords, people, the provider for everyone
+            from lore.auth.firstrun import prepare_setup
+            prepare_setup(auth_ctx.sessions, base.data_dir, auth_ctx.settings.origin)
             from lore.auth.selfhost import build_selfhost_router
             api.include_router(build_selfhost_router(auth_ctx, key_service,
                                                      transport=local_model_transport))

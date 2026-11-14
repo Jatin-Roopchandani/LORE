@@ -3,7 +3,8 @@
 #   docker compose up -d            # pulls the prebuilt image
 #   docker compose up -d --build    # or builds it from this checkout
 #
-# Then open http://localhost:8080 and create the admin account.
+# Then `docker compose logs lore | grep "setup code"`, open
+# http://localhost:8080, enter the code and create the admin account.
 # Everything is optional: copy .env.example to .env to change the port, use
 # an Ollama you already run, and more. The full guide: docs/self-hosting.md.
 #
@@ -33,6 +34,8 @@ x-lore-env: &lore-env
   LORE_SESSION_SECRET: ${LORE_SESSION_SECRET:-}
   LORE_CSRF_SECRET: ${LORE_CSRF_SECRET:-}
   LORE_KEY_ENCRYPTION_KEY: ${LORE_KEY_ENCRYPTION_KEY:-}
+  # Empty: a random one-time code, printed in the log until the admin exists.
+  LORE_SETUP_CODE: ${LORE_SETUP_CODE:-}
 
 x-lore: &lore
   image: ${LORE_IMAGE:-ghcr.io/jatin-roopchandani/lore}:${LORE_VERSION:-latest}

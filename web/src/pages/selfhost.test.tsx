@@ -47,6 +47,7 @@ describe("routing", () => {
 describe("first-run setup", () => {
   async function fill(password = "a long password", confirm = password, email = "owner@example.org") {
     render(<Setup />);
+    await userEvent.type(screen.getByLabelText(SELFHOST.codeLabel), "abcd-efgh-jkmn");
     await userEvent.type(screen.getByLabelText(SELFHOST.emailLabel), email);
     await userEvent.type(screen.getByLabelText(SELFHOST.passwordLabel), password);
     await userEvent.type(screen.getByLabelText(SELFHOST.confirmLabel), confirm);
@@ -58,7 +59,7 @@ describe("first-run setup", () => {
     await fill();
     await waitFor(() => expect(went).toEqual(["/app"]));
     expect(calls[0]).toMatchObject({ url: "/api/setup", method: "POST",
-      body: { email: "owner@example.org", password: "a long password", confirm: "a long password" } });
+      body: { code: "abcd-efgh-jkmn", email: "owner@example.org", password: "a long password", confirm: "a long password" } });
     expect(screen.getByRole("heading", { level: 1, name: SELFHOST.setupTitle })).toBeInTheDocument();
   });
 
@@ -73,6 +74,20 @@ describe("first-run setup", () => {
     await userEvent.click(screen.getByRole("button", { name: SELFHOST.createAdmin }));
     expect(await screen.findByRole("alert")).toHaveTextContent(SELFHOST.tooShort);
     expect(calls).toEqual([]);
+  });
+
+  test("asks for the setup code and says where to find it", async () => {
+    serve(() => ({ body: {} }));
+    render(<Setup />);
+    expect(screen.getByLabelText(SELFHOST.codeLabel)).toBeRequired();
+    expect(screen.getByText(SELFHOST.codeHint, { exact: false })).toBeInTheDocument();
+  });
+
+  test("a wrong setup code is refused with the server's words", async () => {
+    serve(() => err("setup_code", 403, "Enter the setup code from the server's log."));
+    await fill();
+    expect(await screen.findByRole("alert")).toHaveTextContent(SELFHOST.wrongCode);
+    expect(went).toEqual([]);
   });
 
   test("when someone else got there first, it says so and offers sign-in", async () => {
