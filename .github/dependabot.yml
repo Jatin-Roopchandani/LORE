@@ -1,0 +1,7 @@
+# Update PRs for the GitHub Actions pinned to commit SHAs in .github/workflows.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

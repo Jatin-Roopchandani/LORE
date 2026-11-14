@@ -87,6 +87,15 @@ PASS = {
     "self_action": "You can't do that to your own account.",
     "current_session": "Use Sign out to sign this device out.",
     "too_many_tokens": "You have the most tokens allowed. Revoke one first.",
+    # Self-host mode (lore.auth.selfhost): messages written by LORE itself.
+    "setup_required": "Create the admin account first.",
+    "setup_done": "The admin account already exists. Sign in.",
+    "setup_code": "Enter the setup code from the server's log.",
+    "invalid_credentials": "That email and password don't match.",
+    "password_mismatch": "The two passwords don't match.",
+    "weak_password": "Choose a longer password.",
+    "wrong_password": "Your current password isn't right.",
+    "link_invalid": "This link has expired or was already used.",
 }
 
 # FastAPI's {"detail": ...} errors (HTTPException, validation) by status.

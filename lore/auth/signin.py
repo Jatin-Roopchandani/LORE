@@ -116,6 +116,11 @@ def build_signin_router(ctx: AuthContext) -> APIRouter:
     @router.get("/auth/providers")
     def providers():
         """What the sign-in page may offer (only providers that are configured)."""
+        if settings.selfhost:
+            # Self-host: passwords; a sign-in link only when mail is set up.
+            return {"providers": sorted(ctx.providers),
+                    "email": settings.resend_api_key is not None, "invite_only": True,
+                    "password": True, "selfhost": True}
         return {"providers": sorted(ctx.providers), "email": True,
                 "invite_only": settings.invite_only}
 

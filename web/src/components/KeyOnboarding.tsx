@@ -1,7 +1,8 @@
 import "./onboarding.css";
 import { FormEvent, KeyboardEvent, ReactNode, RefObject, useEffect, useRef, useState } from "react";
-import { isError, keyApi } from "../api";
-import { AUTH, ONBOARD, PROVIDERS } from "../messages";
+import { authApi, isError, keyApi } from "../api";
+import { AUTH, ONBOARD, PROVIDERS, SELFHOST } from "../messages";
+import { isSelfhost } from "../routing";
 import { AlertIcon, CheckIcon, Spinner } from "../pages/authIcons";
 import { Logo } from "../pages/Logo";
 import type { KeySaved, ProviderId, ProvidersState } from "../types";
@@ -46,6 +47,7 @@ export function KeyOnboarding({ reason, onDone }: { reason: "missing" | "invalid
       </header>
       <main className="ob-main">
         <div className={`ob-col${step === 1 ? " is-wide" : ""}`}>
+          {isSelfhost() && <SelfhostHint />}
           {step === 1
             ? <ChooseStep reason={reason} provider={provider} onPick={setProvider} onNext={() => go(2)} heading={heading} />
             : <KeyStep provider={provider} onBack={() => go(1)} onDone={onDone} heading={heading} />}
@@ -53,13 +55,26 @@ export function KeyOnboarding({ reason, onDone }: { reason: "missing" | "invalid
       </main>
       <footer className="ob-foot">
         <p>{ONBOARD.footer}</p>
-        <p className="ob-foot-links"><a href="/privacy">{AUTH.privacy}</a><a href="/terms">{AUTH.terms}</a></p>
+        {!isSelfhost() && <p className="ob-foot-links"><a href="/privacy">{AUTH.privacy}</a><a href="/terms">{AUTH.terms}</a></p>}
       </footer>
     </div>
   );
 }
 
 const name = (p: ProviderId) => PROVIDERS.names[p] ?? p;
+
+// Self-host mode: nobody needs a key of their own once the admin sets a model for everyone; say so, and send the
+// admin to the place where they do it.
+export function SelfhostHint() {
+  const [admin, setAdmin] = useState<boolean | null>(null);
+  useEffect(() => { authApi.me().then((r) => setAdmin(!isError(r) && r.user?.role === "admin")); }, []);
+  if (admin === null) return null;
+  return (
+    <div className="ob-note" role="note" data-testid="selfhost-hint">
+      {admin ? <p>{SELFHOST.onboardAdmin} <a href="/admin">{SELFHOST.onboardAdminLink}</a></p> : <p>{SELFHOST.onboardUser}</p>}
+    </div>
+  );
+}
 
 function Head({ n, title, sub, heading }: { n: number; title: string; sub: string; heading: RefObject<HTMLHeadingElement> }) {
   return (

@@ -3,10 +3,13 @@ import { Admin } from "./pages/Admin";
 import { Consent } from "./pages/Consent";
 import { ContinueSignIn } from "./pages/ContinueSignIn";
 import { PageShell } from "./pages/PageShell";
+import { PasswordSignIn } from "./pages/PasswordSignIn";
+import { SetPassword } from "./pages/SetPassword";
+import { Setup } from "./pages/Setup";
 import { SignIn } from "./pages/SignIn";
 import { Waitlist } from "./pages/Waitlist";
 import { AUTH } from "./messages";
-import { isMulti, pageFor } from "./routing";
+import { isMulti, isSelfhost, pageFor } from "./routing";
 
 // The reading app (and its graph library) is loaded only for /app, so the sign-in and public pages stay small.
 const App = lazy(() => import("./App"));
@@ -16,11 +19,15 @@ const Legal = lazy(() => import("./pages/home/Legal"));
 // The blog, its posts and the FAQ: their own chunk, with the Markdown they render.
 const Blog = lazy(() => import("./pages/blog/Blog"));
 
-export default function Router({ pathname = window.location.pathname, multi = isMulti() }: { pathname?: string; multi?: boolean }) {
+export default function Router({ pathname = window.location.pathname, multi = isMulti(), selfhost = isSelfhost() }:
+  { pathname?: string; multi?: boolean; selfhost?: boolean }) {
   switch (pageFor(pathname, multi)) {
     case "app": return <Suspense fallback={null}><App /></Suspense>;
     case "home": return <Suspense fallback={null}><Home /></Suspense>;
-    case "signin": return <SignIn />;
+    // Self-host mode: email and password, the first-run admin, and the admin's set-password links.
+    case "signin": return selfhost ? <PasswordSignIn /> : <SignIn />;
+    case "setup": return <Setup />;
+    case "setpassword": return <SetPassword />;
     case "verify": return <ContinueSignIn />;
     case "consent": return <Consent />;
     case "waitlist": return <Waitlist />;

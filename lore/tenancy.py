@@ -104,7 +104,9 @@ def config_for(base: LoreConfig, user_id: str, *, seed: bool = False) -> LoreCon
 
 
 def multi_user_enabled() -> bool:
-    return os.environ.get(ENV_MULTI_USER, "").strip().lower() in ("1", "true", "yes", "on")
+    """LORE_MULTI_USER, or self-host mode (LORE_SELFHOST), which is built on it."""
+    return any(os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+               for name in (ENV_MULTI_USER, "LORE_SELFHOST"))
 
 
 def resolve_user(request: Request) -> CurrentUser:

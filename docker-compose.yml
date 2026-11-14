@@ -1,0 +1,125 @@
+# LORE, self-hosted: your own server for you and the people you add.
+#
+#   docker compose up -d            # pulls the prebuilt image
+#   docker compose up -d --build    # or builds it from this checkout
+#
+# Then `docker compose logs lore | grep "setup code"`, open
+# http://localhost:8080, enter the code and create the admin account.
+# Everything is optional: copy .env.example to .env to change the port, use
+# an Ollama you already run, and more. The full guide: docs/self-hosting.md.
+#
+# (deploy/compose.yaml is the hosted site's setup; this file is independent.)
+
+name: lore
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+x-lore-env: &lore-env
+  LORE_SELFHOST: "1"
+  LORE_DATA_DIR: /data
+  # The address you open LORE at. Links the admin copies are built from it,
+  # and cookies are Secure exactly when it is https://.
+  LORE_BASE_URL: ${LORE_BASE_URL:-http://localhost:${LORE_PORT:-8080}}
+  # More host names to answer (localhost and IP addresses always work).
+  LORE_ALLOWED_HOSTS: ${LORE_ALLOWED_HOSTS:-}
+  LORE_COOKIE_SECURE: ${LORE_COOKIE_SECURE:-}
+  LORE_TRUST_PROXY: ${LORE_TRUST_PROXY:-0}
+  # Embeddings: the bundled Ollama below, or yours.
+  LORE_OLLAMA_HOST: ${LORE_OLLAMA_HOST:-http://ollama:11434}
+  # Empty: a SQLite file in the data volume (the default; see the guide).
+  LORE_DATABASE_URL: ${LORE_DATABASE_URL:-}
+  # Empty: made on first start and kept in the data volume (/data/secrets.env).
+  LORE_SESSION_SECRET: ${LORE_SESSION_SECRET:-}
+  LORE_CSRF_SECRET: ${LORE_CSRF_SECRET:-}
+  LORE_KEY_ENCRYPTION_KEY: ${LORE_KEY_ENCRYPTION_KEY:-}
+  # Empty: a random one-time code, printed in the log until the admin exists.
+  LORE_SETUP_CODE: ${LORE_SETUP_CODE:-}
+
+x-lore: &lore
+  image: ${LORE_IMAGE:-ghcr.io/jatin-roopchandani/lore}:${LORE_VERSION:-latest}
+  environment: *lore-env
+  volumes:
+    - lore-data:/data
+  # A model server on this computer (llama-server, LM Studio, Ollama...) is
+  # http://host.docker.internal:<port> from inside the containers.
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  logging: *logging
+  restart: unless-stopped
+
+services:
+  # The web app. The only service published on the host.
+  lore:
+    <<: *lore
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    command: ["lore", "ui", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${LORE_BIND:-0.0.0.0}:${LORE_PORT:-8080}:8000"
+    # The image's HEALTHCHECK probes http://127.0.0.1:8000/healthz.
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      ollama: {condition: service_started}
+    stop_grace_period: 20s
+
+  # Processes books (one at a time), from the queue the web app fills.
+  worker:
+    <<: *lore
+    command: ["lore", "worker"]
+    healthcheck: {disable: true}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      ollama-pull: {condition: service_completed_successfully}
+    # SIGTERM hands the running job back to the queue; give it time.
+    stop_grace_period: 60s
+
+  # One-shot: brings the database up to this version, then exits.
+  migrate:
+    <<: *lore
+    command: ["lore", "migrate"]
+    healthcheck: {disable: true}
+    restart: "no"
+
+  # Embeddings (nomic-embed-text, about 300 MB). With LORE_OLLAMA_HOST set to
+  # your own Ollama this one just idles; see docs/self-hosting.md.
+  ollama:
+    image: ollama/ollama:${OLLAMA_VERSION:-latest}
+    environment:
+      OLLAMA_KEEP_ALIVE: "24h"
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    logging: *logging
+    restart: unless-stopped
+
+  # One-shot: pulls the embedding model on first start (a no-op later), on
+  # the bundled Ollama or on yours.
+  ollama-pull:
+    image: ollama/ollama:${OLLAMA_VERSION:-latest}
+    environment:
+      LORE_OLLAMA_HOST: ${LORE_OLLAMA_HOST:-http://ollama:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        host="$${LORE_OLLAMA_HOST}"
+        if OLLAMA_HOST="$$host" ollama pull nomic-embed-text; then exit 0; fi
+        case "$$host" in http://ollama:11434*) exit 1;; esac
+        echo "Could not pull nomic-embed-text on $$host: run 'ollama pull nomic-embed-text' there." >&2
+    depends_on:
+      ollama: {condition: service_healthy}
+    logging: *logging
+    restart: "no"
+
+volumes:
+  lore-data:   # every library, the database and the secrets: back this up
+  ollama:      # the embedding model (can be pulled again)
