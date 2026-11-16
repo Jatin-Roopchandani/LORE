@@ -332,6 +332,11 @@ MIGRATIONS: list[tuple[int, list[str]]] = [
             lambda conn: _migrate_reading_progress(conn),
         ],
     ),
+    # Processing reliability (2026-11-16): how many short pauses in a row
+    # (Gemini unreachable, or its per-minute limit) a book has had with no
+    # progress between them. Each waits longer before LORE resumes it on its
+    # own; after too many the book waits for Continue (pipeline.py).
+    (19, ["ALTER TABLE book_jobs ADD COLUMN retries INTEGER NOT NULL DEFAULT 0"]),
 ]
 
 
