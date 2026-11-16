@@ -123,10 +123,10 @@ def branded_html(link: str, *, heading: str, lead: str, button: str, foot: str) 
 def sign_in_message(link: str) -> tuple[str, str, str]:
     """(subject, text, html) for a sign-in link."""
     text = ("Open this link to sign in to LORE. It works once and expires in"
-            f" 15 minutes.\n\n{link}\n\nIf you did not ask for it, ignore this email.")
+            f" an hour.\n\n{link}\n\nIf you did not ask for it, ignore this email.")
     html = branded_html(
         link, heading="Sign in to LORE",
-        lead="Use the button below to sign in. The link works once and expires in 15 minutes.",
+        lead="Use the button below to sign in. The link works once and expires in an hour.",
         button="Sign in to LORE", foot="If you did not ask for this, you can ignore this email.")
     return "Your LORE sign-in link", text, html
 

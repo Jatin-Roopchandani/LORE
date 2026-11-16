@@ -44,7 +44,7 @@ from lore.inference.key_scope import gemini_api_key  # noqa: F401 - a patch poin
 from lore.inference.providers import factory as providers
 from lore.inference.ollama import OllamaProvider
 from lore.orchestrator.concurrency import bounded_fetch, llm_concurrency
-from lore.orchestrator.gemini_budget import recorder_for
+from lore.orchestrator.gemini_budget import counter_for, recorder_for
 from lore.orchestrator.pipeline import QuotaStop
 from lore.orchestrator.workunit import OutputSummary, WorkUnit, validate_output
 
@@ -428,6 +428,9 @@ def make_gemini_tier(config: LoreConfig, api_key: str | None = None) -> GeminiTi
         config=config,
         client=providers.build(creds, config, "extract",
                                gemini_models=config.extraction.gemini_models,
-                               recorder=recorder_for(config.sqlite_path) if gemini else None),
+                               recorder=recorder_for(config.sqlite_path) if gemini else None,
+                               patient=True,
+                               daily_count=(counter_for(config.sqlite_path)
+                                            if gemini else None)),
         embedder=OllamaProvider(config.ollama),
     )

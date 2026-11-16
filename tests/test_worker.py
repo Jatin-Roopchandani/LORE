@@ -122,13 +122,15 @@ def test_a_failing_stage_fails_the_job_with_the_reason(base, sessions):
     assert book_job(base, "alice", "b1").state == "failed"
 
 
-def test_a_quota_stop_is_a_finished_job_the_user_continues_later(base, sessions):
+def test_a_quota_stop_goes_back_to_the_queue_until_the_reset(base, sessions):
+    # Not finished for the user to continue: queued again, claimed on its
+    # own once the allowance resets (tests/test_worker_auto_resume.py).
     library(base, "alice", "b1")
     enqueue(sessions, "alice", "b1")
     done = make_worker(base, sessions, [FakeStage("chunk", boom=QuotaStop("spent"))]).run_once()
-    assert (done.state, done.outcome) == ("done", "waiting_quota")
-    assert "spent" in done.error
-    assert book_job(base, "alice", "b1").state == "waiting_quota"
+    row = book_job(base, "alice", "b1")
+    assert row.state == "waiting_quota"
+    assert (done.state, done.claimed_by, done.not_before) == ("queued", None, row.resumable_at)
 
 
 def test_a_book_already_processed_is_skipped(base, sessions):

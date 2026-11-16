@@ -141,11 +141,14 @@ def test_deleting_an_account_removes_every_row_and_file_and_nothing_else(app, ce
     assert counts(central, BOB) == before_bob
     assert (bob_lib / "kuzu" / "catalog.kz").read_bytes() == b"graph"
     with central() as db:
-        # The waitlist row is kept, anonymised; the invite is kept, unbound.
+        # The waitlist row is kept, anonymised. The invite goes: kept but freed
+        # and unbound, it would have been an open invite anyone could spend.
         anon = db.scalars(sa.select(Waitlist).where(Waitlist.email == erase.ANONYMISED)).all()
         assert len(anon) == 1 and anon[0].reading is None
         assert db.scalar(sa.select(sa.func.count()).select_from(Invite)
                          .where(Invite.email == email_of(ALICE))) == 0
+        assert db.scalar(sa.select(sa.func.count()).select_from(Invite)
+                         .where(Invite.used_by.is_(None), Invite.email.is_(None))) == 0
         # The admin log names the action and the id, nothing else.
         events = db.scalars(sa.select(AdminEvent).where(AdminEvent.action == "delete_user")).all()
         assert [(e.admin_id, e.target_user_id) for e in events] == [(ROOT, ALICE)]

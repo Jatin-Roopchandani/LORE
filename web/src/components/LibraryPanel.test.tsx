@@ -48,6 +48,26 @@ test("paused: Continue is disabled until the time passes, then the timer enables
   expect(screen.getByRole("button", { name: "Continue Book a" })).toBeEnabled();
 });
 
+test("paused for the daily reset on a server that resumes it: says LORE continues by itself", async () => {
+  status = { gemini, books: [book("a", job({ state: "waiting_quota", auto_resume: true, can_continue: false,
+    stopped_reason: "Paused: Gemini's free-tier daily limit is used up.", resumable_at: "2026-10-28T18:00:00Z" }))] };
+  await open();
+  expect(screen.getByText(/^LORE will continue automatically after \d\d:\d\d \(your time\) — in 8h 0m\.$/)).toBeInTheDocument();
+  expect(screen.queryByText(/Continues after/)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Continue Book a" })).toBeDisabled();
+  vi.clearAllTimers();
+});
+
+test("a short pause (provider unreachable): continues by itself soon, and Continue works now", async () => {
+  status = { gemini, books: [book("a", job({ state: "waiting_quota", auto_resume: true, can_continue: true,
+    stopped_reason: "Paused: LORE couldn't reach Gemini; it will retry in about 2 minutes.", resumable_at: "2026-10-28T10:02:00Z" }))] };
+  await open();
+  expect(screen.getByText("LORE will continue automatically in 0h 2m, or press Continue to try now.")).toBeInTheDocument();
+  await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByRole("button", { name: "Continue Book a" }));
+  expect(posts).toEqual(["/api/books/a/continue"]);
+  vi.clearAllTimers();
+});
+
 test("footer, Gemini free tier: today's requests (as before)", async () => {
   status = { gemini, usage: { mode: "free", provider: "gemini" }, books: [book("a", null)] };
   await open();

@@ -110,6 +110,8 @@ export const edgeKey = (e: Edge) => `${e.subject_id}|${e.predicate}|${e.object_i
 export interface BookJob { stage: string; state: "running" | "waiting_quota" | "waiting_key" | "failed" | "done" | "idle";
   done: number; total: number; stopped_reason: string | null; resumable_at: string | null;
   can_continue: boolean; continue_reason: string;
+  // The server resumes this paused book by itself at resumable_at (multi mode's worker, `lore ui`); absent from older servers.
+  auto_resume?: boolean;
   // The provider the book's latest run used (multi mode: the user's choice at the time); absent from older servers.
   provider?: ProviderId | null;
   // The whole pipeline as the server will run it for this book (lore/orchestrator/plan.py), with seconds left per step

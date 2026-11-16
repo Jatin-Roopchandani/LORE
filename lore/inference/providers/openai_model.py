@@ -52,8 +52,11 @@ def map_openai_error(exc: BaseException, model: str) -> BaseException | None:
     if isinstance(exc, openai.RateLimitError):
         wait = _retry_after(exc)
         hint = f" (retry after {wait:g}s)" if wait is not None else ""
+        # `insufficient_quota` is the account out of credit, not a rate:
+        # nothing clears it within minutes.
         return ProviderQuotaError(f"HTTP 429 from {model}: rate limited or out of"
-                                  f" credit{hint}.", provider=OPENAI, retry_after=wait)
+                                  f" credit{hint}.", provider=OPENAI, retry_after=wait,
+                                  daily=getattr(exc, "code", None) == "insufficient_quota")
     if isinstance(exc, openai.APIStatusError):
         status = exc.status_code
         if status >= 500:

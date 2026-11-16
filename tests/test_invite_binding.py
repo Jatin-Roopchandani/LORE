@@ -93,3 +93,58 @@ def test_hand_out_invites_stay_unbound_unless_an_email_is_given(env):
     assert oauth(app, provider, free, "anyone@example.org").headers["location"] == "/app"
     assert oauth(app, provider, bound, "stranger@example.org").headers["location"] == "/waitlist"
     assert oauth(app, provider, bound, "pal@example.org").headers["location"] == "/app"
+
+
+# --- signing in without the invite email's link (2026-11-15: 5 requests, no mail) ---
+
+def oauth_without_code(app, provider, email):
+    provider.profile = Profile(f"sub-{email}", email, True, "X")
+    person = anon(app)
+    r = person.get("/auth/google/start")
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    return person.get("/auth/google/callback", params={"code": "c", "state": state})
+
+
+def test_an_invited_address_gets_a_link_without_the_code_and_spends_its_invite(env):
+    app, sessions, mailer, provider = env
+    code = approved_code(app, sessions, mailer)
+    sent = len(mailer.sent)
+    client = anon(app)  # the site typed in: no ?invite= anywhere
+    assert client.post("/auth/email", json={"email": "Reader@Example.org"}).status_code == 202
+    assert len(mailer.sent) == sent + 1
+    assert open_magic_link(client, mailer.links()[-1]).headers["location"] == "/app"
+    with sessions() as db:
+        user = db.scalars(sa.select(User).where(User.email == "reader@example.org")).one()
+        assert db.get(Invite, hash_token(code)).used_by == user.id
+
+
+def test_an_invited_address_signs_up_with_google_without_the_code(env):
+    app, sessions, mailer, provider = env
+    code = approved_code(app, sessions, mailer)
+    assert oauth_without_code(app, provider, "reader@example.org").headers["location"] == "/app"
+    with sessions() as db:
+        assert db.get(Invite, hash_token(code)).used_by is not None
+
+
+def test_an_address_with_no_invite_still_gets_no_mail_and_no_account(env):
+    app, sessions, mailer, provider = env
+    approved_code(app, sessions, mailer)  # someone else's invite
+    sent = len(mailer.sent)
+    anon(app).post("/auth/email", json={"email": "stranger@example.org"})
+    assert len(mailer.sent) == sent
+    assert oauth_without_code(app, provider, "stranger@example.org").headers["location"] == "/waitlist"
+
+
+def test_a_spent_or_expired_bound_invite_lets_no_one_new_in(env):
+    from datetime import timedelta
+
+    app, sessions, mailer, provider = env
+    code = approved_code(app, sessions, mailer)
+    with sessions() as db:
+        row = db.get(Invite, hash_token(code))
+        row.expires_at = row.created_at - timedelta(seconds=1)
+        db.commit()
+    sent = len(mailer.sent)
+    anon(app).post("/auth/email", json={"email": "reader@example.org"})
+    assert len(mailer.sent) == sent
+    assert oauth_without_code(app, provider, "reader@example.org").headers["location"] == "/waitlist"

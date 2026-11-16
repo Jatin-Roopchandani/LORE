@@ -35,7 +35,7 @@ def test_ui_in_multi_mode_may_bind_every_interface(monkeypatch):
     monkeypatch.setenv("LORE_MULTI_USER", "1")
     made, seen = {}, {}
     monkeypatch.setattr("lore.web.app.create_app",
-                        lambda config, host, port, dev: made.update(host=host, port=port))
+                        lambda config, host, port, dev, **kw: made.update(host=host, port=port))
     monkeypatch.setattr("uvicorn.run",
                         lambda app, host, port, **kw: seen.update(host=host, port=port))
     result = CliRunner().invoke(app, ["ui", "--host", "0.0.0.0", "--port", "8000"])

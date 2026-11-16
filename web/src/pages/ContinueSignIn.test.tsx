@@ -38,3 +38,18 @@ test("the router draws it at /auth/email/verify in multi-user mode", () => {
   render(<Router pathname="/auth/email/verify" multi />);
   expect(screen.getByRole("heading", { name: SIGNIN_LINK.title })).toBeInTheDocument();
 });
+
+test("the token survives the address bar being cleared: pressing the button still posts it (2026-11-16)", () => {
+  // As a browser opens the mailed link: the token is in the real address bar, not passed in.
+  window.history.replaceState(null, "", "/auth/email/verify?token=real.token");
+  const { container } = render(<ContinueSignIn />);
+  expect(window.location.search).toBe("");  // taken out of the address bar at once
+  const button = screen.getByRole("button", { name: SIGNIN_LINK.button });
+  const form = button.closest("form")!;
+  form.addEventListener("submit", (e) => e.preventDefault()); // jsdom cannot navigate
+  fireEvent.submit(form);  // the busy state draws the page again
+  expect(screen.queryByText(SIGNIN_LINK.missing)).toBeNull();
+  expect(container.querySelector('input[name="token"]')).toHaveValue("real.token");
+  expect(button.closest("form")).toBe(form);
+  window.history.replaceState(null, "", "/");
+});

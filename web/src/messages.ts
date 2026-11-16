@@ -172,6 +172,11 @@ export const LIBRARY = {
     seconds == null ? null : `${duration(seconds)} left${unknown ? " (plus a few minutes)" : ""}`,
   progressLabel: (stage: string) => `${STAGE_LABEL[stage] ?? stage} progress`,
   continuesAfter: (time: string, left: string) => `Continues after ${time} (your time) \u2014 in ${left}`,
+  // The server resumes the book by itself: the reader need not come back to press Continue.
+  resumesAfter: (time: string, left: string) =>
+    `LORE will continue automatically after ${time} (your time) \u2014 in ${left}.`,
+  // A short pause (the provider could not be reached, or a per-minute limit): Continue may go now.
+  resumesSoon: (left: string) => `LORE will continue automatically in ${left}, or press Continue to try now.`,
   inHM: (mins: number) => `${Math.floor(mins / 60)}h ${mins % 60}m`,
   // An empty library on a server that has the sample book: one click adds it, already processed.
   sampleLead: "Not sure where to start? Add a sample book, ready to explore and ask about.",
@@ -541,8 +546,8 @@ export const AUTH = {
   // The sent state. It reads the same whoever asks, so it never says whether an address has an account.
   checkInbox: "Check your inbox",
   sentBefore: "We sent a sign-in link to ",
-  sentAfter: ". It expires in 15 minutes.",
-  sentHint: "Not there? Check your spam folder. A link only goes to an address with an account or an invite.",
+  sentAfter: ". It expires in an hour.",
+  sentHint: "Not there? Check your Updates, Promotions and spam folders. If you were invited, use the same email you asked for the invite with: a link only goes to an address with an account or an invite.",
   didntGet: "Didn't get it?",
   resendIn: (s: number) => `Resend in ${s}s`,
   resend: "Resend link",

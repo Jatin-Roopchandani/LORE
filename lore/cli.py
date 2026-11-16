@@ -1628,7 +1628,8 @@ def ui_command(
     typer.echo(f"lore ui: http://{host}:{port}", err=True)
     from lore.auth.settings import AuthConfigError
     try:
-        web = create_app(config, host=host, port=port, dev=dev)
+        web = create_app(config, host=host, port=port, dev=dev,
+                         auto_resume=True)  # paused books resume when due
     except AuthConfigError as exc:  # LORE_MULTI_USER=1 without its secrets
         typer.echo(f"lore ui: {exc}", err=True)
         raise typer.Exit(2)

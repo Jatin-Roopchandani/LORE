@@ -40,6 +40,20 @@ that is what turns five per-model daily quotas into aggregate capacity of
 roughly 1100 requests/day for a workload that needs one. 503s were
 observed moving between models minute to minute, so a 503 means "try the
 next one", never "this model is broken".
+
+PATIENCE (book processing only). A client built with `patience` > 0 -- the
+one background processing uses, never the one answering a question -- also
+rides out what is SHORT: a 429 that is only the per-minute limit (read off
+the error body's QuotaFailure quotaId and RetryInfo retryDelay, see
+`parse_rate_limit`, or, when Google does not say, off LORE's own daily
+ledger via `daily_count`) cools that model for the retry delay and, once
+every model is cooling, the client waits for the first to come back instead
+of giving up, up to `patience` seconds in all. A transport failure (cannot
+connect, timeout, reset) or a 500/502/504 is retried on the same model with
+TRANSPORT_BACKOFF. Only a genuine daily exhaustion (or patience running
+out) reaches the caller, and the GeminiQuotaError says which it was
+(`daily`, `retry_after`), so processing pauses until the reset or for a few
+minutes accordingly.
 """
 from __future__ import annotations
 
@@ -50,7 +64,9 @@ import stat
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, time as day_time, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from typing import TypeVar
 
 import httpx
@@ -125,6 +141,26 @@ _CASCADE_STATUSES = {
 }
 
 
+# Google's free-tier day: it resets at midnight Pacific (gemini_budget).
+_PACIFIC = ZoneInfo("America/Los_Angeles")
+
+# Patient clients (book processing): how often a transport failure or a
+# server error (500/502/504) is retried on the same model, and how long to
+# wait before each retry: five attempts over about two minutes.
+TRANSPORT_BACKOFF: tuple[float, ...] = (5.0, 15.0, 30.0, 60.0)
+_SERVER_ERRORS = (500, 502, 504)
+# How long a patient client waits, in all, for per-minute limits to clear
+# within one request before it gives up and processing pauses briefly.
+PROCESSING_PATIENCE = 600.0
+# A 429 that names no quota is read as per-minute while the ledger shows the
+# model under this share of its daily allowance (the reader's 429 came
+# after ~140 of 500).
+DAILY_SHARE = 0.9
+# A retryDelay this short (with no quota named and no ledger) is a
+# per-minute limit.
+SHORT_RETRY = 120.0
+
+
 # A JSON reply (a deep section's claims, a written section) is cut off at the
 # model's default output limit, which left a long claims list unterminated
 # ("expected , or ] at line 1 column 4975"); the flash-lite tier allows far more.
@@ -145,6 +181,12 @@ class GeminiAuthError(GeminiError):
 
 class GeminiTransportError(GeminiError):
     """The API could not be reached at all (DNS, connect, timeout)."""
+
+
+class GeminiServerError(GeminiError):
+    """HTTP 500/502/504: Google's side failed. Transient; a patient client
+    retries it like a transport failure. The message is the same plain
+    `HTTP <status> from <model>: ...` every other HTTP error has."""
 
 
 class GeminiOutputError(GeminiError):
@@ -175,7 +217,18 @@ class GeminiQuotaError(GeminiError):
     catch it and move on. The caller must not write a partial answer set
     when this escapes: a half-written cache would make the next run ask
     the wrong questions.
+
+    `daily`: True when what ran out is a daily allowance (or nothing says
+    otherwise), so the work waits for the reset; False when it is short
+    (a per-minute limit, an overload), so it can go on in `retry_after`
+    seconds (None: about a minute).
     """
+
+    def __init__(self, message: str, *, daily: bool = True,
+                 retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.daily = daily
+        self.retry_after = retry_after
 
 
 class GeminiCreditError(GeminiQuotaError):
@@ -190,6 +243,71 @@ class GeminiCreditError(GeminiQuotaError):
 
 def limits_for(model: str) -> ModelLimits:
     return MODEL_LIMITS.get(model, FALLBACK_LIMITS)
+
+
+@dataclass(frozen=True)
+class RateLimit:
+    """What a 429 says about itself. `daily` is None when it does not say."""
+
+    daily: bool | None = None
+    retry_after: float | None = None
+
+
+def _seconds(text: object) -> float | None:
+    """`"37s"`, `"1.5s"` or a number of seconds; None otherwise."""
+    if isinstance(text, (int, float)) and not isinstance(text, bool):
+        return float(text) if text >= 0 else None
+    if isinstance(text, str):
+        body = text.strip().removesuffix("s").strip()
+        try:
+            value = float(body)
+        except ValueError:
+            return None
+        return value if value >= 0 else None
+    return None
+
+
+def parse_rate_limit(body: str, headers: Mapping[str, str] | None = None) -> RateLimit:
+    """Read Gemini's 429: the `error.details` QuotaFailure's quotaId or
+    quotaMetric (`...PerMinute...` or `...PerDay...`) and the RetryInfo
+    `retryDelay`, else a `Retry-After` header. A daily quota wins over a
+    per-minute one named beside it. Never raises: an unreadable body is
+    simply a 429 that does not say."""
+    daily: bool | None = None
+    retry: float | None = None
+    try:
+        payload = json.loads(body) if body else None
+    except ValueError:
+        payload = None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    details = error.get("details") if isinstance(error, dict) else None
+    for detail in details if isinstance(details, list) else []:
+        if not isinstance(detail, dict):
+            continue
+        kind = str(detail.get("@type") or "")
+        if kind.endswith("QuotaFailure"):
+            for violation in detail.get("violations") or []:
+                if not isinstance(violation, dict):
+                    continue
+                named = " ".join(str(violation.get(k) or "") for k in
+                                 ("quotaId", "quotaMetric")).lower()
+                if "perday" in named or "per_day" in named:
+                    daily = True
+                elif ("perminute" in named or "per_minute" in named) and daily is None:
+                    daily = False
+        elif kind.endswith("RetryInfo"):
+            retry = _seconds(detail.get("retryDelay"))
+    if retry is None and headers is not None:
+        retry = _seconds(headers.get("retry-after"))
+    return RateLimit(daily, retry)
+
+
+def seconds_to_reset(now: datetime) -> float:
+    """Seconds from `now` (aware) to the next midnight Pacific."""
+    moment = now.astimezone(_PACIFIC)
+    midnight = datetime.combine(moment.date() + timedelta(days=1), day_time(0),
+                                tzinfo=_PACIFIC)
+    return max(1.0, (midnight - moment).total_seconds())
 
 
 def default_key_file() -> Path:
@@ -293,6 +411,9 @@ class GeminiClient:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         now: Callable[[], float] = time.monotonic,
         recorder: Callable[[str], None] | None = None,
+        patience: float = 0.0,
+        daily_count: Callable[[str], int] | None = None,
+        wall_clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         if not models:
             raise ValueError("at least one model id is required")
@@ -317,6 +438,16 @@ class GeminiClient:
         self.last_model: str | None = None
         # Model -> the clock time its cooldown ends. Set by a 429/503/404.
         self._cooling_until: dict[str, float] = {}
+        # Model -> whether its cooldown is for a daily allowance (patient
+        # clients cool those until the reset, not for a minute).
+        self._cooling_daily: dict[str, bool] = {}
+        # Seconds this client may wait, per request, for short limits to
+        # clear and transport failures to pass (0: never; see the module
+        # docstring's PATIENCE). `daily_count(model)` is today's request
+        # count from LORE's ledger, to read a 429 that does not say.
+        self._patience = max(0.0, patience)
+        self._daily_count = daily_count
+        self._wall_clock = wall_clock
 
     @property
     def daily_limit(self) -> int:
@@ -416,10 +547,23 @@ class GeminiClient:
             key_scope.note_quota_refusal(model)
         if response.status_code in _CASCADE_STATUSES:
             limits = limits_for(model)
+            why = _CASCADE_STATUSES[response.status_code]
+            daily, retry = response.status_code == 404, None
+            if response.status_code == 429:
+                daily, retry = self._read_429(model, response)
+                if self._patience:
+                    why += ": daily limit" if daily else ": per-minute limit"
+            elif response.status_code == 503:
+                daily = False
             raise GeminiQuotaError(
                 f"HTTP {response.status_code} from {model}"
-                f" ({_CASCADE_STATUSES[response.status_code]};"
-                f" {limits.rpm} RPM, {limits.rpd} requests/day)"
+                f" ({why}; {limits.rpm} RPM, {limits.rpd} requests/day)",
+                daily=daily, retry_after=retry,
+            )
+        if response.status_code in _SERVER_ERRORS:
+            raise GeminiServerError(
+                f"HTTP {response.status_code} from {model}:"
+                f" {response.text[:400]}"
             )
         if response.status_code >= 400:
             raise GeminiError(
@@ -442,7 +586,77 @@ class GeminiClient:
             raise GeminiOutputError(f"{model} returned an empty answer", text, model)
         return text
 
+    def _read_429(self, model: str, response: httpx.Response) -> tuple[bool, float | None]:
+        """(daily?, retry seconds) for one model's 429. What the body says
+        first; when it names no quota, LORE's ledger (well under the daily
+        allowance: per-minute); with no ledger, a short retryDelay means
+        per-minute. Otherwise daily, as every 429 was read before."""
+        said = parse_rate_limit(response.text, response.headers)
+        if said.daily is not None:
+            return said.daily, said.retry_after
+        if self._daily_count is not None:
+            try:
+                used = self._daily_count(model)
+            except Exception:  # noqa: BLE001 - an unreadable ledger says nothing
+                used = None
+            if used is not None:
+                return used >= DAILY_SHARE * limits_for(model).rpd, said.retry_after
+        if said.retry_after is not None and said.retry_after <= SHORT_RETRY:
+            return False, said.retry_after
+        return True, said.retry_after
+
     async def _cascade(
+        self, prompt: str, generation_config: dict, exhausted_hint: str,
+        avoid: str | None = None,
+    ) -> str:
+        if not self._patience:
+            return await self._cascade_once(prompt, generation_config,
+                                            exhausted_hint, avoid)
+        waited = 0.0
+        while True:
+            try:
+                return await self._cascade_once(prompt, generation_config,
+                                                exhausted_hint, avoid)
+            except GeminiCreditError:
+                raise
+            except GeminiQuotaError as exc:
+                if exc.daily:
+                    raise
+                wait = max(1.0, exc.retry_after if exc.retry_after is not None
+                           else COOLDOWN_SECONDS)
+                if waited + wait > self._patience:
+                    raise
+                await self._sleep(wait)
+                waited += wait
+
+    async def _generate_patiently(
+        self, model: str, prompt: str, generation_config: dict
+    ) -> str:
+        """One model's answer; a patient client retries a transport failure
+        or a server error on it with TRANSPORT_BACKOFF before giving up."""
+        delays = TRANSPORT_BACKOFF if self._patience else ()
+        for delay in (*delays, None):
+            try:
+                return await self._generate_one(model, prompt, generation_config)
+            except (GeminiTransportError, GeminiServerError):
+                if delay is None:
+                    raise
+                await self._sleep(delay)
+        raise AssertionError("unreachable")
+
+    def _cool(self, model: str, exc: GeminiQuotaError) -> None:
+        self._cooling_daily[model] = exc.daily
+        if not self._patience:
+            self._cooling_until[model] = self._now() + COOLDOWN_SECONDS
+            return
+        if exc.daily:
+            seconds = seconds_to_reset(self._wall_clock())
+        else:
+            seconds = max(1.0, exc.retry_after if exc.retry_after is not None
+                          else COOLDOWN_SECONDS)
+        self._cooling_until[model] = self._now() + seconds
+
+    async def _cascade_once(
         self, prompt: str, generation_config: dict, exhausted_hint: str,
         avoid: str | None = None,
     ) -> str:
@@ -454,23 +668,36 @@ class GeminiClient:
             willing = [m for m in willing if m != avoid] + [avoid]
         for model in willing:
             try:
-                text = await self._generate_one(model, prompt, generation_config)
+                text = await self._generate_patiently(model, prompt, generation_config)
             except GeminiCreditError:
                 raise  # the next model bills the same account: no cascade
             except GeminiQuotaError as exc:
                 refusals.append(str(exc))
-                self._cooling_until[model] = self._now() + COOLDOWN_SECONDS
+                self._cool(model, exc)
                 continue
             self._cooling_until.pop(model, None)
+            self._cooling_daily.pop(model, None)
             self.last_model = model
             return text
         skipped = [m for m in self.models if m not in willing]
         cooling = (f" (cooling down after an earlier refusal: {', '.join(skipped)})"
                    if skipped else "")
+        daily, retry = self._capacity()
         raise GeminiQuotaError(
             "every configured model refused the request — "
-            + "; ".join(refusals) + cooling + ". " + exhausted_hint
+            + "; ".join(refusals) + cooling + ". " + exhausted_hint,
+            daily=daily, retry_after=retry,
         )
+
+    def _capacity(self) -> tuple[bool, float | None]:
+        """Whether every model is out for the day, and otherwise how soon
+        the first one that is only cooling briefly comes back."""
+        now = self._now()
+        short = [self._cooling_until.get(m, now) for m in self.models
+                 if not self._cooling_daily.get(m, True)]
+        if not short:
+            return True, None
+        return False, max(0.0, min(short) - now)
 
     def _willing_models(self) -> list[str]:
         """The configured models not cooling down, in cascade order.
@@ -478,10 +705,12 @@ class GeminiClient:
         When every one is cooling, the one whose cooldown ends soonest
         (first in cascade order on a tie): one real request is better than
         failing without asking, and a daily-quota refusal just re-cools it.
+        A patient client asks none then (it waits, or every model is out
+        for the day).
         """
         now = self._now()
         ready = [m for m in self.models if self._cooling_until.get(m, now) <= now]
-        if ready:
+        if ready or self._patience:
             return ready
         return [min(self.models, key=lambda m: self._cooling_until[m])]
 

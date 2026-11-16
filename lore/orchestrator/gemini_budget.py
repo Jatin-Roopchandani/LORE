@@ -111,6 +111,20 @@ def recorder_for(sqlite_path: Path) -> Callable[[str], None]:
     return record
 
 
+def counter_for(sqlite_path: Path) -> Callable[[str], int]:
+    """Today's request count for a model, read from the ledger at
+    `sqlite_path` (a patient GeminiClient's `daily_count`: a 429 that does
+    not say which limit it is is per-minute while this is well under the
+    model's daily allowance). Opens a connection per call, like the recorder."""
+    def count(model: str) -> int:
+        conn = open_db(sqlite_path)
+        try:
+            return calls_today(conn, model, today())
+        finally:
+            conn.close()
+    return count
+
+
 def day_report(conn: sqlite3.Connection, day: str) -> list[dict]:
     rows = conn.execute(
         "SELECT model, count FROM gemini_ledger WHERE day = ? ORDER BY model",

@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from lore.inference import key_scope
-from lore.inference.gemini import GeminiClient, GeminiKeyFileError
+from lore.inference.gemini import PROCESSING_PATIENCE, GeminiClient, GeminiKeyFileError
 from lore.inference.key_scope import KeyRequired
 from lore.inference.providers import roles
 from lore.inference.providers.base import (
@@ -209,12 +209,29 @@ def effort_for(config, site: str) -> str:
 
 
 def build(creds: Credentials, config, site: str, *,
-          gemini_models, recorder=None) -> TextModel:
-    """The TextModel for `site`. Gemini: exactly the client the site always built."""
+          gemini_models, recorder=None, patient: bool = False,
+          daily_count=None) -> TextModel:
+    """The TextModel for `site`. Gemini: exactly the client the site always built.
+
+    `patient`: book processing's client, which waits out per-minute limits
+    and retries transport failures (GeminiClient's `patience`, PatientModel
+    for the others); `daily_count(model)` reads LORE's Gemini ledger so a
+    429 that does not say is read right. Questions never pass it."""
     if site not in roles.SITES:
         raise ValueError(f"unknown model call site {site!r}")
     if creds.provider == GEMINI:
-        return GeminiClient(creds.key, models=gemini_models, recorder=recorder)
+        if not patient:
+            return GeminiClient(creds.key, models=gemini_models, recorder=recorder)
+        return GeminiClient(creds.key, models=gemini_models, recorder=recorder,
+                            patience=PROCESSING_PATIENCE, daily_count=daily_count)
+    model = _build_other(creds, config, site)
+    if patient:
+        from lore.inference.providers.patient import PatientModel
+        return PatientModel(model)
+    return model
+
+
+def _build_other(creds: Credentials, config, site: str) -> TextModel:
     if creds.provider == ANTHROPIC:
         from lore.inference.providers.anthropic_model import AnthropicTextModel
         return AnthropicTextModel(creds.key, model=model_for(creds, site),
