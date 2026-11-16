@@ -99,13 +99,36 @@ def user_by_email(db: Session, email: str) -> User | None:
     return db.scalars(sa.select(User).where(User.email == email)).first()
 
 
+def bound_invite(db: Session, email: str, now: datetime) -> str | None:
+    """The code hash of an unspent, unexpired invite bound to `email` (an
+    approved waitlist entry's), if any. Such an invite is for that address
+    alone, and every way in proves the address (the mailed link, or the
+    provider's verified email), so the address itself may stand for the code:
+    an invited reader who signs in without the invite email's link (a new
+    tab, another device, the site typed in) still gets in."""
+    return db.scalars(
+        sa.select(Invite.code_hash)
+        .where(Invite.email == email, Invite.used_by.is_(None),
+               sa.or_(Invite.expires_at.is_(None), Invite.expires_at > now))
+        .order_by(Invite.created_at.desc())).first()
+
+
+def invite_for(db: Session, email: str, invite_hash: str | None,
+               now: datetime) -> str | None:
+    """The invite a new account for `email` would use: the code it came with
+    when that one is usable here, else the invite bound to the address."""
+    if invite_usable(db, invite_hash, now, email):
+        return invite_hash
+    return bound_invite(db, email, now)
+
+
 def can_sign_in(db: Session, email: str, invite_hash: str | None, now: datetime,
                 invite_only: bool) -> bool:
     """Would a link to this address lead anywhere? (Decides whether to mail.)"""
     user = user_by_email(db, email)
     if user is not None:
         return user.status == "active"
-    return (not invite_only) or invite_usable(db, invite_hash, now, email)
+    return (not invite_only) or invite_for(db, email, invite_hash, now) is not None
 
 
 def sign_in_with_identity(db: Session, provider: str, subject: str, email: str,
@@ -133,6 +156,8 @@ def sign_in_with_identity(db: Session, provider: str, subject: str, email: str,
         db.flush()
         return SignIn(Outcome.OK, user.id)
 
+    if invite_only:
+        invite_hash = invite_for(db, email, invite_hash, now)
     user = User(id=str(uuid.uuid4()), email=email, name=(name or None) and name[:200],
                 role="user", status="active", created_at=now)
     db.add(user)

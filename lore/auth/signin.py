@@ -33,7 +33,9 @@ from lore.central.models import LoginToken
 log = logging.getLogger("lore.auth")
 
 FLOW_MAX_AGE = 600           # an OAuth round trip, seconds
-MAGIC_MAX_AGE = 15 * 60      # a magic link, seconds
+# A magic link, seconds. An hour, not minutes: an invite or sign-in email
+# often lands in Gmail's Updates or Promotions tab and is found later.
+MAGIC_MAX_AGE = 60 * 60
 EMAIL_PER_HOUR = 5
 IP_PER_HOUR = 20
 _FLOW_SALT = "lore.oauth-flow"
@@ -219,6 +221,8 @@ def build_signin_router(ctx: AuthContext) -> APIRouter:
                                "message": "too many requests; try again later"}},
                     status_code=429, headers={"Retry-After": "3600"})
             if accounts.can_sign_in(db, address, invite_hash, now, settings.invite_only):
+                if settings.invite_only:  # carry the invite this address will use
+                    invite_hash = accounts.invite_for(db, address, invite_hash, now)
                 raw = new_token()
                 db.add(LoginToken(
                     token_hash=hash_token(raw), email=address, invite_hash=invite_hash,
@@ -244,7 +248,7 @@ def build_signin_router(ctx: AuthContext) -> APIRouter:
             token = ""
         try:
             raw = magic.loads(token, max_age=MAGIC_MAX_AGE)
-        except BadSignature:  # tampered, or older than 15 minutes
+        except BadSignature:  # tampered, or older than MAGIC_MAX_AGE
             return fail("link_invalid", clear_flow=False)
         now = ctx.now()
         with ctx.sessions() as db:

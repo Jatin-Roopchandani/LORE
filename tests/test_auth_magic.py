@@ -58,7 +58,7 @@ def test_a_link_signs_an_existing_user_in(env):
     r = ask_link(client, "Alice@Example.org ")
     assert r.status_code == 202 and r.json() == {"sent": True}
     (mail,) = mailer.sent
-    assert mail["to"] == "alice@example.org" and "15 minutes" in mail["text"]
+    assert mail["to"] == "alice@example.org" and "an hour" in mail["text"]
     r = open_magic_link(client, link_path(mailer))
     assert r.status_code == 303 and r.headers["location"] == "/app"
     assert r.headers["cache-control"] == "no-store"
@@ -108,10 +108,10 @@ def test_the_button_needs_no_csrf_token_but_a_foreign_origin_is_refused(env):
     assert r.headers["location"] == "/app"
 
 
-def test_a_link_expires_after_fifteen_minutes(env):
+def test_a_link_expires_after_an_hour(env):
     client, _, mailer, clock, _ = env
     ask_link(client, "alice@example.org")
-    clock.now = NOW + timedelta(minutes=15, seconds=1)
+    clock.now = NOW + timedelta(minutes=60, seconds=1)
     r = open_magic_link(client, link_path(mailer))
     assert r.headers["location"] == "/signin?error=link_invalid"
     assert client.get("/api/me").status_code == 401
@@ -124,14 +124,14 @@ def test_the_signature_also_carries_the_age(env, monkeypatch):
     path = link_path(mailer)
     real = TimestampSigner.get_timestamp
     monkeypatch.setattr(TimestampSigner, "get_timestamp",
-                        lambda self: real(self) + 16 * 60)
+                        lambda self: real(self) + 61 * 60)
     assert open_magic_link(client, path).headers["location"] == "/signin?error=link_invalid"
 
 
 def test_a_just_valid_link_still_works(env):
     client, _, mailer, clock, _ = env
     ask_link(client, "alice@example.org")
-    clock.now = NOW + timedelta(minutes=14, seconds=59)
+    clock.now = NOW + timedelta(minutes=59, seconds=59)
     assert open_magic_link(client, link_path(mailer)).headers["location"] == "/app"
 
 

@@ -541,8 +541,8 @@ export const AUTH = {
   // The sent state. It reads the same whoever asks, so it never says whether an address has an account.
   checkInbox: "Check your inbox",
   sentBefore: "We sent a sign-in link to ",
-  sentAfter: ". It expires in 15 minutes.",
-  sentHint: "Not there? Check your spam folder. A link only goes to an address with an account or an invite.",
+  sentAfter: ". It expires in an hour.",
+  sentHint: "Not there? Check your Updates, Promotions and spam folders. If you were invited, use the same email you asked for the invite with: a link only goes to an address with an account or an invite.",
   didntGet: "Didn't get it?",
   resendIn: (s: number) => `Resend in ${s}s`,
   resend: "Resend link",
