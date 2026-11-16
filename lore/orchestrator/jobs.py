@@ -40,10 +40,23 @@ class BookJob:
     stopped_reason: str | None
     resumable_at: datetime | None  # UTC; set only when waiting_quota
     updated_at: datetime  # UTC
+    # Short pauses in a row with no progress between them (a provider that
+    # could not be reached, or its per-minute limit); 0 for a daily wait.
+    retries: int = 0
+
+    @property
+    def short_pause(self) -> bool:
+        """Waiting a few minutes (not for the daily reset): Continue may go now."""
+        return self.state == WAITING_QUOTA and self.retries > 0
+
+    @property
+    def auto_resumes(self) -> bool:
+        """LORE continues this book on its own at `resumable_at`."""
+        return self.state == WAITING_QUOTA and self.resumable_at is not None
 
 
 _COLS = ("book_id, stage, state, done_items, total_items,"
-         " stopped_reason, resumable_at, updated_at")
+         " stopped_reason, resumable_at, updated_at, retries")
 
 
 def _aware(now: datetime | None) -> datetime:
@@ -64,7 +77,7 @@ def _from_iso(text: str | None) -> datetime | None:
 
 def _row(r: tuple) -> BookJob:
     return BookJob(r[0], r[1], r[2], int(r[3]), int(r[4]), r[5],
-                   _from_iso(r[6]), _from_iso(r[7]))
+                   _from_iso(r[6]), _from_iso(r[7]), int(r[8] or 0))
 
 
 def get_job(conn: sqlite3.Connection, book_id: str) -> BookJob | None:
@@ -172,10 +185,12 @@ def set_provider(conn: sqlite3.Connection, book_id: str, provider: str | None) -
 def stop_switch(conn: sqlite3.Connection, book_id: str, reason: str, *,
                 now: datetime | None = None) -> None:
     """Stopped at a safe point because the user switched provider: idle, so
-    Continue (or the worker's requeue) resumes it with no reset to wait for."""
+    Continue (or the worker's requeue) resumes it with no reset to wait for.
+    Also how a book that kept failing to reach its provider ends up: waiting
+    for Continue, with a fresh run of short pauses ahead of it."""
     _write(conn, book_id,
            "UPDATE book_jobs SET state = 'idle', stopped_reason = ?,"
-           " resumable_at = NULL, updated_at = ? WHERE book_id = ?",
+           " resumable_at = NULL, retries = 0, updated_at = ? WHERE book_id = ?",
            (reason, _iso(_aware(now)), book_id))
 
 
@@ -258,12 +273,16 @@ def finish_stage(conn: sqlite3.Connection, book_id: str, next_stage: str, *,
 
 
 def stop_quota(conn: sqlite3.Connection, book_id: str, reason: str, *,
-               now: datetime | None = None) -> None:
+               now: datetime | None = None, resume_at: datetime | None = None,
+               retries: int = 0) -> None:
+    """Paused until `resume_at` (default: the daily reset), when LORE resumes
+    it on its own. `retries` > 0 marks a short pause (see BookJob.retries)."""
     moment = _aware(now)
+    when = _aware(resume_at) if resume_at is not None else next_reset_utc(moment)
     _write(conn, book_id,
            "UPDATE book_jobs SET state = 'waiting_quota', stopped_reason = ?,"
-           " resumable_at = ?, updated_at = ? WHERE book_id = ?",
-           (reason, _iso(next_reset_utc(moment)), _iso(moment), book_id))
+           " resumable_at = ?, retries = ?, updated_at = ? WHERE book_id = ?",
+           (reason, _iso(when), retries, _iso(moment), book_id))
 
 
 def stop_key(conn: sqlite3.Connection, book_id: str, reason: str, *,
@@ -295,7 +314,7 @@ def done(conn: sqlite3.Connection, book_id: str, *,
     _write(conn, book_id,
            "UPDATE book_jobs SET stage = 'ready', state = 'done',"
            " stopped_reason = NULL, resumable_at = NULL, move_world_id = NULL,"
-           " updated_at = ?"
+           " retries = 0, updated_at = ?"
            " WHERE book_id = ?", (_iso(_aware(now)), book_id))
 
 
@@ -332,7 +351,8 @@ def can_continue(job: BookJob | None, now: datetime | None = None) -> tuple[bool
         return False, "a job is already running for this book"
     if job.state == DONE:
         return False, "this book is already processed"
-    if job.state == WAITING_QUOTA and job.resumable_at and moment < job.resumable_at:
+    if (job.state == WAITING_QUOTA and job.resumable_at and moment < job.resumable_at
+            and not job.short_pause):  # a short pause: Continue means "now"
         local = job.resumable_at.astimezone().strftime("%H:%M")
         return False, f"the Gemini allowance resets at {local} (your local time)"
     return True, ""

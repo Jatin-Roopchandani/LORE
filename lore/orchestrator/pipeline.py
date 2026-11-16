@@ -7,6 +7,16 @@ until the daily allowance resets; Gemini's 402 (prepaid credit used up, from
 any stage) parks it as waiting_key with a friendly reason, resumable with
 Continue; any other exception marks it failed.
 
+Not everything that stops a book is a day's wait (`_pause_for`). A provider
+that could not be reached (a transport failure or a 5xx, after the patient
+client's own retries) and a per-minute limit that outlasted its patience
+park it as waiting_quota for a few minutes instead (BookJob.retries counts
+them; each waits longer, SHORT_PAUSES), never as failed. Either way the
+book resumes on its own at `resumable_at` (the worker's queue in multi mode,
+the web app's sweep in local mode), and Continue still means "now" for a
+short pause. After MAX_SHORT_PAUSES in a row with no progress, the book
+waits for Continue.
+
 A later stage that finds completed extraction units with missing or damaged
 files (DamagedUnitsError, after a hard kill) sends the book back to
 `extract` once in the same run, which redoes exactly those units; a run
@@ -20,14 +30,21 @@ import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from lore import library_lock
 from lore.config import LoreConfig
 from lore.graph.artifacts import DamagedUnitsError
 from lore.inference import key_scope
-from lore.inference.gemini import CREDIT_MESSAGE, GeminiCreditError, limits_for
+from lore.inference.gemini import (
+    CREDIT_MESSAGE,
+    GeminiCreditError,
+    GeminiQuotaError,
+    GeminiServerError,
+    GeminiTransportError,
+    limits_for,
+)
 from lore.inference.providers import factory as providers
 from lore.orchestrator import jobs, plan
 from lore.orchestrator.gemini_budget import calls_today, today
@@ -73,15 +90,56 @@ SWITCH_REASON = "Paused: you switched AI provider. Continuing with your new choi
 JobRefused = jobs.JobRefused  # run_book will not start (see jobs.py)
 
 
-def caused_by(exc: BaseException | None, kind: type) -> bool:
+def caused_by(exc: BaseException | None, kind: type | tuple[type, ...]) -> bool:
     """True when `exc` or anything in its cause/context chain is a `kind`."""
+    return cause_of(exc, kind) is not None
+
+
+def cause_of(exc: BaseException | None, kind: type | tuple[type, ...]):
+    """The first `kind` in `exc`'s cause/context chain (itself first), or None."""
     seen = set()
     while exc is not None and id(exc) not in seen:
         if isinstance(exc, kind):
-            return True
+            return exc
         seen.add(id(exc))
         exc = exc.__cause__ or exc.__context__
-    return False
+    return None
+
+
+# Short pauses (see the module docstring): the wait before the n-th one in a
+# row is resumed, doubling from two minutes up to an hour; after
+# MAX_SHORT_PAUSES with no progress the book waits for Continue instead
+# (about four hours of trying in all).
+FIRST_SHORT_PAUSE = timedelta(minutes=2)
+LONGEST_SHORT_PAUSE = timedelta(hours=1)
+MAX_SHORT_PAUSES = 8
+_DETAIL_CHARS = 600
+
+UNREACHABLE = "unreachable"   # transport failure or 5xx, after retries
+RATE_LIMITED = "rate_limited"  # a per-minute limit (or an overload)
+DAILY = "daily"               # a day's allowance: wait for the reset
+
+
+def short_pause_delay(retries: int) -> timedelta:
+    """How long the `retries`-th short pause in a row waits (1 = the first)."""
+    return min(LONGEST_SHORT_PAUSE, FIRST_SHORT_PAUSE * 2 ** max(0, retries - 1))
+
+
+def pause_kind(exc: BaseException) -> tuple[str, float | None]:
+    """(UNREACHABLE, RATE_LIMITED or DAILY, the provider's retry-after in
+    seconds) for an exception that stops a book. DAILY covers a plain
+    QuotaStop (the processing reserve, the token cap) and a 429 that is, or
+    may be, a daily allowance."""
+    if caused_by(exc, (GeminiTransportError, GeminiServerError)):
+        return UNREACHABLE, None
+    quota = cause_of(exc, GeminiQuotaError)
+    if quota is not None and not getattr(quota, "daily", True):
+        return RATE_LIMITED, getattr(quota, "retry_after", None)
+    return DAILY, None
+
+
+def _utc_clock(moment: datetime) -> str:
+    return moment.astimezone(timezone.utc).strftime("%H:%M")
 
 
 @dataclass
@@ -301,16 +359,13 @@ def _run_stages(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
                 # resumes it once topped up, or on another provider.
                 jobs.stop_key(conn, book_id, CREDIT_MESSAGE, now=clock())
                 return jobs.get_job(conn, book_id)
-            if not isinstance(exc, QuotaStop):
+            kind, retry_after = pause_kind(exc)
+            if kind == DAILY and not isinstance(exc, QuotaStop):
                 jobs.fail(conn, book_id, f"{type(exc).__name__}: {exc}"[:4000],
                           now=clock())
                 return jobs.get_job(conn, book_id)
-            stop = exc
-            cur = jobs.get_job(conn, book_id)
-            jobs.stop_quota(
-                conn, book_id,
-                f"{stop} (during {stage.name}: {cur.done_items}/{cur.total_items})",
-                now=clock())
+            _pause(conn, book_id, stage.name, exc, kind, retry_after, job,
+                   providers.label(provider), clock())
             return jobs.get_job(conn, book_id)
         try:  # this stage's measured speed, for the next book's estimates
             plan.record_stage(conn, book_id, stage.name, provider, model, clock())
@@ -320,3 +375,58 @@ def _run_stages(conn: sqlite3.Connection, config: LoreConfig, book_id: str,
                           keep_running=True)
     jobs.done(conn, book_id, now=clock())
     return jobs.get_job(conn, book_id)
+
+
+def _progressed(before: jobs.BookJob | None, after: jobs.BookJob) -> bool:
+    """Whether this run got further than the row it started from."""
+    if before is None or before.stage not in STAGES or after.stage not in STAGES:
+        return True
+    if STAGES.index(after.stage) != STAGES.index(before.stage):
+        return STAGES.index(after.stage) > STAGES.index(before.stage)
+    return after.done_items > before.done_items
+
+
+def _pause(conn: sqlite3.Connection, book_id: str, stage: str, exc: BaseException,
+           kind: str, retry_after: float | None, before: jobs.BookJob | None,
+           label: str, now: datetime) -> None:
+    """Park the book as waiting_quota with a plain reason: until the daily
+    reset (DAILY), or for a short, growing wait (UNREACHABLE, RATE_LIMITED);
+    a book that has had too many short ones in a row waits for Continue."""
+    cur = jobs.get_job(conn, book_id)
+    where = f" (during {stage}: {cur.done_items}/{cur.total_items})"
+    provider_error = cause_of(exc, GeminiQuotaError) or cause_of(
+        exc, (GeminiTransportError, GeminiServerError))
+    detail = f" Details: {exc}"[:_DETAIL_CHARS] if provider_error is not None else ""
+    if getattr(provider_error, "provider", None):  # the error knows best
+        label = providers.label(provider_error.provider)
+    if kind == DAILY:
+        reset = jobs.next_reset_utc(now)
+        if provider_error is None:  # the reserve, the token cap: their own words
+            reason = f"{exc}{where}"
+        elif label == "Gemini":
+            reason = ("Paused: Gemini's free-tier daily limit is used up. It resets at"
+                      f" midnight Pacific (\u2248 {_utc_clock(reset)} UTC){where}.{detail}")
+        else:
+            reason = (f"Paused: {label} refused more requests for now. LORE tries"
+                      f" again after midnight Pacific (\u2248 {_utc_clock(reset)} UTC)"
+                      f"{where}.{detail}")
+        jobs.stop_quota(conn, book_id, reason[:4000], now=now)
+        return
+    retries = 1 if _progressed(before, cur) else (before.retries if before else 0) + 1
+    if retries > MAX_SHORT_PAUSES:
+        jobs.stop_switch(conn, book_id, (
+            f"Paused: LORE couldn't reach {label} after several tries. Press Continue"
+            f" to try again{where}.{detail}")[:4000], now=now)
+        return
+    delay = short_pause_delay(retries)
+    if retry_after is not None:
+        delay = max(delay, timedelta(seconds=retry_after))
+    minutes = max(1, round(delay.total_seconds() / 60))
+    soon = f"about {minutes} minute{'s' if minutes != 1 else ''}"
+    if kind == UNREACHABLE:
+        reason = f"Paused: LORE couldn't reach {label}; it will retry in {soon}"
+    else:
+        reason = (f"Paused: {label} is limiting how fast LORE can send requests"
+                  f" (a per-minute limit, or it is busy); LORE continues in {soon}")
+    jobs.stop_quota(conn, book_id, f"{reason}{where}.{detail}"[:4000], now=now,
+                    resume_at=now + delay, retries=retries)

@@ -533,15 +533,22 @@ def test_upload_attempts_are_rate_limited(multi, tmp_path):
     assert r.status_code == 429 and r.json()["error"]["code"] == "rate_limited"
 
 
-def test_multi_mode_spent_budget_waits_and_queues_nothing(multi, tmp_path, monkeypatch):
+def test_multi_mode_spent_budget_waits_and_queues_it_for_the_reset(multi, tmp_path,
+                                                                    monkeypatch):
     base, sessions, _, build = multi
     monkeypatch.setattr("lore.web.app.processing_budget_left", lambda conn, c, day: 0)
     alice = sign_in(build(), sessions, "alice")
     r = send(alice, epub_bytes(tmp_path))
     assert r.status_code == 202 and r.json()["processing"]["state"] == "waiting"
-    assert central_jobs(sessions) == []
     job = alice.get("/api/books").json()["books"][0]["job"]
     assert job["state"] == "waiting_quota" and job["can_continue"] is False
+    assert job["auto_resume"] is True
+    # Queued, not before the reset: the worker starts it on its own then.
+    (queued,) = central_jobs(sessions)
+    assert queued.state == "queued"
+    assert queued.not_before == datetime.fromisoformat(job["resumable_at"])
+    books = alice.get("/api/books").json()["books"]
+    assert books[0]["processing"] is False  # waiting, not running: deletable
 
 
 def test_upload_settings_from_env():

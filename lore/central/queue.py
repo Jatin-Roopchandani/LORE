@@ -15,6 +15,10 @@ Claim semantics, and why they hold on both databases:
 - SQLite: no row locks, but every transaction begins `BEGIN IMMEDIATE`
   (lore.central.db), so claims are serialised by the database's single
   writer lock and a busy timeout; the guarded update is then trivially atomic.
+- A book paused until a time (the Gemini daily reset, or a few minutes after
+  its provider could not be reached) stays `queued` with `not_before` set to
+  that time (lore.worker): it is claimed again on its own once it is due.
+  Nothing else changes: the same row, so the same one-live-job-per-book index.
 - One job per user at a time: the candidate query skips users that already
   hold a claimed job, and a partial unique index (`uq_jobs_one_claim_per_user`)
   makes the database refuse a second claim for a user even if two workers
@@ -48,19 +52,24 @@ class UnknownUser(LookupError):
 
 
 def enqueue(session: Session, user_id: str, book_id: str, kind: str,
-            payload: dict | None = None) -> tuple[Job, bool]:
-    """Queue a job; returns (job, created).
+            payload: dict | None = None, *,
+            not_before: datetime | None = None) -> tuple[Job, bool]:
+    """Queue a job; returns (job, created). `not_before`: not claimed before
+    then (a book waiting for the daily reset).
 
     A book has at most one live (queued, claimed or paused) job, so a second
     request for the same book finds the first and `created` is False. A
     paused one is woken (queued again): asking again is the user's resume.
+    So is a queued one waiting for its time, when the request is for now
+    (no `not_before`): Continue means "now".
     """
     if kind not in KINDS:
         raise ValueError(f"unknown job kind {kind!r}")
     if session.get(User, user_id) is None:
         raise UnknownUser(user_id)
     for _ in range(2):  # the second try covers the live job finishing in between
-        job = Job(user_id=user_id, book_id=book_id, kind=kind, payload=payload)
+        job = Job(user_id=user_id, book_id=book_id, kind=kind, payload=payload,
+                  not_before=not_before)
         session.add(job)
         try:
             session.commit()
@@ -74,8 +83,37 @@ def enqueue(session: Session, user_id: str, book_id: str, kind: str,
                 if live.state == PAUSED:
                     live.state = QUEUED
                     session.commit()
+                if (live.state == QUEUED and not_before is None
+                        and live.not_before is not None):
+                    live.not_before = None
+                    session.commit()
                 return live, False
     raise RuntimeError("could not enqueue the job")
+
+
+def wake_waiting(session: Session) -> list[int]:
+    """Queue again every book whose latest job finished as `waiting_quota`
+    with nothing live after it: books paused by the allowance before the
+    worker kept such jobs queued until their time (and any whose requeue was
+    lost). The worker that claims one finds the book row still waiting and
+    puts it back until `resumable_at`, or runs it if that has passed. Commits;
+    returns the new job ids."""
+    latest = (sa.select(sa.func.max(Job.id))
+              .group_by(Job.user_id, Job.book_id).scalar_subquery())
+    waiting = session.execute(sa.select(Job.user_id, Job.book_id).where(
+        Job.id.in_(latest), Job.state == DONE,
+        Job.outcome == "waiting_quota")).all()
+    woken: list[int] = []
+    for user_id, book_id in waiting:
+        job = Job(user_id=user_id, book_id=book_id, kind=KIND_PROCESS)
+        session.add(job)
+        try:
+            session.commit()
+        except IntegrityError:  # a live job appeared meanwhile: it will run
+            session.rollback()
+            continue
+        woken.append(job.id)
+    return woken
 
 
 def _candidate(session: Session, now: datetime) -> Job | None:
@@ -243,11 +281,18 @@ def resume_user(session: Session, user_id: str) -> list[int]:
     return ids
 
 
-def running_books(session: Session, user_id: str) -> set[str]:
-    """The user's books with a queued or claimed job: about to run, or
-    running. (A paused job waits on the user, not on a worker.)"""
+def running_books(session: Session, user_id: str, *,
+                  now: datetime | None = None) -> set[str]:
+    """The user's books with a claimed job, or a queued one that is due:
+    about to run, or running. (A paused job waits on the user, and a queued
+    one waiting for its time -- a book paused until the daily reset -- is
+    not about to run: the reader may still delete that book.)"""
+    moment = now or utcnow()
     return set(session.scalars(sa.select(Job.book_id).where(
-        Job.user_id == user_id, Job.state.in_((QUEUED, CLAIMED)))))
+        Job.user_id == user_id,
+        sa.or_(Job.state == CLAIMED,
+               sa.and_(Job.state == QUEUED,
+                       sa.or_(Job.not_before.is_(None), Job.not_before <= moment))))))
 
 
 def close_for_deleted_book(session: Session, user_id: str, book_id: str, *,

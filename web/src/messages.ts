@@ -172,6 +172,11 @@ export const LIBRARY = {
     seconds == null ? null : `${duration(seconds)} left${unknown ? " (plus a few minutes)" : ""}`,
   progressLabel: (stage: string) => `${STAGE_LABEL[stage] ?? stage} progress`,
   continuesAfter: (time: string, left: string) => `Continues after ${time} (your time) \u2014 in ${left}`,
+  // The server resumes the book by itself: the reader need not come back to press Continue.
+  resumesAfter: (time: string, left: string) =>
+    `LORE will continue automatically after ${time} (your time) \u2014 in ${left}.`,
+  // A short pause (the provider could not be reached, or a per-minute limit): Continue may go now.
+  resumesSoon: (left: string) => `LORE will continue automatically in ${left}, or press Continue to try now.`,
   inHM: (mins: number) => `${Math.floor(mins / 60)}h ${mins % 60}m`,
   // An empty library on a server that has the sample book: one click adds it, already processed.
   sampleLead: "Not sure where to start? Add a sample book, ready to explore and ask about.",

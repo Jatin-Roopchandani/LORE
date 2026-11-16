@@ -181,3 +181,40 @@ def test_the_processing_reserve_stops_before_any_request(tmp_path) -> None:
     assert job.state == "waiting_quota"
     assert server.answered == []
     assert "reserve" in job.stopped_reason
+
+
+def test_an_unreachable_gemini_pauses_the_book_and_it_resumes_where_it_was(tmp_path) -> None:
+    # The hosted reader's first run: a transport error mid-book. A patient
+    # client retries it; when it persists, the book pauses for minutes
+    # (resumable, auto-resumed) instead of failing, and the resume requests
+    # only the chunks still missing.
+    config, conn = _setup(tmp_path, 5, "a")
+
+    class Flaky(Server):
+        def handler(self, request):
+            if self.limit is not None and len(self.answered) >= self.limit:
+                raise httpx.ConnectError("could not resolve host")
+            return super().handler(request)
+
+    def patient(server):
+        async def no_sleep(_s):
+            return None
+
+        def make(cfg):
+            client = GeminiClient("AIza-not-a-real-key", models=list(LITE_MODELS),
+                                  transport=httpx.MockTransport(server.handler),
+                                  sleep=no_sleep, patience=600.0)
+            return GeminiTier(config=cfg, client=client, embedder=_Embedder())
+        return make
+
+    flaky = Flaky(limit=3)
+    job = run_book(conn, config, BOOK, [ExtractStage(gemini_tier_factory=patient(flaky))])
+    assert job.state == jobs.WAITING_QUOTA and job.short_pause
+    assert "couldn't reach Gemini" in job.stopped_reason
+    assert "extract: 3/5" in job.stopped_reason
+
+    resumed = Server()
+    job = run_book(conn, config, BOOK, [ExtractStage(gemini_tier_factory=patient(resumed))],
+                   now=job.resumable_at)
+    assert job.state == jobs.DONE
+    assert sorted(flaky.answered + resumed.answered) == [f"text {i}" for i in range(5)]

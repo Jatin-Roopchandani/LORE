@@ -114,7 +114,8 @@ def test_migration_v6_creates_book_jobs(tmp_path: Path) -> None:
     assert cols == ["book_id", "stage", "state", "done_items", "total_items",
                     "stopped_reason", "resumable_at", "updated_at", "needs_reload",
                     "move_world_id", "provider",  # v16: the provider the run used
-                    "stage_started_at", "stage_base"]  # v17: the step list's clock
+                    "stage_started_at", "stage_base",  # v17: the step list's clock
+                    "retries"]  # v19: short pauses in a row
     conn.close()
 
 
