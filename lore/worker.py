@@ -20,6 +20,16 @@ processes: the job stops at its next safe point (pipeline.ProviderSwitch),
 goes back to the queue and resumes where it stopped on the new provider; if
 that one is paid and the estimate for the rest needs confirming, the book
 waits for Continue instead.
+
+A book that stops for its allowance (the Gemini free tier's day, the user's
+own token cap), or because its provider could not be reached or kept
+answering "too many requests per minute", is paused until a time
+(`resumable_at` on its book row, lore.orchestrator.pipeline). Its central
+job goes back to the queue with `not_before` at that time, so a worker
+resumes it on its own when it is due; Continue still queues it for now. A
+missing or refused key still waits for the user. Books paused that way by
+an older worker (their job finished as `waiting_quota`) are queued again by
+the periodic `wake_waiting` sweep.
 """
 from __future__ import annotations
 
@@ -75,6 +85,8 @@ NEEDS_CONFIRM = "needs_confirm"
 
 
 PURGE_EVERY = timedelta(hours=1)
+# How often a worker looks for paused books nothing will wake (queue.wake_waiting).
+WAKE_EVERY = timedelta(minutes=10)
 # Past the book row's STALE_AFTER before a delayed job is claimed again.
 BUSY_MARGIN = timedelta(seconds=5)
 
@@ -157,6 +169,25 @@ class Worker:
         self._stale_after = stale_after
         self._heartbeat_every = heartbeat_every
         self._purged_at: datetime | None = None
+        self._woken_at: datetime | None = None
+
+    def wake_waiting(self) -> list[int]:
+        """Queue again the books an older worker left paused for their
+        allowance (see queue.wake_waiting): on the first pass, then every
+        WAKE_EVERY. A failure is logged, never fatal."""
+        now = self._clock()
+        if self._woken_at is not None and now - self._woken_at < WAKE_EVERY:
+            return []
+        self._woken_at = now
+        try:
+            with self.sessions() as session:
+                woken = queue.wake_waiting(session)
+            if woken:
+                log.info("queued %d paused book(s) to resume when due", len(woken))
+            return woken
+        except Exception:  # noqa: BLE001
+            log.exception("waking paused books failed")
+            return []
 
     def purge_traces(self) -> int:
         """Delete traces past their retention, at most once an hour (one
@@ -181,6 +212,7 @@ class Worker:
         """Requeue abandoned jobs, claim one and run it. The finished job,
         or None when nothing was waiting."""
         self.purge_traces()
+        self.wake_waiting()
         with self.sessions() as session:
             queue.requeue_stale(session, now=self._clock(), max_age=self._stale_after)
             job = queue.claim_next(session, self.worker_id, now=self._clock())
@@ -368,6 +400,10 @@ class Worker:
                     if current is not None and jobs.is_fresh(current, now):
                         return self._busy(current)
                     ok, why = jobs.can_continue(current, now)
+                    if not ok and current is not None and current.auto_resumes:
+                        # Woken before its time (a sweep, an old Continue):
+                        # back to the queue until the book is due.
+                        return _until(current)
                     if not ok:
                         return Outcome(SKIPPED, error=why)
                     # An unfinished move continues as a move (see the web app).
@@ -414,5 +450,15 @@ class Worker:
             return Outcome(outcome, error=result.stopped_reason, paused=True)
         if result.state == jobs.FAILED:
             return Outcome("failed", True, result.stopped_reason)
-        # done, or waiting_quota (the user continues after the reset)
+        if result.auto_resumes:
+            # Paused until a time (the daily reset, the token cap's reset, a
+            # few minutes after an unreachable provider): resumed then.
+            return _until(result)
+        # done (or idle: the book waits for the user's Continue)
         return Outcome(result.state, error=result.stopped_reason)
+
+
+def _until(row: jobs.BookJob) -> Outcome:
+    """Back to the queue, not claimed before the book's `resumable_at`."""
+    return Outcome(jobs.WAITING_QUOTA, error=row.stopped_reason, requeue=True,
+                   not_before=row.resumable_at)

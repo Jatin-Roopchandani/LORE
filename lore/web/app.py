@@ -85,6 +85,9 @@ if TYPE_CHECKING:
 STATIC = Path(__file__).parent / "static"
 MCP_PORT = 8765
 MAX_QUESTION_CHARS = 2000
+# `lore ui` (local mode, auto_resume): how often it looks for a paused book
+# that is due to resume.
+RESUME_EVERY = 30.0
 
 
 class MoveBody(BaseModel):
@@ -239,9 +242,12 @@ def _quota(config: LoreConfig, multi: bool = False) -> dict:
 
 
 def _job_out(job: jobs.BookJob | None, now: datetime,
-             provider: str | None = None, steps: dict | None = None) -> dict | None:
+             provider: str | None = None, steps: dict | None = None,
+             resumes: bool = True) -> dict | None:
     """`provider`: what the book's latest run used (the Library row names it).
-    `steps`: the step list with time estimates (lore.orchestrator.plan)."""
+    `steps`: the step list with time estimates (lore.orchestrator.plan).
+    `resumes`: this server resumes a paused book on its own at its
+    `resumable_at` (multi mode's worker, or `lore ui`'s sweep)."""
     if job is None:
         return None
     ok, why = jobs.can_continue(job, now)
@@ -251,6 +257,7 @@ def _job_out(job: jobs.BookJob | None, now: datetime,
         "stopped_reason": job.stopped_reason,
         "resumable_at": job.resumable_at.isoformat() if job.resumable_at else None,
         "can_continue": ok, "continue_reason": why,
+        "auto_resume": resumes and job.auto_resumes,
     }
 
 
@@ -352,7 +359,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                oauth_clock: Callable[[], datetime] | None = None,
                codex_refresh_factory: Callable[[], Callable] | None = None,
                local_model_transport=None,
-               selfhost: bool | None = None):
+               selfhost: bool | None = None,
+               auto_resume: bool = False):
     """`stages_factory`, `move_stages_factory` and `clock` are test seams for
     book processing; `codex_refresh_factory` for deleting a book (the cached
     codex rebuild, lore.book_delete).
@@ -427,11 +435,26 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):
-        if hosted_mcp[0] is None:
-            yield
-            return
-        async with hosted_mcp[0].running():
-            yield
+        # `lore ui` (local mode): resume paused books when they are due.
+        stop_resuming = threading.Event()
+        if auto_resume and not multi:
+            threading.Thread(target=_resume_loop, args=(stop_resuming,),
+                             name="lore-auto-resume", daemon=True).start()
+        try:
+            if hosted_mcp[0] is None:
+                yield
+                return
+            async with hosted_mcp[0].running():
+                yield
+        finally:
+            stop_resuming.set()
+
+    def _resume_loop(stop: threading.Event) -> None:
+        while not stop.wait(RESUME_EVERY):
+            try:
+                resume_due()
+            except Exception:  # noqa: BLE001 - the next pass tries again
+                logging.getLogger(__name__).exception("resuming a paused book failed")
 
     api = FastAPI(title="LORE", docs_url=None, redoc_url=None, lifespan=lifespan,
                   dependencies=[Depends(csrf_guard)] if multi else None)
@@ -556,14 +579,15 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         return None if missing is None else JSONResponse(missing, status_code=409)
 
     def enqueue(user: CurrentUser, book_id: str, kind: str,
-                payload: dict | None = None):
+                payload: dict | None = None, not_before: datetime | None = None):
         """Queue the job centrally: (job, created). created is False when the
         book already has a live job, which is returned instead."""
         if sessions[0] is None:  # built on first use: local mode never needs it
             sessions[0] = make_session_factory(make_engine(database_url(base)))
         with sessions[0]() as session:
             try:
-                return queue.enqueue(session, user.id, book_id, kind, payload)
+                return queue.enqueue(session, user.id, book_id, kind, payload,
+                                     not_before=not_before)
             except queue.UnknownUser:
                 raise HTTPException(401, "unknown user") from None
 
@@ -585,6 +609,42 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
 
     if not multi:  # multi mode recovers each user's library when it is read
         recover(base)
+
+    def resume_due() -> str | None:
+        """Local mode: start the paused book whose `resumable_at` has passed
+        (the earliest), if the one runner is free. The book id, or None.
+        Multi mode's worker does this from the central queue instead."""
+        if multi or not runner_slot.acquire(blocking=False):
+            return None
+        handed_off = False
+        try:
+            now = now_utc()
+            conn = open_db(base.sqlite_path)
+            try:
+                due = sorted((j for j in jobs.list_jobs(conn)
+                              if j.auto_resumes and j.resumable_at <= now),
+                             key=lambda j: j.resumable_at)
+                if not due:
+                    return None
+                book_id = due[0].book_id
+                move_world = jobs.move_target(conn, book_id)
+                if move_world is not None and get_world(conn, move_world) is None:
+                    move_world = None
+                try:
+                    jobs.claim_job(conn, book_id, now=now)
+                except JobRefused:
+                    return None
+            finally:
+                conn.close()
+            threading.Thread(target=_process, args=(base, book_id, move_world),
+                             daemon=True).start()
+            handed_off = True
+            return book_id
+        finally:
+            if not handed_off:
+                runner_slot.release()
+
+    api.state.resume_due = resume_due  # the sweep's one pass, for tests
 
     def _position_out(config: LoreConfig, world: str | None,
                       body: PositionBody | None = None):
@@ -690,7 +750,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
              "status": b["status"], "world": b["world"], "series": b["series"],
              "series_index": b["series_index"], "is_sample": b["id"] in sample_ids,
              "job": _job_out(by_book.get(b["id"]), now, used.get(b["id"]),
-                             steps.get(b["id"])),
+                             steps.get(b["id"]), resumes=multi or auto_resume),
              # Running, or queued for the worker: no delete until it is over.
              "processing": b["id"] in queued or (
                  b["id"] in by_book and jobs.is_fresh(by_book[b["id"]], now))}
@@ -703,7 +763,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         if not multi:
             return set()
         with sessions[0]() as session:
-            return queue.running_books(session, user.id)
+            return queue.running_books(session, user.id, now=now_utc())
 
     @api.delete("/api/books/{book_id}")
     def delete_a_book(book_id: str, config: LoreConfig = Depends(user_config),
@@ -1009,6 +1069,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                                     " processing can start after midnight Pacific",
                                     now=now)
                     job = jobs.get_job(conn, book_id)
+                    # Starts on its own after the reset (the worker).
+                    enqueue(user, book_id, KIND_PROCESS, not_before=job.resumable_at)
                     return {"state": "waiting", "reason": "token_cap",
                             "resumable_at": job.resumable_at.isoformat()}
                 finally:
@@ -1024,6 +1086,8 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 jobs.stop_quota(conn, book_id, "today's Gemini allowance is used up;"
                                 " processing can start after the reset", now=now)
                 job = jobs.get_job(conn, book_id)
+                if multi:  # starts on its own after the reset (the worker)
+                    enqueue(user, book_id, KIND_PROCESS, not_before=job.resumable_at)
                 return {"state": "waiting",
                         "resumable_at": job.resumable_at.isoformat()}
         finally:

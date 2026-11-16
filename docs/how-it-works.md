@@ -78,6 +78,19 @@ Two kinds of failure are handled differently:
   continues from the first unfinished unit. `work_unit_size = 10` keeps the
   requests a re-run unit spends again to at most 9.
 
+Book processing is patient where waiting helps. A 429 that Gemini marks as
+its per-minute limit (the error's QuotaFailure `quotaId`, or, when it does
+not say, LORE's own ledger showing the model well under its daily allowance)
+cools that model for the `retryDelay` and the request waits for the first
+model to come back, up to ten minutes. A connection failure, timeout or
+500/502/504 is retried on the same model five times over about two minutes;
+Claude and OpenAI rate limits and outages get the same treatment. What is
+left pauses the book rather than failing it: until the daily reset for a
+real daily exhaustion, or for a few minutes (doubling up to an hour, eight
+times) when the provider could not be reached. A paused book resumes on its
+own when it is due (the worker on a server, `lore ui` locally); Continue
+still starts it at once after a short pause.
+
 Gemini receives each chunk's text. The key is read as for `lore ask` (below);
 with no key, `extract` and `process` exit before dispatching anything.
 
