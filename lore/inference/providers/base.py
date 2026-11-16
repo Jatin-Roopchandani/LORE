@@ -79,13 +79,16 @@ class ProviderKeyError(GeminiAuthError):
 
 
 class ProviderQuotaError(GeminiQuotaError):
-    """Rate limited (429), after the SDK's own retries: the quota path."""
+    """Rate limited (429), after the SDK's own retries: the quota path.
+
+    Short (`daily` False) unless the provider says the account itself is out
+    (OpenAI's `insufficient_quota`): a Claude or OpenAI 429 is a per-minute
+    rate limit, gone in `retry_after` seconds (the retry-after header)."""
 
     def __init__(self, message: str, *, provider: str,
-                 retry_after: float | None = None) -> None:
-        super().__init__(message)
+                 retry_after: float | None = None, daily: bool = False) -> None:
+        super().__init__(message, daily=daily, retry_after=retry_after)
         self.provider = provider
-        self.retry_after = retry_after
 
 
 class ProviderUnavailableError(GeminiQuotaError):
@@ -96,7 +99,7 @@ class ProviderUnavailableError(GeminiQuotaError):
     """
 
     def __init__(self, message: str, *, provider: str) -> None:
-        super().__init__(message)
+        super().__init__(message, daily=False)
         self.provider = provider
 
 

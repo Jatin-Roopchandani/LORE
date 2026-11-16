@@ -46,7 +46,7 @@ from lore.inference.key_scope import gemini_api_key
 from lore.inference.providers import factory as providers
 from lore.orchestrator import jobs
 from lore.orchestrator.concurrency import bounded_fetch, llm_concurrency
-from lore.orchestrator.gemini_budget import recorder_for
+from lore.orchestrator.gemini_budget import counter_for, recorder_for
 from lore.orchestrator.pipeline import JobCtl, QuotaStop, StageContext
 from lore.resolve.disambiguation import (
     MAX_BATCH,
@@ -360,8 +360,12 @@ def _site_client(config, site: str, models, missing: str):
     if creds.key is None:
         raise RuntimeError(missing)
     gemini = creds.provider == providers.GEMINI
+    # Processing's client: patient with per-minute limits and transport
+    # failures (lore.inference.gemini, PATIENCE).
     return providers.build(creds, config, site, gemini_models=models,
-                           recorder=recorder_for(config.sqlite_path) if gemini else None)
+                           recorder=recorder_for(config.sqlite_path) if gemini else None,
+                           patient=True,
+                           daily_count=counter_for(config.sqlite_path) if gemini else None)
 
 
 def _synonym_client(config):
