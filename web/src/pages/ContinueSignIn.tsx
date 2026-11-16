@@ -7,7 +7,10 @@ import { KeyIcon } from "./authIcons";
 // prefetches the link can't burn it. The button is a plain form POST: the server spends the token, sets the session
 // and sends the browser on to /app. The token is taken out of the address bar at once (it stays in the form only).
 export function ContinueSignIn({ search = window.location.search }: { search?: string }) {
-  const token = new URLSearchParams(search).get("token") ?? "";
+  // Read once, on the first draw: the effect below takes the token out of the address bar, so reading it again on a
+  // later draw (the button's busy state) found nothing and swapped the form for "incomplete" mid-submit (2026-11-16:
+  // every emailed link failed this way).
+  const [token] = useState(() => new URLSearchParams(search).get("token") ?? "");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     try { if (window.location.search.includes("token=")) window.history.replaceState(null, "", window.location.pathname); } catch { /* not a browser */ }

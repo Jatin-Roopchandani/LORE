@@ -134,7 +134,8 @@ def erase_user(sessions: sessionmaker[Session], root: Path, user_id: str, *,
         gone("inflight_slots", sa.delete(InflightSlot).where(InflightSlot.user_id == user_id))
         gone("rate_hits", sa.delete(RateHit).where(RateHit.key.in_(
             [ratelimit._key(kind, user_id) for kind in USER_RATE_KINDS])))
-        db.execute(sa.update(Invite).where(Invite.used_by == user_id).values(used_by=None))
+        # The invite they signed up with goes (freed, it would let anyone else in).
+        gone("invites", sa.delete(Invite).where(Invite.used_by == user_id))
         db.execute(sa.update(Invite).where(Invite.created_by == user_id).values(created_by=None))
         db.execute(sa.update(AdminEvent).where(AdminEvent.admin_id == user_id)
                    .values(admin_id=None))
@@ -142,7 +143,9 @@ def erase_user(sessions: sessionmaker[Session], root: Path, user_id: str, *,
             gone("login_tokens", sa.delete(LoginToken).where(LoginToken.email == email))
             gone("waitlist", sa.update(Waitlist).where(Waitlist.email == email)
                  .values(email=ANONYMISED, reading=None))
-            db.execute(sa.update(Invite).where(Invite.email == email).values(email=None))
+            # An invite bound to their address is theirs alone: unbound, it would
+            # become an open invite. It goes with them.
+            gone("invites_bound", sa.delete(Invite).where(Invite.email == email))
         gone("users", sa.delete(User).where(User.id == user_id))
         db.commit()
     log.info("account %s erased (library %s)", user_id,
