@@ -121,12 +121,33 @@ def test_each_user_sees_their_own_library(client):
     assert [b["id"] for b in get(client, "bob", "/api/books")["books"]] == ["bb"]
 
 
+def _without_request_ids(body):
+    """`body` with every `request_id` value dropped: a random UUID is hex, and
+    the markers (ae1, bc1, ...) are hex too, so about 4% of error responses
+    "contained" one by chance (2026-11-16: the long-standing flake of this file
+    was exactly that, never a leak)."""
+    if isinstance(body, dict):
+        return {k: _without_request_ids(v) for k, v in body.items() if k != "request_id"}
+    if isinstance(body, list):
+        return [_without_request_ids(v) for v in body]
+    return body
+
+
 def _leaks(body, markers, *request_parts):
     """The markers found in `body`, except any the request itself carried
-    (an error that echoes the id asked for leaks nothing)."""
+    (an error that echoes the id asked for leaks nothing) and the random
+    request ids errors carry."""
     asked = json.dumps(request_parts)
-    text = json.dumps(body)
+    text = json.dumps(_without_request_ids(body))
     return [m for m in markers if m in text and m not in asked]
+
+
+def test_a_request_id_that_happens_to_spell_a_marker_is_not_a_leak():
+    body = {"error": {"code": "not_found", "message": "no entity with id 'be1'",
+                      "request_id": "07e0fc8a-73b9-4fbb-bc15-9bd27fb7bd42"}}
+    assert _leaks(body, BOB_MARKERS, "/api/entity", {"id": "be1"}) == []
+    # ...while the same marker anywhere else still counts.
+    assert _leaks({"chunk": "bc1", "request_id": "x"}, BOB_MARKERS, "/api/entity") == ["bc1"]
 
 
 @pytest.mark.parametrize("path,a_params,b_params", READS)
