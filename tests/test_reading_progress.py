@@ -149,8 +149,9 @@ def _old_library(tmp_path, rows):
     for wid, (book, chapter, read, enabled) in zip(worlds, rows):
         set_position(conn, ReadingPosition(wid, book, chapter, read, enabled))
     with conn:
-        conn.execute("DELETE FROM schema_migrations WHERE version = 18")
+        conn.execute("DELETE FROM schema_migrations WHERE version >= 18")
         conn.execute("ALTER TABLE reading_positions DROP COLUMN progress")
+        conn.execute("ALTER TABLE book_jobs DROP COLUMN retries")  # v19
     conn.close()
     return path, worlds
 
