@@ -44,11 +44,16 @@ function Row({ book, now, busy, processing = false, error, focus = false, onGo, 
   } else if (job?.state === "waiting_quota" || job?.state === "idle" || job?.state === "waiting_key") {
     const at = job.resumable_at ? new Date(job.resumable_at) : null;
     const left = at ? Math.max(0, Math.ceil((at.getTime() - now) / 60000)) : 0;
-    const enabled = at ? now >= at.getTime() : job.can_continue;
+    const waiting = at !== null && now < at.getTime();
+    // A short pause can be continued now (can_continue); a daily one once its time has passed.
+    const enabled = job.can_continue || (at !== null && !waiting);
+    const until = !waiting ? null
+      : !job.auto_resume ? (!enabled && LIBRARY.continuesAfter(clock(at), LIBRARY.inHM(left)))
+      : enabled ? LIBRARY.resumesSoon(LIBRARY.inHM(left)) : LIBRARY.resumesAfter(clock(at), LIBRARY.inHM(left));
     body = (<>
       <span className="lib-state">{LIBRARY.paused}</span>
       <span className="hint">{job.stopped_reason || (job.state === "waiting_key" ? LIBRARY.pausedKey : LIBRARY.pausedDefault)}</span>
-      {at && !enabled && <span className="hint">{LIBRARY.continuesAfter(clock(at), LIBRARY.inHM(left))}</span>}
+      {until && <span className="hint">{until}</span>}
       {btn(LIBRARY.continue, !enabled)}
     </>);
   } else if (job?.state === "failed") {
