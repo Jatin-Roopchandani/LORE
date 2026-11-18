@@ -132,7 +132,12 @@ export interface LocalModelState { active: LocalModelInfo & { source: "saved" | 
 export type LocalModelTest = { ok: true; model: string; seconds: number } | { ok: false; message: string };
 export interface PlanStep { stage: string; state: "done" | "current" | "upcoming" | "skipped"; done?: number; total?: number;
   seconds_left: number | null; note?: string }
-export interface StepPlan { steps: PlanStep[]; step: number; of: number; seconds_left: number | null; unknown_left: boolean }
+// `free_tier`: on Gemini's free tier, present only when the requests still needed don't fit in what is left today:
+// where today's run out (a part number while extraction goes on), resets waited for, and the expected finish (ISO).
+export interface FreeTierPlan { requests_left: number; today_left: number; per_day: number; days: number;
+  finish_at: string; runs_out_at_part: number | null; rough: boolean }
+export interface StepPlan { steps: PlanStep[]; step: number; of: number; seconds_left: number | null; unknown_left: boolean;
+  free_tier?: FreeTierPlan }
 // `processing`: running, or queued for the worker; the book can't be deleted until it is over.
 export interface LibraryBook { id: string; title: string; author: string | null; status: string;
   world: string | null; series: string | null; series_index: number | null; job: BookJob | null; processing?: boolean;

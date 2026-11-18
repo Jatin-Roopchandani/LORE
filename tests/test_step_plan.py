@@ -180,3 +180,114 @@ def test_the_library_api_carries_the_plan(tmp_path, monkeypatch):
     steps = body["books"][0]["job"]["plan"]
     assert [s["stage"] for s in steps["steps"]] == ["extract", "load", "beats"]
     assert (steps["step"], steps["of"]) == (3, 3)
+
+
+# --- Gemini's free tier: the daily request limit ----------------------------------------
+
+def _big_book(conn, book="big", chunks=1050, chars=3000, chapters=30):
+    conn.execute("INSERT INTO books (id, title, file_path, status) VALUES (?, 'Big', 'x', 'chunked')",
+                 (book,))
+    for i in range(chunks):
+        conn.execute("INSERT INTO chunks (id, book_id, chapter_seq, scene_seq, seq, text)"
+                     " VALUES (?, ?, ?, 0, ?, ?)", (f"{book}:{i}", book, i % chapters, i, "x" * chars))
+    conn.commit()
+
+
+def _tier(today_left=600, per_day=1000, reset=None):
+    from datetime import datetime, timezone
+    return plan.FreeTier(today_left=today_left, per_day=per_day,
+                         reset=reset or datetime(2026, 11, 6, 8, 0, tzinfo=timezone.utc))
+
+
+def test_requests_left_counts_extraction_and_the_later_stages_that_ask(env):
+    _config, conn = env
+    _big_book(conn)
+    jobs.start_job(conn, "big", "extract", 1050, now=NOW)
+    jobs.advance(conn, "big", 50, now=NOW)
+    job = jobs.get_job(conn, "big")
+    need = plan.requests_left(conn, "big", job, ["extract", "load", "beats", "codex"])
+    assert need.extract_done == 50 and need.extract_left == 1000
+    # beats: one request per 60,000 characters of a chapter (35 chunks x 3,000 = 105,000 -> 2 each)
+    assert need.by_stage["beats"] == 60
+    assert need.by_stage["codex"] == 150  # at most CODEX_MAX_PER_BOOK entities
+    assert need.total == sum(need.by_stage.values())
+    assert need.rough  # codex and the load's questions are guesses until they run
+
+
+def test_a_book_that_fits_today_gets_no_free_tier_line(env):
+    _config, conn = env
+    _big_book(conn, chunks=40)
+    jobs.start_job(conn, "big", "extract", 40, now=NOW)
+    out = plan.steps(conn, "big", jobs.get_job(conn, "big"), ["extract", "load"], NOW,
+                     provider="gemini", free_tier=_tier(today_left=600))
+    assert "free_tier" not in out
+
+
+def test_a_book_past_todays_limit_says_where_it_runs_out_and_when_it_finishes(env):
+    _config, conn = env
+    _big_book(conn)
+    jobs.start_job(conn, "big", "extract", 1050, now=NOW)
+    out = plan.steps(conn, "big", jobs.get_job(conn, "big"), ["extract", "load"], NOW,
+                     provider="gemini", free_tier=_tier(today_left=600, per_day=1000))
+    tier = out["free_tier"]
+    assert tier["runs_out_at_part"] == 600 and tier["days"] == 1
+    assert tier["requests_left"] > 1050 and tier["today_left"] == 600
+    # the rest (~450 extraction requests plus the load's) after the reset, at ~4 s a request
+    from datetime import datetime
+    finish = datetime.fromisoformat(tier["finish_at"])
+    assert datetime.fromisoformat("2026-11-06T08:00:00+00:00") < finish < datetime.fromisoformat(
+        "2026-11-06T09:00:00+00:00")
+
+
+def test_several_days_when_the_rest_needs_more_than_a_day(env):
+    _config, conn = env
+    _big_book(conn, chunks=3000)
+    jobs.start_job(conn, "big", "extract", 3000, now=NOW)
+    out = plan.steps(conn, "big", jobs.get_job(conn, "big"), ["extract"], NOW,
+                     provider="gemini", free_tier=_tier(today_left=100, per_day=1000))
+    assert out["free_tier"]["days"] == 3 and out["free_tier"]["runs_out_at_part"] == 100
+
+
+def test_no_free_tier_line_without_a_free_tier(env):
+    _config, conn = env
+    _big_book(conn)
+    jobs.start_job(conn, "big", "extract", 1050, now=NOW)
+    out = plan.steps(conn, "big", jobs.get_job(conn, "big"), ["extract", "load"], NOW, provider="claude")
+    assert "free_tier" not in out
+
+
+def _library_with_big_book(tmp_path, monkeypatch, toml=""):
+    from lore.web.app import create_app
+    monkeypatch.delenv("LORE_MULTI_USER", raising=False)
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.chdir(tmp_path)
+    if toml:
+        (tmp_path / "lore.toml").write_text(toml)
+    cfg = LoreConfig.load()
+    conn = open_db(cfg.sqlite_path)
+    _big_book(conn, chunks=3000)
+    jobs.claim_job(conn, "big", now=NOW)
+    jobs.start_job(conn, "big", "extract", 3000, now=NOW, guard=False)
+    conn.close()
+
+    class S:
+        def __init__(self, name):
+            self.name = name
+    return create_app(cfg, stages_factory=lambda c: [S("extract"), S("load")])
+
+
+def test_the_library_api_carries_the_free_tier_line_on_gemini_free(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from tests.auth_fixtures import BASE_URL
+    app = _library_with_big_book(tmp_path, monkeypatch, '[lore.llm]\nprovider = "gemini"\n')
+    plan_out = TestClient(app, base_url=BASE_URL).get("/api/books").json()["books"][0]["job"]["plan"]
+    assert plan_out["free_tier"]["days"] >= 1 and plan_out["free_tier"]["requests_left"] > 3000
+
+
+def test_a_paid_gemini_plan_has_no_free_tier_line(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from tests.auth_fixtures import BASE_URL
+    app = _library_with_big_book(tmp_path, monkeypatch,
+                                 '[lore.llm]\nprovider = "gemini"\ngemini_paid = true\n')
+    plan_out = TestClient(app, base_url=BASE_URL).get("/api/books").json()["books"][0]["job"]["plan"]
+    assert "free_tier" not in plan_out

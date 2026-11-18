@@ -213,6 +213,17 @@ export const LIBRARY = {
   // A short pause (the provider could not be reached, or a per-minute limit): Continue may go now.
   resumesSoon: (left: string) => `LORE will continue automatically in ${left}, or press Continue to try now.`,
   inHM: (mins: number) => `${Math.floor(mins / 60)}h ${mins % 60}m`,
+  // Gemini's free tier, when today's requests won't cover the book: "About 2 h of work. Gemini's free daily limit runs
+  // out about 600 parts in, so it should finish tomorrow around 10:00 (your time). LORE continues automatically."
+  freeTier: (work: string | null, runsOutAt: number | null, finish: string) =>
+    `${work ? `About ${work.replace(/^~/, "")} of work. ` : ""}Gemini\u2019s free daily limit runs out `
+    + `${runsOutAt !== null ? `about ${runsOutAt.toLocaleString("en")} parts in` : "before it\u2019s done"}, `
+    + `so it should finish ${finish}. LORE continues automatically.`,
+  finishTomorrowAt: (time: string) => `tomorrow around ${time} (your time)`,
+  finishTomorrow: (part: "morning" | "afternoon" | "evening") => `tomorrow ${part}`,
+  finishToday: (time: string) => `around ${time} (your time)`,
+  finishInDays: (days: number) => `in about ${days} days`,
+  roughGuess: " (a rough guess)",
   // An empty library on a server that has the sample book: one click adds it, already processed.
   sampleLead: "Not sure where to start? Add a sample book, ready to explore and ask about.",
   addSample: "Add the sample book", addingSample: "Adding\u2026",

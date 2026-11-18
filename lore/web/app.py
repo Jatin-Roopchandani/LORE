@@ -973,6 +973,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         if not pending:
             return {}
         choice, chosen_model = processing_choice(user, cfg)
+        tier = free_tier_of(user, cfg, conn, now)
         process_names: list[str] | None = None
         process_notes: dict[str, str] = {}
         out = {}
@@ -992,8 +993,24 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             else:
                 model = chosen_model if provider == choice else None
             out[book_id] = plan.steps(conn, book_id, job, names, now,
-                                      provider=provider, model=model, notes=notes)
+                                      provider=provider, model=model, notes=notes,
+                                      free_tier=tier if provider == "gemini" else None)
         return out
+
+    def free_tier_of(user: CurrentUser, cfg: LoreConfig, conn, now: datetime):
+        """Gemini's free tier, when this user processes on it: requests left
+        today and per day for processing (less the answer reserve), and the
+        next reset. None on a paid plan or another provider (no daily limit)."""
+        from lore.inference.gemini import limits_for
+        from lore.orchestrator import plan
+        provider, _model = processing_choice(user, cfg)
+        if provider != "gemini" or gemini_paid_for(user, cfg):
+            return None
+        reserve = cfg.processing.answer_reserve
+        per_day = sum(limits_for(m).rpd for m in dict.fromkeys(cfg.extraction.gemini_models))
+        left = processing_budget_left(conn, cfg, today(now))
+        return plan.FreeTier(today_left=max(0, left - reserve), per_day=max(0, per_day - reserve),
+                             reset=jobs.next_reset_utc(now))
 
     def usage_line(user: CurrentUser, cfg: LoreConfig) -> dict:
         """What the Library footer shows: on Gemini's free tier, `free` (the
