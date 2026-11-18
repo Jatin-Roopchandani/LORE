@@ -4,7 +4,7 @@ import Router from "../Router";
 import { nav } from "../api";
 import { ServerProviderSettings } from "../components/ServerProviderSettings";
 import { ChangePassword } from "../components/settings/AccountTab";
-import { ADMIN, SELFHOST } from "../messages";
+import { ADMIN, GEMINI_GUIDE, SELFHOST } from "../messages";
 import { pageFor } from "../routing";
 import { AddPerson, Admin } from "./Admin";
 import { PasswordSignIn } from "./PasswordSignIn";
@@ -241,7 +241,10 @@ describe("the AI provider for everyone", () => {
     expect(screen.queryByLabelText(SELFHOST.addressLabel)).toBeNull();
     expect(screen.queryByRole("button", { name: SELFHOST.test })).toBeNull();
     expect(screen.getByRole("button", { name: SELFHOST.save })).toBeDisabled();
+    // The admin's Gemini key gets the same collapsed guide as everyone's.
+    expect(screen.getByText(GEMINI_GUIDE.toggle).closest("details")).not.toHaveAttribute("open");
     await userEvent.type(screen.getByLabelText(SELFHOST.keyLabel), "AIzaSECRETsecretSECRETsecret1234");
+    expect(screen.queryByText(GEMINI_GUIDE.notAGeminiKey)).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: SELFHOST.save }));
     expect(await screen.findByText(SELFHOST.keyKept("1234"))).toBeInTheDocument();
     expect(screen.getByLabelText(SELFHOST.keyLabel)).toHaveValue("");

@@ -5,6 +5,7 @@ import { shellQuote } from "../shell";
 import type { UploadError, UploadResult, World } from "../types";
 import { MAX_UPLOAD_BYTES, uploadBook, type UploadProgress } from "../upload";
 import { suggestWorld } from "../worlds";
+import { bigBookNote } from "../freeTier";
 import { Snip } from "./Snip";
 
 const NEW_WORLD = "new";
@@ -104,6 +105,8 @@ export function AddBookDialog({ open, onClose, worlds = [], multi = false, onUpl
               ? UPLOAD.waitingTitle : UPLOAD.started}</strong>
             <p className="hint">{UPLOAD.addedTo(done.title, done.world?.name ?? null)}</p>
             <p className="hint">{confirmed === "started" ? UPLOAD.next.queued : nextText(done)}</p>
+            {"big_book" in done.processing && done.processing.big_book && (
+              <p className="hint upload-big" role="note">{bigBookNote(done.processing.big_book, Date.now())}</p>)}
             {done.processing.state === "needs_confirm" && confirmed !== "started" && (
               <button className="tbtn primary" type="button" disabled={confirmed === "starting"}
                 onClick={() => confirm(done.book_id)}>{ESTIMATE.confirm}</button>)}

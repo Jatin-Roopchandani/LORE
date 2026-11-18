@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { isError, keyApi, reportKeyProblem } from "../api";
 import { PROVIDERS, SELFHOST } from "../messages";
 import type { KeySaved, ProviderId, ProviderInfo, ProvidersState } from "../types";
+import { GeminiKeyGuide, GeminiKeyHint } from "./GeminiKeyGuide";
 
 // Self-contained provider pieces (multi-user mode): no page or route of their own, so they render inside any container
 // (the onboarding screen, the Settings popup). Keys are pasted, checked by the server, and never shown back.
@@ -43,6 +44,8 @@ export function ProviderKeyForm({ provider, onSaved, onCancel }:
         <input type="password" name={`${provider}-key`} autoComplete="off" spellCheck={false} required
           placeholder={PROVIDERS.placeholder} value={key} onChange={(e) => setKey(e.target.value)} />
       </label>
+      {provider === "gemini" && <GeminiKeyHint value={key} />}
+      {provider === "gemini" && <GeminiKeyGuide />}
       {problem && <div className="notice error" role="alert">{problem}</div>}
       <div className="key-actions">
         <button className="btn-new" type="submit" disabled={busy || !key.trim()}>{busy ? PROVIDERS.checking : PROVIDERS.save}</button>

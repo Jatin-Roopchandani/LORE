@@ -44,7 +44,14 @@ export interface SearchResult { answer: string; mode: string; template: string |
   // Present only when a reading position limited the answer: "Answered from what you've read: up to chapter 9 of <book>".
   position_note?: string;
   // True when the reading position held the answer back: the books further on answer it, what has been read does not.
-  ahead?: boolean }
+  ahead?: boolean;
+  // Present only when books in the question's scope are still being processed (not searchable yet).
+  processing?: ProcessingBook[] }
+// A book in scope that can't be searched yet (lore/query/models.py ProcessingBook): its job's stage and state
+// ("not_started" with no job), the stage's counts, and when it continues on its own (ISO, UTC).
+export interface ProcessingBook { book_id: string; title: string; stage: string | null;
+  state: "running" | "waiting_quota" | "waiting_key" | "failed" | "idle" | "not_started" | string;
+  done: number | null; total: number | null; resumable_at: string | null }
 export interface PlanSection { index: number; heading: string; group?: string; group_title?: string; title?: string;
   entities: { id: string; name: string; kind: string }[] }
 export interface SectionEvent { type: "section"; t: number; index: number; kind: "section" | "close"; heading: string;
@@ -125,7 +132,12 @@ export interface LocalModelState { active: LocalModelInfo & { source: "saved" | 
 export type LocalModelTest = { ok: true; model: string; seconds: number } | { ok: false; message: string };
 export interface PlanStep { stage: string; state: "done" | "current" | "upcoming" | "skipped"; done?: number; total?: number;
   seconds_left: number | null; note?: string }
-export interface StepPlan { steps: PlanStep[]; step: number; of: number; seconds_left: number | null; unknown_left: boolean }
+// `free_tier`: on Gemini's free tier, present only when the requests still needed don't fit in what is left today:
+// where today's run out (a part number while extraction goes on), resets waited for, and the expected finish (ISO).
+export interface FreeTierPlan { requests_left: number; today_left: number; per_day: number; days: number;
+  finish_at: string; runs_out_at_part: number | null; rough: boolean }
+export interface StepPlan { steps: PlanStep[]; step: number; of: number; seconds_left: number | null; unknown_left: boolean;
+  free_tier?: FreeTierPlan }
 // `processing`: running, or queued for the worker; the book can't be deleted until it is over.
 export interface LibraryBook { id: string; title: string; author: string | null; status: string;
   world: string | null; series: string | null; series_index: number | null; job: BookJob | null; processing?: boolean;
@@ -245,10 +257,13 @@ export interface TraceRecord { request_id: string; user_id: string; created_at: 
 
 // POST /api/books/upload (lore/web/upload.py). `processing` says what happened next: running in this process (local
 // mode), queued for the worker (multi mode), waiting for the Gemini allowance to reset, or added while another book runs.
+// `big_book`: on Gemini's free tier, a book whose requests won't fit in what is left today: its size in parts, the
+// resets it waits for, when it should be ready (ISO), and whether the library has the sample book to explore meanwhile.
+export interface BigBookNote { parts: number; days: number; finish_at: string; rough: boolean; sample: boolean }
 export type UploadProcessing =
-  | { state: "processing" } | { state: "queued"; job: number } | { state: "busy" }
+  | { state: "processing"; big_book?: BigBookNote } | { state: "queued"; job: number; big_book?: BigBookNote } | { state: "busy"; big_book?: BigBookNote }
   // reason "token_cap": the user's own daily token cap (a billed provider), not Gemini's allowance.
-  | { state: "waiting"; resumable_at: string; reason?: "token_cap" }
+  | { state: "waiting"; resumable_at: string; reason?: "token_cap"; big_book?: BigBookNote }
   // A paid provider (Claude, OpenAI) and an estimate above the threshold: nothing started; Continue confirms.
   | { state: "needs_confirm"; estimate: ProcessEstimate };
 export interface UploadResult { book_id: string; title: string; world: WorldRef | null; filename: string; processing: UploadProcessing }

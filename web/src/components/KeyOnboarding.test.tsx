@@ -183,3 +183,16 @@ test("the replace variant says why and starts on the provider that refused the k
   expect(screen.getByRole("alert")).toHaveTextContent(PROVIDERS.rejected);
   await waitFor(() => expect(radio("Claude")).toBeChecked());
 });
+
+test("Gemini's key step has the collapsed guide and hints at a value that isn't a Gemini key; Claude's has neither", async () => {
+  render(<KeyOnboarding reason="missing" onDone={() => {}} />);
+  await choose("Gemini");
+  const { GEMINI_GUIDE } = await import("../messages");
+  expect(screen.getByText(GEMINI_GUIDE.toggle).closest("details")).not.toHaveAttribute("open");
+  await userEvent.type(screen.getByLabelText(PROVIDERS.fieldLabel("Gemini")), "sk-ant-xyz");
+  expect(screen.getByText(GEMINI_GUIDE.notAGeminiKey)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: ONBOARD.check })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: ONBOARD.changeProvider }));
+  await choose("Claude");
+  expect(screen.queryByText(GEMINI_GUIDE.toggle)).toBeNull();
+});

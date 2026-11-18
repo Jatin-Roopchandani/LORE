@@ -203,6 +203,24 @@ class AnswerSection:
 
 
 @dataclass(frozen=True)
+class ProcessingBook:
+    """A book in the question's scope that cannot be searched yet: processing
+    has not reached the load stage, which writes its passages' vectors and its
+    graph (lore/query/processing.py). `state` is its job's (running,
+    waiting_quota, waiting_key, failed, idle), or not_started with no job;
+    `done`/`total` the current stage's counts (None with no job);
+    `resumable_at` when it continues on its own (ISO, UTC), else None."""
+
+    book_id: str
+    title: str
+    stage: str | None
+    state: str
+    done: int | None
+    total: int | None
+    resumable_at: str | None
+
+
+@dataclass(frozen=True)
 class Answer:
     """`mode` keeps the spec's four outcomes distinct and testable.
 
@@ -269,6 +287,10 @@ class Answer:
     # has read is near the question, but the books further on are. `text` then
     # says so (agent.AHEAD) instead of the plain refusal.
     ahead: bool = False
+    # Books in the question's scope that cannot be searched yet (still being
+    # processed), when there are any; () otherwise. An answer that came back
+    # empty then says so in `text` (agent.PROCESSING_CHECK).
+    processing: tuple[ProcessingBook, ...] = ()
     # A follow-up's question rewritten to stand alone (decompose.FOLLOWUPS),
     # when it differs from the question as typed. None otherwise.
     standalone: str | None = None

@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
-import { DEEP, POSITION, UI } from "../messages";
+import { DEEP, POSITION, PROCESSING, UI } from "../messages";
 import { DEPTHS } from "../depth";
-import type { Depth } from "../types";
+import { askCount } from "../bookStatus";
+import type { Depth, LibraryBook } from "../types";
 
 // `placeholder`: what the empty box says ("Ask about your books…" by default; "Ask a follow-up…" inside a chat).
 // `spoilerGuard`: the reading progress holds something back, so the box offers "Show spoilers for this question": the
@@ -10,10 +11,12 @@ import type { Depth } from "../types";
 // stopped question, which the box holds again (unless something new has been typed) so it can be asked again.
 // `finishing`: the answer has all arrived and is only still being drawn, so there is nothing to stop: the button is
 // "Show answer" instead, and it (or Esc) draws the answer whole at once.
+// `pending`: books in the current world (or any, under all worlds) still being processed: a note under the box says
+// questions about them will work once they're ready. It never stops a question.
 export function AskBox({ onAsk, busy, depth = "auto", onDepth, placeholder = UI.askPlaceholder, spoilerGuard = false, onStop,
-  finishing = false }:
+  finishing = false, pending = [] }:
   { onAsk: (q: string, spoilers?: boolean) => void; busy: boolean; depth?: Depth; onDepth?: (d: Depth) => void; placeholder?: string;
-    spoilerGuard?: boolean; onStop?: () => string | null; finishing?: boolean }) {
+    spoilerGuard?: boolean; onStop?: () => string | null; finishing?: boolean; pending?: LibraryBook[] }) {
   const [q, setQ] = useState("");
   const [spoilers, setSpoilers] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -44,6 +47,7 @@ export function AskBox({ onAsk, busy, depth = "auto", onDepth, placeholder = UI.
               <span className="stop-icon" aria-hidden="true" />{UI.stop}
             </button>)
         : <button key="ask" type="submit" disabled={busy || !q.trim()}>{busy ? "Answering…" : UI.ask}</button>}
+      {pending.length > 0 && <PendingNote books={pending} />}
       {(onDepth || spoilerGuard) && (
         <div className="ask-opts">
           {onDepth && (<>
@@ -69,5 +73,27 @@ export function AskBox({ onAsk, busy, depth = "auto", onDepth, placeholder = UI.
         </div>
       )}
     </form>
+  );
+}
+
+const started = (b: LibraryBook) => b.job !== null || b.processing === true;
+
+function PendingNote({ books }: { books: LibraryBook[] }) {
+  if (books.length === 1) {
+    const b = books[0];
+    return (
+      <p className="ask-pending" role="note" aria-label={PROCESSING.noteLabel}>
+        <em>{b.title}</em> {started(b) ? PROCESSING.askOne(askCount(b)) : PROCESSING.askOneNotStarted}
+      </p>
+    );
+  }
+  return (
+    <p className="ask-pending" role="note" aria-label={PROCESSING.noteLabel}>
+      {PROCESSING.askMany(books.length)}{" "}
+      {books.map((b, i) => {
+        const count = askCount(b);
+        return <span key={b.id}>{i > 0 && ", "}<em>{b.title}</em>{count && ` (${count})`}</span>;
+      })}.
+    </p>
   );
 }

@@ -200,3 +200,22 @@ test("on a paid provider, a costly book shows the estimate and starts only when 
   expect(fetchMock).toHaveBeenCalledWith("/api/books/b123/continue", expect.objectContaining({ method: "POST" }));
   expect(await screen.findByText(UPLOAD.next.queued)).toBeInTheDocument();
 });
+
+test("a big book on Gemini's free tier gets a heads-up with its size and when it should be ready; a small one none", async () => {
+  const finish = new Date(Date.now() + 3 * 86400000).toISOString();
+  dialog();
+  await choose();
+  await upload();
+  await act(async () => FakeXhr.last!.reply(202, ok({ processing: { state: "queued", job: 4,
+    big_book: { parts: 1057, days: 3, finish_at: finish, rough: true, sample: true } } })));
+  expect(screen.getByRole("note")).toHaveTextContent(
+    /^This is a big book \(about 1,050 parts\)\. On Gemini’s free tier it should be ready in about 3 days; LORE keeps going on its own, and you can explore the sample book meanwhile\.$/);
+});
+
+test("a book that fits today's requests gets no heads-up", async () => {
+  dialog();
+  await choose();
+  await upload();
+  await act(async () => FakeXhr.last!.reply(202, ok({ processing: { state: "queued", job: 4 } })));
+  expect(screen.queryByText(/This is a big book/)).toBeNull();
+});

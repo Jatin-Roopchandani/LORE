@@ -148,6 +148,76 @@ def test_a_failed_answer_is_traced_with_its_error(alice, central, monkeypatch):
     assert row.chat_id is None
 
 
+def _unprocessed_world(root):
+    """Alice's library: a processed world, and a world whose one book has not
+    reached the load stage (nothing searchable). Returns that world's id."""
+    import shutil
+
+    from lore.db.sqlite import open_db
+    from lore.tenancy import config_for
+    from lore.worlds import create_world
+    from tests.worlds_fixtures import build_library
+    cfg = config_for(root, "alice", seed=True)
+    built = build_library(root.data_dir.parent / "built")
+    shutil.rmtree(cfg.data_dir, ignore_errors=True)
+    shutil.copytree(built.data_dir, cfg.data_dir)
+    conn = open_db(cfg.sqlite_path)
+    try:
+        wid = create_world(conn, "Big Book")
+        conn.execute("INSERT INTO books (id, title, file_path, status, world_id)"
+                     " VALUES ('big', 'Big Book', 'x.epub', 'chunked', ?)", (wid,))
+        conn.commit()
+    finally:
+        conn.close()
+    return wid
+
+
+def test_an_answer_that_ends_before_any_step_or_model_call_is_traced(alice, central, root,
+                                                                      monkeypatch):
+    # The real search, in a world with nothing searchable yet: it ends at its
+    # first check, with no event and no model call, as the 13 unprocessed-book
+    # questions did. Its trace is stored with its message, on SQLite as on
+    # Postgres (tests/test_postgres_traces.py).
+    from lore.query.agent import QueryModels
+
+    async def embed(texts):
+        return [[0.1] * 768 for _ in texts]
+
+    async def never(prompt, schema):
+        raise AssertionError("no model is asked")
+
+    async def aclose():
+        return None
+    monkeypatch.setattr("lore.mcp.tools._build_models", lambda config: QueryModels(
+        embed, never, never, lambda: "w", aclose, lambda: "s"))
+    wid = _unprocessed_world(root)
+    events, _ = ask(alice, {"question": "Who is Fantine?", "world": wid})
+    rid = events[0][1]["request_id"]
+    answer = dict(events)["answer"]
+    assert answer["result"]["mode"] == "empty" and answer["result"]["requests"] == 0
+    row = stored(central, rid)
+    assert row is not None and row.message_id == answer["message_id"]
+    assert row.steps_json == [] and row.calls_json == [] and row.model_usage_json == {}
+    assert row.timings_json["first_event_ms"] is None
+    assert row.answer_json["processing"][0]["book_id"] == "big"
+
+
+def test_deleting_the_chat_leaves_its_message_with_a_request_id_and_no_trace(alice, central,
+                                                                             monkeypatch):
+    # The one way a stored question loses its trace and keeps its message:
+    # the reader deletes the chat (a soft delete; the trace goes at once).
+    from lore.central.models import Chat, Message
+    monkeypatch.setattr("lore.web.app.tools.lore_search", fake_search())
+    events, _ = ask(alice, {"question": "q"})
+    rid, chat_id = events[0][1]["request_id"], dict(events)["answer"]["chat_id"]
+    assert stored(central, rid) is not None
+    assert alice.delete(f"/api/chats/{chat_id}").status_code == 200
+    with central() as s:
+        message = s.scalars(sa.select(Message).where(Message.request_id == rid)).one()
+        assert s.get(Chat, message.chat_id).deleted_at is not None
+    assert stored(central, rid) is None
+
+
 def test_an_exception_is_traced(alice, central, monkeypatch):
     async def boom(config, query, on_event=None, **_):
         raise RuntimeError("kaboom")

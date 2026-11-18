@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { isError, selfhostApi } from "../api";
 import { SELFHOST } from "../messages";
 import type { LocalModelTest, ServerProvider, ServerProviderId } from "../types";
+import { GeminiKeyGuide, GeminiKeyHint } from "./GeminiKeyGuide";
 
 const CHOICES: ServerProviderId[] = ["openai_compatible", "gemini", "anthropic", "openai"];
 export const DOCKER_HOST_URL = "http://host.docker.internal:8081/v1";
@@ -91,6 +92,8 @@ export function ServerProviderSettings() {
           <input type="password" name="server-key" autoComplete="off" spellCheck={false} value={key}
             onChange={(e) => setKey(e.target.value)} />
         </label>
+        {provider === "gemini" && <GeminiKeyHint value={key} />}
+        {provider === "gemini" && <GeminiKeyGuide />}
         {sameAsSaved && saved?.has_key && saved.last4 && <p className="hint">{SELFHOST.keyKept(saved.last4)}</p>}
         {tested && (tested.ok
           ? <div className="notice" role="status">{SELFHOST.testOk(tested.model, tested.seconds)}</div>

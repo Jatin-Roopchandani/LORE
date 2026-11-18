@@ -3,7 +3,7 @@ import single from "../fixtures/single-part.json";
 import { budget } from "../fixtures/synthetic";
 import { askReducer, initialState } from "../askReducer";
 import { ChatPane } from "./ChatPane";
-import { POSITION, UI } from "../messages";
+import { POSITION, PROCESSING, UI } from "../messages";
 import type { AskEvent } from "../types";
 
 const askWith = (events: AskEvent[], extra = {}) => ({
@@ -124,4 +124,44 @@ test("an empty answer the reading position held back says the reader hasn't reac
   rerender(<ChatPane ask={askWith(empty(false))} showInternals onHoverChunks={() => {}} />);
   expect(screen.getByText(UI.refusal)).toBeInTheDocument();
   expect(screen.queryByText(POSITION.ahead)).toBeNull();
+});
+
+test("an empty answer while a book is still processing names it, its progress and when it continues", () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-18T05:00:00Z"));
+  const processing = [{ book_id: "big", title: "Les Misérables", stage: "extract", state: "waiting_quota", done: 969,
+    total: 1051, resumable_at: "2026-11-18T08:00:00+00:00" }];
+  const empty = (answer: string) => (single as AskEvent[]).map((e) => e.type === "answer"
+    ? { ...e, result: { ...e.result, answer, mode: "empty", claims: [], prose: [], answer_style: "claims", processing } } : e) as AskEvent[];
+  const time = new Date("2026-11-18T08:00:00Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  const { rerender } = render(<ChatPane ask={askWith(empty("Les Misérables is still being processed …"))} showInternals onHoverChunks={() => {}} />);
+  const note = screen.getByRole("note", { name: PROCESSING.noteLabel });
+  expect(note).toHaveTextContent(
+    `Les Misérables is still being processed (969 of 1,051 parts read), so it can’t be searched yet. `
+    + `LORE will continue automatically after ${time} (your time) — in 3h 0m. Ask again when it’s ready.`);
+  expect(screen.queryByText(UI.refusal)).toBeNull();
+  expect(note).not.toHaveTextContent(PROCESSING.readyEmpty);
+  // A world that also has ready books: they were searched and had nothing.
+  rerender(<ChatPane ask={askWith(empty(`${PROCESSING.readyEmptyServer} Les Misérables …`))} showInternals onHoverChunks={() => {}} />);
+  expect(screen.getByRole("note", { name: PROCESSING.noteLabel })).toHaveTextContent(PROCESSING.readyEmpty);
+  vi.useRealTimers();
+});
+
+test("an answer from the ready books says the unprocessed one was left out", () => {
+  const processing = [{ book_id: "big", title: "Les Misérables", stage: "extract", state: "running", done: 12,
+    total: 1051, resumable_at: null }];
+  const events = (single as AskEvent[]).map((e) => e.type === "answer" ? { ...e, result: { ...e.result, processing } } : e) as AskEvent[];
+  render(<ChatPane ask={askWith(events)} showInternals onHoverChunks={() => {}} />);
+  expect(screen.getByRole("list", { name: PROCESSING.noteLabel })).toHaveTextContent(`Les Misérables ${PROCESSING.leftOut}`);
+});
+
+test("the ask box warns of a book still being processed", () => {
+  const book = { id: "big", title: "Les Misérables", author: null, status: "chunked", world: "Les Misérables", series: null,
+    series_index: null, processing: true,
+    job: { stage: "extract", state: "waiting_quota" as const, done: 969, total: 1051, stopped_reason: null,
+      resumable_at: null, can_continue: false, continue_reason: "", provider: null, plan: null } };
+  render(<ChatPane ask={askWith([])} pending={[book as never]} showInternals onHoverChunks={() => {}} />);
+  expect(screen.getByRole("note", { name: PROCESSING.noteLabel })).toHaveTextContent(
+    "Les Misérables is still being processed, so questions about it will work once it’s ready (969/1,051).");
+  expect(screen.getByRole("button", { name: UI.ask })).toBeInTheDocument();
 });
