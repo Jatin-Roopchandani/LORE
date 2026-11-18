@@ -398,6 +398,10 @@ class HostedMcp:
             has read and adds a `position_note`. Pass
             `ignore_reading_position=true` only when the reader has asked to
             see everything.
+
+            A book still being processed cannot be searched yet: the result
+            then lists it in `processing` (title, progress, when it
+            continues), and an answer that found nothing says so.
             """
             return await self._call("lore_search", self._lore_search, query=query,
                                     world=world, depth=depth,

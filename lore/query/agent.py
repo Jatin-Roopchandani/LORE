@@ -21,6 +21,7 @@ from lore.query import deep as deep_module
 from lore.query import recap as recap_module
 from lore.query import scene as scene_module
 from lore.query import visible as visible_module
+from lore.query import processing as processing_module
 from lore.query import interpret as interpret_module
 from lore.query import judge as judge_module
 from lore.query import decompose as decompose_module
@@ -47,7 +48,7 @@ from lore.query.subgraph import (
     run_template,
 )
 from lore.query.synthesize import (
-    CHECK_SKIPPED_NOTE, synthesize, synthesize_parts, validated_verdicts,
+    CHECK_SKIPPED_NOTE, REFUSAL, synthesize, synthesize_parts, validated_verdicts,
 )
 from lore.query.templates import MAX_EVIDENCE_CHARS
 from lore.query.viewpoint import load_viewpoint
@@ -731,14 +732,34 @@ async def answer_question(
     if rewrites:
         answer = replace(answer, standalone=rewrites[-1])
     note = visible_module.position_note([s.position for s in scopes if s.position])
-    if not note:
-        return answer
-    answer = replace(answer, position_note=note)
-    if (AHEAD_CHECK and answer.mode == "empty" and not answer.claims
-            and await _ahead(lance, answer.standalone or question, models,
-                             scopes, resolve_scopes(conn, world, spoilers=True))):
-        answer = replace(answer, text=AHEAD, ahead=True)
+    if note:
+        answer = replace(answer, position_note=note)
+        if (AHEAD_CHECK and answer.mode == "empty" and not answer.claims
+                and await _ahead(lance, answer.standalone or question, models,
+                                 scopes, resolve_scopes(conn, world, spoilers=True))):
+            answer = replace(answer, text=AHEAD, ahead=True)
+    if PROCESSING_CHECK:
+        answer = _processing(conn, lance, answer, world)
     return answer
+
+
+# Books in the question's scope that are still being processed cannot be
+# searched (their vectors and graph come at the load stage). The answer lists
+# them (`processing`), and one that came back empty says so instead of the
+# plain refusal. A data lookup; no model call. With every book processed the
+# answer is unchanged.
+PROCESSING_CHECK = True
+
+
+def _processing(conn: sqlite3.Connection, lance, answer: Answer, world) -> Answer:
+    books, others_ready = processing_module.unready(
+        conn, lance, resolve_scopes(conn, world, spoilers=True))
+    if not books:
+        return answer
+    if not answer.ahead and not answer.claims and answer.text == REFUSAL:
+        return replace(answer, processing=books,
+                       text=processing_module.explain(books, others_ready=others_ready))
+    return replace(answer, processing=books)
 
 
 # An empty answer under a reading position says whether the books further on

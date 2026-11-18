@@ -44,7 +44,14 @@ export interface SearchResult { answer: string; mode: string; template: string |
   // Present only when a reading position limited the answer: "Answered from what you've read: up to chapter 9 of <book>".
   position_note?: string;
   // True when the reading position held the answer back: the books further on answer it, what has been read does not.
-  ahead?: boolean }
+  ahead?: boolean;
+  // Present only when books in the question's scope are still being processed (not searchable yet).
+  processing?: ProcessingBook[] }
+// A book in scope that can't be searched yet (lore/query/models.py ProcessingBook): its job's stage and state
+// ("not_started" with no job), the stage's counts, and when it continues on its own (ISO, UTC).
+export interface ProcessingBook { book_id: string; title: string; stage: string | null;
+  state: "running" | "waiting_quota" | "waiting_key" | "failed" | "idle" | "not_started" | string;
+  done: number | null; total: number | null; resumable_at: string | null }
 export interface PlanSection { index: number; heading: string; group?: string; group_title?: string; title?: string;
   entities: { id: string; name: string; kind: string }[] }
 export interface SectionEvent { type: "section"; t: number; index: number; kind: "section" | "close"; heading: string;

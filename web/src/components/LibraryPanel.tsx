@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, isError } from "../api";
+import { publishBookStatus } from "../bookStatus";
 import { LIBRARY, PROVIDERS, WORLDS } from "../messages";
 import type { LibraryBook, LibraryStatus, StepPlan, World } from "../types";
 
@@ -241,7 +242,7 @@ export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook
     const [r, w] = await Promise.all([api.books(), api.worlds()]);
     if (!alive.current) return;
     if (!isError(w) && Array.isArray(w)) setWorlds(w);
-    if (isError(r)) setFailed(true); else { setFailed(false); setData(r); }
+    if (isError(r)) setFailed(true); else { setFailed(false); setData(r); publishBookStatus(r); }
   }, []);
   useEffect(() => {
     if (!open) return;

@@ -66,6 +66,41 @@ const listOf = (items: string[]) =>
   items.length <= 2 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 
 // The reading progress: the header control, its list of books, the line under it and the note an answer carries.
+// Books still being processed: not searchable until processing reaches the load stage. The ask box warns before a
+// question (from the Library's book status), and an answer that found nothing says which book, how far it got and
+// when it continues, from the answer's `processing` list (lore/query/processing.py).
+export const PROCESSING = {
+  // The server's empty answer in a scope that also has ready books starts with `readyEmptyServer` (READY_EMPTY in
+  // lore/query/processing.py, character for character); the chat then leads with `readyEmpty`.
+  readyEmptyServer: "The books that are ready don't contain enough to answer that.",
+  readyEmpty: "The books that are ready don\u2019t contain enough to answer that.",
+  // "(969 of 1,051 parts read)": the reading stage; any other stage is named with its count.
+  partsRead: (done: number, total: number) => `${done.toLocaleString("en")} of ${total.toLocaleString("en")} parts read`,
+  stageCount: (label: string, done: number, total: number) =>
+    `${label}, ${done.toLocaleString("en")} of ${total.toLocaleString("en")}`,
+  stillBeing: (progress: string | null) =>
+    `is still being processed${progress ? ` (${progress})` : ""}, so it can\u2019t be searched yet.`,
+  notStarted: "hasn\u2019t been processed yet, so it can\u2019t be searched.",
+  running: "It is processing now.",
+  // The same wording as the Library's paused row (LIBRARY.resumesAfter).
+  resumesAfter: (time: string, left: string) => `LORE will continue automatically after ${time} (your time) \u2014 in ${left}.`,
+  resumingSoon: "LORE will continue it shortly.",
+  pausedKey: "It is paused until your AI provider\u2019s key is fixed in Settings.",
+  failed: "Its processing stopped with an error: press Retry in the Library.",
+  paused: "It is paused: press Continue in the Library.",
+  askAgain: (n: number) => (n === 1 ? "Ask again when it\u2019s ready." : "Ask again when they\u2019re ready."),
+  // Under an answer the ready books gave: the unready ones were not searched.
+  leftOut: "is still being processed, so this answer leaves it out.",
+  noteLabel: "Books still being processed",
+  // The ask box, before a question: "Les Misérables is still being processed, so questions about it will work once
+  // it's ready (969/1,051)."
+  askOne: (progress: string | null) =>
+    `is still being processed, so questions about it will work once it\u2019s ready${progress ? ` (${progress})` : ""}.`,
+  askOneNotStarted: "hasn\u2019t been processed yet, so questions about it will work once it is.",
+  askMany: (n: number) => `${n} books are still being processed, so questions about them will work once they\u2019re ready:`,
+  askCount: (done: number, total: number) => `${done.toLocaleString("en")}/${total.toLocaleString("en")}`,
+};
+
 export const POSITION = {
   label: "Reading progress",
   heading: (world: string) => `Your progress \u00b7 ${world}`,

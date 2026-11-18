@@ -1173,6 +1173,8 @@ async def lore_search(config: LoreConfig, query: str,
                 del out["position_note"]  # present only when a position limited it
             if not out.get("ahead"):
                 del out["ahead"]  # present only when the position held the answer back
+            if not out.get("processing"):
+                del out["processing"]  # present only when a book in scope is still processing
             if out.get("coverage") is None:
                 del out["coverage"]  # present only on an answer with prose (write.answer_coverage)
             if answer.standalone:  # present only when a follow-up was rewritten

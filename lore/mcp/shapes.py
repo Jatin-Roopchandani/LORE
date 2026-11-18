@@ -10,6 +10,7 @@ message.
 """
 from __future__ import annotations
 
+import dataclasses
 import math
 from typing import Any
 
@@ -123,6 +124,17 @@ class SectionOut(BaseModel):
     title: str = ""
 
 
+class ProcessingOut(BaseModel):
+    """A book in scope that cannot be searched yet (lore.query.models.ProcessingBook)."""
+    book_id: str
+    title: str
+    stage: str | None
+    state: str
+    done: int | None
+    total: int | None
+    resumable_at: str | None
+
+
 class SearchResult(BaseModel):
     answer: str
     mode: str
@@ -155,6 +167,10 @@ class SearchResult(BaseModel):
     # True when the answer is further on than the reading position: `answer`
     # then says so instead of the plain refusal.
     ahead: bool = False
+    # Books in the question's scope still being processed, so not searchable
+    # yet; lore_search leaves it out when there are none. An empty answer's
+    # `answer` then names them and says to ask again when they are ready.
+    processing: list[ProcessingOut] = []
     # The share of the answer's kept claims its shown prose cites
     # (write.answer_coverage); None for an answer shown as its claim list.
     coverage: float | None = None
@@ -314,6 +330,7 @@ def to_search_result(answer: Answer, titles: dict[str, str]) -> SearchResult:
         unwritten_sections=answer.unwritten,
         position_note=answer.position_note,
         ahead=answer.ahead,
+        processing=[ProcessingOut(**dataclasses.asdict(b)) for b in answer.processing],
         coverage=answer_coverage(answer),
     )
 
