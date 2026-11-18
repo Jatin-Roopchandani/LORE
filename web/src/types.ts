@@ -257,10 +257,13 @@ export interface TraceRecord { request_id: string; user_id: string; created_at: 
 
 // POST /api/books/upload (lore/web/upload.py). `processing` says what happened next: running in this process (local
 // mode), queued for the worker (multi mode), waiting for the Gemini allowance to reset, or added while another book runs.
+// `big_book`: on Gemini's free tier, a book whose requests won't fit in what is left today: its size in parts, the
+// resets it waits for, when it should be ready (ISO), and whether the library has the sample book to explore meanwhile.
+export interface BigBookNote { parts: number; days: number; finish_at: string; rough: boolean; sample: boolean }
 export type UploadProcessing =
-  | { state: "processing" } | { state: "queued"; job: number } | { state: "busy" }
+  | { state: "processing"; big_book?: BigBookNote } | { state: "queued"; job: number; big_book?: BigBookNote } | { state: "busy"; big_book?: BigBookNote }
   // reason "token_cap": the user's own daily token cap (a billed provider), not Gemini's allowance.
-  | { state: "waiting"; resumable_at: string; reason?: "token_cap" }
+  | { state: "waiting"; resumable_at: string; reason?: "token_cap"; big_book?: BigBookNote }
   // A paid provider (Claude, OpenAI) and an estimate above the threshold: nothing started; Continue confirms.
   | { state: "needs_confirm"; estimate: ProcessEstimate };
 export interface UploadResult { book_id: string; title: string; world: WorldRef | null; filename: string; processing: UploadProcessing }

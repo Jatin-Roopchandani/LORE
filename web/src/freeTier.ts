@@ -1,5 +1,5 @@
-import { LIBRARY } from "./messages";
-import type { FreeTierPlan } from "./types";
+import { LIBRARY, UPLOAD } from "./messages";
+import type { BigBookNote, FreeTierPlan } from "./types";
 
 const DAY_MS = 86400000;
 const dayOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -7,7 +7,7 @@ const dayOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).
 /** "about 600": a round number, never false precision. */
 export function roughParts(n: number): number {
   if (n < 100) return n;
-  const step = n < 1000 ? 50 : 100;
+  const step = n < 5000 ? 50 : 100;
   return Math.max(step, Math.round(n / step) * step);
 }
 
@@ -32,4 +32,10 @@ export function freeTierLine(tier: FreeTierPlan, secondsLeft: number | null, now
   const work = secondsLeft != null ? LIBRARY.duration(secondsLeft) : null;
   const runsOut = tier.runs_out_at_part !== null ? roughParts(tier.runs_out_at_part) : null;
   return LIBRARY.freeTier(work, runsOut, finishPhrase(tier.finish_at, now, tier.rough));
+}
+
+/** The upload's heads-up for a book today's free requests won't cover, or null for one that fits. */
+export function bigBookNote(note: BigBookNote | undefined, now: number): string | null {
+  if (!note) return null;
+  return UPLOAD.bigBook(roughParts(note.parts), finishPhrase(note.finish_at, now, note.rough), note.sample);
 }

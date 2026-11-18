@@ -619,3 +619,49 @@ def test_the_worker_then_processes_the_uploaded_book_in_its_users_library(multi,
     assert ran == [(str(config_for(base, "alice").data_dir), book)]
     (shown,) = alice.get("/api/books").json()["books"]
     assert shown["job"]["state"] == "done"
+
+
+# --- the big-book note on Gemini's free tier ---------------------------------------------
+
+def _free_tier_app(tmp_path, monkeypatch, rpd):
+    from types import SimpleNamespace
+    cfg = LoreConfig(data_dir=tmp_path / "lib")
+    limit = lambda model: SimpleNamespace(rpd=rpd(cfg))  # noqa: E731
+    monkeypatch.setattr("lore.inference.gemini.limits_for", limit)
+    monkeypatch.setattr("lore.orchestrator.pipeline.limits_for", limit)
+    app = create_app(cfg, stages_factory=lambda c: [FakeStage([], "extract")], clock=lambda: NOW,
+                     upload_settings=UploadSettings(checks=Limits(max_pages=50)))
+    return TestClient(app, base_url="http://127.0.0.1:8766"), cfg
+
+
+def test_a_book_that_will_not_fit_todays_free_requests_says_how_big_and_how_long(tmp_path, monkeypatch):
+    # One request left today past the answer reserve.
+    from lore.orchestrator.gemini_budget import today
+    client, cfg = _free_tier_app(tmp_path, monkeypatch, lambda c: 1000)
+    assert cfg.llm.provider == "gemini" and not cfg.llm.gemini_paid
+    models = list(dict.fromkeys(cfg.extraction.gemini_models))
+    conn = open_db(cfg.sqlite_path)
+    try:
+        for model in models[:-1]:  # every model spent but the last ...
+            conn.execute("INSERT INTO gemini_ledger (day, model, count) VALUES (?, ?, 1000)",
+                         (today(NOW), model))
+        conn.execute("INSERT INTO gemini_ledger (day, model, count) VALUES (?, ?, ?)",
+                     (today(NOW), models[-1], 1000 - cfg.processing.answer_reserve - 1))
+        conn.commit()
+    finally:
+        conn.close()
+    body = send(client, epub_bytes(tmp_path)).json()
+    note = body["processing"]["big_book"]
+    conn = open_db(cfg.sqlite_path)
+    try:
+        parts = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    finally:
+        conn.close()
+    assert note["parts"] == parts and note["days"] >= 1 and note["sample"] is False
+    assert datetime.fromisoformat(note["finish_at"]) > NOW
+
+
+def test_a_book_that_fits_today_gets_no_note(tmp_path, monkeypatch):
+    client, _cfg = _free_tier_app(tmp_path, monkeypatch, lambda c: 1000)
+    body = send(client, epub_bytes(tmp_path)).json()
+    assert body["processing"] == {"state": "processing"}

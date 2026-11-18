@@ -331,6 +331,10 @@ export const UPLOAD = {
     waiting: (time: string) => `Today's allowance is used up, so the book waits. Press Continue in the Library after ${time} (your time).`,
     waitingCap: (time: string) => `Your daily token cap is reached, so the book waits. Press Continue in the Library after ${time} (your time).`,
   },
+  // A book today's free Gemini requests won't cover: its size, and when it should be ready.
+  bigBook: (parts: number, when: string, sample: boolean) =>
+    `This is a big book (about ${parts.toLocaleString("en")} parts). On Gemini\u2019s free tier it should be ready ${when};`
+    + ` LORE keeps going on its own${sample ? ", and you can explore the sample book meanwhile" : ""}.`,
   addedTo: (title: string, world: string | null) => world ? `\u201c${title}\u201d is in the world \u201c${world}\u201d.` : `\u201c${title}\u201d is in your library.`,
   openLibrary: "Open it in the Library",
   startFailed: "Processing couldn't start. Press Continue on the book in the Library.",
