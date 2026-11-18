@@ -312,6 +312,28 @@ export const UI = {
 };
 
 // Adding a book in the browser (AddBookDialog, web/src/upload.ts).
+// How to get a Gemini key: a collapsed guide wherever a Gemini key is asked for (onboarding, Settings, self-host admin).
+export const GEMINI_GUIDE = {
+  toggle: "How do I get a free Gemini key?",
+  url: "https://aistudio.google.com/apikey",
+  stepsLabel: "Getting a Gemini key",
+  open: "Open Google AI Studio\u2019s API keys page",
+  openRest: " and sign in with any Google account.",
+  newTab: "(opens in a new tab)",
+  create: "Click Create API key. If it asks, choose Create API key in new project.",
+  copy: "Copy the key (it starts with AIza).",
+  paste: "Paste it here and save.",
+  reassure: "The free tier needs no credit card. Your key is stored encrypted, and LORE only ever shows its last four"
+    + " characters. The free tier allows about 1,000 requests a day, enough to process roughly a novel a day; LORE pauses"
+    + " and continues on its own.",
+  // A pasted value that doesn't look like one; a hint only, never a block.
+  notAGeminiKey: "That doesn\u2019t look like a Gemini key: they start with \u201cAIza\u201d. Check you copied the whole key.",
+};
+
+/** The hint for a pasted value that doesn't look like a Gemini key, or null. */
+export const geminiKeyHint = (value: string): string | null =>
+  value.trim() !== "" && !value.trim().startsWith("AIza") ? GEMINI_GUIDE.notAGeminiKey : null;
+
 export const UPLOAD = {
   title: "Add a book",
   drop: "Drop an EPUB or PDF here", dropOr: "or click to choose a file",

@@ -6,6 +6,7 @@ import { isSelfhost } from "../routing";
 import { AlertIcon, CheckIcon, Spinner } from "../pages/authIcons";
 import { Logo } from "../pages/Logo";
 import type { KeySaved, ProviderId, ProvidersState } from "../types";
+import { GeminiKeyGuide, GeminiKeyHint } from "./GeminiKeyGuide";
 import { checkKey, ClaudePrices, GeminiPaidSwitch, ModelPicker, PROVIDER_IDS } from "./ProviderSettings";
 
 // Shown inside /app, in place of the reading app, while the signed-in user has no working key: on first sign-in
@@ -227,6 +228,8 @@ function KeyStep({ provider, onBack, onDone, heading }: { provider: ProviderId; 
               </button>
             </div>
           </div>
+          {provider === "gemini" && <GeminiKeyHint value={key} />}
+          {provider === "gemini" && <GeminiKeyGuide />}
           {problem && <Alert id="ob-key-problem">{problem}</Alert>}
           <button className="ob-primary" type="submit" disabled={busy || !key.trim()} aria-busy={busy || undefined}>
             {busy ? <><Spinner />{PROVIDERS.checking}</> : ONBOARD.check}
