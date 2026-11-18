@@ -77,6 +77,10 @@ def build_server(config: LoreConfig) -> MCPServer:
         position") limits the answer to what the reader has read and adds a
         `position_note` saying so. Pass `ignore_reading_position=true` only
         when the reader has asked to see everything.
+
+        A book still being processed cannot be searched yet: the result then
+        lists it in `processing` (title, progress, when it continues), and an
+        answer that found nothing says so.
         """
         return await tools.lore_search(config, query, world=world, depth=depth,
                                        **_bypass(ignore_reading_position))

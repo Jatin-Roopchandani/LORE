@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, authApi, isError, keyApi, onKeyProblem } from "./api";
 import { ChatPane } from "./components/ChatPane";
 import { KeyOnboarding } from "./components/KeyOnboarding";
@@ -12,6 +12,7 @@ import { applyMotion, loadInternals, loadMotion, saveInternals } from "./setting
 import { applyTheme, loadTheme } from "./theme";
 import type { Book, Me, SubgraphData, World } from "./types";
 import { useAsk } from "./useAsk";
+import { unprocessedBooks, useBookStatus } from "./bookStatus";
 import { loadWorld, resolveWorld, saveWorld } from "./worlds";
 
 // Multi-user mode: whether the signed-in user has a working Gemini key. `checking` while it is asked for (nothing is
@@ -118,6 +119,10 @@ function ReadingApp({ me }: { me: Me | null }) {
     setDrawerOpen(false);
     setTimeout(() => document.getElementById("ask-input")?.focus(), 0);
   }, [ask.clear]);
+  // Books in this world (any world, under all worlds) still being processed: the ask box says so before a question.
+  // Read when an answer ends or the library changes; the open Library's polls keep it current.
+  const bookStatus = useBookStatus(`${refreshKey}:${libraryVersion}`);
+  const pending = useMemo(() => unprocessedBooks(bookStatus, world, worlds), [bookStatus, world, worlds]);
   const graphed = books.filter((b) => b.status === "graphed");
   const noBooks = graphed.length > 0 && graphed.every((b) => hiddenBooks.has(b.id));
   return (
@@ -138,7 +143,7 @@ function ReadingApp({ me }: { me: Me | null }) {
           <HistorySidebar items={ask.history} current={ask.current} world={world} worlds={worlds ?? []} onReplay={replay} onDelete={ask.remove}
             onClear={ask.clearHistory} onNew={newQuestion} onClose={closeDrawer} />
         )}
-        <ChatPane ask={ask} limited={limited} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview}
+        <ChatPane ask={ask} limited={limited} pending={pending} showInternals={showInternals} resetsAt={resetsAt} onHoverChunks={setHoverChunks} overview={overview}
           onSection={(index) => setReading((r) => (r.run === ask.run && r.index === index ? r : { run: ask.run, index }))} />
         <GraphPane key={ask.run} state={ask.state} hiddenBooks={hiddenBooks} hoverChunks={hoverChunks} noBooks={noBooks} books={books} overview={overview} world={world} positionVersion={positionVersion} onAsk={ask.ask}
           section={reading.run === ask.run ? reading.index : null} />

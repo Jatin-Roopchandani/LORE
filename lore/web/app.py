@@ -973,6 +973,7 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
         if not pending:
             return {}
         choice, chosen_model = processing_choice(user, cfg)
+        tier = free_tier_of(user, cfg, conn, now)
         process_names: list[str] | None = None
         process_notes: dict[str, str] = {}
         out = {}
@@ -992,8 +993,24 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
             else:
                 model = chosen_model if provider == choice else None
             out[book_id] = plan.steps(conn, book_id, job, names, now,
-                                      provider=provider, model=model, notes=notes)
+                                      provider=provider, model=model, notes=notes,
+                                      free_tier=tier if provider == "gemini" else None)
         return out
+
+    def free_tier_of(user: CurrentUser, cfg: LoreConfig, conn, now: datetime):
+        """Gemini's free tier, when this user processes on it: requests left
+        today and per day for processing (less the answer reserve), and the
+        next reset. None on a paid plan or another provider (no daily limit)."""
+        from lore.inference.gemini import limits_for
+        from lore.orchestrator import plan
+        provider, _model = processing_choice(user, cfg)
+        if provider != "gemini" or gemini_paid_for(user, cfg):
+            return None
+        reserve = cfg.processing.answer_reserve
+        per_day = sum(limits_for(m).rpd for m in dict.fromkeys(cfg.extraction.gemini_models))
+        left = processing_budget_left(conn, cfg, today(now))
+        return plan.FreeTier(today_left=max(0, left - reserve), per_day=max(0, per_day - reserve),
+                             reset=jobs.next_reset_utc(now))
 
     def usage_line(user: CurrentUser, cfg: LoreConfig) -> dict:
         """What the Library footer shows: on Gemini's free tier, `free` (the
@@ -1089,10 +1106,48 @@ def create_app(config: LoreConfig, *, host: str = "127.0.0.1", port: int = 8766,
                 if multi:  # starts on its own after the reset (the worker)
                     enqueue(user, book_id, KIND_PROCESS, not_before=job.resumable_at)
                 return {"state": "waiting",
-                        "resumable_at": job.resumable_at.isoformat()}
+                        "resumable_at": job.resumable_at.isoformat(),
+                        **big_book_note(user, cfg, conn, book_id, now)}
+            note = big_book_note(user, cfg, conn, book_id, now)
         finally:
             conn.close()
-        return begin_processing(user, cfg, book_id)
+        return {**begin_processing(user, cfg, book_id), **note}
+
+    def big_book_note(user: CurrentUser, cfg: LoreConfig, conn, book_id: str,
+                      now: datetime) -> dict:
+        """On Gemini's free tier, a book whose requests will not fit in what
+        is left today: {"big_book": {parts, days, finish_at, rough, sample}}
+        for the upload's note (the same estimate as the Library's step list).
+        {} for a book that fits, or off the free tier."""
+        from lore.orchestrator import plan
+        tier = free_tier_of(user, cfg, conn, now)
+        if tier is None:
+            return {}
+        try:
+            # The pipeline's request-making steps as the config switches them
+            # (the stage objects are the worker's to build, not the web's).
+            names = ["extract", "load",
+                     *(["disambiguate"] if cfg.disambiguation.enabled else []),
+                     *(["beats"] if cfg.beats.enabled else []),
+                     *(["codex"] if cfg.codex.enabled else [])]
+            notes: dict[str, str] = {}
+            fresh = jobs.BookJob(book_id, "extract", jobs.IDLE, 0, 0, None, None, now)
+            out = plan.steps(conn, book_id, fresh, names, now, provider="gemini",
+                             model=(cfg.extraction.gemini_models or [None])[0],
+                             notes=notes, free_tier=tier)
+        except Exception:  # noqa: BLE001 -- a hint never fails an upload
+            logging.getLogger(__name__).exception("estimating a big book failed")
+            return {}
+        late = (out or {}).get("free_tier")
+        if late is None:
+            return {}
+        parts = conn.execute("SELECT COUNT(*) FROM chunks WHERE book_id = ?",
+                             (book_id,)).fetchone()[0]
+        has_sample = not user.is_local and bool(
+            sample.book_ids(base.data_dir) & {r[0] for r in conn.execute("SELECT id FROM books")})
+        return {"big_book": {"parts": int(parts), "days": late["days"],
+                             "finish_at": late["finish_at"], "rough": late["rough"],
+                             "sample": has_sample}}
 
     def begin_processing(user: CurrentUser, cfg: LoreConfig, book_id: str) -> dict:
         if multi:

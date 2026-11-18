@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, isError } from "../api";
+import { publishBookStatus } from "../bookStatus";
+import { freeTierLine } from "../freeTier";
 import { LIBRARY, PROVIDERS, WORLDS } from "../messages";
 import type { LibraryBook, LibraryStatus, StepPlan, World } from "../types";
 
@@ -94,6 +96,9 @@ function Row({ book, now, busy, processing = false, error, focus = false, onGo, 
         </div>
       )}
       {job?.state === "running" && job.plan && <Steps plan={job.plan} />}
+      {job && job.state !== "done" && job.plan?.free_tier && (
+        <p className="hint lib-free-tier">{freeTierLine(job.plan.free_tier, job.plan.seconds_left, now)}</p>
+      )}
       {children}
       {error && <p className="hint" role="alert">{error}</p>}
     </li>
@@ -241,7 +246,7 @@ export function LibraryPanel({ open, onClose, showInternals, onChange, focusBook
     const [r, w] = await Promise.all([api.books(), api.worlds()]);
     if (!alive.current) return;
     if (!isError(w) && Array.isArray(w)) setWorlds(w);
-    if (isError(r)) setFailed(true); else { setFailed(false); setData(r); }
+    if (isError(r)) setFailed(true); else { setFailed(false); setData(r); publishBookStatus(r); }
   }, []);
   useEffect(() => {
     if (!open) return;

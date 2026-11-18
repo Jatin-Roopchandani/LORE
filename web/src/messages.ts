@@ -66,6 +66,41 @@ const listOf = (items: string[]) =>
   items.length <= 2 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 
 // The reading progress: the header control, its list of books, the line under it and the note an answer carries.
+// Books still being processed: not searchable until processing reaches the load stage. The ask box warns before a
+// question (from the Library's book status), and an answer that found nothing says which book, how far it got and
+// when it continues, from the answer's `processing` list (lore/query/processing.py).
+export const PROCESSING = {
+  // The server's empty answer in a scope that also has ready books starts with `readyEmptyServer` (READY_EMPTY in
+  // lore/query/processing.py, character for character); the chat then leads with `readyEmpty`.
+  readyEmptyServer: "The books that are ready don't contain enough to answer that.",
+  readyEmpty: "The books that are ready don\u2019t contain enough to answer that.",
+  // "(969 of 1,051 parts read)": the reading stage; any other stage is named with its count.
+  partsRead: (done: number, total: number) => `${done.toLocaleString("en")} of ${total.toLocaleString("en")} parts read`,
+  stageCount: (label: string, done: number, total: number) =>
+    `${label}, ${done.toLocaleString("en")} of ${total.toLocaleString("en")}`,
+  stillBeing: (progress: string | null) =>
+    `is still being processed${progress ? ` (${progress})` : ""}, so it can\u2019t be searched yet.`,
+  notStarted: "hasn\u2019t been processed yet, so it can\u2019t be searched.",
+  running: "It is processing now.",
+  // The same wording as the Library's paused row (LIBRARY.resumesAfter).
+  resumesAfter: (time: string, left: string) => `LORE will continue automatically after ${time} (your time) \u2014 in ${left}.`,
+  resumingSoon: "LORE will continue it shortly.",
+  pausedKey: "It is paused until your AI provider\u2019s key is fixed in Settings.",
+  failed: "Its processing stopped with an error: press Retry in the Library.",
+  paused: "It is paused: press Continue in the Library.",
+  askAgain: (n: number) => (n === 1 ? "Ask again when it\u2019s ready." : "Ask again when they\u2019re ready."),
+  // Under an answer the ready books gave: the unready ones were not searched.
+  leftOut: "is still being processed, so this answer leaves it out.",
+  noteLabel: "Books still being processed",
+  // The ask box, before a question: "Les Misérables is still being processed, so questions about it will work once
+  // it's ready (969/1,051)."
+  askOne: (progress: string | null) =>
+    `is still being processed, so questions about it will work once it\u2019s ready${progress ? ` (${progress})` : ""}.`,
+  askOneNotStarted: "hasn\u2019t been processed yet, so questions about it will work once it is.",
+  askMany: (n: number) => `${n} books are still being processed, so questions about them will work once they\u2019re ready:`,
+  askCount: (done: number, total: number) => `${done.toLocaleString("en")}/${total.toLocaleString("en")}`,
+};
+
 export const POSITION = {
   label: "Reading progress",
   heading: (world: string) => `Your progress \u00b7 ${world}`,
@@ -178,6 +213,17 @@ export const LIBRARY = {
   // A short pause (the provider could not be reached, or a per-minute limit): Continue may go now.
   resumesSoon: (left: string) => `LORE will continue automatically in ${left}, or press Continue to try now.`,
   inHM: (mins: number) => `${Math.floor(mins / 60)}h ${mins % 60}m`,
+  // Gemini's free tier, when today's requests won't cover the book: "About 2 h of work. Gemini's free daily limit runs
+  // out about 600 parts in, so it should finish tomorrow around 10:00 (your time). LORE continues automatically."
+  freeTier: (work: string | null, runsOutAt: number | null, finish: string) =>
+    `${work ? `About ${work.replace(/^~/, "")} of work. ` : ""}Gemini\u2019s free daily limit runs out `
+    + `${runsOutAt !== null ? `about ${runsOutAt.toLocaleString("en")} parts in` : "before it\u2019s done"}, `
+    + `so it should finish ${finish}. LORE continues automatically.`,
+  finishTomorrowAt: (time: string) => `tomorrow around ${time} (your time)`,
+  finishTomorrow: (part: "morning" | "afternoon" | "evening") => `tomorrow ${part}`,
+  finishToday: (time: string) => `around ${time} (your time)`,
+  finishInDays: (days: number) => `in about ${days} days`,
+  roughGuess: " (a rough guess)",
   // An empty library on a server that has the sample book: one click adds it, already processed.
   sampleLead: "Not sure where to start? Add a sample book, ready to explore and ask about.",
   addSample: "Add the sample book", addingSample: "Adding\u2026",
@@ -266,6 +312,28 @@ export const UI = {
 };
 
 // Adding a book in the browser (AddBookDialog, web/src/upload.ts).
+// How to get a Gemini key: a collapsed guide wherever a Gemini key is asked for (onboarding, Settings, self-host admin).
+export const GEMINI_GUIDE = {
+  toggle: "How do I get a free Gemini key?",
+  url: "https://aistudio.google.com/apikey",
+  stepsLabel: "Getting a Gemini key",
+  open: "Open Google AI Studio\u2019s API keys page",
+  openRest: " and sign in with any Google account.",
+  newTab: "(opens in a new tab)",
+  create: "Click Create API key. If it asks, choose Create API key in new project.",
+  copy: "Copy the key (it starts with AIza).",
+  paste: "Paste it here and save.",
+  reassure: "The free tier needs no credit card. Your key is stored encrypted, and LORE only ever shows its last four"
+    + " characters. The free tier allows about 1,000 requests a day, enough to process roughly a novel a day; LORE pauses"
+    + " and continues on its own.",
+  // A pasted value that doesn't look like one; a hint only, never a block.
+  notAGeminiKey: "That doesn\u2019t look like a Gemini key: they start with \u201cAIza\u201d. Check you copied the whole key.",
+};
+
+/** The hint for a pasted value that doesn't look like a Gemini key, or null. */
+export const geminiKeyHint = (value: string): string | null =>
+  value.trim() !== "" && !value.trim().startsWith("AIza") ? GEMINI_GUIDE.notAGeminiKey : null;
+
 export const UPLOAD = {
   title: "Add a book",
   drop: "Drop an EPUB or PDF here", dropOr: "or click to choose a file",
@@ -285,6 +353,10 @@ export const UPLOAD = {
     waiting: (time: string) => `Today's allowance is used up, so the book waits. Press Continue in the Library after ${time} (your time).`,
     waitingCap: (time: string) => `Your daily token cap is reached, so the book waits. Press Continue in the Library after ${time} (your time).`,
   },
+  // A book today's free Gemini requests won't cover: its size, and when it should be ready.
+  bigBook: (parts: number, when: string, sample: boolean) =>
+    `This is a big book (about ${parts.toLocaleString("en")} parts). On Gemini\u2019s free tier it should be ready ${when};`
+    + ` LORE keeps going on its own${sample ? ", and you can explore the sample book meanwhile" : ""}.`,
   addedTo: (title: string, world: string | null) => world ? `\u201c${title}\u201d is in the world \u201c${world}\u201d.` : `\u201c${title}\u201d is in your library.`,
   openLibrary: "Open it in the Library",
   startFailed: "Processing couldn't start. Press Continue on the book in the Library.",

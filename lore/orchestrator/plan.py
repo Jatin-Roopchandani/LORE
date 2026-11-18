@@ -20,12 +20,22 @@ sections only exist after the load), and each stage's work grows with it.
   unknown (None: the page says "a few minutes", never invented precision).
 
 Seconds are returned raw; the page rounds them to friendly values.
+
+GEMINI'S FREE TIER. Working time is not the whole story there: the free tier
+allows so many requests a day, so a big book stops when they run out and goes
+on after the reset (midnight Pacific). With `free_tier` given, the list also
+estimates the requests the book still needs (`requests_left`) and, when they
+do not fit in what is left today, carries `free_tier`: where today's run out
+and when the book should finish. Paid plans and other providers have no daily
+limit and pass none.
 """
 from __future__ import annotations
 
+import math
 import sqlite3
 from collections.abc import Callable, Iterable
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from lore.orchestrator import jobs
 
@@ -128,9 +138,108 @@ def _current_left(conn, book_id: str, job: jobs.BookJob, now: datetime) -> float
     return max(0.0, elapsed / worked * (job.total_items - job.done_items))
 
 
+# --- requests, for Gemini's free daily limit ------------------------------------------
+
+# Requests per chunk for steps whose own count is unknown until they run. Rough
+# guesses (marked `rough`): the load asks its adjudication questions in
+# batches, a few per hundred chunks; disambiguation asks in batches of 25.
+ROUGH_REQUESTS_PER_CHUNK: dict[str, float] = {"load": 0.02, "disambiguate": 0.02}
+# Codex: one request per entity profile, at most CODEX_MAX_PER_BOOK; about one
+# entity worth a profile per five chunks until the cap (rough).
+CODEX_CHUNKS_PER_ENTITY = 5
+# Seconds per request when nothing was measured (as DEFAULT_SECONDS_PER_CHUNK).
+DEFAULT_SECONDS_PER_REQUEST = 4.0
+
+
+@dataclass(frozen=True)
+class FreeTier:
+    """What Gemini's free tier leaves for processing: requests left today and
+    per full day (both less the answer reserve), and the next reset (UTC)."""
+
+    today_left: int
+    per_day: int
+    reset: datetime
+
+
+@dataclass(frozen=True)
+class RequestsLeft:
+    by_stage: dict[str, int]
+    extract_done: int
+    extract_left: int
+    rough: bool
+
+    @property
+    def total(self) -> int:
+        return sum(self.by_stage.values())
+
+
+def _beat_requests(conn: sqlite3.Connection, book_id: str) -> int:
+    """The beats step's own count: one request per part of a chapter of at most
+    MAX_PART_CHARS characters."""
+    from lore.beats.build import MAX_PART_CHARS
+    return sum(max(1, math.ceil(int(chars or 0) / MAX_PART_CHARS)) for (chars,) in conn.execute(
+        "SELECT SUM(LENGTH(text)) FROM chunks WHERE book_id = ? GROUP BY chapter_seq", (book_id,)))
+
+
+def requests_left(conn: sqlite3.Connection, book_id: str, job: jobs.BookJob,
+                  names: list[str], notes: dict[str, str] | None = None) -> RequestsLeft:
+    """The model requests the book's remaining steps should make. The current
+    step's own counts when it has them (one request per item), else per-chunk
+    figures; `rough` when a guess makes up a fair part of the total."""
+    from lore.codex.build import CODEX_MAX_PER_BOOK
+    notes = notes or {}
+    chunks = _chunks(conn, book_id)
+    current = job.stage if job.stage in names else jobs_order(names, job.stage)
+    upcoming = names[names.index(current):] if current in names else []
+    by_stage: dict[str, int] = {}
+    guessed = 0
+    extract_done, extract_left = 0, 0
+    for name in upcoming:
+        if name in notes:
+            continue  # skipped: asks nothing
+        counted = name == job.stage and job.total_items > 1
+        if name == "extract":
+            extract_done = job.done_items if counted else 0
+            extract_left = (job.total_items - job.done_items) if counted else chunks
+            by_stage[name] = extract_left
+        elif counted and name in ("beats", "codex", "disambiguate"):
+            by_stage[name] = max(0, job.total_items - job.done_items)
+        elif name == "beats":
+            by_stage[name] = _beat_requests(conn, book_id)
+        elif name == "codex":
+            by_stage[name] = min(CODEX_MAX_PER_BOOK, math.ceil(chunks / CODEX_CHUNKS_PER_ENTITY))
+            guessed += by_stage[name]
+        elif name in ROUGH_REQUESTS_PER_CHUNK:
+            by_stage[name] = math.ceil(chunks * ROUGH_REQUESTS_PER_CHUNK[name])
+            guessed += by_stage[name]
+    total = sum(by_stage.values())
+    return RequestsLeft(by_stage, extract_done, extract_left,
+                        rough=total > 0 and guessed / total > 0.1)
+
+
+def free_tier_finish(need: RequestsLeft, seconds: float | None, tier: FreeTier) -> dict | None:
+    """When `need` does not fit in what is left today: where today's requests
+    run out (a part number, while extraction is still going), how many resets
+    it waits for, and when it should finish (ISO, UTC). None when it fits."""
+    total = need.total
+    today = max(0, tier.today_left)
+    if total <= today or tier.per_day <= 0:
+        return None
+    per_request = (seconds / total) if seconds and total else DEFAULT_SECONDS_PER_REQUEST
+    rest = total - today
+    days = math.ceil(rest / tier.per_day)
+    last_day = rest - (days - 1) * tier.per_day
+    finish = tier.reset + timedelta(days=days - 1, seconds=last_day * per_request)
+    runs_out = need.extract_done + today if today < need.extract_left else None
+    return {"requests_left": total, "today_left": today, "per_day": tier.per_day,
+            "days": days, "finish_at": finish.isoformat(), "runs_out_at_part": runs_out,
+            "rough": need.rough}
+
+
 def steps(conn: sqlite3.Connection, book_id: str, job: jobs.BookJob | None,
           names: list[str], now: datetime, *, provider: str | None = None,
-          model: str | None = None, notes: dict[str, str] | None = None) -> dict | None:
+          model: str | None = None, notes: dict[str, str] | None = None,
+          free_tier: FreeTier | None = None) -> dict | None:
     """The step list for a book's job: each step's state (done, current,
     upcoming, or skipped: an upcoming step with a note from `notes`, e.g.
     "skipped: no model configured for story beats"), the current one's
@@ -176,9 +285,15 @@ def steps(conn: sqlite3.Connection, book_id: str, job: jobs.BookJob | None,
         else:
             known += left
     index = next((i for i, s in enumerate(out) if s["state"] == "current"), len(out) - 1)
-    return {"steps": out, "step": index + 1, "of": len(out),
-            "seconds_left": round(known) if known or not unknown else None,
-            "unknown_left": unknown}
+    result = {"steps": out, "step": index + 1, "of": len(out),
+              "seconds_left": round(known) if known or not unknown else None,
+              "unknown_left": unknown}
+    if free_tier is not None:
+        late = free_tier_finish(requests_left(conn, book_id, job, names, notes),
+                                known or None, free_tier)
+        if late is not None:
+            result["free_tier"] = late
+    return result
 
 
 def jobs_order(names: list[str], stage: str) -> str | None:

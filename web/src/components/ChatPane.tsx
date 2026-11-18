@@ -2,7 +2,8 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { useAsk } from "../useAsk";
 import { foldEvents, type AskState } from "../askReducer";
 import type { ThreadEntry } from "../history";
-import { CHAT, errorMessage, POSITION, SETTINGS, UI } from "../messages";
+import { CHAT, errorMessage, POSITION, PROCESSING, SETTINGS, UI } from "../messages";
+import { processingLine } from "../bookStatus";
 import { hrefFor } from "../settings";
 import { Claims } from "./Claims";
 import { Prose } from "./Prose";
@@ -14,7 +15,7 @@ import { ShortAnswer } from "./ShortAnswer";
 import { StepList } from "./StepList";
 import { Snip } from "./Snip";
 import { exampleQuestions } from "../examples";
-import type { AskEvent, SubgraphData } from "../types";
+import type { AskEvent, LibraryBook, ProcessingBook, SearchResult, SubgraphData } from "../types";
 
 const NOT_FOUND = "not found: ";
 // The backend joins notes with "; " and names each missing part as "not found: <part>".
@@ -28,10 +29,11 @@ type AskApi = ReturnType<typeof useAsk>;
 type Hover = (chunks: string[]) => void;
 
 // `onSection`: the latest answer's section being read (a deep answer), for the graph. `limited`: the reading progress
-// holds something back, so the ask box offers "Show spoilers for this question".
-export function ChatPane({ ask, limited = false, showInternals, resetsAt, onHoverChunks, overview, onSection }:
+// holds something back, so the ask box offers "Show spoilers for this question". `pending`: books in scope still being
+// processed, for the ask box's note.
+export function ChatPane({ ask, limited = false, showInternals, resetsAt, onHoverChunks, overview, onSection, pending }:
   { ask: Pick<AskApi, "state" | "run" | "ask" | "retry" | "busy" | "depth" | "setDepth"> & Partial<Pick<AskApi, "thread" | "clear" | "stopAnswer" | "finishing">>;
-    limited?: boolean;
+    limited?: boolean; pending?: LibraryBook[];
     showInternals: boolean; resetsAt?: string; onHoverChunks: Hover; overview?: SubgraphData | null; onSection?: (index: number | null) => void }) {
   const { state } = ask;
   const thread = ask.thread ?? [];
@@ -72,9 +74,22 @@ export function ChatPane({ ask, limited = false, showInternals, resetsAt, onHove
         )}
       </div>
       <AskBox onAsk={(q, spoilers) => (spoilers ? ask.ask(q, undefined, true) : ask.ask(q))} busy={ask.busy} depth={ask.depth} onDepth={ask.setDepth}
-        spoilerGuard={limited} onStop={ask.stopAnswer} finishing={ask.finishing}
+        spoilerGuard={limited} onStop={ask.stopAnswer} finishing={ask.finishing} pending={pending}
         placeholder={inChat ? CHAT.followupPlaceholder : UI.askPlaceholder} />
     </section>
+  );
+}
+
+// An answer that found nothing while books in scope were still being processed: which ones, how far each got, when it
+// continues, and to ask again (in place of the refusal). Times are the reader's own.
+function ProcessingNote({ result, books }: { result: SearchResult; books: ProcessingBook[] }) {
+  const now = Date.now();
+  return (
+    <p className="note processing-note" role="note" aria-label={PROCESSING.noteLabel}>
+      {result.answer.startsWith(PROCESSING.readyEmptyServer) && <>{PROCESSING.readyEmpty} </>}
+      {books.map((b) => <span key={b.book_id}><em>{b.title}</em> {processingLine(b, now)} </span>)}
+      {PROCESSING.askAgain(books.length)}
+    </p>
   );
 }
 
@@ -157,7 +172,9 @@ function AnswerBody({ state, run, showInternals, resetsAt, onHoverChunks, onRetr
       {state.status === "stopped" && (
         <p className="note stopped-note" role="status"><strong className="stopped-label">{UI.stopped}</strong> {UI.stoppedNote}</p>
       )}
-      {r && r.claims.length === 0 && <p className="note">{r.ahead ? POSITION.ahead : UI.refusal}</p>}
+      {r && r.claims.length === 0 && (!r.ahead && r.processing?.length
+        ? <ProcessingNote result={r} books={r.processing} />
+        : <p className="note">{r.ahead ? POSITION.ahead : UI.refusal}</p>)}
       <ShortAnswer state={state} onHoverChunks={onHoverChunks} />
       {r?.position_note && <p className="position-note" role="note" aria-label={POSITION.noteLabel}>{r.position_note}</p>}
       {sectioned && <Sections key={run} state={state} onHoverChunks={onHoverChunks} onSection={onSection} />}
@@ -176,6 +193,11 @@ function AnswerBody({ state, run, showInternals, resetsAt, onHoverChunks, onRetr
         </>
       )}
       {notFound.length > 0 && <p className="note">{UI.partial(notFound)}</p>}
+      {r && r.claims.length > 0 && (r.processing?.length ?? 0) > 0 && (
+        <ul className="note processing-note" aria-label={PROCESSING.noteLabel}>
+          {r.processing!.map((b) => <li key={b.book_id}><em>{b.title}</em> {PROCESSING.leftOut}</li>)}
+        </ul>
+      )}
       {state.status === "done" && state.requestId && <ReportAnswer key={state.requestId} requestId={state.requestId} />}
     </>
   );

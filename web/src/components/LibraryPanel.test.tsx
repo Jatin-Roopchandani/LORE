@@ -547,3 +547,15 @@ test("a refused delete shows the reason on the row and keeps the book", async ()
   expect(screen.getByRole("button", { name: LIBRARY.deleteBookLabel("Book a") })).toBeEnabled();
   expect(changed).not.toHaveBeenCalled();
 });
+
+test("a book past today's free requests says when it should finish; one that fits keeps the plain step line", async () => {
+  const plan = (free_tier?: object) => ({ steps: [{ stage: "extract", state: "current", done: 50, total: 1050, seconds_left: 7200 }],
+    step: 1, of: 2, seconds_left: 7200, unknown_left: false, ...(free_tier ? { free_tier } : {}) });
+  status = { gemini, books: [book("a", job({ total: 1050, done: 50, plan: plan({ requests_left: 1100, today_left: 600, per_day: 950,
+    days: 1, finish_at: "2026-10-29T17:00:00Z", runs_out_at_part: 650, rough: false }) }), "chunked"),
+    book("b", job({ plan: plan() }), "chunked")] };
+  await open();
+  expect(screen.getByText(/^About 2 h of work\. Gemini’s free daily limit runs out about 650 parts in, so it should finish tomorrow around \d\d:00 \(your time\)\. LORE continues automatically\.$/)).toBeInTheDocument();
+  expect(screen.getAllByText(/free daily limit/)).toHaveLength(1);
+  vi.clearAllTimers();
+});
