@@ -73,3 +73,57 @@ class OllamaProvider:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+class ModelPullError(RuntimeError):
+    """The embedding model could not be made available on that Ollama."""
+
+
+def _has_model(tags: dict, name: str) -> bool:
+    pulled = {m.get("name", "") for m in tags.get("models", [])}
+    return name in pulled or f"{name}:latest" in pulled
+
+
+def ensure_model(host: str, name: str, *, wait_s: float = 300.0, client: httpx.Client | None = None,
+                 sleep=None, now=None) -> bool:
+    """Make sure the Ollama at `host` has model `name`, pulling it through
+    Ollama's own HTTP API when it is missing. Waits up to `wait_s` for the
+    server to answer (it may still be starting). Returns True when it pulled,
+    False when the model was already there; raises ModelPullError otherwise.
+
+    The self-hosted compose file runs this (`lore pull-models`) on LORE's own
+    image, so an Ollama you already run is enough: no Ollama image is needed
+    just to fetch the model."""
+    import time
+    sleep = sleep or time.sleep
+    now = now or time.monotonic
+    own = client is None
+    client = client or httpx.Client(base_url=host.rstrip("/"), timeout=30.0)
+    try:
+        deadline = now() + wait_s
+        while True:
+            try:
+                tags = client.get("/api/tags").json()
+                break
+            except (httpx.HTTPError, ValueError) as exc:
+                if now() >= deadline:
+                    raise ModelPullError(
+                        f"no Ollama answered at {host} within {int(wait_s)}s ({exc}). "
+                        "Is it running, and is LORE_OLLAMA_HOST right?") from exc
+                sleep(3.0)
+        if _has_model(tags, name):
+            return False
+        try:
+            r = client.post("/api/pull", json={"model": name, "stream": False},
+                            timeout=httpx.Timeout(30.0, read=1800.0))
+        except httpx.HTTPError as exc:
+            raise ModelPullError(f"pulling {name} on {host} failed: {exc}") from exc
+        if r.status_code >= 400:
+            raise ModelPullError(f"pulling {name} on {host} failed: HTTP {r.status_code} "
+                                 f"{r.text[:200]}")
+        if not _has_model(client.get("/api/tags").json(), name):
+            raise ModelPullError(f"{host} reported success but does not list {name}")
+        return True
+    finally:
+        if own:
+            client.close()
