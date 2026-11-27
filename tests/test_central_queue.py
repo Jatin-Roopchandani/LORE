@@ -235,3 +235,19 @@ def test_the_database_allows_one_live_job_per_book_counting_paused(session):
     session.add(Job(user_id="alice", book_id="b1", kind="process", state="queued"))
     with pytest.raises(IntegrityError):
         session.commit()
+
+
+def test_users_take_turns_so_one_long_queue_cannot_block_a_newcomer(session):
+    # Alice queued three books first; Bob's one book should not wait behind
+    # all of them: after each claim, the user who ran least recently goes next.
+    for book in ("b1", "b2", "b3"):
+        queue.enqueue(session, "alice", book, "process")
+    queue.enqueue(session, "bob", "b4", "process")
+    first = queue.claim_next(session, "w1", now=T0)
+    assert first.book_id == "b1"
+    queue.finish(session, first.id, "w1", outcome="done", now=T0 + timedelta(hours=1))
+    second = queue.claim_next(session, "w1", now=T0 + timedelta(hours=1))
+    assert second.book_id == "b4"  # Bob has never run: his turn
+    queue.finish(session, second.id, "w1", outcome="done", now=T0 + timedelta(hours=2))
+    third = queue.claim_next(session, "w1", now=T0 + timedelta(hours=2))
+    assert third.book_id == "b2"  # back to Alice, her books still in order
