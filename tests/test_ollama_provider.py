@@ -167,3 +167,26 @@ async def test_the_request_timeout_defaults_to_120s_and_is_configurable() -> Non
     assert patient._client.timeout.read == 600.0
     await default.aclose()
     await patient.aclose()
+
+
+@pytest.mark.asyncio
+async def test_embed_uses_an_openai_compatible_server_when_set(monkeypatch) -> None:
+    monkeypatch.setenv("LORE_EMBED_API_KEY", "sk-test")
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"data": [
+            {"index": 1, "embedding": [2.0]}, {"index": 0, "embedding": [1.0]}]})
+
+    provider = OllamaProvider(OllamaConfig(embed_base_url="http://gw/v1"))
+    provider._embed_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://gw/v1",
+        headers=provider._embed_client.headers)
+    assert await provider.embed(["a", "b"], model="m") == [[1.0], [2.0]]
+    request = seen[0]
+    assert request.url == "http://gw/v1/embeddings"
+    assert request.headers["authorization"] == "Bearer sk-test"
+    assert json.loads(request.content) == {"model": "m", "input": ["a", "b"],
+                                           "dimensions": 768}
+    await provider.aclose()

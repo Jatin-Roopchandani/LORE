@@ -279,6 +279,9 @@ All optional; see [`.env.example`](../.env.example) for the full list.
 | `LORE_COOKIE_SECURE` | from `LORE_BASE_URL` | Force Secure cookies on (`1`) or off (`0`). |
 | `LORE_TRUST_PROXY` | `0` | `1` behind your own reverse proxy. |
 | `LORE_OLLAMA_HOST` | `http://ollama:11434` | Your own Ollama instead of the bundled one. |
+| `LORE_EMBED_BASE_URL` | (none) | Embed through an OpenAI-compatible server's `/v1` (vLLM, LiteLLM, a gateway) instead of Ollama. Its model must return 768 dimensions when asked. Set it before adding books: vectors from two models do not compare. |
+| `LORE_EMBED_MODEL` | `nomic-embed-text` | The embedding model's name on that server. |
+| `LORE_EMBED_API_KEY` | (none) | That server's key, if it needs one. |
 | `LORE_DATABASE_URL` | SQLite in the volume | `postgresql+psycopg://user:pass@host:5432/lore` for Postgres. |
 | `LORE_VERSION` | `latest` | The image tag: a version, `latest` or `edge`. |
 | `LORE_SETUP_CODE` | a random code, in the log | Your own setup code, for an unattended install. |
