@@ -8,9 +8,10 @@
 # CLOUDFLARE_TUNNEL_TOKEN, LORE_IMAGE_TAG, COMPOSE_PROFILES, ...). The lore
 # services also read the whole file as their environment (LORE_ENV_FILE).
 #
-# Memory (limits; 6 GB RAM in all): web 1.5 GB, worker 2 GB, db 512 MB,
-# ollama 1 GB, cloudflared 128 MB, about 5.1 GB, the rest for the OS and the
-# page cache. Swap absorbs a burst. Raise the limits after a resize (see
+# Memory (limits; 6 GB RAM in all): web 1.5 GB, two workers 1.5 GB each
+# (about 1 GB each in use), db 512 MB, ollama 1 GB, cloudflared 128 MB; the
+# limits add up past the RAM on purpose, as no two peak together, and the
+# rest is the OS and the page cache. Swap absorbs a burst. Raise the limits after a resize (see
 # docs/deploy/server.md).
 
 name: lore
@@ -123,12 +124,16 @@ services:
   worker:
     <<: *lore
     command: ["lore", "worker"]
+    # Two books at once (two readers; the queue gives each user one at a
+    # time, lore.central.queue). Most of a book's time is waiting on the
+    # reader's own AI provider, so the second costs memory, not CPU.
+    scale: 2
     healthcheck: {disable: true}
     depends_on:
       db: {condition: service_healthy}
       ollama: {condition: service_started}
       migrate: {condition: service_completed_successfully}
-    mem_limit: 2g
+    mem_limit: 1536m
     # SIGTERM hands the running job back to the queue; give it time.
     stop_grace_period: 60s
 
