@@ -278,3 +278,22 @@ def test_the_stage_asks_synonyms_through_its_own_client_when_given_one() -> None
     assert stage._client_factory(None) is names and stage._synonym_client_factory(None) is synonyms
     shared = DisambiguateStage(client_factory=lambda c: names)
     assert shared._synonym_client_factory is shared._client_factory
+
+
+def test_unreadable_name_answers_never_stop_the_stage() -> None:
+    # A real failure (2026-11-21): the model answered "1. none", the batch
+    # raised AnswerMismatchError and the whole book failed.
+    import asyncio
+    from lore.orchestrator.stages import _ask_names_softly
+    from tests.test_disambiguation import _question
+
+    class Mumbler:
+        calls = 0
+
+        async def generate(self, prompt: str) -> str:
+            Mumbler.calls += 1
+            return "1. none"
+
+    batch = [_question("Kell", "Kell Maresh", "Kell Seyn")]
+    assert asyncio.run(_ask_names_softly(Mumbler(), batch)) == {}
+    assert Mumbler.calls == 2
