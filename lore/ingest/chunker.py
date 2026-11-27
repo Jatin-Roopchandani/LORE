@@ -87,11 +87,43 @@ def _sentences(scene_text: str) -> list[str]:
     """
     sentences: list[str] = []
     for paragraph in _PARAGRAPH_BREAK.split(scene_text):
-        flat = re.sub(r"\s+", " ", paragraph).strip()
-        if not flat:
-            continue
-        sentences.extend(s.strip() for s in _SEGMENTER.segment(flat) if s.strip())
+        for piece in _pieces(paragraph):
+            flat = re.sub(r"\s+", " ", piece).strip()
+            if not flat:
+                continue
+            sentences.extend(s.strip() for s in _SEGMENTER.segment(flat) if s.strip())
     return sentences
+
+
+# pysbd's time grows much faster than its input. Some PDFs come out with no
+# blank lines at all, so a whole chapter (20-60k characters) is one
+# "paragraph", and a long novel ran past the upload sandbox's CPU limit.
+_PIECE_CHARS = 2500
+# A line that closes a sentence: ., ! or ?, then optional closing quotes or
+# brackets. "Mr." also ends that way, so a line ending in a short
+# abbreviation is never a cut point.
+_CLOSES = re.compile(r"[.!?][\"'”’)\]]*\s*$")
+_ABBREVIATION = re.compile(r"\b(?:Mr|Mrs|Ms|Dr|St|Mme|Mlle|M|Sr|Jr|Lt|Col|Gen|Capt|No|vs|etc)\.\s*$",
+                           re.IGNORECASE)
+
+
+def _pieces(paragraph: str) -> list[str]:
+    """`paragraph`, or for a very long one, pieces of about _PIECE_CHARS cut
+    only at line ends that close a sentence (so pysbd finds the same
+    sentences, fast). Ordinary paragraphs are returned whole."""
+    if len(paragraph) <= 2 * _PIECE_CHARS:
+        return [paragraph]
+    pieces, current, size = [], [], 0
+    for line in paragraph.split("\n"):
+        current.append(line)
+        size += len(line) + 1
+        if (size >= _PIECE_CHARS and _CLOSES.search(line)
+                and not _ABBREVIATION.search(line)):
+            pieces.append("\n".join(current))
+            current, size = [], 0
+    if current:
+        pieces.append("\n".join(current))
+    return pieces
 
 
 # A closing-quote-then-space boundary: a straight or curly closing quote
