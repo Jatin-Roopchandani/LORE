@@ -930,8 +930,16 @@ class KeyService:
         return {"provider": value["provider"], "label": LABELS.get(value["provider"]),
                 "model": value.get("model"), "fast_model": value.get("fast_model"),
                 "base_url": value.get("base_url"), "has_key": bool(value.get("sealed")),
+                "key_from_env": self._env_key_in_use(value),
                 "last4": value.get("last4"), "models": list(value.get("models") or []),
                 "updated_at": _iso(updated)}
+
+    @staticmethod
+    def _env_key_in_use(value: dict) -> bool:
+        """Whether a local model runs on LORE_LLM_API_KEY, there being no saved key."""
+        from lore.inference.providers.factory import KEY_VARIABLES
+        return (value["provider"] == OPENAI_COMPATIBLE and not value.get("sealed")
+                and bool(os.environ.get(KEY_VARIABLES[OPENAI_COMPATIBLE])))
 
     def set_server_provider(self, admin_id: str | None, provider: str, *,
                             key: str | None = None, model: str | None = None,

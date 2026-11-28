@@ -244,8 +244,8 @@ def test_the_environment_sets_the_local_model_until_the_admin_saves_one(env, mon
     assert (creds.provider, creds.base_url, creds.model, creds.key, creds.source) == (
         "openai_compatible", "http://gateway:8080/v1", "artemis", "sk-from-env", "server")
     shown = sign_in(app, sessions, "root").get("/api/admin/provider").json()["provider"]
-    assert (shown["base_url"], shown["model"], shown["has_key"]) == (
-        "http://gateway:8080/v1", "artemis", False)
+    assert (shown["base_url"], shown["model"], shown["has_key"], shown["key_from_env"]) == (
+        "http://gateway:8080/v1", "artemis", False, True)
     with sessions() as db:
         assert db.get(ServerSetting, "provider") is None, "the environment is never saved"
     keys.set_server_provider("root", **LOCAL)

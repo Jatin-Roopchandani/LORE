@@ -1377,6 +1377,7 @@ export const SELFHOST = {
   providerLabel: "Provider",
   keyLabel: "API key",
   keyKept: (last4: string) => `Saved key ending ${last4}. Leave empty to keep it.`,
+  keyFromEnv: "Using the key from LORE_LLM_API_KEY on the server. A key saved here replaces it.",
   modelLabel: "Model",
   modelHintCloud: "Optional for Gemini; for Claude or OpenAI, the model id (leave empty for LORE's suggestion).",
   addressLabel: "Server address",

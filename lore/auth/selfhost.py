@@ -22,10 +22,9 @@ no ambient authority to borrow, and the Origin guard refuses a cross-site form.
 """
 from __future__ import annotations
 
-import os
-
 import json
 import logging
+import os
 import time
 import uuid
 from datetime import timedelta

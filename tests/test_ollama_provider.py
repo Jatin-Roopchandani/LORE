@@ -177,16 +177,29 @@ async def test_embed_uses_an_openai_compatible_server_when_set(monkeypatch) -> N
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, json={"data": [
-            {"index": 1, "embedding": [2.0]}, {"index": 0, "embedding": [1.0]}]})
+            {"index": 1, "embedding": [2.0] * 768}, {"index": 0, "embedding": [1.0] * 768}]})
 
     provider = OllamaProvider(OllamaConfig(embed_base_url="http://gw/v1"))
     provider._embed_client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler), base_url="http://gw/v1",
         headers=provider._embed_client.headers)
-    assert await provider.embed(["a", "b"], model="m") == [[1.0], [2.0]]
+    assert await provider.embed(["a", "b"], model="m") == [[1.0] * 768, [2.0] * 768]
     request = seen[0]
     assert request.url == "http://gw/v1/embeddings"
     assert request.headers["authorization"] == "Bearer sk-test"
     assert json.loads(request.content) == {"model": "m", "input": ["a", "b"],
                                            "dimensions": 768}
+    await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_embed_refuses_vectors_of_the_wrong_width() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [0.0] * 1024}]})
+
+    provider = OllamaProvider(OllamaConfig(embed_base_url="http://gw/v1"))
+    provider._embed_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://gw/v1")
+    with pytest.raises(ValueError, match="m returned 1024 dimensions; LORE needs 768"):
+        await provider.embed(["a"], model="m")
     await provider.aclose()
