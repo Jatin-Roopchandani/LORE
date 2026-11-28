@@ -276,7 +276,7 @@ export interface AdminEvent { id: number; at: string; admin_id: string | null; a
 // Self-host mode: the admin's AI provider for everyone (GET/PUT /api/admin/provider). Never the key itself.
 export type ServerProviderId = ProviderId | "openai_compatible";
 export interface ServerProvider { provider: ServerProviderId; label?: string; model: string | null; fast_model: string | null;
-  base_url: string | null; has_key: boolean; last4: string | null; models?: string[]; updated_at: string | null }
+  base_url: string | null; has_key: boolean; key_from_env?: boolean; last4: string | null; models?: string[]; updated_at: string | null }
 export interface PasswordLink { code: string; link: string; expires_at: string }
 export interface SignedIn { ok: true; redirect: string }
 export interface NewPerson { user: AdminUser; link?: PasswordLink }

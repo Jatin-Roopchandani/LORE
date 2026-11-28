@@ -95,6 +95,7 @@ export function ServerProviderSettings() {
         {provider === "gemini" && <GeminiKeyHint value={key} />}
         {provider === "gemini" && <GeminiKeyGuide />}
         {sameAsSaved && saved?.has_key && saved.last4 && <p className="hint">{SELFHOST.keyKept(saved.last4)}</p>}
+        {local && sameAsSaved && saved?.key_from_env && <p className="hint">{SELFHOST.keyFromEnv}</p>}
         {tested && (tested.ok
           ? <div className="notice" role="status">{SELFHOST.testOk(tested.model, tested.seconds)}</div>
           : <div className="notice error" role="alert"><b>{SELFHOST.testFailed}</b> {tested.message}</div>)}

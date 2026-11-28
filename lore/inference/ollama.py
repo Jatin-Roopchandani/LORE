@@ -76,12 +76,21 @@ class OllamaProvider:
                 json={"model": model, "input": texts, "dimensions": EMBED_DIM})
             response.raise_for_status()
             rows = sorted(response.json()["data"], key=lambda row: row["index"])
-            return [row["embedding"] for row in rows]
-        response = await self._client.post(
-            "/api/embed", json={"model": model, "input": texts}
-        )
-        response.raise_for_status()
-        return response.json()["embeddings"]
+            vectors = [row["embedding"] for row in rows]
+        else:
+            response = await self._client.post(
+                "/api/embed", json={"model": model, "input": texts}
+            )
+            response.raise_for_status()
+            vectors = response.json()["embeddings"]
+        # Caught here, LanceDB's error on a wrong-width vector names neither the model nor the fix.
+        for vector in vectors:
+            if len(vector) != EMBED_DIM:
+                raise ValueError(
+                    f"{model} returned {len(vector)} dimensions; LORE needs {EMBED_DIM}."
+                    " Use a model that supports `dimensions`, or one that is"
+                    f" {EMBED_DIM} wide.")
+        return vectors
 
     async def healthy(self) -> bool:
         try:

@@ -223,6 +223,13 @@ describe("the AI provider for everyone", () => {
     expect(put.body).toEqual({ provider: "openai_compatible", model: "qwen3-30b", base_url: "http://host.docker.internal:8081/v1" });
   });
 
+  test("a local model on the server's LORE_LLM_API_KEY says so", async () => {
+    serve(() => ({ body: { provider: { provider: "openai_compatible", model: "artemis", fast_model: null,
+      base_url: "http://gateway:8080/v1", has_key: false, key_from_env: true, last4: null, updated_at: null } } }));
+    render(<ServerProviderSettings />);
+    expect(await screen.findByText(SELFHOST.keyFromEnv)).toBeInTheDocument();
+  });
+
   test("a failed test says why", async () => {
     serve((url) => url.endsWith("/test") ? { body: { ok: false, message: "Couldn't reach a server." } } : { body: { provider: null } });
     render(<ServerProviderSettings />);
