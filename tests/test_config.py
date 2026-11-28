@@ -264,3 +264,11 @@ def test_processing_answer_reserve_default_and_toml(tmp_path) -> None:
     p.write_text("[lore.processing]\nanswer_reserve = 12\n")
     assert LoreConfig.load(p).processing.answer_reserve == 12
     assert LoreConfig.load(Path("lore.toml")).processing.answer_reserve == 60
+
+
+def test_the_env_points_embeddings_at_an_openai_compatible_server(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LORE_EMBED_BASE_URL", "http://gw/v1")
+    monkeypatch.setenv("LORE_EMBED_MODEL", "qwen3-embedding")
+    cfg = LoreConfig.load(tmp_path / "missing.toml")
+    assert cfg.ollama.embed_base_url == "http://gw/v1"
+    assert cfg.extraction.embed_model_ollama == "qwen3-embedding"

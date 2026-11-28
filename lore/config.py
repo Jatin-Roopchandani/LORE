@@ -16,6 +16,9 @@ from lore.inference.gemini import DEFAULT_MODELS, LITE_MODELS
 class OllamaConfig(BaseModel):
     host: str = "http://localhost:11434"
     model: str = "qwen2.5:3b-instruct-q4_K_M"
+    # An OpenAI-compatible server (its /v1 address) to embed with instead of
+    # Ollama. Its key comes from LORE_EMBED_API_KEY, never lore.toml.
+    embed_base_url: str = ""
 
 
 # The extraction tier that ran on Kaggle's free GPUs was removed. An old
@@ -303,6 +306,13 @@ class LoreConfig(BaseModel):
         if ollama_host := os.environ.get("LORE_OLLAMA_HOST"):
             cfg = cfg.model_copy(update={
                 "ollama": cfg.ollama.model_copy(update={"host": ollama_host})})
+        if embed_base_url := os.environ.get("LORE_EMBED_BASE_URL"):
+            cfg = cfg.model_copy(update={
+                "ollama": cfg.ollama.model_copy(update={"embed_base_url": embed_base_url})})
+        if embed_model := os.environ.get("LORE_EMBED_MODEL"):
+            cfg = cfg.model_copy(update={
+                "extraction": cfg.extraction.model_copy(
+                    update={"embed_model_ollama": embed_model})})
         return with_saved_llm(cfg)
 
     @property
