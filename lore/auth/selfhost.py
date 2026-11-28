@@ -22,6 +22,8 @@ no ambient authority to borrow, and the Origin guard refuses a cross-site form.
 """
 from __future__ import annotations
 
+import os
+
 import json
 import logging
 import time
@@ -404,6 +406,8 @@ def build_selfhost_router(ctx: AuthContext, key_service, *, transport=None) -> A
                 with ctx.sessions() as db:
                     creds = key_service._server_credentials(db)
                 key = None if creds is None or creds.key == "no-key" else creds.key
+        if key is None:
+            key = os.environ.get("LORE_LLM_API_KEY")
         client = OpenAICompatibleTextModel(key, base_url=base_url, model=model,
                                            timeout=TEST_TIMEOUT_S, transport=transport)
         started = time.monotonic()

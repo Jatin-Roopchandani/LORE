@@ -282,6 +282,8 @@ All optional; see [`.env.example`](../.env.example) for the full list.
 | `LORE_EMBED_BASE_URL` | (none) | Embed through an OpenAI-compatible server's `/v1` (vLLM, LiteLLM, a gateway) instead of Ollama. Its model must return 768 dimensions when asked. Set it before adding books: vectors from two models do not compare. |
 | `LORE_EMBED_MODEL` | `nomic-embed-text` | The embedding model's name on that server. |
 | `LORE_EMBED_API_KEY` | (none) | That server's key, if it needs one. |
+| `LORE_LLM_BASE_URL`, `LORE_LLM_MODEL` | (none) | A local model for everyone, set from the environment instead of the admin page. Both are needed. A provider saved on the admin page wins. |
+| `LORE_LLM_API_KEY` | (none) | The local model's key when the admin page saves none, so it can come from a secret store. |
 | `LORE_DATABASE_URL` | SQLite in the volume | `postgresql+psycopg://user:pass@host:5432/lore` for Postgres. |
 | `LORE_VERSION` | `latest` | The image tag: a version, `latest` or `edge`. |
 | `LORE_SETUP_CODE` | a random code, in the log | Your own setup code, for an unattended install. |

@@ -350,6 +350,20 @@ class Credentials:
     base_url: str | None = None
 
 
+def _env_server_value() -> dict | None:
+    """The local model for everyone from LORE_LLM_BASE_URL and LORE_LLM_MODEL,
+    for an operator who configures LORE from the environment."""
+    base_url = os.environ.get("LORE_LLM_BASE_URL", "").strip()
+    model = os.environ.get("LORE_LLM_MODEL", "").strip()
+    if not base_url and not model:
+        return None
+    if not base_url.startswith(("http://", "https://")) or not model:
+        log.warning("ignoring LORE_LLM_BASE_URL/LORE_LLM_MODEL: both are needed,"
+                    " and the address starts with http:// or https://")
+        return None
+    return {"provider": OPENAI_COMPATIBLE, "base_url": base_url, "model": model}
+
+
 def _iso(moment: datetime | None) -> str | None:
     return moment.isoformat() if moment else None
 
@@ -878,7 +892,11 @@ class KeyService:
     def _server_row(self, db: Session) -> ServerSetting | None:
         if not self._server_default:
             return None
-        return db.get(ServerSetting, SERVER_SETTING)
+        row = db.get(ServerSetting, SERVER_SETTING)
+        if row is None and (value := _env_server_value()) is not None:
+            # Unsaved, never added to the session: the admin page's choice wins.
+            return ServerSetting(key=SERVER_SETTING, value=value)
+        return row
 
     def _server_credentials(self, db: Session) -> Credentials | None:
         row = self._server_row(db)
@@ -893,8 +911,9 @@ class KeyService:
                 base64.b64decode(sealed["c"]), base64.b64decode(sealed["n"]), sealed["v"]),
                 provider)
         if provider == OPENAI_COMPATIBLE:
-            from lore.inference.providers.factory import NO_KEY
-            key = key or NO_KEY  # a local server may need none
+            from lore.inference.providers.factory import KEY_VARIABLES, NO_KEY
+            # No saved key: the operator's LORE_LLM_API_KEY, else none at all.
+            key = key or os.environ.get(KEY_VARIABLES[OPENAI_COMPATIBLE]) or NO_KEY
         elif provider == ANTHROPIC and value.get("model") not in roles.ANTHROPIC_MODELS:
             value = {**value, "model": roles.ANTHROPIC_DEFAULT}
         return Credentials(provider, key or "", value.get("model"), value.get("fast_model"),
