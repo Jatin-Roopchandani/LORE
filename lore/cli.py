@@ -1665,6 +1665,31 @@ def migrate_command() -> None:
     typer.echo("central database is up to date")
 
 
+@app.command(name="pull-models")
+def pull_models_command(
+    wait: int = typer.Option(300, "--wait", help="seconds to wait for Ollama to answer"),
+) -> None:
+    """Make sure the Ollama LORE uses (LORE_OLLAMA_HOST, or [lore.ollama] host)
+    has the embedding model, pulling it through Ollama's API if it is missing.
+    The self-hosted compose file runs it once on start; with your own Ollama
+    nothing else needs to be installed for embeddings."""
+    from lore.inference import ollama as ollama_module
+
+    config = LoreConfig.load()
+    host, model = config.ollama.host, config.extraction.embed_model_ollama
+    if config.ollama.embed_base_url:
+        # Embeddings come from an OpenAI-compatible server (LORE_EMBED_BASE_URL):
+        # nothing to pull, and no Ollama may be running at all.
+        typer.echo(f"embeddings from {config.ollama.embed_base_url}: nothing to pull")
+        return
+    try:
+        pulled = ollama_module.ensure_model(host, model, wait_s=wait)
+    except ollama_module.ModelPullError as exc:
+        typer.echo(f"lore pull-models: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"{model} {'pulled' if pulled else 'already present'} on {host}")
+
+
 @app.command(name="trace")
 def trace_command(
     request_id: str = typer.Argument(help="the request id (X-Request-Id, or the report's)"),

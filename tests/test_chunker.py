@@ -330,3 +330,29 @@ def test_a_sentence_never_spans_a_paragraph_break() -> None:
     # pysbd returns a single 57-char pseudo-sentence that _split_oversized
     # then hard-cuts mid-phrase, so the paragraphs come back mangled.
     assert [c.text for c in chunks] == [first, second]
+
+
+def test_a_chapter_with_no_paragraph_breaks_is_segmented_fast_and_the_same():
+    # Some PDFs come out with no blank lines at all: each chapter is one
+    # 20-60k character "paragraph", and pysbd's time grows much faster than
+    # its input, so a long novel (The Count of Monte Cristo, 2026-11-27)
+    # ran past the upload sandbox's CPU limit. Long paragraphs are cut at
+    # line ends that close a sentence first; the sentences must not change.
+    import time
+
+    from lore.ingest import chunker
+
+    lines = []
+    for i in range(1500):
+        lines.append(f'"Is it you, Mr. Dantès?" asked the man at line {i}, and he')
+        lines.append(f"turned to the window. The sea was calm that night {i}.")
+    paragraph = "\n".join(lines)  # single newlines only: one paragraph
+    assert len(paragraph) > 100_000
+    start = time.process_time()
+    got = chunker._sentences(paragraph)
+    assert time.process_time() - start < 10
+    flat = " ".join(paragraph.split())
+    # The same sentences pysbd finds on small, sentence-aligned pieces.
+    assert " ".join(got) == flat
+    assert all(not s.startswith("Dantès") for s in got)  # never split after "Mr."
+    assert sum(1 for s in got if s.startswith("The sea was calm")) == 1500

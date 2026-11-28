@@ -3,6 +3,11 @@
 #   docker compose up -d            # pulls the prebuilt image
 #   docker compose up -d --build    # or builds it from this checkout
 #
+# Already run Ollama somewhere? Set LORE_OLLAMA_HOST in .env and start just
+# LORE, so the Ollama image is never downloaded:
+#
+#   docker compose up -d lore worker
+#
 # Then `docker compose logs lore | grep "setup code"`, open
 # http://localhost:8080, enter the code and create the admin account.
 # Everything is optional: copy .env.example to .env to change the port, use
@@ -26,7 +31,8 @@ x-lore-env: &lore-env
   LORE_ALLOWED_HOSTS: ${LORE_ALLOWED_HOSTS:-}
   LORE_COOKIE_SECURE: ${LORE_COOKIE_SECURE:-}
   LORE_TRUST_PROXY: ${LORE_TRUST_PROXY:-0}
-  # Embeddings: the bundled Ollama below, or yours.
+  # Embeddings: the bundled Ollama below, or yours (then start only
+  # `lore worker`; see the top of this file).
   LORE_OLLAMA_HOST: ${LORE_OLLAMA_HOST:-http://ollama:11434}
   # Empty: a SQLite file in the data volume (the default; see the guide).
   LORE_DATABASE_URL: ${LORE_DATABASE_URL:-}
@@ -62,7 +68,6 @@ services:
     # The image's HEALTHCHECK probes http://127.0.0.1:8000/healthz.
     depends_on:
       migrate: {condition: service_completed_successfully}
-      ollama: {condition: service_started}
     stop_grace_period: 20s
 
   # Processes books (one at a time), from the queue the web app fills.
@@ -72,7 +77,7 @@ services:
     healthcheck: {disable: true}
     depends_on:
       migrate: {condition: service_completed_successfully}
-      ollama-pull: {condition: service_completed_successfully}
+      models: {condition: service_completed_successfully}
     # SIGTERM hands the running job back to the queue; give it time.
     stop_grace_period: 60s
 
@@ -83,8 +88,17 @@ services:
     healthcheck: {disable: true}
     restart: "no"
 
-  # Embeddings (nomic-embed-text, about 300 MB). With LORE_OLLAMA_HOST set to
-  # your own Ollama this one just idles; see docs/self-hosting.md.
+  # One-shot: makes sure the Ollama in LORE_OLLAMA_HOST (the bundled one, or
+  # yours) has the embedding model, pulling it through Ollama's API if needed
+  # (a no-op later). Runs on LORE's own image: nothing else to download.
+  models:
+    <<: *lore
+    command: ["lore", "pull-models"]
+    healthcheck: {disable: true}
+    restart: "no"
+
+  # Embeddings (nomic-embed-text, about 300 MB). Optional: with your own
+  # Ollama, start only `lore worker` and this is never pulled or run.
   ollama:
     image: ollama/ollama:${OLLAMA_VERSION:-latest}
     environment:
@@ -99,26 +113,6 @@ services:
       start_period: 20s
     logging: *logging
     restart: unless-stopped
-
-  # One-shot: pulls the embedding model on first start (a no-op later), on
-  # the bundled Ollama or on yours.
-  ollama-pull:
-    image: ollama/ollama:${OLLAMA_VERSION:-latest}
-    environment:
-      LORE_OLLAMA_HOST: ${LORE_OLLAMA_HOST:-http://ollama:11434}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        host="$${LORE_OLLAMA_HOST}"
-        if OLLAMA_HOST="$$host" ollama pull nomic-embed-text; then exit 0; fi
-        case "$$host" in http://ollama:11434*) exit 1;; esac
-        echo "Could not pull nomic-embed-text on $$host: run 'ollama pull nomic-embed-text' there." >&2
-    depends_on:
-      ollama: {condition: service_healthy}
-    logging: *logging
-    restart: "no"
 
 volumes:
   lore-data:   # every library, the database and the secrets: back this up

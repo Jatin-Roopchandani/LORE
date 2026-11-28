@@ -289,7 +289,7 @@ class DisambiguateStage:
             kind, batch = todo[index]
             job_ctl.spend_check()
             if kind == "names":
-                answers = await ask_disambiguation(client, batch)
+                answers = await _ask_names_softly(client, batch)
                 store.save_answers(answers)
             else:
                 if synonym_client is None:
@@ -343,6 +343,19 @@ async def _ask_synonyms_softly(client, batch) -> dict[str, str]:
             return await ask_synonyms(client, batch)
         except AnswerMismatchError as exc:
             log.warning("synonym answers unreadable (attempt %d of 2): %s", attempt, exc)
+    return {}
+
+
+async def _ask_names_softly(client, batch) -> dict[str, str]:
+    """Bare-name answers for one batch, asked twice at most, like synonyms
+    above: a reply in the wrong form (a model writing "1. none") leaves the
+    questions unanswered for a later run instead of failing the book."""
+    from lore.resolve.disambiguation import AnswerMismatchError
+    for attempt in (1, 2):
+        try:
+            return await ask_disambiguation(client, batch)
+        except AnswerMismatchError as exc:
+            log.warning("name answers unreadable (attempt %d of 2): %s", attempt, exc)
     return {}
 
 

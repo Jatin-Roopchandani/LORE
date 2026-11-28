@@ -30,9 +30,9 @@ you choose: no sign-up, no mail service, no outside login.
   system memory.
 - **Disk:** about 10 GB for the images (LORE's is about 1.2 GB; the
   `ollama/ollama` image is about 8.5 GB, most of it GPU libraries) and the
-  embedding model, plus roughly 50-200 MB per processed book. With your own
-  Ollama for embeddings (`LORE_OLLAMA_HOST`), the bundled image is still
-  pulled for the one-shot model download.
+  embedding model, plus roughly 50-200 MB per processed book. **Already run
+  Ollama?** Point LORE at it and the Ollama image is never downloaded: LORE
+  alone is about 1.2 GB (see [Your own Ollama](#your-own-ollama-for-embeddings)).
 
 ## Quick start
 
@@ -76,7 +76,7 @@ edit it, and run `docker compose up -d` again.
 | `worker` | Processes uploaded books, one at a time. |
 | `migrate` | Runs once at start to bring the database up to date, then exits. |
 | `ollama` | Embeddings (`nomic-embed-text`), used to search your books. |
-| `ollama-pull` | Runs once to download the embedding model, then exits. |
+| `models` | Runs once on LORE's image: makes sure your Ollama has the embedding model (pulling it through Ollama's API if needed), then exits. |
 
 Data lives in two Docker volumes: `lore-data` (every library, the accounts
 database and the server's secrets) and `ollama` (the embedding model, which
@@ -289,11 +289,25 @@ All optional; see [`.env.example`](../.env.example) for the full list.
 | `LORE_SETUP_CODE` | a random code, in the log | Your own setup code, for an unattended install. |
 | `LORE_SESSION_SECRET`, `LORE_CSRF_SECRET`, `LORE_KEY_ENCRYPTION_KEY` | made on first start | Kept in `/data/secrets.env`; set them only to manage them yourself. |
 
-**Your own Ollama for embeddings.** Set `LORE_OLLAMA_HOST`, for an Ollama on
-this computer `http://host.docker.internal:11434` (it must listen beyond
-127.0.0.1: start it with `OLLAMA_HOST=0.0.0.0 ollama serve`). `ollama-pull`
-then pulls `nomic-embed-text` there, and the bundled `ollama` service just
-idles (a few MB of memory, no model loaded).
+### Your own Ollama for embeddings
+
+Already running Ollama (on this computer or another box)? Skip the bundled one
+entirely, so its ~8.5 GB image is never downloaded:
+
+```bash
+# .env next to docker-compose.yml
+LORE_OLLAMA_HOST=http://192.168.1.50:11434   # or http://host.docker.internal:11434 on this computer
+```
+
+```bash
+docker compose up -d lore worker   # starts only LORE (and its one-shot helpers)
+```
+
+LORE pulls `nomic-embed-text` (about 300 MB) on that Ollama by itself on first
+start, through Ollama's API. An Ollama on this same computer must listen beyond
+127.0.0.1: start it with `OLLAMA_HOST=0.0.0.0 ollama serve`. Always start it
+with `lore worker` named: a bare `docker compose up -d` also starts the
+bundled Ollama.
 
 **Tuning the local model.** The image's `lore.toml` sends one request at a
 time and caps each reply at 8192 tokens. To change that, mount your own copy:
@@ -309,7 +323,7 @@ chosen on the admin page).
 ```bash
 docker compose ps                    # every service and its health
 docker compose logs -f lore worker   # the web app and the book processor
-docker compose logs ollama-pull      # the embedding model download
+docker compose logs models           # the embedding model check and download
 ```
 
 **Check every part.** `lore doctor` inside the container checks the database,
@@ -324,7 +338,7 @@ embedding model may still be downloading, or the download failed (no
 internet at first start). Pull it again:
 
 ```bash
-docker compose run --rm ollama-pull
+docker compose run --rm models
 ```
 
 **Test connection fails for a local model.**

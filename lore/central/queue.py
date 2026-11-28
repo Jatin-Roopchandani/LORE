@@ -122,16 +122,23 @@ def _candidate(session: Session, now: datetime) -> Job | None:
     # Only an active user's jobs run: a disabled or deleting account's wait.
     active = sa.select(User.id).where(User.status == "active")
     due = sa.or_(Job.not_before.is_(None), Job.not_before <= now)
+    # Users take turns: the user whose last claim is oldest (or who never ran
+    # one) goes first, then their oldest job. Plain FIFO let one reader's
+    # queue of a whole series hold every newcomer back for hours.
+    ran = aliased(Job)
+    last_run = (sa.select(sa.func.max(ran.claimed_at))
+                .where(ran.user_id == Job.user_id).scalar_subquery())
     stmt = (sa.select(Job).where(Job.state == QUEUED, due, ~busy,
                                  Job.user_id.in_(active))
-            .order_by(Job.id).limit(1)
+            .order_by(last_run.asc().nulls_first(), Job.id).limit(1)
             .with_for_update(skip_locked=True))  # ignored by SQLite
     return session.scalars(stmt).first()
 
 
 def claim_next(session: Session, worker_id: str, *,
                now: datetime | None = None) -> Job | None:
-    """Atomically claim the oldest queued job whose user has none running."""
+    """Atomically claim a queued job whose user has none running: the user
+    who ran least recently first, then that user's oldest job."""
     moment = now or utcnow()
     for _ in range(_CLAIM_TRIES):
         job = _candidate(session, moment)
