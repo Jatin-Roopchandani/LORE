@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import math
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -137,8 +138,9 @@ def doctor() -> None:
 
     try:
         healthy = asyncio.run(_check_ollama())
+        host = config.ollama.embed_base_url or config.ollama.host
         ok &= _report("ollama", healthy,
-                      config.ollama.model if healthy else f"no server at {config.ollama.host}")
+                      config.ollama.model if healthy else f"no server at {host}")
     except Exception as exc:
         healthy = False
         ok &= _report("ollama", False, str(exc))
@@ -154,6 +156,18 @@ def _embedding_check(config) -> tuple[str, bool, str]:
     """Whether Ollama has the embedding model every book and question needs."""
     import httpx
     name = config.extraction.embed_model_ollama
+    if base := config.ollama.embed_base_url:
+        key = os.environ.get("LORE_EMBED_API_KEY")
+        try:
+            listed = httpx.get(f"{base.rstrip('/')}/models", timeout=10,
+                               headers={"Authorization": f"Bearer {key}"} if key else None)
+            listed.raise_for_status()
+            served = {m.get("id", "") for m in listed.json().get("data", [])}
+        except Exception as exc:  # noqa: BLE001 - reported, not raised
+            return "embeddings", False, f"could not list {base}'s models: {exc}"
+        if name in served:
+            return "embeddings", True, f"{name} on {base}"
+        return "embeddings", False, f"{base} does not serve {name}"
     try:
         tags = httpx.get(f"{config.ollama.host.rstrip('/')}/api/tags", timeout=10).json()
         pulled = {m.get("name", "") for m in tags.get("models", [])}

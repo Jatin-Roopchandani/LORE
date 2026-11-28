@@ -213,3 +213,49 @@ def test_the_hosted_site_has_no_provider_for_everyone(tmp_path, monkeypatch):
         keys.set_server_provider("root", **LOCAL)
     with pytest.raises(KeyRequired):
         keys.credentials_for("alice")
+
+
+def test_the_local_model_takes_lore_llm_api_key_when_no_key_is_saved(env, monkeypatch):
+    monkeypatch.setenv("LORE_LLM_API_KEY", "sk-from-env")
+    _app, sessions, _ = env
+    keys = service(sessions)
+    keys.set_server_provider("root", **LOCAL)
+    assert keys.credentials_for("alice").key == "sk-from-env"
+    keys.set_server_provider("root", **LOCAL, key="sk-saved-by-the-admin")
+    assert keys.credentials_for("alice").key == "sk-saved-by-the-admin"
+
+
+def test_test_connection_sends_lore_llm_api_key_when_no_key_is_given(env, monkeypatch):
+    monkeypatch.setenv("LORE_LLM_API_KEY", "sk-from-env")
+    app, sessions, seen = env
+    admin = sign_in(app, sessions, "root")
+    r = admin.post("/api/admin/provider/test", json=LOCAL)
+    assert r.status_code == 200 and r.json()["ok"] is True, r.text
+    assert seen[0].headers["authorization"] == "Bearer sk-from-env"
+
+
+def test_the_environment_sets_the_local_model_until_the_admin_saves_one(env, monkeypatch):
+    monkeypatch.setenv("LORE_LLM_BASE_URL", "http://gateway:8080/v1")
+    monkeypatch.setenv("LORE_LLM_MODEL", "artemis")
+    monkeypatch.setenv("LORE_LLM_API_KEY", "sk-from-env")
+    app, sessions, _ = env
+    keys = service(sessions)
+    creds = keys.credentials_for("alice")
+    assert (creds.provider, creds.base_url, creds.model, creds.key, creds.source) == (
+        "openai_compatible", "http://gateway:8080/v1", "artemis", "sk-from-env", "server")
+    shown = sign_in(app, sessions, "root").get("/api/admin/provider").json()["provider"]
+    assert (shown["base_url"], shown["model"], shown["has_key"]) == (
+        "http://gateway:8080/v1", "artemis", False)
+    with sessions() as db:
+        assert db.get(ServerSetting, "provider") is None, "the environment is never saved"
+    keys.set_server_provider("root", **LOCAL)
+    assert keys.credentials_for("alice").model == "qwen3-30b"
+
+
+@pytest.mark.parametrize("url, model", [("gateway:8080/v1", "artemis"),
+                                        ("http://gateway:8080/v1", "")])
+def test_an_incomplete_environment_sets_no_local_model(env, monkeypatch, url, model):
+    monkeypatch.setenv("LORE_LLM_BASE_URL", url)
+    monkeypatch.setenv("LORE_LLM_MODEL", model)
+    _app, sessions, _ = env
+    assert service(sessions).server_provider() is None

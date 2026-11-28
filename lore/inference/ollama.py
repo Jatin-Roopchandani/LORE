@@ -1,10 +1,13 @@
 """Local Ollama provider — structured output via /api/chat `format` schema."""
 from __future__ import annotations
 
+import os
+
 import httpx
 from pydantic import BaseModel
 
 from lore.config import OllamaConfig
+from lore.db.lance_store import EMBED_DIM
 from lore.extract.schemas import MAX_OUTPUT_TOKENS
 from lore.inference.base import ProviderOutputError
 
@@ -18,9 +21,16 @@ _TRUNCATION_HINT_CHARS = MAX_OUTPUT_TOKENS * _CHARS_PER_TOKEN
 
 
 class OllamaProvider:
+    _embed_client: httpx.AsyncClient | None = None
+
     def __init__(self, config: OllamaConfig, *, timeout: float = 120.0) -> None:
         self._model = config.model
         self._client = httpx.AsyncClient(base_url=config.host, timeout=timeout)
+        if config.embed_base_url:
+            key = os.environ.get("LORE_EMBED_API_KEY")
+            self._embed_client = httpx.AsyncClient(
+                base_url=config.embed_base_url, timeout=timeout,
+                headers={"Authorization": f"Bearer {key}"} if key else None)
 
     async def generate(
         self,
@@ -58,6 +68,15 @@ class OllamaProvider:
             raise ProviderOutputError(message, raw_output=content) from exc
 
     async def embed(self, texts: list[str], model: str) -> list[list[float]]:
+        if self._embed_client is not None:
+            # The stores' vectors are EMBED_DIM wide; a Matryoshka model
+            # truncates to it on the server.
+            response = await self._embed_client.post(
+                "/embeddings",
+                json={"model": model, "input": texts, "dimensions": EMBED_DIM})
+            response.raise_for_status()
+            rows = sorted(response.json()["data"], key=lambda row: row["index"])
+            return [row["embedding"] for row in rows]
         response = await self._client.post(
             "/api/embed", json={"model": model, "input": texts}
         )
@@ -66,13 +85,18 @@ class OllamaProvider:
 
     async def healthy(self) -> bool:
         try:
-            response = await self._client.get("/api/tags", timeout=5.0)
+            if self._embed_client is not None:
+                response = await self._embed_client.get("/models", timeout=5.0)
+            else:
+                response = await self._client.get("/api/tags", timeout=5.0)
             return response.status_code == 200
         except httpx.HTTPError:
             return False
 
     async def aclose(self) -> None:
         await self._client.aclose()
+        if self._embed_client is not None:
+            await self._embed_client.aclose()
 
 
 class ModelPullError(RuntimeError):
