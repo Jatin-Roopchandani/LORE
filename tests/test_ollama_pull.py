@@ -97,3 +97,19 @@ def test_the_cli_fails_loudly(tmp_path, monkeypatch):
     monkeypatch.setattr("lore.inference.ollama.ensure_model", fail)
     r = CliRunner().invoke(cli.app, ["pull-models"])
     assert r.exit_code == 1 and "no Ollama answered" in r.output
+
+
+def test_the_cli_pulls_nothing_when_embeddings_come_from_another_server(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from lore import cli
+
+    def must_not_run(*a, **k):
+        raise AssertionError("no Ollama to pull from")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LORE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LORE_EMBED_BASE_URL", "http://gw/v1")
+    monkeypatch.setattr("lore.inference.ollama.ensure_model", must_not_run)
+    r = CliRunner().invoke(cli.app, ["pull-models"])
+    assert r.exit_code == 0 and "nothing to pull" in r.output, r.output

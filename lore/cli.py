@@ -1677,6 +1677,11 @@ def pull_models_command(
 
     config = LoreConfig.load()
     host, model = config.ollama.host, config.extraction.embed_model_ollama
+    if config.ollama.embed_base_url:
+        # Embeddings come from an OpenAI-compatible server (LORE_EMBED_BASE_URL):
+        # nothing to pull, and no Ollama may be running at all.
+        typer.echo(f"embeddings from {config.ollama.embed_base_url}: nothing to pull")
+        return
     try:
         pulled = ollama_module.ensure_model(host, model, wait_s=wait)
     except ollama_module.ModelPullError as exc:
