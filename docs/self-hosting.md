@@ -279,6 +279,8 @@ All optional; see [`.env.example`](../.env.example) for the full list.
 | `LORE_COOKIE_SECURE` | from `LORE_BASE_URL` | Force Secure cookies on (`1`) or off (`0`). |
 | `LORE_TRUST_PROXY` | `0` | `1` behind your own reverse proxy. |
 | `LORE_OLLAMA_HOST` | `http://ollama:11434` | Your own Ollama instead of the bundled one. |
+| `LORE_LLM_BASE_URL`, `LORE_LLM_MODEL` | (none) | A local model for everyone, set from the environment instead of the admin page. Both are needed. A provider saved on the admin page wins. |
+| `LORE_LLM_API_KEY` | (none) | The local model's key when the admin page saves none, so it can come from a secret store. |
 | `LORE_DATABASE_URL` | SQLite in the volume | `postgresql+psycopg://user:pass@host:5432/lore` for Postgres. |
 | `LORE_VERSION` | `latest` | The image tag: a version, `latest` or `edge`. |
 | `LORE_SETUP_CODE` | a random code, in the log | Your own setup code, for an unattended install. |
